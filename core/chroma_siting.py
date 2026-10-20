@@ -41,11 +41,12 @@ CHROMA_SITING_TO_RGBA = f"{CHROMA_SITING_444},format=rgba"
 """La conversion complète, 4:2:0 vers RVB : un seul ``yuva444p16le``, jamais un ``scale`` seul devant ``format=rgba``."""
 
 _RGB_BOUNDARY = re.compile(
-    r"(?:^|(?<=[,;\]]))(?P<name>format=rgba\b|colorbalance=|colorchannelmixer=|lutrgb=|curves=|colorlevels=|"
-    r"lut3d=|colortemperature=)"
+    r"(?:^|(?<=[,;\]]))(?P<name>format=rgba\b|(?:colorbalance|colorchannelmixer|lutrgb|curves|colorlevels|"
+    r"lut3d|colortemperature)(?:@\w+)?=)"
 )
 """Premier filtre d'une chaîne qui impose du RVB : FFmpeg y insère sa conversion, avec ses réglages par défaut
-(recopie de la chroma). Les autres filtres de la chaîne (``eq``, ``hue``, ``gblur``…) travaillent en YUV."""
+(recopie de la chroma). Les autres filtres de la chaîne (``eq``, ``hue``, ``gblur``…) travaillent en YUV. Un filtre **nommé**
+(``curves@v0cge=…``, étalonnage animé, ADR-0008 étape 6) est un filtre RVB comme son homologue statique."""
 
 
 def siting_before_rgb(chain: str) -> str:

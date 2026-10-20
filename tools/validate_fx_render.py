@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Banc de validation du rendu des paramètres d'effets animés (ADR-0008, étapes 3 et 5) : hors ligne, jamais importé par l'application.
+"""Banc de validation du rendu des paramètres d'effets et d'étalonnage animés (ADR-0008, étapes 3, 5 et 6) : hors ligne, jamais importé par l'application.
 
 Question : pour une version de FFmpeg donnée, l'image ``n`` de la sortie ANIMÉE (expression du temps local, ou fichier de
-commandes ``sendcmd`` pour le flou, le rayon de la lueur et l'aberration chromatique ; graphe de l'export)
-est-elle égale à l'image ``n`` du rendu STATIQUE du même effet réglé sur la valeur de la courbe à cet instant ? Critère :
-écart maximal <= 1 niveau (même critère et même méthode que ``tools/validate_sendcmd.py``).
+commandes ``sendcmd`` pour le flou, le rayon de la lueur, l'aberration chromatique et les réglages d'étalonnage ``color.*`` ; graphe
+de l'export) est-elle égale à l'image ``n`` du rendu STATIQUE du même effet (ou du même étalonnage) réglé sur la valeur de la
+courbe à cet instant ? Critère : écart maximal <= 1 niveau (même critère et même méthode que ``tools/validate_sendcmd.py``).
+Étape 6 : les cas ``grade_*`` (un par propriété, plus tous ensemble) et les ``tables`` (la table de ``curves`` égale celle de
+``lutrgb`` sur les 256 niveaux d'entrée, écart exigé : 0).
 
 Deux temps, parce que les chaînes viennent de l'application (``core.export_engine``) et que les versions de FFmpeg à tester
 tournent dans Docker, sans l'application :
@@ -67,7 +69,58 @@ def _cases() -> dict[str, dict]:
         # Une image à décalage 0 garde la conversion RVB aller-retour (le rendu statique à 0 n'a pas de filtre) : <= 2 niveaux.
         "sendcmd_chromatic_from_zero": {"effects": [ca], "animation": ramp(ca, "intensity", 0.0, 9.0), "tolerance": 2},
         **_expression_cases(cc, vg, hz, ramp, ease),
+        **_grade_cases(),
     }
+
+
+def _grade_cases() -> dict[str, dict]:
+    """Étape 6 : une courbe par propriété d'étalonnage (interpolations variées), puis toutes ensemble."""
+    from core.animation import InterpolationType, Keyframe
+    from core.color_grading import ColorGrade
+    from core.grade_targets import ANIMATABLE_GRADE_PARAMS, grade_spec
+
+    span = FRAMES / RATE
+
+    def curve(property_id, reach=1.0):
+        spec = grade_spec(property_id)
+        half = reach * (spec.maximum - spec.minimum) / 2.0
+        centre = spec.default
+        return [Keyframe(property_id, 0.0, centre - 0.8 * half, InterpolationType.BEZIER, out_slope=half),
+                Keyframe(property_id, span / 2, centre + 0.7 * half, InterpolationType.EASE_IN_OUT),
+                Keyframe(property_id, span, centre - 0.3 * half, InterpolationType.LINEAR)]
+
+    cases = {f"grade_{pid.removeprefix('color.')}": {"grade": ColorGrade(contrast=0.1, saturation=1.1), "animation": curve(pid)}
+             for pid in ANIMATABLE_GRADE_PARAMS}
+    cases["grade_all_together"] = {"grade": ColorGrade(), "animation": [kf for pid in ANIMATABLE_GRADE_PARAMS for kf in curve(pid, 0.25)]}
+    # Exposition qui traverse 0 EV : le statique n'émet pas de filtre, l'animé garde ``curves`` (table identité).
+    cases["grade_exposure_through_zero"] = {"grade": ColorGrade(), "animation": [
+        Keyframe("color.exposure", 0.0, -1.0, InterpolationType.LINEAR), Keyframe("color.exposure", span, 1.0, InterpolationType.LINEAR)]}
+    return cases
+
+
+def _table_cases() -> list[dict]:
+    """Paires (chaîne ``lutrgb`` de l'export statique, chaîne ``curves`` de l'étalonnage animé) à comparer sur un dégradé 0..255."""
+    import random
+
+    from core.color_grading import ColorGrade, Wheel
+    from core.color_wheels import exposure_filter, wheels_filter
+    from core.grade_tables import curves_points, exposure_table, wheel_tables
+
+    rng = random.Random(6)
+    pairs = []
+    for stops in (-2.0, -1.31, -0.5, 0.0004, 0.37, 1.0, 1.77, 2.0):
+        pairs.append({"name": f"exposure {stops}", "static": exposure_filter(stops),
+                      "animated": f"curves=master='{curves_points(exposure_table(stops))}'"})
+    for index in range(12):
+        def part():
+            return Wheel(*(round(rng.uniform(-1.0, 1.0), 3) if rng.random() < 0.6 else 0.0 for _ in range(4)))
+        grade = ColorGrade(lift=part(), gamma=part(), gain=part(), offset=part())
+        if grade.wheels_are_neutral():
+            continue
+        tables = wheel_tables(grade)
+        pairs.append({"name": f"wheels {index}", "static": wheels_filter(grade),
+                      "animated": "curves=" + ":".join(f"{n}='{curves_points(t)}'" for n, t in zip(("red", "green", "blue"), tables))})
+    return pairs
 
 
 def _expression_cases(cc, vg, hz, ramp, ease) -> dict[str, dict]:
@@ -119,8 +172,35 @@ def cmd_gen(args: argparse.Namespace) -> int:
         graph = (text + "," if text else "") + "format=rgba"
         return f"setpts=PTS-STARTPTS,fps={RATE},setpts=PTS-STARTPTS,{siting_before_rgb(graph)}"
 
+    from core.export_engine import _build_color_grade_filters
+    from core.grade_targets import effective_grade
+
+    class _Clip:
+        pass
+
+    def grade_chain(grade, animation) -> str:
+        written: list[str] = []
+        context = context_for(RATE, 0.0, FRAMES / RATE) if animation else None
+        with command_files(written):
+            text = _build_color_grade_filters(grade, "v0cg", animation=tuple(animation), sendcmd=context)
+        for path in written:
+            target = work / f"cmd-{len(cmd_files)}.cmd"
+            target.write_bytes(Path(path).read_bytes())
+            Path(path).unlink(missing_ok=True)
+            cmd_files.append(target)
+            text = text.replace(path, str(target))
+        graph = (text + "," if text else "") + "format=rgba"
+        return f"setpts=PTS-STARTPTS,fps={RATE},setpts=PTS-STARTPTS,{siting_before_rgb(graph)}"
+
     cases = {}
     for name, case in _cases().items():
+        if "grade" in case:
+            clip = _Clip()
+            clip.color_grade, clip.animation = case["grade"], case["animation"]
+            statics = {str(n): grade_chain(effective_grade(clip, n / RATE), ()) + f",select='eq(n,{n})'" for n in SAMPLES}
+            cases[name] = {"animated": grade_chain(case["grade"], case["animation"]), "static": statics,
+                           "tolerance": case.get("tolerance", TOLERANCE)}
+            continue
         layer_space = bool(case.get("layer_space"))
         statics = {}
         for n in SAMPLES:
@@ -135,8 +215,9 @@ def cmd_gen(args: argparse.Namespace) -> int:
             statics[str(n)] = text + f",select='eq(n,{n})'"
         cases[name] = {"animated": chain(case["effects"], case["animation"], layer_space), "static": statics,
                        "tolerance": case.get("tolerance", TOLERANCE)}
+    cases["__tables__"] = _table_cases()
     (work / "cases.json").write_text(json.dumps(cases, indent=1), encoding="utf-8")
-    print(f"{len(cases)} cas écrits dans {work}")
+    print(f"{len(cases) - 1} cas et {len(cases['__tables__'])} tables écrits dans {work}")
     return 0
 
 
@@ -159,6 +240,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     size = WIDTH * HEIGHT * 4
     report: dict = {"ffmpeg": _banner(args.ffmpeg), "cpuflags0": bool(args.cpuflags0), "cases": {}}
     for name, case in cases.items():
+        if name == "__tables__":
+            continue
         animated = _frames(args.ffmpeg, work / "input.mkv", case["animated"], args.cpuflags0)
         assert len(animated) == size * FRAMES, (name, len(animated) // size)
         worst, per_frame = 0, {}
@@ -169,6 +252,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             per_frame[n] = diff
             worst = max(worst, diff)
         report["cases"][name] = {"max": worst, "per_frame": per_frame, "valid": worst <= case.get("tolerance", TOLERANCE)}
+    for pair in cases.get("__tables__", []):               # tables : curves égale lutrgb sur les 256 niveaux d'entrée (écart exigé : 0)
+        ramps = []
+        for key in ("static", "animated"):
+            command = [args.ffmpeg, "-v", "error", *(["-cpuflags", "0"] if args.cpuflags0 else []), "-f", "lavfi", "-i",
+                       "color=c=black:s=256x2:r=1:d=1", "-vf", f"format=rgba,geq=r='X':g='X':b='X':a=255,{pair[key]}",
+                       "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]
+            ramps.append(np.frombuffer(subprocess.run(command, capture_output=True, check=True).stdout, np.uint8).astype(int))
+        worst = int(np.abs(ramps[0] - ramps[1]).max())
+        report["cases"][f"tables {pair['name']}"] = {"max": worst, "per_frame": {}, "valid": worst == 0}
     Path(args.out).write_text(json.dumps(report, indent=1), encoding="utf-8")
     for name, result in report["cases"].items():
         print(f"{report['ffmpeg']:>22} {'VALIDÉ' if result['valid'] else 'NON VALIDÉ':>11}  max {result['max']:>3}  {name}")

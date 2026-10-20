@@ -575,8 +575,19 @@ _ANIMATABLE = tuple(
 )
 
 
+def refuse_grade_property(property_name: object, verb: str) -> None:
+    """Refuse la famille ``color.*`` (étalonnage animé, ADR-0008) pour tout verbe qui reçoit un nom de propriété, **avant** toute écriture.
+
+    Tant que l'étape 9 n'a pas écrit ses verbes (ni l'étape 8 son interface), un script ne doit ni créer, ni modifier, ni déplacer, ni
+    retirer, ni activer une image clé d'étalonnage : elle serait rendue à l'export sans que rien ne permette de l'inspecter ou de la retirer.
+    Le modèle et le rendu (``effective_grade``, un projet chargé qui en contient) ne passent pas par ici."""
+    if isinstance(property_name, str) and property_name.startswith("color."):
+        raise ValueError(f"{verb} : l'animation de l'étalonnage n'est pas encore disponible dans les scripts.")
+
+
 def _add_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
+        refuse_grade_property(a["property"], "add_keyframe")
         clip_id = _editable_clip(project, a["clip"])
         target = get_target(a["property"])
         owner = _owner_track(project, clip_id)
@@ -603,6 +614,7 @@ def _add_keyframe(a: Mapping[str, Any]) -> Operation:
 
 def _remove_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
+        refuse_grade_property(a["property"], "remove_keyframe")
         clip_id = _editable_clip(project, a["clip"])
         if not remove_keyframe_at(project, clip_id, a["property"], float(a["at"])):
             raise KeyError(f"Aucune image clé de {a['property']!r} à {a['at']} s sur ce clip.")

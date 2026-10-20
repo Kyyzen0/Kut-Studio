@@ -58,7 +58,7 @@ Kut-Studio describe projet.kut --json                    # lire la structure d'u
 ## Images clés : propriétés et unités
 
 `add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform et `graphic.*`.
-Sont exclus : `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
+Sont exclus : `color.*` (l'étalonnage animé : **aucun** verbe qui reçoit un nom de propriété ne le crée, ne le modifie, ne le déplace, ne le retire ni ne l'active — refus « l'animation de l'étalonnage n'est pas encore disponible dans les scripts », projet inchangé — tant que l'interface et les verbes de l'étalonnage animé n'existent pas ; un projet qui en contient déjà se rend normalement), `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
 `remove_mask_keyframe`). Les valeurs sont dans **l'unité du modèle**, pas celle que l'inspecteur affiche ; elles doivent rester dans les bornes
 (sinon refus, jamais d'écrêtage). Un test (`tests/test_script_verbs_animation_masks.py`) relit ce tableau et le compare au registre.
 

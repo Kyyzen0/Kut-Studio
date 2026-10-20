@@ -2496,7 +2496,7 @@ def _build_layer_filter(
     )
     sendcmd_context = (
         context_for(fps, local_start, layer.timeline_end - layer.timeline_start)
-        if any(kf.property_name.startswith("fx.") for kf in layer.animation or ())
+        if any(kf.property_name.startswith(("fx.", "color.")) for kf in layer.animation or ())
         else None
     )
     effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale, label=f"{output_label}fx",
@@ -2528,7 +2528,8 @@ def _build_layer_filter(
                 f"{output_label}_w{node_id}", geometry,
             )
     color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg",
-                                                     windows=window_labels, pixel_scale=pixel_scale)
+                                                     windows=window_labels, pixel_scale=pixel_scale,
+                                                     animation=layer.animation, sendcmd=sendcmd_context)
     matte_label = None
     compositing = layer.compositing
     if compositing is not None and compositing.masks and add_input is not None:
@@ -2663,7 +2664,8 @@ def _build_layer_filter(
     return ";".join([*matte_parts, *retime_chains, "".join(parts)])
 
 
-def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_scale: float = 1.0) -> str:
+def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_scale: float = 1.0,
+                               animation=None, sendcmd=None) -> str:
     """Construit la chaîne de filtres FFmpeg pour un :class:`ColorGrade`.
 
     L'ordre est déterministe et identique pour tous les clips ; chaque
@@ -2702,6 +2704,13 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
             aligné sur l'image étalonnée, ou couverture constante.
         pixel_scale: pixels de sortie par pixel de la séquence (σ du flou
             d'un nœud, réglé à la taille de la séquence).
+        animation: images clés génériques du clip (``Clip.animation``). Celles d'une propriété d'étalonnage
+            (``color.<champ>``, :mod:`core.grade_targets`) animent le ``ColorGrade`` **simple** du clip (:mod:`core.grade_render`) ;
+            ``None`` (valeur par défaut : moniteur, empreintes de cache, nœuds) ou sans image clé, la chaîne est celle
+            d'avant, caractère pour caractère.
+        sendcmd: :class:`core.effect_sendcmd.SendcmdContext` (cadence, origine et durée du flux) pour les réglages rendus par un
+            fichier de commandes ; ``None`` : ils restent à leur valeur de base (seuls contraste, saturation et teinte
+            suivent leur courbe, par expression).
 
     Returns:
         Chaîne prête à être concaténée dans un pipeline, ou
@@ -2726,25 +2735,39 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
         # qualifieurs : un sous-graphe, insérable lui aussi dans une chaîne,
         # aux labels préfixés par ``tag`` (unique dans le graphe de l'appelant).
         return render_filters(grade, tag, _build_color_grade_filters, windows=windows, pixel_scale=pixel_scale)
+    if grade is None and animation:
+        from .grade_targets import has_grade_animation
+
+        if has_grade_animation(animation):
+            grade = ColorGrade()          # jamais étalonné, mais animé : les images clés partent du réglage neutre (comme l'inspecteur)
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:
         return ""
     filters: list[str] = []
+    animated = None
+    if animation:
+        from .grade_render import animated_grade
+
+        animated = animated_grade(grade, animation, sendcmd, tag, _format_seconds)
     # 0. exposition en stops (EV) : la lumière est multipliée par 2^EV, puis ré-encodée (table ``lutrgb`` exacte), avant
     # le contraste. Avant, ``eq=gamma=2**EV`` : un gamma n'est pas une exposition (gris moyen à −2 EV : 0 au lieu de 66).
-    exposure = exposure_filter(grade.exposure)
+    exposure = (animated.exposure() if animated is not None else None) or exposure_filter(grade.exposure)
     if exposure:
         filters.append(exposure)
     # 1. eq : contraste et saturation sont des multiplicateurs centrés sur 1.
-    if grade.contrast or grade.saturation != 1.0:
+    if (animated_eq := animated.eq() if animated is not None else None):
+        filters.append(animated_eq)
+    elif grade.contrast or grade.saturation != 1.0:
         eq_contrast = _format_seconds(1.0 + float(grade.contrast))
         eq_saturation = _format_seconds(float(grade.saturation))
         filters.append(
             f"eq=contrast={eq_contrast}:saturation={eq_saturation}"
         )
     # 1 bis. teinte : rotation de la chroma (degrés).
-    if abs(float(grade.hue)) > 1e-3:
+    if (animated_hue := animated.hue() if animated is not None else None):
+        filters.append(animated_hue)
+    elif abs(float(grade.hue)) > 1e-3:
         filters.append(f"hue=h={_format_seconds(float(grade.hue))}")
     # 2. colorbalance : ombres et hautes lumières. Sans ``pl=1`` (« conserver
     # la luminosité ») : FFmpeg y met la saturation à zéro dès qu'un canal vaut
@@ -2752,7 +2775,9 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     # ombres et hautes lumières, qui décalent les trois canaux d'autant.
     shadow = max(-1.0, min(1.0, float(grade.shadows)))
     highlight = max(-1.0, min(1.0, float(grade.highlights)))
-    if abs(shadow) > 1e-3 or abs(highlight) > 1e-3:
+    if (animated_balance := animated.balance() if animated is not None else None):
+        filters.append(animated_balance)
+    elif abs(shadow) > 1e-3 or abs(highlight) > 1e-3:
         filters.append(
             "colorbalance="
             f"rs={_format_seconds(shadow)}:gs={_format_seconds(shadow)}:"
@@ -2761,7 +2786,9 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
             f"bh={_format_seconds(highlight)}"
         )
     # 2 bis. température : balance des blancs sur toute l'image.
-    if abs(float(grade.temperature)) > 1e-3:
+    if (animated_temperature := animated.temperature() if animated is not None else None):
+        filters.append(animated_temperature)
+    elif abs(float(grade.temperature)) > 1e-3:
         red, green, blue = temperature_gains(float(grade.temperature))
         filters.append(
             f"colorchannelmixer=rr={_format_seconds(red)}:"
@@ -2769,7 +2796,7 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
         )
     # 2 ter. roues lift / gamma / gain / offset : une table exacte par canal
     # (``lutrgb``), émise seulement si une roue a bougé.
-    wheels = wheels_filter(grade)
+    wheels = (animated.wheels() if animated is not None else None) or wheels_filter(grade)
     if wheels:
         filters.append(wheels)
     # 3. courbes par canal : on émet un filtre ``curves`` par canal

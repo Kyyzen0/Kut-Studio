@@ -117,7 +117,11 @@ FORMAT_NAME = "kut-studio-project"
 CURRENT_VERSION = 17
 """Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18,
 :data:`COLOR_MATRIX_VERSION` pour la 19, :data:`EFFECT_ANIMATION_VERSION` pour la 20,
-:data:`TRANSITION_CATALOG_VERSION` pour la 21, :data:`SCENE3D_VERSION` pour la 22 et :data:`SENDCMD_ANIMATION_VERSION` pour la 23).
+:data:`TRANSITION_CATALOG_VERSION` pour la 21, :data:`SCENE3D_VERSION` pour la 22, :data:`SENDCMD_ANIMATION_VERSION` pour la 23 et
+:data:`GRADE_ANIMATION_VERSION` pour la 24).
+
+La version 24 n'est écrite que par un projet dont un clip porte une image clé d'étalonnage rendue (``color.<champ>`` ou
+``color.<roue>.<canal>``, ADR-0008 étape 6) ; elle l'emporte sur toutes les autres conditions ; le chargeur la lit comme la 17.
 
 La version 22 n'est écrite que par un projet qui contient un calque « scène 3D » (:mod:`core.scene3d`) ; le chargeur la lit
 comme la 17, un ancien Kut-Studio la refuse.
@@ -214,9 +218,19 @@ en 20, un projet sans courbe d'effet s'écrit octet pour octet comme avant, et l
 courbe dont l'effet n'existe pas (orpheline) est ignorée par tous les builds : elle n'exige pas la 23. Le chargeur lit 17 à 23
 de la même façon."""
 
+GRADE_ANIMATION_VERSION = 24
+"""Version écrite par un projet qui contient une image clé d'étalonnage **rendue** (``color.exposure``, ``color.contrast``…,
+``color.lift.r``… : :data:`core.grade_targets.ANIMATABLE_GRADE_PARAMS`, ADR-0008 étape 6). Les versions publiées ne connaissent pas
+ces cibles : elles ouvriraient le fichier en rendant l'étalonnage à sa valeur de base, sans rien dire, puis perdraient les courbes à la
+sauvegarde suivante. Même règle « version minimale nécessaire » : un projet sans ces images clés s'écrit octet pour octet comme
+avant ; la 24 l'emporte sur toutes les autres conditions (la 23 d'un flou animé comprise). Une image clé d'un nom ``color.*`` que le
+registre ne connaît pas (``color.curves``) est ignorée par tous les builds : elle n'exige pas la 24. Un Kut-Studio qui ne la connaît
+pas refuse le fichier avec le message de ``_validate_envelope``. Le chargeur lit 17 à 24 de la même façon."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION,
-     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION, SENDCMD_ANIMATION_VERSION}
+     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION, SENDCMD_ANIMATION_VERSION,
+     GRADE_ANIMATION_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -605,6 +619,26 @@ def payload_uses_sendcmd_animation(node: Any) -> bool:
     return False
 
 
+def payload_uses_grade_animation(node: Any) -> bool:
+    """``True`` si la structure sérialisée contient une image clé d'étalonnage rendue (:func:`core.grade_targets.is_grade_property`).
+
+    Même principe que :func:`payload_uses_effect_animation` : on lit le résultat de la sérialisation (clips de toutes les
+    séquences, clips imbriqués, compositions), donc aucun endroit n'est oublié. Le registre décide, pas une liste en dur."""
+    from .grade_targets import is_grade_property
+
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            name = item.get("property_name")
+            if isinstance(name, str) and is_grade_property(name):
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
 _SCENE3D_VALUE = "scene3d"      # valeur sérialisée de GraphicType.SCENE3D (core.graphics : import différé du module)
 _CATALOG_TYPE_VALUES = frozenset(member.value for member in CATALOG_EXTENSION_TYPES)
 
@@ -665,6 +699,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
         payload[_VERSION_KEY] = SCENE3D_VERSION
     if payload_uses_sendcmd_animation(payload[_PROJECT_KEY]):
         payload[_VERSION_KEY] = SENDCMD_ANIMATION_VERSION
+    if payload_uses_grade_animation(payload[_PROJECT_KEY]):
+        payload[_VERSION_KEY] = GRADE_ANIMATION_VERSION
     return payload
 
 

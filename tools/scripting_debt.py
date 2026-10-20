@@ -96,6 +96,7 @@ READ_MODULES: dict[str, str] = {
     "animation_targets": "registre des propriétés animables (lecture)",
     "beat_detection": "détection de rythme (analyse)",
     "effect_targets": "paramètres d'effets évalués (lecture)",
+    "grade_targets": "propriétés d'étalonnage animables et étalonnage évalué (lecture)",
     "shortcuts": "raccourcis clavier : « sequence » y est une suite de touches, pas une séquence du modèle",
     "time_editing": "restrictions de la courbe de vitesse (lecture)",
     "time_map": "mapping temporel (lecture)",
