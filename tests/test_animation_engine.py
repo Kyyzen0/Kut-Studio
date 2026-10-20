@@ -231,22 +231,61 @@ def test_hold_switches_on_the_same_frame_in_python_and_ffmpeg_despite_float_nois
 
 
 def test_evaluation_cost_does_not_grow_with_the_number_of_keyframes():
-    """Recherche dichotomique : 1 000 keyframes ne coûtent pas 100× plus que 10."""
-    import time
+    """Recherche dichotomique : le nombre de sondages par évaluation croît en log2(n), pas en n.
 
-    def cost(count):
+    Mesure déterministe (aucun chronomètre) : l'ancienne version comparait des durées de moins d'une milliseconde et
+    échouait sur un runner chargé (×15 mesuré pour une limite ×10). On compte ici les lectures faites par une évaluation
+    dans **toutes** les séquences qu'elle pourrait parcourir (instants, keyframes, segments) : un parcours linéaire de
+    n'importe laquelle ferait exploser le total, pas seulement celui des instants.
+    """
+    import math
+
+    class Counting(list):
+        probes = 0  # compteur partagé par les trois séquences
+
+        def __getitem__(self, index):
+            result = super().__getitem__(index)
+            type(self).probes += len(result) if isinstance(index, slice) else 1
+            return result
+
+        def __iter__(self):
+            for value in super().__iter__():
+                type(self).probes += 1
+                yield value
+
+        def __reversed__(self):
+            for value in super().__reversed__():
+                type(self).probes += 1
+                yield value
+
+        def __contains__(self, value):
+            type(self).probes += len(self)
+            return super().__contains__(value)
+
+        def index(self, *args):
+            type(self).probes += len(self)
+            return super().index(*args)
+
+        def count(self, value):
+            type(self).probes += len(self)
+            return super().count(value)
+
+    def worst_probes(count):
         c = curve(*(kf(i * 0.01, float(i % 9), list(I)[i % 6]) for i in range(count)))
         end = c.times[-1]
-        instants = [end * k / 997 for k in range(997)]
-        best = float("inf")
-        for _ in range(5):
-            start = time.perf_counter()
-            for t in instants:
-                c.evaluate(t)
-            best = min(best, time.perf_counter() - start)
-        return best
+        c._times, c._keyframes, c._segments = Counting(c._times), Counting(c._keyframes), Counting(c._segments)
+        worst = 0
+        for k in range(997):
+            Counting.probes = 0
+            c.evaluate(end * k / 997)
+            worst = max(worst, Counting.probes)
+        return worst
 
-    assert cost(1000) < cost(10) * 10
+    for count in (10, 100, 1000):
+        # Mesuré : ceil(log2 n) + 4 (bisect, plus les lectures des bornes et du premier keyframe) ; marge de 2.
+        limit = math.ceil(math.log2(count)) + 6
+        probes = worst_probes(count)
+        assert probes <= limit, f"{count} keyframes : {probes} sondages par évaluation (limite {limit})"
 
 
 # --- Retours de revue : bornes et insertion hors de la courbe ------------------------------------
