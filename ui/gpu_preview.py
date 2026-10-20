@@ -809,8 +809,9 @@ class GpuPreviewWidget(QRhiWidget):
         program = compile_program(grade, _build_color_grade_filters)
         if program is not None:
             return self._resolve_program(layer, program, options, images)
-        found = self.grades.lookup(grade, **options)
         slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
+        # Un emplacement par calque : deux calques étalonnés dont l'un est animé ne s'écrasent pas la demande (ADR-0008, étape 7).
+        found = self.grades.lookup(grade, **options, slot=slot)
         if found is None and not self.grades.failed(grade, **options):
             self._poll_grades()
         if found is None:

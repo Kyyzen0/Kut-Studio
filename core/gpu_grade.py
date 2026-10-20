@@ -191,9 +191,15 @@ class GradeLutCache:
     affiche le calque sans étalonnage le temps d'une cuisson (≈ 30 ms), puis ``on_ready`` (appelé depuis le fil de
     cuisson) demande une nouvelle image. Une demande attend **par emplacement** (``slot`` : le calque, ou une étape d'un
     graphe spatial, qui en demande plusieurs à la fois) : pendant un glisser de curseur, seule la dernière valeur de
-    l'emplacement attend, les intermédiaires ne sont jamais cuites ; la plus récente passe d'abord. Un échec est
+    l'emplacement attend, les intermédiaires ne sont jamais cuites. Parmi les emplacements en attente, **le moins
+    récemment servi** passe d'abord (à égalité, le plus récemment demandé) : un seul emplacement, c'est « la dernière
+    valeur d'abord » d'un curseur ; plusieurs clips dont l'étalonnage est animé (ADR-0008, étape 7) demandent une nouvelle
+    LUT à chaque image, et sans cette règle le dernier demandé serait servi à chaque fois, les autres jamais. Un échec est
     mémorisé (pas de nouvel essai à chaque image).
     """
+
+    MAX_SLOTS_REMEMBERED = 256
+    """Emplacements dont on retient le dernier service (borne : les identifiants de clips s'accumulent)."""
 
     def __init__(self, on_ready: Callable[[], None] | None = None, *, capacity: int = 48,
                  bake: Callable[..., bytes] = bake_grade_lut) -> None:
@@ -204,6 +210,8 @@ class GradeLutCache:
         self._ready: OrderedDict[str, bytes | None] = OrderedDict()
         self._pending: OrderedDict[str, tuple[str, object, dict]] = OrderedDict()
         self._busy = False
+        self._served: OrderedDict[str, int] = OrderedDict()      # emplacement → rang de sa dernière cuisson
+        self._rank = 0
 
     def lookup(self, grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_range: str = "",
                slot: str = "") -> tuple[str, bytes] | None:
@@ -228,15 +236,30 @@ class GradeLutCache:
         with self._lock:
             return key in self._ready and self._ready[key] is None
 
+    def _next_slot(self) -> str:
+        """L'emplacement à cuire (verrou pris) : le moins récemment servi, puis le plus récemment demandé."""
+        best, best_rank = "", -1
+        for slot in reversed(self._pending):
+            rank = self._served.get(slot, 0)
+            if best_rank < 0 or rank < best_rank:
+                best, best_rank = slot, rank
+        return best
+
     def _work(self) -> None:
         while True:
             with self._lock:
                 if not self._pending:
                     self._busy = False
                     return
-                _slot, job = self._pending.popitem(last=True)
+                slot = self._next_slot()
+                job = self._pending.pop(slot)
                 if job[0] in self._ready:
                     continue
+                self._rank += 1
+                self._served[slot] = self._rank
+                self._served.move_to_end(slot)
+                while len(self._served) > self.MAX_SLOTS_REMEMBERED:
+                    self._served.popitem(last=False)
             key, grade, options = job
             try:
                 atlas: bytes | None = self._bake(grade, **options)

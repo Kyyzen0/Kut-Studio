@@ -281,7 +281,7 @@ class HardwarePreviewMixin:
             matte = None
             if has_masks or getattr(clip_obj, "tracking", None) is not None:
                 matte = self._clip_matte(clip_obj, float(self.playhead_seconds))
-            grade = self._monitor_color_grade(clip_obj)
+            grade = self._monitor_color_grade(clip_obj, float(local))      # étalonnage animé : celui de l'export à cet instant
             grade = grade if grade_is_active(grade) else None
             windows = self._clip_windows(clip_obj, float(self.playhead_seconds)) if grade is not None else {}
             entries.append((

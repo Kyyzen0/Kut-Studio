@@ -1901,7 +1901,9 @@ class MainWindow(
             # Effets animés (ADR-0008) : paramètres évalués à l'instant local ; sans image clé, les effets du clip tels quels.
             self.preview_panel.set_effects(evaluated_effects(
                 clip_obj.effects, clip_obj.animation, float(self.playhead_seconds) - float(clip_obj.timeline_start)))
-            self.preview_panel.set_color_grade(self._monitor_color_grade(clip_obj))
+            # Étalonnage animé (ADR-0008, étape 7) : celui de l'export à cet instant ; sans image clé, la valeur de base.
+            self.preview_panel.set_color_grade(self._monitor_color_grade(
+                clip_obj, float(self.playhead_seconds) - float(clip_obj.timeline_start)))
             self.preview_panel.set_source_color(*self._monitor_color_matrix(top_clip, clip_obj))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
@@ -2027,6 +2029,7 @@ class MainWindow(
         if self.timeline_timer.isActive():
             self.timeline_timer.stop()
         self.preview_panel.player.pause()
+        self._settle_animated_grade()                       # l'étalonnage animé du moniteur se pose sur l'instant d'arrêt
         self._sync_live_mix()                               # la pause ne resynchronise pas le moniteur : le son s'arrête ici
         self.timeline_panel.setPlayState(False)
         self._set_preview_play_icon(False)
