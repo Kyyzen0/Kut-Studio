@@ -26,6 +26,7 @@ from ..compositing import MASK_PROPERTY_ORDER, Compositing, mask_property_id
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..project_model import Project
 from ..timeline_operations import find_clip
+from .resource_limits import require_keyframe_slot
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip, _pick
 
 _RESERVED = ("crop", "trackcrop")
@@ -72,6 +73,7 @@ def _add_mask_keyframe(a: Mapping[str, Any]) -> Operation:
         at = float(a["at"])
         if at > clip_duration(clip) + 1e-9:
             raise ValueError(f"L'instant {at:g} s dépasse la durée du clip : les images clés sont relatives au clip.")
+        require_keyframe_slot(clip, get_target(property_id, clip), at, "add_mask_keyframe")
         return add_keyframe(project, clip_id, property_id, at, float(value), interpolation=a.get("interpolation"))
 
     return operation

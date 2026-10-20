@@ -296,7 +296,7 @@ def test_create_format_version_bounds_sequences_and_clips_before_copying(monkeyp
     monkeypatch.setattr("core.scripting.sequence_rules.MAX_SEQUENCES_IN_PROJECT", 1)
     _refused(_social_project(), {"op": "create_format_version", "sequence": MAIN_SEQUENCE_ID, "format": "vertical"}, message="limite")
     monkeypatch.undo()
-    monkeypatch.setattr("core.scripting.auto_rules.MAX_CLIPS_IN_PROJECT", 7)          # 7 clips déjà là : la copie en ajouterait 7
+    monkeypatch.setattr("core.scripting.resource_limits.MAX_CLIPS_IN_PROJECT", 7)          # 7 clips déjà là : la copie en ajouterait 7
     _refused(_social_project(), {"op": "create_format_version", "sequence": MAIN_SEQUENCE_ID, "format": "vertical"}, message="limite")
 
 
@@ -316,6 +316,6 @@ def test_the_clip_bound_counts_every_sequence_for_duplicate_sequence(monkeypatch
     project = _project()
     other = create_sequence(project, "Autre", sequence_id="autre")
     other.tracks[0].clips.append(Clip("z", "m", other.tracks[0].id, 0.0, 0.0, 2.0, label="z"))
-    monkeypatch.setattr("core.scripting.auto_rules.MAX_CLIPS_IN_PROJECT", 6)           # 5 clips en tout (4 + 1 dans l'autre séquence)
+    monkeypatch.setattr("core.scripting.resource_limits.MAX_CLIPS_IN_PROJECT", 6)           # 5 clips en tout (4 + 1 dans l'autre séquence)
     _refused(project, {"op": "duplicate_sequence", "sequence": MAIN_SEQUENCE_ID}, message="dépasseraient")
     _ok(project, {"op": "duplicate_sequence", "sequence": "autre"})

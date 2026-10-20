@@ -27,6 +27,8 @@ from ..timeline_editing import (
 from ..timeline_operations import cut_clip, duplicate_clip, find_clip, ripple_delete_clip, trim_clip_left, trim_clip_right
 from ..track_operations import move_track, remove_track, rename_track
 from .layer_rules import require_room
+from .resource_limits import require_clip_room
+from .tracking_rules import require_tracker_copies_room
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _owner_track, _pick, _require_unlocked, _track_id
 
 _MAX_INDEX = 10_000
@@ -79,9 +81,11 @@ def _ripple_trim_clip_start(a: Mapping[str, Any]) -> Operation:
 
 
 def _room_for_copy(project: Project, clip_id: str) -> None:
-    """Couper ou dupliquer un calque graphique en crée un de plus : le plafond de calques du projet vaut aussi ici."""
+    """Couper ou dupliquer crée un clip de plus (un calque graphique : aussi un calque de plus), qui reprend les suiveurs du clip."""
+    require_clip_room(project, 1)
     if _owner_track(project, clip_id).type == "graphics":
         require_room(project, 1)
+    require_tracker_copies_room(project, find_clip(project, clip_id))
 
 
 def _cut_clip(a: Mapping[str, Any]) -> Operation:

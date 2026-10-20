@@ -18,6 +18,7 @@ script reçoit un refus, et la session restaure le projet.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from ..graphics import GraphicOverlay
@@ -28,7 +29,9 @@ from ..object_ids import resolve_object_id
 from ..template_slots import add_photo_slideshow, empty_slots, fill_slot, fill_slot_with_photo, fill_slots_with_photos, slideshow_cuts
 from ..timeline_operations import find_clip
 from ..compositing_guard import ClipEditRefused, clip_edit_refusal
-from .auto_rules import MAX_PHOTOS, require_grid, require_room
+from .auto_rules import MAX_PHOTOS, require_grid
+from .layer_rules import require_layers_room
+from .resource_limits import require_media_room
 from .image_layer import read_image_size
 from .verbs import MAX_TIME, Kind, Operation, Param, ScriptContext, Verb, _CLIP, _asset_id, _editable_clip
 
@@ -78,12 +81,20 @@ def _fill_slot(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+def _new_photo_media(project: Any, photos: Any) -> int:
+    """Médias que poser ces photos ajoute : un par photo DISTINCTE qui n'est pas déjà une image du projet (le modèle réutilise le média de même chemin)."""
+    known = {asset.path for asset in project.media_assets if asset.media_type == "image"}
+    return len({str(Path(str(path)).expanduser().resolve()) for path, _size in photos} - known)
+
+
 def _fill_slot_with_photo(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
     def operation(project: Any) -> Any:
         if context is None:
             raise ValueError(_NO_CONTEXT.format(verb="fill_slot_with_photo"))
         clip_id = _slot(project, a["clip"])
-        ((path, size),) = _photos(context, [a["path"]])
+        photos = _photos(context, [a["path"]])
+        ((path, size),) = photos
+        require_media_room(project, _new_photo_media(project, photos))
         return fill_slot_with_photo(project, clip_id, path, size, ken_burns=bool(a.get("ken_burns", True)))
 
     return operation
@@ -96,6 +107,7 @@ def _fill_slots_with_photos(a: Mapping[str, Any], context: ScriptContext | None)
         start = None if a.get("start") is None else _slot(project, a["start"])
         _require_unlocked_targets(project, start)
         photos = _photos(context, a["photos"])
+        require_media_room(project, _new_photo_media(project, photos))
         filled = fill_slots_with_photos(project, photos, start_clip_id=start, ken_burns=bool(a.get("ken_burns", True)))
         if len(filled) != len(photos):                    # photos en trop : le modèle les ignore, un script reçoit un refus (la session restaure)
             raise ValueError(f"{len(photos) - len(filled)} photo(s) sur {len(photos)} n'ont pas d'emplacement libre (déverrouillé, vide, après l'emplacement de départ).")
@@ -115,7 +127,7 @@ def _add_photo_slideshow(a: Mapping[str, Any], context: ScriptContext | None) ->
         cuts = slideshow_cuts(len(photos), start=start, grid=grid, seconds=seconds, beats_per_photo=beats)
         if cuts[-1][1] > MAX_TIME:
             raise ValueError(f"Le diaporama finirait à {cuts[-1][1]:g} s, au-delà de la limite de {MAX_TIME:g} s.")
-        require_room(project, len(photos))
+        require_layers_room(project, len(photos), media=_new_photo_media(project, photos))
         return add_photo_slideshow(project, photos, start=start, grid=grid, seconds=seconds, beats_per_photo=beats,
                                    ken_burns=bool(a.get("ken_burns", True)))
 
@@ -138,7 +150,7 @@ def _add_leaderboard(a: Mapping[str, Any]) -> Operation:
         board_id = resolve_object_id(a.get("id"), prefix="lb", kind="classement", taken=_taken_board_ids(project))
         board = Leaderboard(_rows(a["rows"]), float(a["start"]), float(a["duration"]), float(a.get("top", -0.105)), float(a.get("delay", 0.3)), id=board_id)
         layers = 5 * len(board.rows)
-        require_room(project, layers)
+        require_layers_room(project, layers)
         build_leaderboard(project, board)
         return board
 
@@ -182,7 +194,7 @@ def _update_leaderboard(a: Mapping[str, Any]) -> Operation:
         board = Leaderboard(rows, old.start, duration, old.top, old.delay, id=old.id)
         present = _require_replaceable(project, [str(item) for item in group.get("clips", ())])
         layers = 5 * len(board.rows)
-        require_room(project, max(0, layers - present))
+        require_layers_room(project, max(0, layers - present))
         update_leaderboard(project, board)
         return board
 

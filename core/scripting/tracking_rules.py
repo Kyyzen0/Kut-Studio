@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from ..compositing_guard import ClipEditRefused, clip_edit_refusal
 from ..project_model import Clip, Project
 from ..tracking_ops import _still_tracked_elsewhere, tracking_of
+from .resource_limits import require_room_in
 
 MAX_TRACKERS_PER_CLIP = 32
 """Trackers d'un clip (l'interface en pose quatre pour une stabilisation automatique)."""
@@ -64,6 +65,14 @@ def require_tracker_room(project: Project, clip: Clip) -> None:
     count = sum(len(tracking_of(other).trackers) for other in project_clips(project))
     if count >= MAX_TRACKERS_IN_PROJECT:
         raise ValueError(f"Le projet compte déjà {count} trackers : la limite est de {MAX_TRACKERS_IN_PROJECT}.")
+
+
+def require_tracker_copies_room(project: Project, clip: Clip) -> None:
+    """Refuse, AVANT de couper ou de dupliquer ``clip``, que la copie (qui reprend ses suiveurs, mêmes identifiants) fasse dépasser la limite
+    de suiveurs du projet (toutes séquences). Un clip sans suiveur n'ajoute rien."""
+    copies = len(tracking_of(clip).trackers)
+    count = sum(len(tracking_of(other).trackers) for other in project_clips(project))
+    require_room_in(count, copies, MAX_TRACKERS_IN_PROJECT, "suiveurs", "Le projet")
 
 
 def require_span(project: Project, data, index: int) -> None:

@@ -972,6 +972,35 @@ bibliothèque, la page Composition et la sélection de la timeline appellent.
   d'un calque, liaison de suivi, même sur une autre séquence) ne doit pas être verrouillé ; c'est vérifié avant la première suppression.
 - **Identifiant du clip créé** : `id` / `as` ; les fonctions de composition reçoivent pour cela un paramètre optionnel `clip_id` (sans lui, l'interface ne change pas).
 
+## Plafonds des verbes
+
+Un script ne peut pas faire grossir un projet sans limite. Chaque verbe qui crée des objets vérifie, **avant** de créer, que le projet (ou la séquence, le clip, la piste concernés) ne dépasserait pas le plafond de la ressource, avec le nombre **exact** d'objets que l'opération ajoute. Un script qui dépasse un plafond est **refusé** avec un message clair : rien n'est ramené en silence, et le projet reste inchangé (tout ou rien). Les plafonds ne visent que les verbes de script, jamais l'interface. Un projet qui dépasse **déjà** un plafond (fichier ouvert dans l'application) n'est pas modifié : un verbe refuse seulement d'y **ajouter**, il ne supprime rien et une opération qui remplace ou retire passe.
+
+Toutes les constantes vivent dans `core/scripting/resource_limits.py` (les plafonds de séquences, de calques, de suiveurs, de ducking, d'automation, de bibliothèque et de bus restent dans leur module de règles, indiqué ci-dessous).
+
+| Ressource | Plafond | Valeur | Portée |
+| --- | --- | --- | --- |
+| Clips (calques, sous-titres, copies, coupes, segments Multicam compris) | `MAX_CLIPS_IN_PROJECT` | 5 000 | le projet, toutes séquences ; tout chemin qui crée un calque réserve aussi ses clips (un projet peut avoir 5 000 clips vidéo et peu de calques) |
+| Clips créés par une opération | `MAX_NEW_CLIPS_PER_OPERATION` | 500 | l'opération |
+| Images clés | `MAX_KEYFRAMES_PER_CLIP` | 2 000 | un clip : une **seule** mesure, transform + animation (effets, masques, vitesse, calques) |
+| Pistes | `MAX_TRACKS_PER_SEQUENCE` | 100 | la séquence active |
+| Repères | `MAX_MARKERS_PER_SEQUENCE` | 5 000 | la séquence active |
+| Guides | `MAX_GUIDES_PER_SEQUENCE` | 200 | la séquence active |
+| Inserts audio | `MAX_INSERTS_PER_CHAIN` | 32 | une piste, ou un bus |
+| Effets visuels | `MAX_EFFECTS_PER_CLIP` | 100 | un clip |
+| Effets audio | `MAX_AUDIO_EFFECTS_PER_CLIP` | 100 | un clip |
+| Masques | `MAX_MASKS_PER_CLIP` | 64 | un clip |
+| Nœuds d'étalonnage | `MAX_COLOR_NODES_PER_CLIP` | 64 | un clip |
+| Fenêtres d'étalonnage | `MAX_COLOR_WINDOWS_PER_CLIP` | 64 | un clip, tous nœuds confondus |
+| Médias | `MAX_MEDIA_IN_PROJECT` | 10 000 | le projet : tout chemin qui ajoute un média réserve son nombre exact avant de créer (import, média interne d'un calque ou d'un sous-titre, photo posée dans un emplacement ; une photo déjà dans le projet n'en ajoute pas) |
+| Suiveurs | `MAX_TRACKERS_IN_PROJECT` (`tracking_rules`) | 1 000 | le projet ; une coupe ou une copie d'un clip suivi reprend ses suiveurs |
+| Séquences | `MAX_SEQUENCES_IN_PROJECT` (`sequence_rules`) | 200 | le projet |
+| Calques | `MAX_LAYERS_IN_PROJECT` (`layer_rules`) | 5 000 | le projet, toutes séquences (copie de séquence comprise) |
+| Associations de ducking | `MAX_SIDECHAINS` (`audio_rules`) | 256 | le projet |
+| Points d'une courbe de volume | `MAX_AUTOMATION_POINTS` (`audio_rules`) | 1 000 | une piste |
+
+Les valeurs sont larges (plusieurs fois ce qu'un projet réaliste utilise). Deux familles ne portent pas de plafond propre parce qu'elles sont bornées par construction : les **transitions** (une par jonction, et un clip n'est dans qu'une seule transition : au plus la moitié des clips de la séquence) et les **liaisons de suivi** (une par propriété cible d'un clip, vers un masque qui doit exister : au plus 2 + masques + fenêtres, eux-mêmes plafonnés). Le fichier `tests/script_resource_guards.py` tient l'inventaire de chaque verbe créateur (voir ci-dessous).
+
 ## Garde-fous de ressources
 
 Deux garde-fous de tests empêchent qu'un verbe oublie une limite, ou qu'une raison de la dette se perde.

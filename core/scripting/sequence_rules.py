@@ -8,22 +8,20 @@ Aucun verbe ici (les modules de verbes et ``verbs.py`` les emploient). Le plafon
 from __future__ import annotations
 
 from ..project_model import Project
+from . import resource_limits
+from .layer_rules import require_room
+from .resource_limits import require_room_in, total_clips
 
 MAX_SEQUENCES_IN_PROJECT = 200
 """Séquences d'un projet au-delà desquelles un script n'en crée plus."""
 
 
-def require_sequence_room(project: Project, adding: int = 1, *, clips: int = 0) -> None:
-    """Refuse, AVANT toute création, ``adding`` séquences (et ``clips`` clips copiés) de plus si le projet dépasserait ses plafonds."""
-    count = len(project.sequences)
-    if count + adding > MAX_SEQUENCES_IN_PROJECT:
-        raise ValueError(f"Le projet compte déjà {count} séquences : {adding} de plus dépasseraient la limite de {MAX_SEQUENCES_IN_PROJECT}.")
-    if clips:
-        from .auto_rules import MAX_CLIPS_IN_PROJECT, total_clips          # import tardif : auto_rules importe la table des verbes
-
-        have = total_clips(project)
-        if have + clips > MAX_CLIPS_IN_PROJECT:
-            raise ValueError(f"Le projet compte déjà {have} clips : {clips} de plus dépasseraient la limite de {MAX_CLIPS_IN_PROJECT}.")
+def require_sequence_room(project: Project, adding: int = 1, *, clips: int = 0, layers: int = 0) -> None:
+    """Refuse, AVANT toute création, ``adding`` séquences (et ``clips`` clips, dont ``layers`` calques, copiés) de plus si le projet dépasserait ses plafonds."""
+    require_room_in(len(project.sequences), adding, MAX_SEQUENCES_IN_PROJECT, "séquences", "Le projet")
+    require_room_in(total_clips(project), clips, resource_limits.MAX_CLIPS_IN_PROJECT, "clips", "Le projet")      # lu à l'appel (tests)
+    if layers:
+        require_room(project, layers)
 
 
 def clips_in(sequence) -> int:

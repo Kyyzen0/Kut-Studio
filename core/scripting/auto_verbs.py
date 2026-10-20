@@ -28,6 +28,8 @@ from .auto_rules import (
     MAX_LISTED_CLIPS, MAX_NEW_CLIPS_PER_OPERATION, TOLERANCE, editable_clips, require_count, require_grid, require_room,
 )
 from .impact_verbs import IMPACT_VERBS
+from .layer_rules import require_layers_room
+from .resource_limits import require_media_room
 from .template_verbs import TEMPLATE_VERBS
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip
 
@@ -150,6 +152,7 @@ def _add_subtitle_lines(a: Mapping[str, Any]) -> Operation:
     def operation(project: Any) -> Any:
         lines = _caption_lines(a["lines"], karaoke=False)
         require_room(project, len(lines))
+        require_media_room(project, len(lines))                       # un média interne par ligne
         return add_subtitle_lines(project, lines)
 
     return operation
@@ -158,7 +161,7 @@ def _add_subtitle_lines(a: Mapping[str, Any]) -> Operation:
 def _add_karaoke_lines(a: Mapping[str, Any]) -> Operation:
     def operation(project: Any) -> Any:
         lines = _caption_lines(a["lines"], karaoke=True)
-        require_room(project, len(lines))
+        require_layers_room(project, len(lines))                      # un calque (donc un clip et un média interne) par ligne
         return add_karaoke_lines(project, lines)
 
     return operation

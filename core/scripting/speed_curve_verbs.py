@@ -26,6 +26,7 @@ from ..time_ops import RippleMode, edit_speed_points, remove_speed_points, set_s
 from ..time_presets import TimePreset, apply_preset
 from ..time_targets import SPEED_TARGET
 from .keyframe_rules import MAX_BLOCK, MAX_SLOPE, require_effective_tangents
+from .resource_limits import require_keyframes_after_project_edit
 from .time_verbs import (
     _AT, _MAX_POINTS, _RIPPLE, _TOLERANCE, _checked_move, _mode, _require_aligned, _speed_point, _time_clip,
 )
@@ -117,7 +118,12 @@ def _apply_time_preset(a: Mapping[str, Any]) -> Operation:
                 f"apply_time_preset : le préréglage `{preset.value}` ne conserve pas la durée de la timeline ; "
                 "utilisez ripple `source` (ou set_clip_speed / les verbes de courbe de vitesse)."
             )
-        apply_preset(project, clip_id, preset, local_time=0.0 if at is None else float(at), fps=float(project.fps), mode=_mode(a))
+
+        def apply(target: Project) -> None:
+            apply_preset(target, clip_id, preset, local_time=0.0 if at is None else float(at), fps=float(project.fps), mode=_mode(a))
+
+        require_keyframes_after_project_edit(project, find_clip(project, clip_id), apply, "apply_time_preset")
+        apply(project)
         return None
 
     return operation
