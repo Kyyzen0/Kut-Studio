@@ -743,10 +743,13 @@ def test_segment_start_is_the_first_pts_ffmpeg_gives_the_frame(rate):
             ["ffmpeg", "-v", "info", "-f", "lavfi", "-i", "testsrc2=s=16x16:r=60:d=20",
              "-vf", f"trim=start=0:end=19,setpts=PTS-STARTPTS+{text}/TB,fps={ffrate},setpts=PTS-STARTPTS+{text}/TB,showinfo",
              "-frames:v", "3", "-f", "null", "-"], capture_output=True, text=True)
-        times = [float(m) for m in re.findall(r"pts_time:([0-9.]+)", completed.stderr)]
-        assert len(times) >= 3, completed.stderr[-300:]
-        assert times[0] == pytest.approx(segment_start(skip, fps), abs=2e-6), (rate, skip, times, segment_start(skip, fps))
-        assert times[1] - times[0] == pytest.approx(1.0 / fps, abs=2e-6)
+        # Ticks ENTIERS (``pts:``) et base de temps exacte 1/cadence : le texte ``pts_time`` est arrondi (5 décimales sous FFmpeg 6.1),
+        # plus grossier qu'un tick à 60 i/s.
+        ticks = [int(m) for m in re.findall(r"\bpts:\s*(\d+)", completed.stderr)]
+        assert len(ticks) >= 3, completed.stderr[-300:]
+        rate_fraction = frame_rate(fps)
+        assert Fraction(ticks[0]) / rate_fraction == Fraction(segment_start(skip, fps)).limit_denominator(10**9), (
+            rate, skip, ticks, segment_start(skip, fps))
 
 
 @needs_ffmpeg
