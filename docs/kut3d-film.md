@@ -48,7 +48,7 @@ film.place_scene(scene, duration=3.0, start=0.0, track=1, name="cube")   # -> "s
 - `scene` : une `kut3d.Scene`. **Une fonction `t -> Scene` n'est pas sérialisable** : elle est refusée, utilisez `render_shot`.
 - `track` : numéro de la piste de **graphiques** (G1, G2...), au-dessus de toute la vidéo (défaut 1). Un chevauchement sur la même piste est refusé.
 - `duration` est arrondie à l'image (`round(durée x fps)`, comme un plan) ; `name` (lettres, chiffres, `_`) ne peut pas être celui d'un plan
-  ni d'une autre scène du film (casse ignorée) ; `overwrite=True` remplace les fichiers d'une exécution précédente.
+  ni d'une autre scène du film (casse ignorée) ; `overwrite=True` remplace les fichiers d'une exécution précédente **sans jamais détruire l'ancienne scène avant que la nouvelle soit installée et relue** : l'ancien `.kut3d` et son dossier de modèles sont mis de côté (`.<nom>.XXXX.bak`), puis supprimés seulement après validation ; sur tout échec (ou interruption) ils sont remis en place. Le nombre de plans rendus + scènes est borné par un seul total (`MAX_PLACEMENTS`), quel que soit l'ordre des poses.
 - Fond transparent (celui que la scène déclare, sinon aucun), taille et cadence du film, vitesse fixe (pas de remappage de temps).
 - Le projet s'écrit alors au format `.kut` **22** ; `export()` fonctionne tel quel (les scènes sont vérifiées avant l'export).
 - **Modèles copiés** : un `.kut3d` ne référence que des fichiers **sous son propre dossier**. `place_scene` copie donc chaque modèle (OBJ, glTF,

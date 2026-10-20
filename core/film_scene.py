@@ -137,32 +137,54 @@ def write_scene(scene: Any, assets_dir: Path, name: str, *, overwrite: bool) -> 
         raise FilmError(f"La scène {name!r} existe déjà sur le disque : choisissez un autre nom ou passez overwrite=True.")
     stage: Path | None = None
     moved = [False, False]                                       # [dossier des modèles, fichier .kut3d] déjà posés à l'emplacement final
+    saved: list[tuple[Path, Path]] = []                          # (sauvegarde, emplacement d'origine) de l'ancienne scène
+    backup_dir: Path | None = None
     try:
         assets_dir.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(dir=assets_dir, prefix=f".{name}.", suffix=".tmp"))
         staged = confined_scene(scene, stage / f"{name}_models")
         kut3d.save_scene(staged, stage / f"{name}.kut3d")
-        if final_models.exists():
-            shutil.rmtree(final_models)
+        if final.exists() or final_models.exists():              # overwrite=True : on met l'ancienne scène de côté, on ne la détruit pas
+            backup_dir = Path(tempfile.mkdtemp(dir=assets_dir, prefix=f".{name}.", suffix=".bak"))
+            for original, kept in ((final_models, backup_dir / "models"), (final, backup_dir / "scene.kut3d")):
+                if original.exists():
+                    os.replace(original, kept)                   # l'emplacement d'origine est libre ensuite : pas de remplacement dossier sur dossier
+                    saved.append((kept, original))
         if (stage / f"{name}_models").exists():
             os.replace(stage / f"{name}_models", final_models)
             moved[0] = True
         os.replace(stage / f"{name}.kut3d", final)
         moved[1] = True
         validate(final)                                          # ce que l'export relira doit se lire
-    except (SceneFileError, Scene3DError) as error:
+    except BaseException as error:                               # y compris KeyboardInterrupt : l'ancien état revient toujours
         _discard(final, final_models, moved)
-        raise FilmError(f"Scène 3D refusée : {short(str(error), 300)}") from error
-    except OSError as error:
-        _discard(final, final_models, moved)
-        raise FilmError(f"Écriture impossible : {short(str(error), 200)}") from error
-    except BaseException:
-        _discard(final, final_models, moved)
+        _restore(saved, backup_dir)
+        if isinstance(error, (SceneFileError, Scene3DError)):
+            raise FilmError(f"Scène 3D refusée : {short(str(error), 300)}") from error
+        if isinstance(error, OSError):
+            raise FilmError(f"Écriture impossible : {short(str(error), 200)}") from error
         raise
     finally:
         if stage is not None:
             shutil.rmtree(stage, ignore_errors=True)
+    if backup_dir is not None:                                   # point de non-retour unique : la nouvelle scène est installée ET validée
+        shutil.rmtree(backup_dir, ignore_errors=True)
     return final.resolve()
+
+
+def _restore(saved: list[tuple[Path, Path]], backup_dir: Path | None) -> None:
+    """Remet l'ancienne scène à sa place puis retire le dossier de sauvegarde ; si la remise échoue, la sauvegarde est conservée et son emplacement indiqué."""
+    if backup_dir is None:
+        return
+    try:
+        for kept, original in reversed(saved):
+            os.replace(kept, original)
+    except OSError as error:
+        raise FilmError(
+            f"Écriture impossible et ancienne scène non restaurée ({short(str(error), 120)}) : "
+            f"ses fichiers sont conservés dans {short(str(backup_dir), 160)}."
+        ) from error
+    shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def _discard(final: Path, final_models: Path, moved: list[bool]) -> None:

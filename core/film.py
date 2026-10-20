@@ -196,6 +196,11 @@ class Film:
         self._shots[key] = shot
         return shot
 
+    def _check_room(self) -> None:
+        """Borne commune (plans rendus + scènes 3D), appliquée par toutes les entrées qui posent un clip vidéo ou graphique."""
+        if len(self._placements) + len(self._scenes) >= MAX_PLACEMENTS:
+            raise FilmError(f"Trop de plans posés (maximum {MAX_PLACEMENTS}).")
+
     def place(self, shot: Shot, *, start: float = 0.0, track: int = 2) -> str:
         """Pose ``shot`` sur la piste vidéo ``track`` (V1 est le fond) à ``start`` secondes ; retourne l'identifiant du clip."""
         if not isinstance(shot, Shot):
@@ -208,8 +213,7 @@ class Film:
             raise FilmError(f"Le fichier du plan {shot.name!r} a disparu : {short(str(shot.path), 120)}.")
         if number == 1 and self._background is not None:
             raise FilmError("La piste 1 est occupée par le fond : posez les plans à partir de la piste 2.")
-        if len(self._placements) >= MAX_PLACEMENTS:
-            raise FilmError(f"Trop de plans posés (maximum {MAX_PLACEMENTS}).")
+        self._check_room()
         if at + shot.duration > MAX_FILM_SECONDS:
             raise FilmError(f"Le film dépasserait {MAX_FILM_SECONDS:g} s.")
         for other in self._placements:
@@ -244,8 +248,7 @@ class Film:
         if not isinstance(overwrite, bool):
             raise FilmError("overwrite est un booléen.")
         key = label.lower()
-        if len(self._placements) + len(self._scenes) >= MAX_PLACEMENTS:
-            raise FilmError(f"Trop de plans posés (maximum {MAX_PLACEMENTS}).")
+        self._check_room()
         if at + length > MAX_FILM_SECONDS:
             raise FilmError(f"Le film dépasserait {MAX_FILM_SECONDS:g} s.")
         if key in self._shots or any(item.shot.name.lower() == key for item in self._placements) or any(item.name.lower() == key for item in self._scenes):

@@ -379,3 +379,151 @@ def test_the_example_script_builds_its_own_cube_without_external_files():
     text = (ROOT / "examples" / "kut3d_scene_film.py").read_text(encoding="utf-8")
     assert "place_scene" in text and "render_shot" not in text
 
+
+
+# --- overwrite : reprise de l'ancienne scène, borne commune ----------------------------------------------------------------
+
+def _snapshot(folder: Path) -> dict[str, bytes]:
+    return {p.relative_to(folder).as_posix(): p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+def _old_scene_film(tmp_path: Path):
+    """Un film avec une scène « cube » déjà écrite ; retourne (film neuf sur le même dossier, scène de remplacement, état initial)."""
+    make_film(tmp_path).place_scene(red_cube_scene(tmp_path / "src"), duration=1.0, name="cube")
+    film = make_film(tmp_path)
+    before = _snapshot(film.assets_dir)
+    other = red_cube_scene(tmp_path / "src2", name="autre")
+    return film, other, before
+
+
+def _assert_old_intact(film: Film, before: dict[str, bytes]) -> None:
+    assert _snapshot(film.assets_dir) == before                  # mêmes fichiers, mêmes octets, ni temporaire ni sauvegarde
+    assert sorted(p.name for p in film.assets_dir.iterdir()) == ["cube.kut3d", "cube_models"]
+    assert kut3d.load_scene(film.assets_dir / "cube.kut3d").instances                       # l'ancien .kut3d se relit
+    assert film.duration == 0.0
+
+
+def _fail_replace(monkeypatch, match):
+    real = os.replace
+    state = {"hit": False}
+
+    def replace(src, dst, *a, **k):
+        if not state["hit"] and match(Path(src), Path(dst)):
+            state["hit"] = True
+            raise OSError("renommage refusé")
+        return real(src, dst, *a, **k)
+
+    monkeypatch.setattr(film_scene.os, "replace", replace)
+
+
+@pytest.mark.parametrize("step", ["backup_models", "backup_file", "install_models", "install_file"])
+def test_overwrite_failing_at_any_rename_keeps_the_old_scene(tmp_path, monkeypatch, step):
+    film, other, before = _old_scene_film(tmp_path)
+    matches = {
+        "backup_models": lambda s, d: s.name == "cube_models" and d.name == "models",
+        "backup_file": lambda s, d: s.name == "cube.kut3d" and d.name == "scene.kut3d",
+        "install_models": lambda s, d: s.name == "cube_models" and s.parent.name.endswith(".tmp"),
+        "install_file": lambda s, d: s.name == "cube.kut3d" and s.parent.name.endswith(".tmp"),
+    }
+    _fail_replace(monkeypatch, matches[step])
+    with pytest.raises(FilmError, match="Écriture impossible"):
+        film.place_scene(other, duration=1.0, name="cube", overwrite=True)
+    _assert_old_intact(film, before)
+
+
+def test_overwrite_failing_in_validate_keeps_the_old_scene(tmp_path, monkeypatch):
+    film, other, before = _old_scene_film(tmp_path)
+    from core import scene3d
+
+    def refuse(path):
+        raise scene3d.Scene3DError("refusée pour le test")
+
+    monkeypatch.setattr("core.scene3d.validate", refuse)
+    with pytest.raises(FilmError, match="refusée pour le test"):
+        film.place_scene(other, duration=1.0, name="cube", overwrite=True)
+    _assert_old_intact(film, before)
+
+
+def test_overwrite_interrupted_restores_the_old_scene(tmp_path, monkeypatch):
+    film, other, before = _old_scene_film(tmp_path)
+    real = os.replace
+
+    def interrupt(src, dst, *a, **k):
+        if Path(src).name == "cube.kut3d" and Path(src).parent.name.endswith(".tmp"):
+            raise KeyboardInterrupt
+        return real(src, dst, *a, **k)
+
+    monkeypatch.setattr(film_scene.os, "replace", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        film.place_scene(other, duration=1.0, name="cube", overwrite=True)
+    _assert_old_intact(film, before)
+
+
+def test_a_failed_restore_keeps_the_backup_and_says_where(tmp_path, monkeypatch):
+    film, other, before = _old_scene_film(tmp_path)
+    real = os.replace
+
+    def broken(src, dst, *a, **k):
+        if Path(src).name == "cube.kut3d" and Path(src).parent.name.endswith(".tmp"):
+            raise OSError("install refusée")
+        if Path(src).parent.name.endswith(".bak"):
+            raise OSError("restauration refusée")
+        return real(src, dst, *a, **k)
+
+    monkeypatch.setattr(film_scene.os, "replace", broken)
+    with pytest.raises(FilmError, match=r"non restaurée.*\.bak"):
+        film.place_scene(other, duration=1.0, name="cube", overwrite=True)
+    backups = [p for p in film.assets_dir.iterdir() if p.name.endswith(".bak")]
+    assert len(backups) == 1
+    assert sorted(p.name for p in backups[0].iterdir()) == ["models", "scene.kut3d"]
+
+
+def test_a_successful_overwrite_leaves_the_new_scene_and_no_backup(tmp_path):
+    film, other, before = _old_scene_film(tmp_path)
+    film.place_scene(other, duration=1.0, name="cube", overwrite=True)
+    assert sorted(p.name for p in film.assets_dir.iterdir()) == ["cube.kut3d", "cube_models"]
+    assert _snapshot(film.assets_dir) != before
+    assert any(p.parent.name.startswith("autre") or "autre" in p.name for p in (film.assets_dir / "cube_models").rglob("*.obj"))
+    assert kut3d.load_scene(film.assets_dir / "cube.kut3d").instances
+
+
+def test_a_first_placement_that_fails_leaves_nothing_and_needs_no_backup(tmp_path, monkeypatch):
+    film = make_film(tmp_path)
+    _fail_replace(monkeypatch, lambda s, d: s.name == "cube.kut3d" and s.parent.name.endswith(".tmp"))
+    with pytest.raises(FilmError, match="Écriture impossible"):
+        film.place_scene(red_cube_scene(tmp_path / "src"), duration=1.0, name="cube")
+    assert tree(film.assets_dir) == []
+
+
+def _shot(tmp_path: Path, film: Film, name: str):
+    from core.film import Shot
+    path = tmp_path / f"{name}.mp4"
+    path.write_bytes(b"x")
+    return Shot(name, path, 1.0, int(FPS), film.size, film.fps)
+
+
+def test_the_placement_bound_is_shared_whatever_the_order(tmp_path, monkeypatch):
+    from core import film as film_module
+    monkeypatch.setattr(film_module, "MAX_PLACEMENTS", 3)
+    scene = red_cube_scene(tmp_path / "src")
+    # scènes d'abord, puis un plan
+    film = make_film(tmp_path)
+    for index in range(3):
+        film.place_scene(scene, duration=1.0, start=float(index), name=f"s{index}")
+    with pytest.raises(FilmError, match="Trop de plans posés"):
+        film.place(_shot(tmp_path, film, "p0"), track=2)
+    with pytest.raises(FilmError, match="Trop de plans posés"):
+        film.place_scene(scene, duration=1.0, start=3.0, name="s9")
+    # plans d'abord, puis une scène
+    film = make_film(tmp_path / "b")
+    for index in range(3):
+        film.place(_shot(tmp_path, film, f"q{index}"), start=float(index), track=2)
+    with pytest.raises(FilmError, match="Trop de plans posés"):
+        film.place_scene(scene, duration=1.0, name="s0")
+    # mélange alterné : la borne exacte passe, borne + 1 refusée
+    film = make_film(tmp_path / "c")
+    film.place_scene(scene, duration=1.0, name="a1")
+    film.place(_shot(tmp_path, film, "r1"), track=2)
+    film.place_scene(scene, duration=1.0, start=1.0, name="a2")
+    with pytest.raises(FilmError, match="maximum 3"):
+        film.place(_shot(tmp_path, film, "r2"), start=1.0, track=2)
