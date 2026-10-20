@@ -288,6 +288,16 @@ Supprimer une moitié retire la référence morte (`TrackLink.without_source`) :
 la barre d'état nomme le défaut s'il en reste un. Hors de toute partie de la source, le mouvement **tient** la valeur
 de la plus proche (jamais un saut) et `source_gap` le dit.
 
+**Un suiveur verrouillé n'est jamais réécrit.** Couper ou supprimer la source réécrit la liaison de clips qui ne sont pas ceux que
+l'utilisateur vise (`follow_cut`, `release_source`, sur toutes les séquences). Si l'un d'eux est verrouillé (piste verrouillée ou
+calque graphique verrouillé), le **modèle** refuse l'opération entière, avant la première écriture (`ValueError`, message en
+français qui nomme le suiveur) : `cut_clip`, `cut_clips_on_beats`, `delete_clip`, `ripple_delete_clip`, `delete_clips` (tout ou rien) et
+`update_leaderboard`. L'interface (coupe, suppression simple, ripple, sélection multiple, bascule Multicam, coupes sur les temps ou
+aux changements de plan) et les verbes de script partagent donc la même règle (`core/tracking_locks.py`, source unique). Le refus ne vise que
+ce qui serait réellement modifié : une liaison qui suit une autre source, ou qu'une suppression laisse telle quelle (aucune prolongation), ne
+bloque rien ; un suiveur supprimé dans la même opération non plus. Choix de sécurité : refuser plutôt qu'ignorer le suiveur (il
+cesserait de suivre la moitié droite) ou le détacher. Déverrouillez le suiveur, puis recommencez.
+
 ## Undo / redo
 
 Snapshots du projet (`core.edit_history`) : `TrackData` est immuable et ses

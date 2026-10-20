@@ -178,7 +178,11 @@ class TemplatesMixin:
         except LeaderboardError as error:
             self._report_edit_refused(error)
             return
-        clips = update_leaderboard(self.project, edited)
+        try:
+            clips = update_leaderboard(self.project, edited)
+        except ValueError as error:                       # un clip verrouillé suit un calque du classement : rien n'a changé
+            self._report_edit_refused(error)
+            return
         self._record_history(i18n.translate("history.template.leaderboard"))
         self._refresh_project_library()
         self._reload_timeline_preserving_selection(clips[0].id)

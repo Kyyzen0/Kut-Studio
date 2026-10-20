@@ -172,7 +172,7 @@ class MulticamMixin:
         angle = angles[number - 1]
         try:
             result = switch_angle(self.project, time_seconds, angle.id, clip_id=segment.id)
-        except (KeyError, MulticamError) as error:
+        except (KeyError, ValueError) as error:           # MulticamError en est une ; piste ou suiveur de suivi verrouillé : refus avant toute écriture
             self._report_edit_refused(error)
             return None
         if result is None:

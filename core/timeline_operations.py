@@ -20,6 +20,7 @@ pas de transitions.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import replace
 
 from .object_ids import clip_ids, ensure_free_asset_id, resolve_object_id
@@ -459,7 +460,8 @@ def cut_clip(
     Raises:
         KeyError: si ``clip_id`` n'existe pas.
         ValueError: si la position n'est pas strictement à l'intérieur
-            du clip, ou si ``right_clip_id`` est invalide ou déjà pris.
+            du clip, si ``right_clip_id`` est invalide ou déjà pris, ou si un clip verrouillé (piste ou calque, toute séquence) suit ce
+            clip et verrait sa liaison de suivi étendue à la moitié droite (voir :mod:`core.tracking_locks`).
     """
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
@@ -480,7 +482,10 @@ def cut_clip(
         right_id = _free_clip_id(project, f"{clip_id}-split-")
     else:
         right_id = resolve_object_id(right_clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
+    from .tracking_locks import require_cut_followers_unlocked
     from .tracking_ops import follow_cut, tracking_for_cut
+
+    require_cut_followers_unlocked(project, clip_id, right_id)         # ``follow_cut`` réécrit les liaisons des suiveurs : avant toute écriture
 
     # Données de tracking en temps source : partagées sans copie par les deux moitiés.
     cut_tracking = tracking_for_cut(clip)
@@ -585,6 +590,13 @@ def cut_clip(
 # ---------------------------------------------------------------------------
 
 
+def _ensure_followers_editable(project: Project, clip_id: str, also_removed: Collection[str] | None) -> None:
+    """Refuse, avant d'écrire, de retirer ``clip_id`` si un clip verrouillé qui le suit verrait sa liaison réécrite (``release_source``)."""
+    from .tracking_locks import require_release_followers_unlocked
+
+    require_release_followers_unlocked(project, [clip_id, *(also_removed or ())])
+
+
 def _release_clip_references(project: Project, clip: Clip) -> None:
     """Après le retrait d'un clip : plus rien ne doit pointer vers lui ni vers son média technique.
 
@@ -611,15 +623,20 @@ def _release_clip_references(project: Project, clip: Clip) -> None:
         ]
 
 
-def delete_clip(project: Project, clip_id: str) -> Clip:
+def delete_clip(project: Project, clip_id: str, *, also_removed: Collection[str] | None = None) -> Clip:
     """Retire le clip de sa piste et le retourne.
+
+    ``also_removed`` : autres clips retirés dans la même opération (``None`` : aucun) ; un suiveur verrouillé qui en fait partie
+    disparaît lui-même et n'est donc pas « réécrit ».
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas.
-        ValueError: si la piste du clip est verrouillée.
+        ValueError: si la piste du clip est verrouillée, ou si un clip verrouillé le suit (suivi) et verrait sa liaison réécrite
+            (voir :mod:`core.tracking_locks`) : refus avant toute écriture.
     """
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
+    _ensure_followers_editable(project, clip_id, also_removed)
     clip = track.clips[index]
     del track.clips[index]
     remove_transitions_for_clips(project, {clip_id})
@@ -959,7 +976,7 @@ def set_clip_enabled(
     return clip
 
 
-def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
+def ripple_delete_clip(project: Project, clip_id: str, *, also_removed: Collection[str] | None = None) -> list[str]:
     """Supprime ``clip_id`` et ramène à gauche tous les clips suivants.
 
     Tous les clips (vidéo, audio, sous-titres) des pistes **non verrouillées**
@@ -971,10 +988,12 @@ def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     Returns:
         Liste des identifiants effectivement déplacés.
 
-    Les assets de la bibliothèque ne sont jamais supprimés.
+    Les assets de la bibliothèque ne sont jamais supprimés. Mêmes refus que :func:`delete_clip` (piste verrouillée, suiveur de suivi
+    verrouillé), avant toute écriture ; ``also_removed`` y a le même sens.
     """
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
+    _ensure_followers_editable(project, clip_id, also_removed)
     deleted_clip = track.clips.pop(index)
     remove_transitions_for_clips(project, {clip_id})
     _release_clip_references(project, deleted_clip)

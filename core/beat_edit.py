@@ -14,6 +14,7 @@ from .beat_grid import BeatGrid
 from .project_model import Project
 from .timeline_editing import ClipPlacement, move_clips
 from .timeline_operations import _find_track_for_clip, cut_clip, find_clip, trim_clip_right
+from .tracking_locks import require_cut_followers_unlocked
 
 MIN_PIECE = 1e-3
 """Une coupe ne laisse jamais un morceau plus court qu'une milliseconde."""
@@ -48,6 +49,8 @@ def cut_clips_on_beats(project: Project, clip_ids: Iterable[str], grid: BeatGrid
             targets.append(clip_id)
     if not targets:
         raise ValueError("Aucun temps de la grille ne tombe à l'intérieur des clips sélectionnés.")
+    for clip_id in targets:
+        require_cut_followers_unlocked(project, clip_id)          # un suiveur verrouillé refuse AVANT la première coupe (le tout ou rien)
     pieces: list[str] = []
     for clip_id in targets:
         pieces.extend(cut_on_beats(project, clip_id, grid, every=every))
