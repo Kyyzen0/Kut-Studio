@@ -18,7 +18,7 @@ from core.graphics import GraphicOverlay, GraphicType, add_graphic_clip
 from core.keyframe_editing import add_keyframe
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track
 from core.scripting import ScriptInvalid, Session, apply_script, created_ids, parse_script
-from core.scripting import auto_rules
+from core.scripting import resource_limits
 from core.scripting.describe import describe
 from core.scripting.verbs import VERBS
 from core.timeline_operations import find_clip
@@ -166,11 +166,11 @@ def test_create_refuses_a_taken_id_in_any_sequence_without_leaving_anything():
 def test_create_counts_the_clips_of_every_sequence_before_creating(monkeypatch):
     project = _project()
     project.sequences.append(Sequence("seq-b", "B", width=320, height=180, fps=30.0, tracks=[Track("V1", "V1", "video", clips=[Clip(f"x{i}", "m", "V1", float(i), 0.0, 1.0) for i in range(5)])]))
-    total = auto_rules.total_clips(project)
+    total = resource_limits.total_clips(project)
     assert total == 4 + 5 + 0 or total > 5, total
-    monkeypatch.setattr(auto_rules, "MAX_CLIPS_IN_PROJECT", total)
+    monkeypatch.setattr(resource_limits, "MAX_CLIPS_IN_PROJECT", total)
     assert "dépasseraient la limite" in _refused(project, _op("create_composition", track="V3", at=0.0, duration=1.0)).error
-    monkeypatch.setattr(auto_rules, "MAX_CLIPS_IN_PROJECT", total + 1)
+    monkeypatch.setattr(resource_limits, "MAX_CLIPS_IN_PROJECT", total + 1)
     assert _apply(project, _op("create_composition", track="V3", at=0.0, duration=1.0))[1].ok
 
 

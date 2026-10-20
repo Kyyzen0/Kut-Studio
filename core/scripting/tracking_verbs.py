@@ -41,6 +41,7 @@ from .tracking_rules import (
     MAX_TRACKERS_PER_CLIP, known_link_ids, known_tracker_ids, require_derived_size, require_followers_editable,
     require_link_owners_editable, require_span, require_tracker_room, require_within,
 )
+from .resource_limits import require_keyframes_after
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip, _pick
 
 _VIDEO = ("video",)
@@ -347,9 +348,14 @@ def _follow_reframe(a: Mapping[str, Any]) -> Operation:
                 raise ValueError(f"Le tracker '{tracker.id}' n'a aucune position.")
         require_derived_size(project, clip, "follow_reframe")
         sequence = project.active_sequence
-        apply_follow_reframe(
-            clip, trackers, media_size=(asset.width, asset.height), canvas_size=(sequence.width, sequence.height), fps=sequence.fps,
-        )
+
+        def reframe(target: Clip) -> Any:
+            return apply_follow_reframe(
+                target, trackers, media_size=(asset.width, asset.height), canvas_size=(sequence.width, sequence.height), fps=sequence.fps,
+            )
+
+        require_keyframes_after(clip, reframe, "follow_reframe")          # le nombre exact que le modèle écrira, sur une copie du clip
+        reframe(clip)
         return None
 
     return operation

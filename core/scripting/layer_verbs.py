@@ -35,6 +35,7 @@ from .layer_rules import (
     MAX_LAYERS_PER_OPERATION, appearance, frozen_layers, graphic_of, require_editable_container, require_room,
     require_same_appearance, require_shallow, require_untouched,
 )
+from .resource_limits import require_keyframes_after
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip
 
 _MAX_INDEX = 10_000
@@ -284,6 +285,7 @@ def _apply_text_animation(a: Mapping[str, Any]) -> Operation:
             raise ValueError(f"Il reste moins de {_MIN_ROOM:g} s de calque après {start:g} s : trop court pour cette animation.")
         if a["animation"] == "bounce" and (clip.duration - start) / 0.25 > _MAX_BOUNCE_KEYFRAMES:
             raise ValueError(f"Le rebond pose une image clé tous les 0,25 s : au plus {_MAX_BOUNCE_KEYFRAMES * 0.25:g} s de calque.")
+        require_keyframes_after(clip, lambda probe: apply_text_animation(probe, a["animation"], start=start), "apply_text_animation")
         return apply_text_animation(clip, a["animation"], start=start)
 
     return operation

@@ -35,6 +35,7 @@ from ..time_targets import SPEED_TARGET
 from ..timeline_operations import (
     remove_clip_freeze_frame, reset_clip_time_remapping, set_clip_freeze_duration, set_clip_freeze_frame, set_clip_reverse, set_clip_speed,
 )
+from .resource_limits import require_keyframes_after_project_edit
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip
 
 _TRACKS = ("video", "audio")
@@ -115,10 +116,13 @@ def _reset_clip_time_remapping(a: Mapping[str, Any]) -> Operation:
 def _add_speed_point(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _time_clip(project, a["clip"])
-        value = a.get("value")
-        return add_speed_point(
-            project, clip_id, float(a["at"]), None if value is None else float(value), interpolation=a.get("interpolation"), mode=_mode(a),
-        )
+        value = None if a.get("value") is None else float(a["value"])
+
+        def add(target: Project) -> Any:
+            return add_speed_point(target, clip_id, float(a["at"]), value, interpolation=a.get("interpolation"), mode=_mode(a))
+
+        require_keyframes_after_project_edit(project, find_clip(project, clip_id), add, "add_speed_point")
+        return add(project)
 
     return operation
 
@@ -198,7 +202,12 @@ def _insert_hold(a: Mapping[str, Any]) -> Operation:
         clip = find_clip(project, clip_id)
         at = float(a["at"])
         _require_aligned(project, clip, at, "insert_hold")
-        return insert_hold(project, clip_id, at, float(a.get("duration", 1.0)), fps=float(project.fps), mode=_mode(a))
+
+        def hold(target: Project) -> Any:
+            return insert_hold(target, clip_id, at, float(a.get("duration", 1.0)), fps=float(project.fps), mode=_mode(a))
+
+        require_keyframes_after_project_edit(project, clip, hold, "insert_hold")
+        return hold(project)
 
     return operation
 

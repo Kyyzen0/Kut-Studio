@@ -28,6 +28,7 @@ from .auto_rules import (
     MAX_NEW_CLIPS_PER_OPERATION, MAX_SHAKE_SECONDS, graphic_type_of, require_count, require_fits, require_keyframe_room, require_no_keyframes,
     require_room, shake_keyframe_count,
 )
+from .resource_limits import require_keyframes_after
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _track_id
 
 _VISUAL = ("video", "graphics")
@@ -43,7 +44,9 @@ def _impact_zoom(a: Mapping[str, Any]) -> Operation:
         start, length = float(a.get("start", 0.0)), float(a.get("length", ZOOM_SECONDS))
         end = require_fits(clip, start, length, "apply_impact_zoom")
         require_no_keyframes(clip, ("scale",), start, end, "apply_impact_zoom")
-        apply_impact_zoom(clip, strength=float(a.get("strength", DEFAULT_ZOOM)), start=start, length=length)
+        strength = float(a.get("strength", DEFAULT_ZOOM))
+        require_keyframes_after(clip, lambda probe: apply_impact_zoom(probe, strength=strength, start=start, length=length), "apply_impact_zoom")
+        apply_impact_zoom(clip, strength=strength, start=start, length=length)
         return clip
 
     return operation
@@ -108,7 +111,9 @@ def _apply_ken_burns(a: Mapping[str, Any]) -> Operation:
         if kind not in (None, "image"):
             raise ValueError(f"apply_ken_burns : le calque '{clip.id}' n'est ni une vidéo ni une image.")
         require_no_keyframes(clip, ("scale", "position_x", "position_y"), 0.0, float(clip.duration), "apply_ken_burns")
-        if apply_ken_burns([clip], strength=float(a.get("strength", DEFAULT_STRENGTH))) != 1:
+        strength = float(a.get("strength", DEFAULT_STRENGTH))
+        require_keyframes_after(clip, lambda probe: apply_ken_burns([probe], strength=strength), "apply_ken_burns")
+        if apply_ken_burns([clip], strength=strength) != 1:
             raise ValueError(f"apply_ken_burns : le clip '{clip.id}' n'a pas de durée.")
         return clip
 

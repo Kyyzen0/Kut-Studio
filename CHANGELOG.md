@@ -37,6 +37,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Les scripts savent poser un clip scène 3D : verbe `add_scene3d_clip` (fichier `.kut3d` du dossier du script, lu avant toute écriture, refusé sur une piste verrouillée ou de mauvais genre) et `Film.place_scene` en Python (la scène est écrite dans un `.kut3d` avec la copie confinée de ses modèles, sans vidéo ProRes). Un projet qui en contient un s'enregistre au format 22. Voir [docs/scripting.md](docs/scripting.md) et [docs/kut3d-film.md](docs/kut3d-film.md).
 - **Kut-3D : fichier de scène `.kut3d` (interne, pas encore visible dans l'application).** Une scène 3D (caméra, lumières, modèles, instances) s'enregistre et se relit à l'identique dans un fichier JSON strict, avec des modèles confinés au dossier du fichier. Voir [docs/kut3d-scene.md](docs/kut3d-scene.md).
 
+### Changed
+
+- Les verbes de script refusent désormais de dépasser des plafonds de ressources (pistes, repères, guides, inserts, effets, masques, nœuds et fenêtres d'étalonnage, médias, images clés d'un clip, clips, et suiveurs repris par une coupe ou une copie), avec un message clair et sans rien modifier ; un projet qui dépasse déjà un plafond n'est ni corrigé ni abîmé (le verbe refuse seulement d'y ajouter). L'interface n'est pas concernée. Un seul plafond d'images clés par clip couvre le transform, les effets, les masques et la vitesse ; `nest_clips` et `add_multicam_angle` comptent maintenant le clip qu'ils créent. Voir « Plafonds des verbes » dans [docs/scripting.md](docs/scripting.md).
+
 ### Fixed
 
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.

@@ -20,12 +20,16 @@ import json
 import re
 import textwrap
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from core.audio_automation import DuckingSidechain
-from core.audio_buses import add_bus
+from core.audio_buses import add_bus, add_bus_insert
+from core.audio_effects_model import add_audio_effect_to_clip, add_track_insert
+from core.canvas_guides import add_guide
+from core.compositing import Mask, MaskShape
+from core.effects_model import add_effect_to_clip
 from core.graphics import add_graphic_clip
 from core.library_organization import LibraryOrganization
 from core.beat_grid import BeatGrid
@@ -33,6 +37,7 @@ from core.multicam_ops import AngleSpec, add_angle, create_multicam_source
 from core.tracking_model import ClipTracking, Tracker
 from core.visual_effects import TransformKeyframe
 from core.project_model import MAIN_SEQUENCE_ID, Clip, MediaAsset, Project, Track
+from core.timeline_editing import add_marker
 from core.scripting.verbs import VERBS
 from core.sequences import create_sequence
 
@@ -171,32 +176,26 @@ def _fill_trackers(project: Project, n: int) -> None:
     track.clips.append(clip)
 
 
+def _find(project: Project, clip_id: str) -> Clip:
+    """Le clip, dans n'importe quelle séquence (``nest_clips`` déplace ``c1`` ailleurs) ; ``StopIteration`` s'il n'existe pas."""
+    return next(clip for track in project.all_tracks() for clip in track.clips if clip.id == clip_id)
+
+
+def _keyframes_of(clip: Clip) -> int:
+    """Toutes les images clés du clip, comptées SANS les gardes : transform + animation générique (effets, masques, vitesse, calques)."""
+    return len(clip.transform_keyframes) + len(clip.animation)
+
+
 def _fill_keyframes(project: Project, n: int) -> None:
-    clip = project.tracks[0].clips[0]
+    clip = _find(project, "c1")
     start = len(clip.transform_keyframes)
     clip.transform_keyframes.extend(TransformKeyframe("scale", 0.0005 * (start + index), 1.0) for index in range(n))
 
 
-def _fx_property() -> str:
-    from core.effect_targets import fx_property_id
-
-    return fx_property_id("fx1", "brightness")
-
-
-def _fill_effect_keyframes(project: Project, n: int) -> None:
-    from core.keyframe_editing import add_keyframe
-
-    clip = project.tracks[0].clips[0]
-    start = len(_effect_curve(project))
-    for index in range(start, start + n):
-        add_keyframe(project, clip.id, _fx_property(), 0.0005 * index, 0.1)
-
-
-def _effect_curve(project: Project):
-    from core.animation_targets import get_target
-
-    clip = project.tracks[0].clips[0]
-    return get_target(_fx_property(), clip).get_keyframes(clip)
+def _fill_layer_keyframes(project: Project, n: int) -> None:
+    clip = _find(project, "g1")
+    start = len(clip.transform_keyframes)
+    clip.transform_keyframes.extend(TransformKeyframe("skew", 0.0005 * (start + index), 0.0) for index in range(n))
 
 
 def _fill_points(project: Project, n: int) -> None:
@@ -221,6 +220,89 @@ def _fill_angles(project: Project, n: int) -> None:
         add_angle(project, "mc", AngleSpec(asset_id="m", name=f"Remplissage {index}"))
 
 
+def _fill_tracks(project: Project, n: int) -> None:
+    for _ in range(n):
+        project.tracks.append(Track(f"ftr{len(project.tracks)}", "Remplissage", "video"))
+
+
+def _fill_markers(project: Project, n: int) -> None:
+    for index in range(n):
+        add_marker(project, 0.1 * (len(project.markers) + 1), "", marker_id=f"fmk{len(project.markers)}x{index}")
+
+
+def _fill_guides(project: Project, n: int) -> None:
+    for _ in range(n):
+        add_guide(project.active_sequence, "vertical", 0.1 * (len(project.active_sequence.guides) + 1))
+
+
+def _fill_track_inserts(project: Project, n: int) -> None:
+    for _ in range(n):
+        add_track_insert(project, "A1", "normalize", effect_id=f"fti{len(_find_track(project, 'A1').inserts)}")
+
+
+def _fill_bus_inserts(project: Project, n: int) -> None:
+    for _ in range(n):
+        add_bus_insert(project, "b1", "normalize", effect_id=f"fbi{len(_find_bus(project, 'b1').inserts)}")
+
+
+def _fill_effects(project: Project, n: int) -> None:
+    for _ in range(n):
+        add_effect_to_clip(project, "c1", "blur", effect_id=f"fe{len(_find(project, 'c1').effects)}")
+
+
+def _fill_audio_effects(project: Project, n: int) -> None:
+    for _ in range(n):
+        add_audio_effect_to_clip(project, "a1", "normalize", effect_id=f"fa{len(_find(project, 'a1').audio_effects)}")
+
+
+def _fill_masks(project: Project, n: int) -> None:
+    clip = _find(project, "c1")
+    masks = clip.compositing.masks
+    clip.compositing = replace(clip.compositing, masks=(*masks, *(Mask(shape=MaskShape.ELLIPSE, id=f"fm{len(masks) + i}") for i in range(n))))
+
+
+def _fill_color_nodes(project: Project, n: int) -> None:
+    from core.color_grading import ColorGradingService
+
+    for _ in range(n):
+        ColorGradingService().edit_nodes(project, "c1", lambda graph: graph.with_node_after(None)[0])
+
+
+def _fill_color_windows(project: Project, n: int) -> None:
+    from core.color_grading import ColorGradingService
+
+    for _ in range(n):
+        def add(graph):
+            node = graph.correctors[0]
+            return graph.with_windows(node.id, (*node.windows, Mask(shape=MaskShape.ELLIPSE, id=f"fw{sum(len(c.windows) for c in graph.correctors)}")))
+
+        ColorGradingService().edit_nodes(project, "c1", add)
+
+
+def _fill_assets(project: Project, n: int) -> None:
+    for index in range(n):
+        project.media_assets.append(MediaAsset(f"fa{len(project.media_assets)}x{index}", f"/x/fill{len(project.media_assets)}.mp4", "f", 1.0, 8, 8, 30.0, "video"))
+
+
+def _find_track(project: Project, track_id: str) -> Track:
+    return next(track for track in project.tracks if track.id == track_id)
+
+
+def _find_bus(project: Project, bus_id: str):
+    return next(bus for bus in project.buses if bus.id == bus_id)
+
+
+def _color_nodes(clip: Clip) -> int:
+    """Les nœuds d'étalonnage du clip, sans passer par ``as_graph`` des gardes : un clip jamais étalonné n'a pas de graphe (``n1`` virtuel)."""
+    grade = clip.color_grade
+    return len(grade.nodes) if hasattr(grade, "nodes") else 1
+
+
+def _color_windows(clip: Clip) -> int:
+    grade = clip.color_grade
+    return sum(len(node.windows) for node in grade.correctors) if hasattr(grade, "correctors") else 0
+
+
 def _count_clips(project: Project) -> int:
     return sum(len(track.clips) for sequence in project.sequences for track in sequence.tracks)
 
@@ -235,7 +317,7 @@ def _count_trackers(project: Project) -> int:
 
 
 RESOURCES: dict[str, Resource] = {
-    "clips": Resource((("core.scripting.auto_rules", "MAX_CLIPS_IN_PROJECT"),), _count_clips, _fill_clips, 5_001),
+    "clips": Resource((("core.scripting.resource_limits", "MAX_CLIPS_IN_PROJECT"),), _count_clips, _fill_clips, 5_001),
     "layers": Resource((("core.scripting.layer_rules", "MAX_LAYERS_IN_PROJECT"),), _count_layers, _fill_layers, 5_001),
     "sequences": Resource((("core.scripting.sequence_rules", "MAX_SEQUENCES_IN_PROJECT"),), lambda p: len(p.sequences), _fill_sequences, 201,
                           cross_sequence=False),
@@ -243,9 +325,33 @@ RESOURCES: dict[str, Resource] = {
                            _fill_sidechains, 257),
     "buses": Resource((("core.audio_buses", "MAX_BUSES"),), lambda p: len(p.buses), _fill_buses, 9, cross_sequence=False),
     "trackers": Resource((("core.scripting.tracking_rules", "MAX_TRACKERS_IN_PROJECT"),), _count_trackers, _fill_trackers, 1_001),
-    "keyframes": Resource((("core.scripting.auto_rules", "MAX_KEYFRAMES_PER_CLIP"),), lambda p: len(p.tracks[0].clips[0].transform_keyframes),
+    # Images clés : UNE ressource pour tous les verbes (transform + animation générique du clip c1), un seul plafond.
+    "keyframes": Resource((("core.scripting.resource_limits", "MAX_KEYFRAMES_PER_CLIP"),), lambda p: _keyframes_of(_find(p, "c1")),
                           _fill_keyframes, 2_001, cross_sequence=False),
-    "effect_keyframes": Resource((), lambda p: len(_effect_curve(p)), _fill_effect_keyframes, 2_001, cross_sequence=False),
+    "layer_keyframes": Resource((("core.scripting.resource_limits", "MAX_KEYFRAMES_PER_CLIP"),), lambda p: _keyframes_of(_find(p, "g1")),
+                                _fill_layer_keyframes, 2_001, cross_sequence=False),
+    "tracks": Resource((("core.scripting.resource_limits", "MAX_TRACKS_PER_SEQUENCE"),), lambda p: len(p.tracks), _fill_tracks, 101,
+                       cross_sequence=False),
+    "markers": Resource((("core.scripting.resource_limits", "MAX_MARKERS_PER_SEQUENCE"),), lambda p: len(p.markers), _fill_markers, 5_001,
+                        cross_sequence=False),
+    "guides": Resource((("core.scripting.resource_limits", "MAX_GUIDES_PER_SEQUENCE"),), lambda p: len(p.active_sequence.guides),
+                       _fill_guides, 201, cross_sequence=False),
+    "inserts": Resource((("core.scripting.resource_limits", "MAX_INSERTS_PER_CHAIN"),), lambda p: len(_find_track(p, "A1").inserts),
+                        _fill_track_inserts, 33, cross_sequence=False),
+    "bus_inserts": Resource((("core.scripting.resource_limits", "MAX_INSERTS_PER_CHAIN"),), lambda p: len(_find_bus(p, "b1").inserts),
+                            _fill_bus_inserts, 33, cross_sequence=False),
+    "effects": Resource((("core.scripting.resource_limits", "MAX_EFFECTS_PER_CLIP"),), lambda p: len(_find(p, "c1").effects),
+                        _fill_effects, 101, cross_sequence=False),
+    "audio_effects": Resource((("core.scripting.resource_limits", "MAX_AUDIO_EFFECTS_PER_CLIP"),), lambda p: len(_find(p, "a1").audio_effects),
+                              _fill_audio_effects, 101, cross_sequence=False),
+    "masks": Resource((("core.scripting.resource_limits", "MAX_MASKS_PER_CLIP"),), lambda p: len(_find(p, "c1").compositing.masks),
+                      _fill_masks, 65, cross_sequence=False),
+    "color_nodes": Resource((("core.scripting.resource_limits", "MAX_COLOR_NODES_PER_CLIP"),), lambda p: _color_nodes(_find(p, "c1")),
+                            _fill_color_nodes, 65, cross_sequence=False),
+    "color_windows": Resource((("core.scripting.resource_limits", "MAX_COLOR_WINDOWS_PER_CLIP"),), lambda p: _color_windows(_find(p, "c1")),
+                              _fill_color_windows, 65, cross_sequence=False),
+    "assets": Resource((("core.scripting.resource_limits", "MAX_MEDIA_IN_PROJECT"),), lambda p: len(p.media_assets), _fill_assets, 10_001,
+                       cross_sequence=False),
     "points": Resource((("core.scripting.audio_rules", "MAX_AUTOMATION_POINTS"),),
                        lambda p: len(next(t for t in p.tracks if t.id == "A1").automation.points), _fill_points, 1_001, cross_sequence=False),
     "folders": Resource((("core.scripting.library_rules", "MAX_LIBRARY_FOLDERS"),), lambda p: len(p.library_folders), _fill_folders, 1_001,
@@ -367,6 +473,34 @@ def _effect(project: Project) -> None:
     VERBS["add_effect"].build({"clip": "c1", "type": "color_correction", "id": "fx1"})(project)
 
 
+def _tracked(project: Project) -> None:
+    """``c1`` porte deux suiveurs : une coupe ou une copie les reprend (mêmes identifiants)."""
+    _find(project, "c1").tracking = ClipTracking(trackers=(Tracker(id="t1"), Tracker(id="t2")))
+
+
+def _bus(project: Project) -> None:
+    add_bus(project, "Bus", bus_id="b1")
+
+
+def _mask(project: Project) -> None:
+    VERBS["add_mask"].build({"clip": "c1", "shape": "ellipse", "id": "m1"})(project)
+
+
+def _segment(project: Project) -> None:
+    """Un segment Multicam sur V1 (à 5 s), de quoi changer d'angle."""
+    _source(project)
+    VERBS["insert_multicam_clip"].build({"sequence": "mc", "track": "V1", "at": 5.0})(project)
+
+
+def _portrait_tracked(project: Project) -> None:
+    """Séquence verticale (le plan horizontal déborde : de la marge où déplacer la fenêtre) et un suiveur analysé sur ``c1``."""
+    from core import tracking_ops
+
+    project.width, project.height = 360, 640
+    tracking_ops.add_tracker(project, "c1", timeline_time=0.0, x=100.0, y=50.0, tracker_id="t1")
+    tracking_ops.set_tracker_position(project, "c1", "t1", 3.0, 100.0, 50.0)       # immobile : une courbe de panoramique plate, donc un nombre d'images clés qui ne dépend pas de l'arrondi
+
+
 def _nestable(project: Project) -> None:
     inserted = create_sequence(project, "Ins", sequence_id="ins")
     inserted.tracks.append(Track("iv", "iv", "video"))
@@ -385,8 +519,10 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
     "duplicate_layers": (Spec("layers", {"clips": ["g1"]}, prepare=_layer),),
     "group_layers": (Spec("layers", {"clips": ["g1"]}, prepare=_layer),),
     "apply_layer_preset": (Spec("layers", {"preset": "Lower third", "at": 0.0}, adds=4),),
-    "cut_clip": (Spec("layers", {"clip": "g1", "at": 1.0}, prepare=_layer),),
-    "duplicate_clip": (Spec("layers", {"clip": "g1"}, prepare=_layer),),
+    "cut_clip": (Spec("layers", {"clip": "g1", "at": 1.0}, prepare=_layer), Spec("clips", {"clip": "c1", "at": 2.0}),
+                 Spec("trackers", {"clip": "c1", "at": 2.0}, adds=2, prepare=_tracked)),
+    "duplicate_clip": (Spec("layers", {"clip": "g1"}, prepare=_layer), Spec("clips", {"clip": "c1"}),
+                       Spec("trackers", {"clip": "c1"}, adds=2, prepare=_tracked)),
     # --- Clips du projet (auto_rules.MAX_CLIPS_IN_PROJECT) ---
     "create_composition": (Spec("clips", {"track": "V1", "at": 10.0, "duration": 2.0}),),
     "add_flash": (Spec("clips", {"at": 1.0}),),
@@ -401,14 +537,16 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
     # --- Séquences (sequence_rules) : le plafond de séquences, puis celui de clips que copient certains chemins ---
     "create_sequence": (Spec("sequences", {}),),
     "duplicate_sequence": (Spec("sequences", dict(_SEQ)), Spec("clips", dict(_SEQ), adds=2, placements=("other",))),
-    "nest_clips": (Spec("sequences", {"clips": ["c1"]}),),       # clips : voir DEBT_SPECS (nest_clips:clips)
+    "nest_clips": (Spec("sequences", {"clips": ["c1"]}),
+                   Spec("clips", {"clips": ["c1"]}, placements=("active",))),     # le clip imbriqué : les clips déplacés restent dans le projet
     "create_format_version": (Spec("sequences", {**_SEQ, "format": "vertical"}),
                               Spec("clips", {**_SEQ, "format": "vertical"}, adds=2, placements=("other",))),
     "create_multicam_source": (Spec("sequences", {"angles": [{"asset": "m"}, {"asset": "a"}]}),
                                Spec("clips", {"angles": [{"asset": "m"}, {"asset": "a"}]}, adds=2)),
     "create_multicam_from_clips": (Spec("sequences", {"clips": [{"clip": "c1"}, {"clip": "a1"}]}),
                                    Spec("clips", {"clips": [{"clip": "c1"}, {"clip": "a1"}]})),
-    "add_multicam_angle": (Spec("angles", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",)),),
+    "add_multicam_angle": (Spec("angles", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",)),
+                           Spec("clips", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",))),
     # --- Audio ---
     "add_bus": (Spec("buses", {}),),
     "add_ducking_sidechain": (Spec("sidechains", {"music": "A1", "voice": "A2"}, prepare=_two_audio),),
@@ -421,6 +559,36 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
     "create_library_tag": (Spec("tags", {"name": "Nouvelle"}),),
     # --- Images clés d'un clip (auto_rules.MAX_KEYFRAMES_PER_CLIP) ---
     "apply_camera_shake": (Spec("keyframes", {"clip": "c1", "length": 1.0}, adds=48, cap=60, placements=("active",)),),
+    # --- Les verbes qui n'avaient aucun plafond : clips, puis chaque ressource propre ---
+    "add_clip": (Spec("clips", {"track": "V1", "asset": "m", "at": 5.0}),),
+    "add_subtitle": (Spec("clips", {"text": "x", "at": 5.0, "duration": 1.0}, prepare=_subtitle_track),),
+    "insert_sequence_clip": (Spec("clips", {"sequence": "ins", "track": "V2", "at": 0.0}, prepare=_nestable),),
+    "insert_multicam_clip": (Spec("clips", {"sequence": "mc", "track": "V1", "at": 5.0}, prepare=_source),),
+    "switch_multicam_angle": (Spec("clips", {"track": "V1", "at": 6.0, "angle": "angle-2"}, prepare=_segment, placements=("active",)),),
+    "add_track": (Spec("tracks", {"type": "video"}),),
+    "add_marker": (Spec("markers", {"at": 1.0}),),
+    "add_guide": (Spec("guides", {"orientation": "vertical", "position": 0.5}),),
+    "add_track_insert": (Spec("inserts", {"track": "A1", "effect": "normalize"}),),
+    "add_bus_insert": (Spec("bus_inserts", {"bus": "b1", "effect": "normalize"}, prepare=_bus),),
+    "add_effect": (Spec("effects", {"clip": "c1", "type": "blur"}),),
+    "apply_effect_preset": (Spec("effects", {"clip": "c1", "preset": "neon_rush"}, adds=2),),
+    "add_clip_audio_effect": (Spec("audio_effects", {"clip": "a1", "type": "normalize"}),),
+    "add_mask": (Spec("masks", {"clip": "c1", "shape": "ellipse"}),),
+    "add_color_node": (Spec("color_nodes", {"clip": "c1"}),),
+    "branch_color_node": (Spec("color_nodes", {"clip": "c1", "node": "n1", "kind": "parallel"}, adds=2),),
+    "add_color_window": (Spec("color_windows", {"clip": "c1", "shape": "ellipse"}),),
+    "import_media": (Spec("assets", {"path": "p.png"}, context=True),),
+    # --- Images clés d'un clip : UNE mesure (transform + animation), chaque verbe qui en pose est plafonné par elle ---
+    "add_keyframe": (Spec("keyframes", {"clip": "c1", "property": "scale", "at": 3.9, "value": 1.2}),),
+    "add_effect_keyframe": (Spec("keyframes", {"clip": "c1", "effect": "fx1", "parameter": "brightness", "at": 3.9, "value": 0.3},
+                                 prepare=_effect),),
+    "add_mask_keyframe": (Spec("keyframes", {"clip": "c1", "mask": "m1", "property": "feather", "at": 3.9, "value": 0.1}, prepare=_mask),),
+    "apply_impact_zoom": (Spec("keyframes", {"clip": "c1", "start": 2.0}, adds=2),),
+    "apply_text_animation": (Spec("layer_keyframes", {"clip": "g1", "animation": "slide_left"}, adds=4, prepare=_layer),),
+    "follow_reframe": (Spec("keyframes", {"clip": "c1", "trackers": ["t1"]}, adds=2, prepare=_portrait_tracked),),
+    "add_speed_point": (Spec("keyframes", {"clip": "c1", "at": 2.0, "value": 2.0}, adds=2),),
+    "insert_hold": (Spec("keyframes", {"clip": "c1", "at": 2.0}, adds=3),),
+    "apply_time_preset": (Spec("keyframes", {"clip": "c1", "preset": "ramp_out"}, adds=3),),
 }
 """Verbes créateurs dont le plafond est PROUVÉ : un projet déjà au plafond (constante abaissée à ``cap``) est refusé sans changement, avec les
 objets déjà là dans la séquence active comme dans une autre. Un verbe peut avoir plusieurs ressources (une entrée par ressource)."""
@@ -429,12 +597,18 @@ _LAYER_IN_CLIPS = "un calque est un clip et les deux plafonds valent la même ch
 
 EXCLUDED_RESOURCES: dict[tuple[str, str], str] = {
     **{(verb, "clips"): _LAYER_IN_CLIPS for verb in (
-        "add_graphic", "add_image_layer", "add_scene3d_clip", "duplicate_layers", "group_layers", "apply_layer_preset", "cut_clip", "duplicate_clip")},
+        "add_graphic", "add_image_layer", "add_scene3d_clip", "duplicate_layers", "group_layers", "apply_layer_preset")},
     **{(verb, "layers"): _LAYER_IN_CLIPS for verb in (
         "add_flash", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "apply_impact_on_cuts")},
 }
 """``(verbe, ressource)`` dont le compte augmente sans spec propre, avec la raison écrite : le test `test_every_resource_a_verb_consumes_has_a_spec`
 mesure les comptes avant / après l'opération et exige une spec (ou une dette, ou une exclusion ici) pour chaque ressource qui augmente."""
+
+_INTERNAL_MEDIA = "un média interne par calque ou sous-titre créé : borné par le plafond de clips de ce même verbe, et `import_media` compte tous les médias, internes compris (MAX_MEDIA_IN_PROJECT = 2 x MAX_CLIPS_IN_PROJECT)."
+
+EXCLUDED_RESOURCES.update({(verb, "assets"): _INTERNAL_MEDIA for verb in (
+    "add_flash", "add_graphic", "add_image_layer", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "add_scene3d_clip", "add_subtitle",
+    "add_subtitle_lines", "apply_impact_on_cuts", "apply_layer_preset", "duplicate_layers", "group_layers")})
 
 BOUNDED: dict[str, str] = {
     "convert_to_composition": "remplace les clips cités (au moins un) par un seul clip : le nombre de clips ne peut pas croître (vérifié : 3 clips -> 2, 2 -> 2).",
@@ -443,22 +617,14 @@ BOUNDED: dict[str, str] = {
     "fill_slot": "remplit un emplacement de modèle existant (le clip change de média, rien n'est ajouté ; lu dans core/template_slots.fill_slot).",
     "fill_slot_with_photo": "idem : un emplacement existant change de média, l'ancienne photo devenue inutilisée est retirée ; au plus un média par emplacement.",
     "fill_slots_with_photos": "idem, emplacement par emplacement : le verbe refuse les photos sans emplacement libre ; au plus un média par emplacement.",
+    "apply_color_preset": "règle le réglage d'un nœud EXISTANT (`ColorGradingService.apply_preset` -> `set_grade` ; aucun nœud, aucune fenêtre n'est créé) : trois appels, un seul nœud (test_apply_color_preset_creates_nothing).",
+    "add_transition": "une transition par jonction, et un clip n'est dans qu'une seule transition (`core.transitions.add_transition` refuse « Un clip ne peut pas avoir deux transitions ») : au plus la moitié des clips de la séquence, eux-mêmes plafonnés (test_transitions_are_bounded_by_the_clips).",
+    "apply_transition_preset": "idem : elle appelle `add_transition` du modèle, mêmes refus (test_transitions_are_bounded_by_the_clips).",
+    "add_link": "une liaison par propriété cible d'un clip (`add_link` refuse une seconde sur la même propriété), et un masque ciblé doit exister (masque ou fenêtre, eux-mêmes plafonnés) : au plus 2 + masques + fenêtres (test_links_are_bounded_by_masks_and_windows).",
     "set_automation_curve": "remplace toute la courbe : le verbe refuse plus de MAX_AUTOMATION_POINTS points (test dédié : test_set_automation_curve_is_capped).",
 }
 """Verbes créateurs qui ne peuvent pas faire croître une ressource sans limite : ``{verbe: raison}`` (une raison qui dit comment on l'a vérifié)."""
 
-DEBT_SPECS: dict[str, Spec] = {
-    "add_effect_keyframe:effect_keyframes": Spec(
-        "effect_keyframes", {"clip": "c1", "effect": "fx1", "parameter": "brightness", "at": 3.9, "value": 0.3}, prepare=_effect,
-        placements=("active",)),
-    "nest_clips:clips": Spec("clips", {"clips": ["c1"]}, placements=("active",)),
-    "add_multicam_angle:clips": Spec("clips", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",)),
-    "add_clip:clips": Spec("clips", {"track": "V1", "asset": "m", "at": 5.0}, placements=("active",)),
-    "add_subtitle:clips": Spec("clips", {"text": "x", "at": 5.0, "duration": 1.0}, prepare=_subtitle_track, placements=("active",)),
-    "cut_clip:clips": Spec("clips", {"clip": "c1", "at": 2.0}, placements=("active",)),
-    "duplicate_clip:clips": Spec("clips", {"clip": "c1"}, placements=("active",)),
-    "insert_sequence_clip:clips": Spec("clips", {"sequence": "ins", "track": "V2", "at": 0.0}, prepare=_nestable, placements=("active",)),
-    "add_keyframe:keyframes": Spec("keyframes", {"clip": "c1", "property": "scale", "at": 3.9, "value": 1.2}, placements=("active",)),
-}
+DEBT_SPECS: dict[str, Spec] = {}
 """Pour une dette que l'on sait sonder : de quoi prouver QU'ELLE EXISTE ENCORE (le verbe n'est pas refusé au-delà de ``big`` objets). Le test
 échoue dès que le verbe se met à refuser : la dette est alors payée, il faut l'en retirer et inscrire le verbe dans ``CEILINGS``."""

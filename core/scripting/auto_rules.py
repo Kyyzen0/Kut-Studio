@@ -24,42 +24,21 @@ from ..beat_grid import BeatGrid
 from ..graphics import GraphicOverlay
 from ..impact_fx import SHAKE_FREQUENCY
 from ..project_model import Clip, Project
+from .resource_limits import (
+    MAX_CLIPS_IN_PROJECT, MAX_KEYFRAMES_PER_CLIP, MAX_NEW_CLIPS_PER_OPERATION, require_clip_room as require_room, require_count,
+    require_keyframe_room, total_clips,
+)
 from .verbs import _editable_clip
 
-MAX_NEW_CLIPS_PER_OPERATION = 500
-"""Clips (morceaux de coupe, lignes de sous-titres, plans de diaporama, calques) qu'une seule opération crée."""
-MAX_CLIPS_IN_PROJECT = 5_000
-"""Clips d'un projet (toutes séquences) au-delà desquels ces verbes n'en créent plus : le nombre maximal d'opérations d'un script."""
 MAX_LISTED_CLIPS = 200
 """Clips cités par une seule opération (liste de clips à couper, à répartir)."""
 MAX_PHOTOS = 100
 """Photos d'un diaporama ou d'un remplissage d'emplacements : chacune est ouverte (en-tête) avant la moindre écriture."""
-MAX_KEYFRAMES_PER_CLIP = 2_000
-"""Images clés de transform qu'un clip porte au plus après un effet de ces verbes (une secousse en pose 3 par pas de 1/15 s)."""
 MAX_SHAKE_SECONDS = 60.0
 """Durée maximale d'une secousse : au-delà, ce n'est plus un effet d'impact."""
 TOLERANCE = 1e-6
 
 _KEYFRAME_TOLERANCE = 1e-6
-
-
-def require_count(count: int, limit: int, what: str) -> None:
-    """Refuse ``count`` éléments au-delà de ``limit`` (sans en créer un seul)."""
-    if count > limit:
-        raise ValueError(f"{count} {what} d'un coup dépassent la limite de {limit} par opération.")
-
-
-def total_clips(project: Project) -> int:
-    """Les clips de TOUTES les séquences du projet."""
-    return sum(len(track.clips) for sequence in project.sequences for track in sequence.tracks)
-
-
-def require_room(project: Project, clips: int) -> None:
-    """Refuse, AVANT toute création, ``clips`` clips (calques graphiques compris) de plus s'ils dépassaient le plafond de l'opération ou du projet."""
-    require_count(clips, MAX_NEW_CLIPS_PER_OPERATION, "clips")
-    count = total_clips(project)
-    if count + clips > MAX_CLIPS_IN_PROJECT:
-        raise ValueError(f"Le projet compte déjà {count} clips : {clips} de plus dépasseraient la limite de {MAX_CLIPS_IN_PROJECT}.")
 
 
 def require_grid(project: Project) -> BeatGrid:
@@ -107,13 +86,6 @@ def shake_keyframe_count(length: float) -> int:
     """Nombre d'images clés que ``apply_camera_shake`` pose pour cette durée (le calcul du modèle : 3 propriétés, un pas de 1/15 s, au moins 2 pas)."""
     steps = max(2, math.ceil(length * SHAKE_FREQUENCY))
     return 3 * (steps + 1)
-
-
-def require_keyframe_room(clip: Clip, adding: int, effect: str) -> None:
-    """Refuse AVANT d'appeler le modèle si le clip porterait plus de :data:`MAX_KEYFRAMES_PER_CLIP` images clés (celles déjà là comprises)."""
-    total = len(clip.transform_keyframes) + adding
-    if total > MAX_KEYFRAMES_PER_CLIP:
-        raise ValueError(f"{effect} : le clip '{clip.id}' porterait {total} images clés de transform (au plus {MAX_KEYFRAMES_PER_CLIP}) ; réduisez la durée.")
 
 
 def graphic_type_of(clip: Clip) -> Any:

@@ -19,6 +19,14 @@ from tests.script_resource_guards import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _fake_probe(monkeypatch):
+    """``import_media`` lit un fichier : une sonde sans ffprobe (le test porte sur le plafond, pas sur le média)."""
+    from core.project_model import MediaAsset
+
+    monkeypatch.setattr("core.scripting.verbs.probe_media", lambda path: MediaAsset("probe", path, "p", 1.0, 8, 8, 30.0, "video"))
+
+
 def _ceiling_cases() -> Iterator[object]:
     for verb, specs in sorted(CEILINGS.items()):
         for spec in specs:
