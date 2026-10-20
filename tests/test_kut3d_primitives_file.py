@@ -139,6 +139,16 @@ def test_a_scene_without_a_primitive_stays_in_version_1_with_no_new_key(
     assert json.loads((tmp_path / "e.kut3d").read_bytes())["version"] == 1
 
 
+def test_a_scene_without_a_primitive_is_written_byte_for_byte_as_before(tmp_path: Path) -> None:
+    """Empreinte relevée sur le code d'avant les formes de base (origin/main 52575b5) pour `rich_scene` : elle ne doit jamais bouger."""
+    import hashlib
+
+    path = tmp_path / "scene.kut3d"
+    save_scene(rich_scene(tmp_path), path)
+    assert len(path.read_bytes()) == 2504
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == "89c6402b842cf89ae84599527a3e1dff620194c20b7efce84746b59eff9a90f8"
+
+
 def test_a_file_model_and_a_primitive_can_share_a_scene(tmp_path: Path) -> None:
     write_cube_obj(tmp_path, name="cube")
     mesh = load_model(tmp_path / "cube.obj")
