@@ -36,6 +36,11 @@
       "present": null
     }
   ],
+  "library": {
+    "folders": [],
+    "tags": [],
+    "assignments": []
+  },
   "color_presets": [],
   "sequences": [
     {
@@ -134,7 +139,27 @@
                 "blend_mode": "normal"
               },
               "animation": [],
-              "composition": null
+              "composition": null,
+              "text_style": {
+                "font_family": "Arial",
+                "font_size": 32.0,
+                "color": "#ffffff",
+                "opacity": 1.0,
+                "outline_color": "#000000",
+                "outline_width": 2.0,
+                "shadow_color": "#000000",
+                "shadow_offset": 1.5,
+                "background_color": null,
+                "background_opacity": 0.0,
+                "padding_x": 12.0,
+                "padding_y": 6.0,
+                "alignment": "bottom_center",
+                "position_x": 0.0,
+                "position_y": 0.0,
+                "margin_x": 32.0,
+                "margin_y": 48.0
+              },
+              "tracking": null
             },
             {
               "id": "c2",
@@ -204,7 +229,27 @@
                 "blend_mode": "normal"
               },
               "animation": [],
-              "composition": null
+              "composition": null,
+              "text_style": {
+                "font_family": "Arial",
+                "font_size": 32.0,
+                "color": "#ffffff",
+                "opacity": 1.0,
+                "outline_color": "#000000",
+                "outline_width": 2.0,
+                "shadow_color": "#000000",
+                "shadow_offset": 1.5,
+                "background_color": null,
+                "background_opacity": 0.0,
+                "padding_x": 12.0,
+                "padding_y": 6.0,
+                "alignment": "bottom_center",
+                "position_x": 0.0,
+                "position_y": 0.0,
+                "margin_x": 32.0,
+                "margin_y": 48.0
+              },
+              "tracking": null
             }
           ]
         },
@@ -294,7 +339,27 @@
                 "blend_mode": "normal"
               },
               "animation": [],
-              "composition": null
+              "composition": null,
+              "text_style": {
+                "font_family": "Arial",
+                "font_size": 32.0,
+                "color": "#ffffff",
+                "opacity": 1.0,
+                "outline_color": "#000000",
+                "outline_width": 2.0,
+                "shadow_color": "#000000",
+                "shadow_offset": 1.5,
+                "background_color": null,
+                "background_opacity": 0.0,
+                "padding_x": 12.0,
+                "padding_y": 6.0,
+                "alignment": "bottom_center",
+                "position_x": 0.0,
+                "position_y": 0.0,
+                "margin_x": 32.0,
+                "margin_y": 48.0
+              },
+              "tracking": null
             }
           ]
         }
@@ -317,16 +382,17 @@
         }
       ],
       "buses": [],
-      "ducking_sidechains": []
+      "ducking_sidechains": [],
+      "guides": [],
+      "motion_blur": {
+        "enabled": true,
+        "shutter_angle": 180.0,
+        "samples": 8
+      },
+      "multicam": null,
+      "beat_grid": null,
+      "generated_groups": []
     }
   ],
-  "not_described": [
-    "graphic_style",
-    "library",
-    "mograph",
-    "multicam",
-    "social",
-    "text_style",
-    "tracking"
-  ]
+  "not_described": []
 }
