@@ -279,7 +279,7 @@ DERIVED: dict[str, str] = {
         for name in ("empty", "tracked", "uncertain", "lost", "manual")
     },
     f"{_TRACKER}.data.manual_points": (
-        "Les points posés à la main (état « manuel »), au plus 256 : ce que ``set_tracker_position`` pose. ``index`` est l'image source "
+        "Les points posés à la main (état « manuel »), au plus 64 : ce que ``set_tracker_position`` pose. ``index`` est l'image source "
         "(abscisse de la grille, ``first`` compris), ``x`` et ``y`` des pixels du média."),
     f"{_TRACKER}.data.manual_points[].index": "Image source du point.",
     f"{_TRACKER}.data.manual_points[].timeline_time": (

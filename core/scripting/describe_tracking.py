@@ -20,8 +20,10 @@ from ..tracking_model import FIXED_POINT, SampleStatus
 from ..tracking_motion import local_time_for_source
 from .describe_values import number, optional_text, text
 
-MAX_MANUAL_POINTS = 256
-"""Points « manuels » écrits par tracker : au-delà, ``manual_points_truncated`` vaut ``true`` (le total reste dans ``counts.manual``)."""
+MAX_MANUAL_POINTS = 64
+"""Points « manuels » écrits par tracker : au-delà, ``manual_points_truncated`` vaut ``true`` (le total reste dans ``counts.manual``).
+Un script pose un point par opération (5 000 opérations au plus) : la sortie ne peut pas valoir plus que ce qu'un script réécrit, et reste
+bornée par tracker quel que soit le nombre de clips."""
 
 _VALID = (SampleStatus.TRACKED, SampleStatus.UNCERTAIN, SampleStatus.MANUAL)
 
