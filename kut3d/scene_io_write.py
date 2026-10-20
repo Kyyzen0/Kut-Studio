@@ -27,6 +27,7 @@ from kut3d.scene_io_read import (
     FORMAT_NAME,
     PRIMITIVES_FORMAT_VERSION,
     SCENE_FORMAT_VERSION,
+    TEXT_FORMAT_VERSION,
     build_scene,
     parse_document,
 )
@@ -106,6 +107,13 @@ def _primitive_entry(model: Model, mid: str, label: str) -> dict[str, Any]:
     return entry
 
 
+def _format_version(models: list[dict[str, Any]]) -> int:
+    shapes = [entry["primitive"] for entry in models if "primitive" in entry]
+    if any(shape["kind"] == "text" for shape in shapes):
+        return TEXT_FORMAT_VERSION
+    return PRIMITIVES_FORMAT_VERSION if shapes else SCENE_FORMAT_VERSION
+
+
 def _unique_id(model: Model, taken: set[str]) -> str:
     base = model.primitive.kind if model.primitive is not None else model.source.stem
     stem = re.sub(r"[^A-Za-z0-9_-]", "_", base)[:48] or "model"
@@ -168,10 +176,9 @@ def _document_and_models(
     camera = scene.camera
     doc = {
         "format": FORMAT_NAME,
-        # Version 2 SEULEMENT si une forme de base y figure : une scène sans forme s'écrit octet pour octet comme en version 1.
-        "version": PRIMITIVES_FORMAT_VERSION
-        if any("primitive" in entry for entry in models)
-        else SCENE_FORMAT_VERSION,
+        # Version 3 SEULEMENT si un texte 3D y figure, 2 SEULEMENT si une forme de base y figure : une scène sans forme
+        # s'écrit octet pour octet comme en version 1, une scène sans texte comme en version 2.
+        "version": _format_version(models),
         "scene": {
             "camera": {
                 "position": _vec(camera.position),

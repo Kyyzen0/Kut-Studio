@@ -42,9 +42,10 @@ from kut3d.scene_io_primitives import read_material, read_primitive
 
 SCENE_FORMAT_VERSION = 1  # version écrite tant qu'aucune fonction ne demande mieux : un fichier sans forme reste en version 1
 PRIMITIVES_FORMAT_VERSION = 2  # `models[]` peut contenir des formes de base (`primitive`) ; écrite SEULEMENT dans ce cas
-MAX_READ_VERSION = (
-    PRIMITIVES_FORMAT_VERSION  # la plus récente que ce lecteur sache lire
+TEXT_FORMAT_VERSION = (
+    3  # une forme « text » (texte 3D extrudé) y figure ; écrite SEULEMENT dans ce cas
 )
+MAX_READ_VERSION = TEXT_FORMAT_VERSION  # la plus récente que ce lecteur sache lire
 FORMAT_NAME = "kut3d"
 
 
@@ -253,6 +254,11 @@ def _primitive_entries(
                 f"(ce fichier est au format {version})."
             )
         entry = _primitive_entry(item, i)
+        if entry[1].kind == "text" and version < TEXT_FORMAT_VERSION:
+            raise SceneFileError(
+                f"models[{i}] : un texte 3D exige le format {TEXT_FORMAT_VERSION} "
+                f"(ce fichier est au format {version})."
+            )
         total += entry[1].triangle_count
         if total > MAX_SCENE_PRIMITIVE_TRIANGLES:
             raise SceneFileError(
@@ -373,7 +379,12 @@ def build_scene_with_models(
                     f"models[{i}] : identifiant {short(mid, 40)} en double."
                 )
             if models is None:
-                model = primitive_model(spec, material)
+                try:
+                    model = primitive_model(spec, material)
+                except ValueError as exc:  # police introuvable, biseau trop grand, caractère sans glyphe...
+                    raise SceneFileError(
+                        f"models[{i}] : {short(str(exc), 200)}"
+                    ) from exc
                 loaded[mid] = (
                     model if matrix is None else model.with_root_transform(matrix)
                 )

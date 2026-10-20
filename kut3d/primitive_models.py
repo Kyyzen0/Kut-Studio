@@ -20,7 +20,7 @@ def primitive_model(spec: PrimitiveSpec, material: Material | None = None) -> Mo
     Le modèle porte `primitive=spec` : `save_scene` en écrit les paramètres, jamais les sommets."""
     if not isinstance(spec, PrimitiveSpec):
         raise ValueError(
-            "spec doit être une forme de kut3d.primitives (Cube, Sphere, Plane, Cylinder, Cone, Torus)."
+            "spec doit être une forme de kut3d.primitives (Cube, Sphere, Plane, Cylinder, Cone, Torus, Text3D)."
         )
     if material is not None and not isinstance(material, Material):
         raise ValueError("material doit être un kut3d.model.Material ou None.")

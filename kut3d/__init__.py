@@ -20,7 +20,7 @@ from kut3d.gpu import probe_qrhi
 from kut3d.importers import load_model, supported_extensions
 from kut3d.model import Material, Model
 from kut3d.primitive_models import primitive_instance, primitive_model
-from kut3d.primitives import Cone, Cube, Cylinder, Plane, Sphere, Torus
+from kut3d.primitives import Cone, Cube, Cylinder, Plane, Sphere, Text3D, Torus
 from kut3d.render import (
     Frame,
     available_backends,
@@ -32,6 +32,7 @@ from kut3d.render import (
 from kut3d.scene_io import (
     PRIMITIVES_FORMAT_VERSION,
     SCENE_FORMAT_VERSION,
+    TEXT_FORMAT_VERSION,
     dependency_files,
     load_scene,
     save_scene,
@@ -48,6 +49,7 @@ from kut3d.scene import (
 __all__ = [
     "PRIMITIVES_FORMAT_VERSION",
     "SCENE_FORMAT_VERSION",
+    "TEXT_FORMAT_VERSION",
     "AmbientLight",
     "Camera",
     "Cone",
@@ -69,6 +71,7 @@ __all__ = [
     "SceneFileError",
     "SceneVersionError",
     "Sphere",
+    "Text3D",
     "Torus",
     "UnsupportedFormatError",
     "available_backends",
