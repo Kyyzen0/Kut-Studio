@@ -15,6 +15,8 @@ Usage ::
     python -m tools.scripting_debt verbs --summary              # chiffres par raison
     python -m tools.scripting_debt verbs --update-baseline      # retire de la dette ce qui a été résolu (jamais d'ajout)
     python -m tools.scripting_debt verbs --update-baseline --accept-new --label "lecture seule"   # (initialisation) ajoute le neuf
+    python -m tools.scripting_debt verbs --check-reclassified   # les raisons durables (« interne », « interface seulement »…) sont celles écrites
+    python -m tools.scripting_debt verbs --sync-reclassified    # (re)génère tests/data/script_verb_reclassified.json depuis la dette actuelle
 
 Une dette **ne grossit pas** : une fonction ou un champ nouveau force une décision (un verbe, une exclusion motivée, ou une entrée
 de dette écrite à la main, visible en revue) ; une entrée résolue doit sortir du fichier (``--update-baseline``).
@@ -39,6 +41,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 FIELD_DEBT_PATH = ROOT / "tests" / "data" / "describe_field_debt.json"
 VERB_DEBT_PATH = ROOT / "tests" / "data" / "script_verb_debt.json"
+RECLASSIFIED_PATH = ROOT / "tests" / "data" / "script_verb_reclassified.json"
 SCRIPTING_DIR = ROOT / "core" / "scripting"
 _NOT_VERB_MODULES = frozenset({
     "api", "describe", "describe_coverage", "describe_values", "describe_shapes", "describe_color", "describe_audio", "describe_composition",
@@ -152,6 +155,15 @@ REASONS: dict[str, str] = {
 }
 """Les raisons permises d'une entrée de la dette des verbes. Les cinq premières sont durables (pas un verbe) ; ``à faire : …`` est une
 promesse : l'entrée sort de la dette quand le verbe existe."""
+
+
+TRANSIENT_PREFIX = "à faire : "
+"""Une raison qui commence ainsi est une PROMESSE (un verbe à venir) ; les autres sont durables (la fonction n'est pas un verbe). Les
+catégories « à faire » peuvent devenir vides sans rien casser : elles restent décrites dans :data:`REASONS`."""
+
+
+def is_transient(reason: str) -> bool:
+    return reason.startswith(TRANSIENT_PREFIX)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -282,6 +294,62 @@ def compare_verbs(debt: dict[str, str], root: Path = ROOT) -> VerbComparison:
     )
 
 
+def durable_entries(debt: dict[str, str]) -> dict[str, str]:
+    """Les entrées de la dette dont la raison est durable (pas « à faire : … ») : ce que le fichier des reclassements doit retenir."""
+    return {name: reason for name, reason in debt.items() if not is_transient(reason)}
+
+
+def transient_entries(debt: dict[str, str]) -> dict[str, list[str]]:
+    """Ce qu'il reste en « à faire », par raison (vide quand tout a son verbe)."""
+    groups: dict[str, list[str]] = {}
+    for name, reason in sorted(debt.items()):
+        if is_transient(reason):
+            groups.setdefault(reason, []).append(name)
+    return groups
+
+
+def load_reclassified(path: Path = RECLASSIFIED_PATH) -> dict[str, str]:
+    return dict(json.loads(path.read_text(encoding="utf-8"))["verbs"])
+
+
+@dataclasses.dataclass
+class ReclassifiedComparison:
+    """``wrong`` : la dette porte une autre raison que celle écrite (un merge a écrasé un reclassement) ; ``unregistered`` : une raison
+    durable de la dette que le fichier ne connaît pas ; ``stale`` : une entrée du fichier que la dette n'a plus ; ``bad_reason`` : une
+    raison du fichier qui est inconnue ou « à faire »."""
+
+    wrong: list[str]
+    unregistered: list[str]
+    stale: list[str]
+    bad_reason: list[str]
+
+    @property
+    def clean(self) -> bool:
+        return not (self.wrong or self.unregistered or self.stale or self.bad_reason)
+
+
+def compare_reclassified(debt: dict[str, str], reclassified: dict[str, str]) -> ReclassifiedComparison:
+    durable = durable_entries(debt)
+    return ReclassifiedComparison(
+        wrong=sorted(f"{name} : {debt[name]!r} au lieu de {reason!r}" for name, reason in reclassified.items()
+                     if name in debt and debt[name] != reason),
+        unregistered=sorted(name for name in durable if name not in reclassified),
+        stale=sorted(name for name in reclassified if name not in debt),
+        bad_reason=sorted(name for name, reason in reclassified.items() if reason not in REASONS or is_transient(reason)),
+    )
+
+
+def write_reclassified(entries: dict[str, str], path: Path = RECLASSIFIED_PATH) -> None:
+    body = {
+        "_comment": "Raisons DURABLES de la dette des verbes (la fonction n'est pas un verbe : lecture seule, interne, interface seulement…). "
+                    "Un merge qui écrase un de ces reclassements fait échouer tests/test_script_verb_reasons.py. "
+                    "Ne s'édite pas à la main : python -m tools.scripting_debt verbs --sync-reclassified.",
+        "version": 1,
+        "verbs": dict(sorted(entries.items())),
+    }
+    path.write_text(json.dumps(body, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
 def write_verb_debt(debt: dict[str, str], path: Path = VERB_DEBT_PATH) -> None:
     body = {
         "_comment": "Dette des verbes de script : fonctions d'édition du modèle sans verbe. Ne peut que diminuer "
@@ -393,6 +461,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--update-baseline", action="store_true", help="retire de la dette ce qui est résolu")
     parser.add_argument("--accept-new", action="store_true", help="avec --update-baseline : ajoute aussi le neuf (initialisation)")
     parser.add_argument("--label", default=None, help="avec --accept-new : la section / raison des entrées ajoutées")
+    parser.add_argument("--check-reclassified", action="store_true", help="verbs : les raisons durables de la dette sont celles du fichier des reclassements")
+    parser.add_argument("--sync-reclassified", action="store_true", help="verbs : réécrit le fichier des reclassements depuis la dette actuelle")
     parser.add_argument("--reason", "--section", dest="only", default=None, help="avec --list : une seule section / raison")
     return parser
 
@@ -413,6 +483,25 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     is_verbs = args.kind == "verbs"
     debt = load_verb_debt() if is_verbs else load_field_debt()
+    if (args.check_reclassified or args.sync_reclassified) and not is_verbs:
+        print("--check-reclassified et --sync-reclassified ne valent que pour « verbs ».", file=sys.stderr)
+        return 2
+    if args.sync_reclassified:
+        write_reclassified(durable_entries(debt), RECLASSIFIED_PATH)
+        print(f"Reclassements durables réécrits : {len(durable_entries(debt))} entrée(s). Relisez le diff : c'est lui que la revue voit.")
+        return 0
+    if args.check_reclassified:
+        result = compare_reclassified(debt, load_reclassified())
+        for title, names in vars(result).items():
+            if names:
+                print(f"{title} :\n  " + "\n  ".join(names), file=sys.stderr)
+        for reason, names in transient_entries(debt).items():
+            print(f"[{reason}] {len(names)} fonction(s) encore à faire")
+        if not result.clean:
+            print("Corrigez la dette (le reclassement perdu), ou, si le changement est voulu : --sync-reclassified.", file=sys.stderr)
+            return 1
+        print(f"Raisons durables conformes ({len(durable_entries(debt))} entrée(s)).")
+        return 0
     if args.list:
         _print_groups(debt, args.only)
         return 0
@@ -432,6 +521,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             updated.update({name: args.label for name in comparison.undecided})
         (write_verb_debt if is_verbs else write_field_debt)(updated)
+        if is_verbs and RECLASSIFIED_PATH.exists():          # une entrée résolue sort aussi du fichier des reclassements (jamais d'ajout silencieux)
+            kept = {name: reason for name, reason in load_reclassified().items() if name in updated}
+            write_reclassified(kept, RECLASSIFIED_PATH)
         print(f"Dette mise à jour : {len(updated)} entrée(s).")
         return 0
     if comparison.clean:
