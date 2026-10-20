@@ -134,3 +134,9 @@ def test_updating_a_leaderboard_refuses_before_removing_anything_when_a_locked_f
     _follow(project, "f", layers[0], continuation=(layers[1],) if len(layers) > 1 else ("b",))
     find_clip(project, "f").graphic = GraphicOverlay(type=GraphicType.TEXT, locked=True)
     _refused(project, lambda p: update_leaderboard(p, board))
+
+
+@pytest.mark.parametrize("ripple", [False, True])
+def test_a_follower_on_a_locked_track_selected_with_its_source_is_not_exempt(ripple):
+    project = _locked("track", continuation=("b",))                   # « f » ne peut pas être supprimé (piste verrouillée) : il serait réécrit
+    _refused(project, lambda p: delete_clips(p, ["a", "f"], ripple=ripple))

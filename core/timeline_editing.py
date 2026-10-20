@@ -452,7 +452,8 @@ def delete_clips(
             continue
         found.append(_track.clips[index])
     found.sort(key=lambda clip: clip.timeline_start, reverse=True)
-    doomed = [clip.id for clip in found]
+    locked_tracks = {track.id for track in project.all_tracks() if track.locked}
+    doomed = [clip.id for clip in found if clip.track_id not in locked_tracks]      # un clip d'une piste verrouillée ne part pas : il n'exempte pas son propre suivi
     require_release_followers_unlocked(project, doomed)                # tout ou rien : le ripple ci-dessous saute en silence un clip refusé
     for clip in found:
         if ripple:
