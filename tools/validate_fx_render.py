@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Banc de validation du rendu des paramètres d'effets animés (ADR-0008, étape 3) : hors ligne, jamais importé par l'application.
+"""Banc de validation du rendu des paramètres d'effets animés (ADR-0008, étapes 3 et 5) : hors ligne, jamais importé par l'application.
 
-Question : pour une version de FFmpeg donnée, l'image ``n`` de la sortie ANIMÉE (expression du temps local, graphe de l'export)
+Question : pour une version de FFmpeg donnée, l'image ``n`` de la sortie ANIMÉE (expression du temps local, ou fichier de
+commandes ``sendcmd`` pour le flou, le rayon de la lueur et l'aberration chromatique ; graphe de l'export)
 est-elle égale à l'image ``n`` du rendu STATIQUE du même effet réglé sur la valeur de la courbe à cet instant ? Critère :
 écart maximal <= 1 niveau (même critère et même méthode que ``tools/validate_sendcmd.py``).
 
@@ -51,6 +52,25 @@ def _cases() -> dict[str, dict]:
     hz = create_effect(EffectType.HEAT_HAZE, effect_id="hz",
                        params={"amplitude": 6.0, "frequency": 0.08, "speed": 9.0, "top": 0.2, "span": 0.5})
     ease = InterpolationType.EASE_IN_OUT
+    bl = create_effect(EffectType.BLUR, effect_id="bl")
+    gl = create_effect(EffectType.GLOW, effect_id="gl", params={"threshold": 0.5, "intensity": 1.5})
+    ca = create_effect(EffectType.CHROMATIC_ABERRATION, effect_id="ca")
+    return {
+        # Étape 5 (``sendcmd``) : un cas par paramètre, interpolations variées (linéaire, Bézier, maintien, ease).
+        "sendcmd_blur": {"effects": [bl], "animation": ramp(bl, "intensity", 0.0, 12.0)},
+        "sendcmd_blur_bezier": {"effects": [bl], "animation": [
+            Keyframe("fx.bl.intensity", 0.0, 1.0, InterpolationType.BEZIER, out_slope=20.0),
+            Keyframe("fx.bl.intensity", 1.5, 14.0, InterpolationType.HOLD),
+            Keyframe("fx.bl.intensity", 3.0, 3.0, InterpolationType.LINEAR)]},
+        "sendcmd_glow_radius": {"effects": [gl], "animation": ramp(gl, "radius", 2.0, 30.0, ease)},
+        "sendcmd_chromatic": {"effects": [ca], "animation": ramp(ca, "intensity", 2.0, 14.0)},
+        # Une image à décalage 0 garde la conversion RVB aller-retour (le rendu statique à 0 n'a pas de filtre) : <= 2 niveaux.
+        "sendcmd_chromatic_from_zero": {"effects": [ca], "animation": ramp(ca, "intensity", 0.0, 9.0), "tolerance": 2},
+        **_expression_cases(cc, vg, hz, ramp, ease),
+    }
+
+
+def _expression_cases(cc, vg, hz, ramp, ease) -> dict[str, dict]:
     return {
         "eq_brightness_contrast": {"effects": [cc], "animation": ramp(cc, "brightness", 0.0, 0.3) + ramp(cc, "contrast", 0.8, 1.6)},
         "eq_saturation": {"effects": [cc], "animation": ramp(cc, "saturation", 0.2, 2.5, ease)},
@@ -71,17 +91,29 @@ def cmd_gen(args: argparse.Namespace) -> int:
 
     ANIMATABLE_EFFECT_PARAMS[EffectType.HEAT_HAZE] = ("amplitude", "frequency", "top", "span")   # le temps du banc
 
+    from core.effect_sendcmd import command_files, context_for
+
     work = Path(args.work)
     work.mkdir(parents=True, exist_ok=True)
     source = work / "input.mkv"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
                     f"testsrc2=s={WIDTH}x{HEIGHT}:r={RATE}:d={FRAMES / RATE},noise=alls=12:allf=t:all_seed=7",
                     "-pix_fmt", "yuv420p", "-c:v", "ffv1", str(source)], check=True)
+    cmd_files: list[Path] = []
 
     def chain(effects, animation, layer_space: bool) -> str:
-        build = (lambda: _layer_space_filters(tuple(effects), 1.0, tuple(animation))) if layer_space else (
-            lambda: _build_clip_effect_filters(tuple(effects), animation=tuple(animation)))
-        text = build()
+        written: list[str] = []
+        context = context_for(RATE, 0.0, FRAMES / RATE) if animation else None
+        with command_files(written):
+            build = (lambda: _layer_space_filters(tuple(effects), 1.0, tuple(animation))) if layer_space else (
+                lambda: _build_clip_effect_filters(tuple(effects), animation=tuple(animation), sendcmd=context))
+            text = build()
+        for path in written:        # les fichiers de commandes vivent dans ``work`` (monté tel quel dans Docker)
+            target = work / f"cmd-{len(cmd_files)}.cmd"
+            target.write_bytes(Path(path).read_bytes())
+            Path(path).unlink(missing_ok=True)
+            cmd_files.append(target)
+            text = text.replace(path, str(target))
         # Comme l'export : étage de préparation du clip (PTS remis à zéro après ``fps``), puis l'effet, puis la conversion RVBA
         # (4:2:0 vers RVB co-sitée devant les filtres RVB, ``siting_before_rgb``).
         graph = (text + "," if text else "") + "format=rgba"
@@ -101,7 +133,8 @@ def cmd_gen(args: argparse.Namespace) -> int:
                     # (mesuré : 1 octet sur 230 000, écart 2, qui disparaît avec l'angle exact).
                     text = re.sub(r"vignette=angle=[0-9.]+", f"vignette=angle={effect.params['intensity'] * math.pi / 4!r}", text)
             statics[str(n)] = text + f",select='eq(n,{n})'"
-        cases[name] = {"animated": chain(case["effects"], case["animation"], layer_space), "static": statics}
+        cases[name] = {"animated": chain(case["effects"], case["animation"], layer_space), "static": statics,
+                       "tolerance": case.get("tolerance", TOLERANCE)}
     (work / "cases.json").write_text(json.dumps(cases, indent=1), encoding="utf-8")
     print(f"{len(cases)} cas écrits dans {work}")
     return 0
@@ -135,7 +168,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             diff = int(np.abs(frame - static).max())
             per_frame[n] = diff
             worst = max(worst, diff)
-        report["cases"][name] = {"max": worst, "per_frame": per_frame, "valid": worst <= TOLERANCE}
+        report["cases"][name] = {"max": worst, "per_frame": per_frame, "valid": worst <= case.get("tolerance", TOLERANCE)}
     Path(args.out).write_text(json.dumps(report, indent=1), encoding="utf-8")
     for name, result in report["cases"].items():
         print(f"{report['ffmpeg']:>22} {'VALIDÉ' if result['valid'] else 'NON VALIDÉ':>11}  max {result['max']:>3}  {name}")

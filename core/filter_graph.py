@@ -13,7 +13,7 @@ import os
 
 
 def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export", prepared=None,
-                         origin=0.0):
+                         origin=0.0, temporary_files=None):
     """Construit le -filter_complex via le moteur d'export (parite).
 
     ``quality`` ne regle que le flou de mouvement des calques motion
@@ -22,11 +22,14 @@ def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, 
     ``core.retime_layers``), par identifiant de clip.
     ``origin`` : premier instant utile (debut d'un segment) ; voir
     ``ExportEngine._build_filter_complex``.
+    ``temporary_files`` : liste qui recoit les fichiers ecrits par la construction (commandes ``sendcmd`` des effets
+    animes) ; l'appelant les supprime apres le rendu. ``None`` : comportement d'avant (voir ``_build_filter_complex``).
     """
     from .export_engine import ExportEngine
 
     return ExportEngine._build_filter_complex(
-        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared, origin=origin
+        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared, origin=origin,
+        temporary_files=temporary_files,
     )
 
 
@@ -118,8 +121,9 @@ def build_preview_command(plan, **kwargs):
     srt_path = kwargs.get("srt_path", None)
     out_w, out_h = preview_output_size(width, height, quality)
     # Le segment ne compose qu'à partir de son début : son coût ne dépend plus de sa position sur la timeline.
+    temporary_files = kwargs.get("temporary_files")
     result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality, prepared=kwargs.get("prepared"),
-                                  origin=max(0.0, start))
+                                  origin=max(0.0, start), temporary_files=temporary_files)
     filter_complex, video_label, audio_label, input_paths = result
     # Même conversion et mêmes balises que l'export (BT.709) : l'aperçu montre les couleurs de l'export.
     filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
@@ -130,7 +134,6 @@ def build_preview_command(plan, **kwargs):
         if callable(input_args):
             command.extend(input_args(path))
         command.extend(input_arguments(path, threads=threads))
-    temporary_files = kwargs.get("temporary_files")
     command.extend(filter_graph_arguments(filter_complex, temporary_files if temporary_files is not None else []))
     command.extend(["-map", "[" + video_label + "]"])
     command.extend(["-map", "[" + audio_label + "]"])

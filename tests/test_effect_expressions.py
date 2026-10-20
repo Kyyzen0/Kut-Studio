@@ -20,6 +20,7 @@ from core.animation_targets import targets_for_clip
 from core.effect_expressions import GEQ_TIME, animated_effect_expressions, heat_haze_shift
 from core.effect_targets import (
     ANIMATABLE_EFFECT_PARAMS,
+    EXPRESSION_EFFECT_PARAMS,
     PENDING_EFFECT_PARAMS,
     effective_effect_parameters,
     evaluated_effects,
@@ -63,7 +64,7 @@ def rich_curve(effect, name, *, overshoot=True):
 
 
 SAMPLES = [-1.0, 0.0, 0.25, 0.5, 0.6, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.4999, 2.5, 2.6, 3.0, 3.7, 4.0, 4.5, 6.0]
-RENDERED = [(kind, name) for kind, names in ANIMATABLE_EFFECT_PARAMS.items() for name in names]
+RENDERED = [(kind, name) for kind, names in EXPRESSION_EFFECT_PARAMS.items() for name in names]   # par expression (étape 3)
 HAZE_PARAMS = ("amplitude", "frequency", "top", "span")
 HAZE_RENDERED = [(EffectType.HEAT_HAZE, name) for name in HAZE_PARAMS]
 
@@ -201,11 +202,9 @@ def golden_layer(animation=()):
 # Images clés qui ne doivent RIEN changer : autres propriétés, effet absent, paramètres en attente ou exclus.
 IGNORED_ANIMATION = (
     kf("mask.m.feather", 0.0, 3.0), kf("graphic.width", 1.0, 5.0), kf("fx.gone.intensity", 0.0, 0.5),
-    kf("fx.blur.intensity", 0.0, 9.0), kf("fx.blur.intensity", 2.0, 30.0),           # flou : en attente (étape 5)
     kf("fx.haze.speed", 0.0, 1.0), kf("fx.haze.speed", 2.0, 30.0),                    # vitesse de la brume : saut de phase
     kf("fx.haze.amplitude", 0.0, 1.0), kf("fx.haze.amplitude", 2.0, 30.0),            # brume : rendu écrit, non enregistré
     kf("fx.haze.top", 0.0, 0.1), kf("fx.haze.span", 0.0, 0.9), kf("fx.haze.frequency", 0.0, 0.2),
-    kf("fx.ca.intensity", 0.0, 9.0),
 )
 
 

@@ -49,7 +49,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
@@ -638,11 +638,27 @@ def build_export_command(
             f"Le dossier de sortie est introuvable : {output_path.parent}"
         )
 
+    created: list[str] = []                   # fichiers écrits par cette construction (graphe long, commandes ``sendcmd``)
+    try:
+        return _build_export_command(request, plan, width, height, output_path, prepared, subtitle_path, created,
+                                     temporary_files)
+    except BaseException:
+        for path in created:                  # un échec après l'écriture ne laisse aucun temporaire
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        raise
+
+
+def _build_export_command(request, plan, width, height, output_path, prepared, subtitle_path, created, temporary_files):
+    """Corps de :func:`build_export_command` (les fichiers écrits vont dans ``created``)."""
     from .scene3d import strict_rendering
 
     with strict_rendering():                  # un échec de rendu d'une scène 3D fait échouer l'export (l'écran le tolère)
         filter_complex, video_label, audio_label, input_paths = (
-            ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared)
+            ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared,
+                                               temporary_files=created)
         )
 
     command: list[str] = [
@@ -685,7 +701,6 @@ def build_export_command(
     if encoder.video_filter:
         filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
         video_label = "vencoded"
-    created: list[str] = []
     command.extend(filter_graph_arguments(filter_complex, created))
     if temporary_files is not None:
         temporary_files.extend(created)
@@ -1119,7 +1134,8 @@ class ExportEngine(QObject):
         horizon = (math.floor(max(0.0, float(playhead)) * rate + 1e-6) + 2) / rate
         filter_complex, video_label, audio_label, input_paths = (
             self._build_filter_complex(
-                plan, width, height, request.fps, self._current_srt_path, prepared=prepared, horizon=horizon
+                plan, width, height, request.fps, self._current_srt_path, prepared=prepared, horizon=horizon,
+                temporary_files=self._temporary_files,
             )
         )
         # Seule l'image est extraite : l'audio du graphe est consommé par un
@@ -1239,8 +1255,14 @@ class ExportEngine(QObject):
         horizon: float | None = None,
         audio_origin: float = 0.0,
         track_taps: dict[str, str] | None = None,
+        temporary_files: list[str] | None = None,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
+
+        ``temporary_files`` : liste à laquelle ajouter les fichiers que la construction écrit (les fichiers de commandes
+        ``sendcmd`` des effets animés, :mod:`core.effect_sendcmd`) ; l'appelant les supprime avec ses autres temporaires.
+        ``None`` : un fichier par contenu dans un dossier de processus supprimé à la sortie. Sans effet animé par
+        ``sendcmd``, rien n'est écrit et le graphe est celui d'avant.
 
         ``quality`` (``draft`` / ``standard`` / ``high`` / ``export``) ne règle
         que le flou de mouvement des calques motion graphics : un segment
@@ -1297,15 +1319,18 @@ class ExportEngine(QObject):
 
         # Séquences imbriquées : chaque sous-plan est composé une fois, en
         # amont, puis distribué (``split``) à ses instances.
-        sources = _build_nested_sources(
-            parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
-            video=not audio_only,
-        )
-        video_label, audio_label = _compose_plan_graph(
-            parts, plan, width, height, fps, path_to_index, sources,
-            add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
-            horizon=horizon, audio_origin=audio_origin, track_taps=track_taps,
-        )
+        from .effect_sendcmd import command_files
+
+        with command_files(temporary_files):
+            sources = _build_nested_sources(
+                parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
+                video=not audio_only,
+            )
+            video_label, audio_label = _compose_plan_graph(
+                parts, plan, width, height, fps, path_to_index, sources,
+                add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
+                horizon=horizon, audio_origin=audio_origin, track_taps=track_taps,
+            )
         if audio_only:
             return ";".join(parts), "", audio_label, input_paths
 
@@ -2459,8 +2484,24 @@ def _build_layer_filter(
         transform, kfs, canvas=_animated_layer_canvas(transform, kfs, width, height, layer.timeline_end - layer.timeline_start),
     )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
+    # Flux qui entre dans les effets : ``PTS`` est le temps local du clip (voir ci-dessous), sa première image est celle de
+    # ``origin`` pour un segment d'aperçu, ramenée à la grille des ticks (``segment_start``) (hors arrêt sur image, qui repart de 0). Les paramètres animés par ``sendcmd``.
+    from .effect_sendcmd import context_for, segment_start
+
+    local_start = segment_start(
+        max(0.0, origin - layer.timeline_start)
+        if origin > 0.0 and layer.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
+        else 0.0,
+        fps,
+    )
+    sendcmd_context = (
+        context_for(fps, local_start, layer.timeline_end - layer.timeline_start)
+        if any(kf.property_name.startswith("fx.") for kf in layer.animation or ())
+        else None
+    )
     effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale, label=f"{output_label}fx",
-                                                include_layer_space=False, animation=layer.animation)
+                                                include_layer_space=False, animation=layer.animation,
+                                                sendcmd=sendcmd_context)
     layer_space_filters = _layer_space_filters(layer.effects, pixel_scale, layer.animation)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
@@ -2842,7 +2883,8 @@ def _build_lut3d_filter(lut) -> str | None:
     return f"lut3d=file='{safe}'"
 
 
-def _glow_filter(params, pixel_scale: float, label: str) -> str:
+def _glow_filter(params, pixel_scale: float, label: str, *, blur_name: str | None = None,
+                 blur_sigma: float | None = None) -> str:
     """Bloom : copie des zones plus claires que le seuil (RVB), floutée, **ajoutée** à l'image (alpha inchangé).
 
     Un sous-graphe au milieu de la chaîne (``split`` puis ``blend``) : la syntaxe des graphes FFmpeg permet de
@@ -2852,16 +2894,20 @@ def _glow_filter(params, pixel_scale: float, label: str) -> str:
     la chaîne (:mod:`core.chroma_siting`, posée devant ce ``format=rgba`` par l'appelant) ; vers ``gbrap`` il
     l'interpole autrement (sur une mire aux couleurs franches, 18 niveaux d'écart en moyenne). De ``rgba`` à ``gbrap``
     (pour ``gblur``), rien ne change.
+
+    ``blur_name`` / ``blur_sigma`` : le rayon est animé par ``sendcmd`` (:mod:`core.effect_sendcmd`) ; le ``gblur`` porte ce nom
+    d'instance et démarre à ``blur_sigma`` (valeur de la première image, déjà en pixels de rendu et plancher appliqué).
     L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``eq``…) travaillent en YUV,
     comme à l'accoutumée (en RVB, la vignette rapprochait chaque canal de 128 et éclaircissait l'image)."""
     threshold = float(params["threshold"])
     gain = float(params["intensity"]) / max(0.05, 1.0 - threshold)
     level = _format_seconds(threshold * 255.0)
     curve = f"'clip((val-{level})*{_format_seconds(gain)},0,255)'"
-    sigma = _format_seconds(max(0.01, float(params["radius"]) * pixel_scale))
+    sigma = _format_seconds(max(0.01, float(params["radius"]) * pixel_scale) if blur_sigma is None else blur_sigma)
+    blur = "gblur" if blur_name is None else blur_name
     return (
         f"format=rgba,split[{label}a][{label}b];"
-        f"[{label}b]lutrgb=r={curve}:g={curve}:b={curve},gblur=sigma={sigma}[{label}g];"
+        f"[{label}b]lutrgb=r={curve}:g={curve}:b={curve},{blur}=sigma={sigma}[{label}g];"
         f"[{label}a][{label}g]blend=all_mode=addition:c3_mode=normal:c3_opacity=0,format=rgba,format=yuva444p"
     )
 
@@ -2894,7 +2940,7 @@ def _heat_haze_filter(params, pixel_scale: float, expressions=None) -> str:
 
 def _build_clip_effect_filters(
     effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0, label: str = "fx", *, include_layer_space: bool = True,
-    animation=None,
+    animation=None, sendcmd=None,
 ) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
@@ -2908,6 +2954,11 @@ def _build_clip_effect_filters(
     ``animation`` : images clés génériques du clip (``Clip.animation``). Celles d'un paramètre d'effet rendu
     (``fx.<effet>.<paramètre>``, :mod:`core.effect_expressions`) deviennent une expression du temps local du clip ; sans
     elles, ``None`` ou non, la chaîne est celle d'avant, caractère pour caractère.
+
+    ``sendcmd`` (:class:`core.effect_sendcmd.SendcmdContext`) : cadence, origine et durée du flux, pour les paramètres rendus
+    par un fichier de commandes (flou, aberration chromatique, rayon de la lueur). ``None`` (empreintes de cache, calques
+    graphiques) : ces paramètres restent à leur valeur de base, comme avant l'étape 5. Le fichier est écrit à la
+    construction (:func:`core.effect_sendcmd.write_command_file`).
     """
     from .effect_expressions import (
         EQ_TIME,
@@ -2936,9 +2987,12 @@ def _build_clip_effect_filters(
                 f"saturation={_format_seconds(params['saturation'])}"
             )
         elif effect.type is EffectType.BLUR:
-            filters.append(
-                f"gblur=sigma={_format_seconds(float(params['intensity']) * pixel_scale)}"
-            )
+            if stage := _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}"):
+                filters.extend([stage.load, f"{stage.name}=sigma={_format_seconds(stage.plan.initial)}"])
+            else:
+                filters.append(
+                    f"gblur=sigma={_format_seconds(float(params['intensity']) * pixel_scale)}"
+                )
         elif effect.type is EffectType.SHARPEN:
             filters.append(
                 "unsharp=luma_msize_x=5:luma_msize_y=5:"
@@ -2955,14 +3009,52 @@ def _build_clip_effect_filters(
                 ".393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
             )
         elif effect.type is EffectType.GLOW:
-            filters.append(_glow_filter(params, pixel_scale, f"{label}{index}"))
+            if stage := _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}"):
+                filters.extend([stage.load, _glow_filter(params, pixel_scale, f"{label}{index}", blur_name=stage.name,
+                                                         blur_sigma=stage.plan.initial)])
+            else:
+                filters.append(_glow_filter(params, pixel_scale, f"{label}{index}"))
         elif effect.type is EffectType.CHROMATIC_ABERRATION:
-            shift = int(round(float(params["intensity"]) * pixel_scale))
-            if shift:
-                filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
+            stage = _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}")
+            if stage is not None and not stage.load:
+                continue
+            if stage is not None:
+                # Toujours présent quand la courbe est animée (sauf si elle reste à 0 partout) : le décalage change d'une image
+                # à l'autre, y compris vers 0 (``rh=0`` : identité aux arrondis de la conversion RVB près).
+                shift = int(stage.plan.initial)
+                filters.extend([stage.load, f"format=rgba,{stage.name}=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p"])
+            else:
+                shift = int(round(float(params["intensity"]) * pixel_scale))
+                if shift:
+                    filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
         elif effect.type is EffectType.HEAT_HAZE and include_layer_space:
             filters.append(_heat_haze_filter(params, pixel_scale, animated_effect_expressions(effect, animation, GEQ_TIME)))
     return ",".join(filters)
+
+
+@dataclass(frozen=True)
+class _SendcmdStage:
+    """Un effet animé par ``sendcmd`` : le filtre qui charge le fichier, le nom d'instance du filtre visé et le plan."""
+
+    load: str
+    name: str
+    plan: Any
+
+
+def _sendcmd_stage(effect: ClipEffect, animation, context, pixel_scale: float, label: str) -> _SendcmdStage | None:
+    """Écrit le fichier de commandes de ``effect`` et rend l'étage (``None`` : rien n'est animé, ou pas de contexte de flux : la
+    chaîne statique est alors celle d'avant ; ``load`` vide : la courbe d'une aberration chromatique reste à 0, rien à ajouter)."""
+    if context is None or not animation:
+        return None
+    from .effect_sendcmd import command_plan, filter_name, sendcmd_filter, write_command_file
+
+    name = filter_name(effect.type, label)
+    plan = command_plan(effect, animation, context, name, pixel_scale)
+    if plan is None:
+        return None
+    if effect.type is EffectType.CHROMATIC_ABERRATION and plan.peak == 0.0:
+        return _SendcmdStage("", name, plan)           # la courbe reste à 0 : aucun décalage, aucun fichier, aucun filtre
+    return _SendcmdStage(sendcmd_filter(write_command_file(plan.text)), name, plan)
 
 
 def _layer_space_filters(effects, pixel_scale: float, animation=None) -> str:

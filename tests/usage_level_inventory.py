@@ -205,13 +205,14 @@ def _floor(widget: QWidget, panel) -> UsageLevel:
     return level
 
 
-EFFECT_SCENARIOS = ("color_correction", "vignette", "sharpen")
-"""Effets sélectionnés tour à tour (ADR-0008, étape 4) : les réglages et les losanges d'images clés d'un effet n'existent que
-pour l'effet affiché. La correction de couleur et la vignette ont des paramètres animables ; la netteté n'en a aucun."""
+EFFECT_SCENARIOS = ("color_correction", "vignette", "sharpen", "blur", "glow", "chromatic_aberration")
+"""Effets sélectionnés tour à tour (ADR-0008, étapes 4 et 5) : les réglages et les losanges d'images clés d'un effet n'existent
+que pour l'effet affiché. La correction de couleur, la vignette, le flou, la lueur (rayon) et l'aberration chromatique ont des
+paramètres animables ; la netteté n'en a aucun."""
 
 
 def effect_view(kind: str):
-    """Une vue de clip vidéo qui porte les trois effets de ``EFFECT_SCENARIOS`` (dans cet ordre)."""
+    """Une vue de clip vidéo qui porte les effets de ``EFFECT_SCENARIOS`` (dans cet ordre)."""
     import dataclasses
 
     from core.effects_model import EffectType, create_effect
@@ -222,7 +223,7 @@ def effect_view(kind: str):
 
 
 def show_effect(panel, kind: str) -> None:
-    """Montre le clip aux trois effets avec ``kind`` sélectionné dans la liste (les réglages sont reconstruits)."""
+    """Montre le clip aux effets avec ``kind`` sélectionné dans la liste (les réglages sont reconstruits)."""
     panel.show_clip(effect_view(kind))
     panel.effects_list.setCurrentRow(EFFECT_SCENARIOS.index(kind))
     QApplication.processEvents()

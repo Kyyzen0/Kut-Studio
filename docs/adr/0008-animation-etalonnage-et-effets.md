@@ -1,6 +1,6 @@
 # ADR-0008 : animer l'étalonnage et les paramètres des effets de clip
 
-**Statut :** Accepté le 2026-10-18 (trois décisions de cadrage prises avec l'utilisateur, voir « Décisions prises »). Étapes 1 à 4 du plan faites (la 4, l'interface, le 2026-10-19).
+**Statut :** Accepté le 2026-10-18 (trois décisions de cadrage prises avec l'utilisateur, voir « Décisions prises »). Étapes 1 à 5 du plan faites (la 4, l'interface, le 2026-10-19 ; la 5, `sendcmd` pour le flou, l'aberration chromatique et le rayon de la lueur, le 2026-10-20).
 **Date :** 2026-10-18
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -173,7 +173,7 @@ clés » ferait pointer les courbes vers les effets d'origine. La décision :
 2. **Cibles des effets + format + cycle de vie** : `fx.*` enregistrées (découpage par la droite, test de garde « aucun nom de paramètre ne contient de point »), constante de version 20 conditionnelle, `effective_effect_parameters`, **cycle de vie** (suppression, préréglage, collage avec table de correspondance des identifiants, coupe et duplication, orphelins tolérés puis nettoyés). Tests : aller-retour d'un fichier, ancien build refuse, identifiant à points, suppression puis annulation, préréglage, collage « Effets + Images clés » (les courbes animent les **nouveaux** effets), coupe d'un clip animé, image clé orpheline au chargement. Sans rendu encore.
 3. **Rendu des effets (fait, résultats ci-dessous)** : par expression (`eq`, `vignette`, `geq`) à l'export, uniformes par image dans le moniteur, parité export / GPU sur des images échantillonnées, `RENDER_ENGINE_VERSION`.
 4. **Interface des effets (faite, résultats ci-dessous)** : branche « image clé » dans le panneau Effets, losanges, menu, éditeur de courbes, niveau d'usage, manifeste d'énumération.
-5. **Effets hors expression** via `sendcmd`, selon la validation de l'étape 1 : **flou** (`gblur`, `sigma` + `sigmaV`) et **aberration chromatique** (`rgbashift`, `rh` / `bh`) sont validés ; la **lueur** n'est animable que pour son rayon (`gblur`), son gain passe par `lutrgb` (coût, voir « Export ») ; la **netteté** (`unsharp`) n'est **pas animable** par cette voie et reste statique dans ce plan.
+5. **Effets hors expression** via `sendcmd` (fait le 2026-10-20, résultats ci-dessous) : **flou** (`gblur`, `sigma` + `sigmaV`), **aberration chromatique** (`rgbashift`, `rh` / `bh`) et **rayon de la lueur** (`gblur` du bloom) sont rendus et enregistrés ; le **gain et le seuil de la lueur** (`lutrgb`, coût) et la **netteté** (`unsharp`, ignore les commandes) restent statiques.
 6. **Cibles et rendu de l'étalonnage** : `color.*`, `effective_grade`, export par expression (`eq`, `hue`) puis `sendcmd` pour le reste (`colorbalance`, `colorchannelmixer`, `curves`), `RENDER_ENGINE_VERSION`. **Commence par une mesure** : une alternative à `lutrgb` pour l'exposition et les roues (coût de 0,2 s et 0,07 s par image), faute de quoi ces paramètres restent statiques.
 7. **Moniteur fidèle d'abord** pour l'étalonnage animé, LUT cuite à l'arrêt avec les valeurs évaluées.
 8. **Interface de l'étalonnage** : losanges dans le panneau Couleur.
@@ -267,6 +267,77 @@ tests dont celui du cas (c).
 **Non fait / limites.** Rien n'a été vu dans l'application réelle, seulement hors écran. Les raccourcis clavier d'animation ne
 visent un réglage d'effet que s'il est la propriété active (clic sur son losange ou sa courbe) ; la timeline ne dessine pas les
 images clés d'effets (seul le losange de l'inspecteur et l'éditeur de courbes les montrent).
+
+---
+
+## Résultats de l'étape 5 (2026-10-20) : flou, aberration chromatique, rayon de la lueur par `sendcmd`
+
+**Rendu et enregistré** : `blur.intensity` (`gblur` : `sigma` **et** `sigmaV`), `chromatic_aberration.intensity` (`rgbashift` : `rh` et
+`bh` opposés, entiers) et `glow.radius` (le `gblur` du bloom, plancher 0,01 comme en statique), à l'export, à l'aperçu fidèle
+(même graphe) et au moniteur GPU (valeur évaluée à l'image courante par `evaluated_effects`, sans code de plus : le registre
+suffit). Nouveau module `core/effect_sendcmd.py` ; le registre se scinde en `EXPRESSION_EFFECT_PARAMS` (étape 3) et
+`SENDCMD_EFFECT_PARAMS`, `ANIMATABLE_EFFECT_PARAMS` en est l'union (`PENDING_EFFECT_PARAMS` ne garde que la brume de chaleur).
+Refusés (interface : pas de losange ; verbes : « pas animable » ou valeur hors du choix de `parameter`) : netteté, seuil et gain de
+la lueur, brume de chaleur. Moteur de rendu inchangé (13) : un projet sans courbe sur ces réglages produit exactement le graphe
+d'avant (testé : aucun `sendcmd`, aucun fichier ; les graphes des tests d'or de l'étape 3 sont inchangés), et le format est
+écrit en **version 23 conditionnelle** (`SENDCMD_ANIMATION_VERSION`) : la 0.8.0 publiée lit la 22 mais n'a pas ces trois cibles et rendrait ces réglages à leur valeur de base sans rien dire. La 23 n'est écrite que si un clip a une image clé sur un paramètre de `SENDCMD_EFFECT_PARAMS` dont l'effet existe (le registre décide, pas une liste en dur) ; une courbe de vignette ou de correction de couleur (déjà publiées) reste en 20 ; la 23 l'emporte sur la 22 (scène 3D) ; un projet sans courbe est écrit octet pour octet comme avant.
+
+**Coût** (`tools/measure_sendcmd_cost.py`, la chaîne et le fichier de commandes de l'application, 1920x1080, 150 images,
+`-f null`, meilleur de deux ; la valeur statique est la moyenne de la courbe). Rapport animé / statique :
+
+| Réglage (filtre) | FFmpeg | Statique | 2 images clés | 10 images clés |
+|---|---|---|---|---|
+| flou (`gblur`) | 6.1.1 | 0,73 s | 0,75 s (×1,03) | 0,75 s (×1,03) |
+| flou (`gblur`) | 7.1.5 | 0,75 s | 0,76 s (×1,01) | 0,75 s (×1,00) |
+| flou (`gblur`) | 9.0.2 | 0,63 s | 0,63 s (×1,00) | 0,64 s (×1,02) |
+| rayon du bloom (`gblur`, graphe `split` / `blend`) | 6.1.1 | 3,29 s | 3,08 s (×0,94) | 3,10 s (×0,94) |
+| rayon du bloom (`gblur`, graphe `split` / `blend`) | 7.1.5 | 3,16 s | 3,13 s (×0,99) | 3,11 s (×0,98) |
+| rayon du bloom (`gblur`, graphe `split` / `blend`) | 9.0.2 | 2,15 s | 2,14 s (×1,00) | 2,19 s (×1,02) |
+| aberration chromatique (`rgbashift`) | 6.1.1 | 1,13 s | 1,12 s (×0,99) | 1,13 s (×1,00) |
+| aberration chromatique (`rgbashift`) | 7.1.5 | 1,14 s | 1,28 s (×1,12) | 1,09 s (×0,96) |
+| aberration chromatique (`rgbashift`) | 9.0.2 | 0,53 s | 0,51 s (×0,96) | 0,48 s (×0,91) |
+
+(6.1 et 7.1 sont des images Docker amd64 émulées sur arm64 : les rapports comptent, pas les temps entre versions.) Le fichier de commandes a une
+ligne par **changement de valeur**, pas par image clé : 10 Ko pour 5 s à 30 i/s (150 lignes), 0,06 à 0,11 Mo pour 60 s
+(`docs/ffmpeg-sendcmd.md`). Critère de la règle de l'étape 1 (plus de ×3 : non enregistré) : les trois sont à ×1, enregistrés.
+
+**Génération** (mesurée à l'étape 1, appliquée) : une instruction par image, à `(n − 0,5) / cadence`, depuis le temps local de la
+première image du flux (0 ; `origin − début du clip` pour un segment d'aperçu ; 0 pour un arrêt sur image), cadence exacte
+(`Fraction`, 29,97 = 30000/1001), valeurs de `AnimatableProperty.evaluate` (courbe construite une fois) puis conversion de la
+chaîne statique ; une ligne seulement si la valeur change ; filtres nommés `gblur@<étiquette du graphe>` (étiquette réduite à
+`[0-9A-Za-z_]`). Borne posée **avant** d'allouer le texte : 2 000 000 d'instructions, message sans donnée de l'utilisateur.
+`sendcmd` est placé juste avant le filtre visé dans la chaîne des effets (donc après le recalage de `PTS` au temps local du clip et
+après `scale` / `rotate`), et avant `format=rgba,split` pour le bloom.
+
+**Segment hors grille.** `setpts` tronque `skip / TB` au tick : un segment dont l'origine tombe entre deux images (ou, par erreur d'arrondi flottant, `0,3 / 0,1 = 2,9999999999999996`) a sa première image un tick plus tôt que `skip`. `segment_start` reproduit la troncature (mesuré contre `showinfo` sur 9 cadences x 13 origines) et le fichier de commandes vise ces images ; le montage double par ailleurs la première image d'un segment hors grille (comportement d'avant, non traité).
+
+**Fichier temporaire.** `_build_filter_complex(…, temporary_files=None)` (paramètre neuf, valeur par défaut `None` : l'interface ne
+change pas) pose un contexte (`command_files`) où chaque fichier de commandes est un fichier unique ajouté à la liste de
+l'appelant : `build_export_command` (la sienne, vidée en cas d'échec de la construction après l'écriture), `ExportEngine` (scopes :
+`take_temporary_files`), `build_preview_command` / `build_filter_complex` (la liste `temporary_files` que le moteur d'aperçu
+supprime déjà après le rendu). Sans liste (outils, bancs, tests) : un fichier **nommé par son contenu** dans un dossier de
+processus supprimé à la sortie. Le chemin cité passe par `_escape_filter_path` (`C\:`, `/`, apostrophe fermée-échappée-rouverte) ;
+un chemin avec un caractère de contrôle est refusé. FFmpeg réel : un dossier « Jean D'Arc, [v1]; a=b » avec un fichier « x'y.cmd »
+est lu. Les empreintes de cache (`fingerprint_plan`) construisent la chaîne **sans** contexte de flux : elles ne dépendent donc
+jamais du nom aléatoire d'un fichier.
+
+**Parité** (`tools/validate_fx_render.py`, image `n` animée contre rendu statique à la valeur de la courbe) : écart maximal **0**
+niveau sur FFmpeg 6.1.1, 7.1.5 et 9.0.2, avec et sans `-cpuflags 0`, pour le flou (linéaire ; Bézier + maintien), le rayon du bloom
+(ease) et l'aberration chromatique (linéaire) ; **2** niveaux pour une aberration qui part de 0 (la conversion RVB aller-retour des
+images à décalage 0, que le rendu statique à 0 n'a pas : limite connue, documentée, sans effet visible). Tests : image `n` contre
+statique, 29,97 i/s, clip entier contre segment d'aperçu (clip décalé, source rognée ; 24 vers 10 i/s ; vitesse ×2), arrêt sur image,
+parité avec la référence du moniteur (même écart que le statique à la même valeur, et nettement plus grand si le moniteur gardait la
+valeur de la première image). Constat hors animation : à la même valeur, l'écart moyen / p99 entre l'export et la référence du
+moniteur pour le flou grandit avec σ (0,73 / 7,6 à 4 ; 2,09 / 21,6 à 12 sur la mire lisse de ces tests) : c'est la formule du
+moniteur, pas l'animation (le seuil de `test_gpu_pipeline` est calibré sur une autre image).
+
+**Cycle de vie, composition, script.** Les nouveaux réglages passent par les mêmes points d'entrée : suppression d'un effet et
+annulation (une étape d'historique), coupe, duplication, refus de la conversion en composition, plafond de
+`MAX_KEYFRAMES_PER_CLIP`, piste verrouillée (interface : rangées désactivées **et** signaux refusés ; verbes : refus, projet
+inchangé). Tous testés pour les trois réglages (`tests/test_effect_sendcmd_model.py`, `tests/test_effect_sendcmd_ui.py`).
+
+**Non fait / limites.** Rien n'a été vu dans l'application réelle, seulement hors écran. Les images clés du flou, de l'aberration et
+du rayon ne s'affichent pas dans la timeline (comme celles des autres effets) ; les mêmes raccourcis qu'à l'étape 4 les visent.
 
 ---
 

@@ -195,13 +195,13 @@ Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la
 (`max_transform_value`), aux côtés multiples de 4 : FFmpeg fixe la taille de sortie de `rotate` à la première image
 (`RENDER_ENGINE_VERSION` 9).
 
-## Paramètres d'effets : animer la correction de couleur et la vignette (ADR-0008, étapes 2 à 4)
+## Paramètres d'effets : animer la correction de couleur, la vignette, le flou, l'aberration chromatique et le rayon de la lueur (ADR-0008, étapes 2 à 5)
 
 ### Pour l'utilisateur
 
-Sont animables : la **luminosité, le contraste et la saturation** de la *Correction couleur*, et l'**intensité** de la
-*Vignette*. Aucun autre réglage d'effet ne l'est encore : flou, netteté, lueur, aberration chromatique et brume de chaleur
-restent fixes (pas de losange sur leurs réglages).
+Sont animables : la **luminosité, le contraste et la saturation** de la *Correction couleur*, l'**intensité** de la
+*Vignette*, l'**intensité du Flou**, l'**intensité de l'Aberration chromatique** et le **rayon du Bloom** (la lueur). Les autres
+réglages restent fixes, sans losange : la **netteté**, le **seuil et l'intensité du Bloom** et la **brume de chaleur**.
 
 1. Sélectionnez un clip vidéo, onglet **Effets** de l'inspecteur, puis l'effet dans la liste.
 2. Sous chaque réglage animable, la rangée **‹ ◆ ›** fonctionne comme celle de Mouvement : le losange pose (ou retire) une
@@ -225,8 +225,10 @@ menu du losange, au niveau Avancé.
 révèle le groupe Effets) ; le menu du losange n'offre que « Désactiver » et « Supprimer l'animation de l'effet » en Studio,
 l'interpolation, le copier / coller et l'éditeur de courbes en Avancé. Changer de niveau ne perd aucune valeur.
 
-**Format** : un fichier qui contient au moins une courbe d'effet s'écrit en version 20 et ne s'ouvre plus dans une version
-antérieure de Kut-Studio ; sans courbe il reste en version 17 (inchangé).
+**Format** : un fichier qui contient une courbe de correction de couleur ou de vignette s'écrit en version 20 ; un fichier qui
+contient une courbe de **flou, de rayon du Bloom ou d'aberration chromatique** (rendues par `sendcmd`) s'écrit en version **23**
+(la 0.8.0 publiée lit la 22 mais ne connaît pas ces réglages : elle les rendrait à leur valeur de base sans rien dire). Une
+version antérieure refuse ces fichiers au lieu de perdre l'animation ; sans courbe d'effet, le fichier garde la version qu'il avait.
 
 ### Modèle et rendu
 
@@ -262,7 +264,7 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   ignorée, puis retirée à la prochaine modification de la chaîne d'effets du clip. Un test de garde
   (`tests/test_effects_write_guard.py`) échoue si une nouvelle écriture de `clip.effects` n'est pas classée.
 - **Format** : un fichier qui contient au moins une image clé `fx.*` (ou `color.*`, réservé à l'étalonnage) s'écrit en version
-  20 (`EFFECT_ANIMATION_VERSION`) ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
+  20 (`EFFECT_ANIMATION_VERSION`), ou 23 (`SENDCMD_ANIMATION_VERSION`) si l'une porte sur le flou, l'aberration chromatique ou le rayon du Bloom ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
 
 ### Rendu (étape 3)
 
@@ -293,6 +295,37 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   `eq` de l'export (écart moyen 1,9 à −0,1 et 2,8 à −0,2, contre 0,4 à +0,1 ; mesuré sur des valeurs fixes). Ce n'est pas
   l'animation ; les tests de parité animée prennent une luminosité de 0 à 0,3.
 
+### Flou, aberration chromatique, rayon du Bloom : fichier de commandes `sendcmd` (étape 5)
+
+Ces trois filtres n'acceptent pas d'expression du temps : `gblur` (`sigma`), `rgbashift` (`rh`, `bh`). Mais ils acceptent de
+changer d'option en cours de route (`sendcmd`, validé sur FFmpeg 6.1.1, 7.1.5 et 9.0.2, `docs/ffmpeg-sendcmd.md`).
+
+- **Fichier de commandes** (`core/effect_sendcmd.py`) : écrit à la construction du graphe dans un fichier temporaire (le dossier
+  temporaire du système), cité dans le graphe par `sendcmd=f='…'` avec le chemin échappé (lettre de lecteur Windows `C\:`,
+  barres obliques, apostrophe fermée-échappée-rouverte ; un chemin avec un saut de ligne ou un caractère de contrôle est refusé),
+  supprimé avec les autres fichiers temporaires de l'export, de l'aperçu ou de l'analyse des scopes (même après un échec de la
+  construction de la commande). Hors de ces appelants (outils, bancs), un fichier **nommé par son contenu** dans un dossier de
+  processus supprimé à la sortie.
+- **Une instruction par image**, écrite **une demi-image avant** l'image visée (`(n − 0,5) / cadence`), avec la valeur que lit
+  l'inspecteur : `AnimatableProperty.evaluate` (linéaire, Bézier, maintien, ease), bornée par le modèle, puis la conversion de la
+  chaîne statique (`× pixel_scale`, arrondi entier de l'aberration, plancher de 0,01 du rayon du Bloom). Une ligne n'est écrite
+  que si la valeur change (un maintien ne coûte qu'une instruction). `gblur` reçoit `sigma` **et** `sigmaV`, `rgbashift` `rh` et
+  `bh` opposés. Les filtres visés sont **nommés** (`gblur@v0fx0`) : plusieurs effets animés d'un même graphe ne se confondent pas.
+- **Base de temps** : les instants sont ceux de `PTS` à l'entrée de `sendcmd`, donc le **temps local du clip** (la même remise à
+  zéro que pour `t` des expressions : clip entier, segment d'aperçu qui démarre en milieu de clip, clip remappé, arrêt sur
+  image). La cadence est exacte (29,97 = 30000/1001).
+- **Aberration chromatique à zéro** : à décalage 0 le rendu statique n'ajoute aucun filtre ; animée, la conversion RVB
+  aller-retour reste présente pour les images à 0 : écart d'au plus 2 niveaux avec le rendu statique à 0 sur ces images. Une
+  courbe qui reste à 0 n'ajoute rien.
+- **Pas de courbe** : un projet sans image clé sur ces réglages produit **exactement** le graphe d'avant (aucun fichier,
+  aucun `sendcmd`), donc `RENDER_ENGINE_VERSION` ne change pas (13).
+- **Moniteur** : `evaluated_effects` évalue déjà la valeur à l'image courante pour tout réglage enregistré ; `program_for`
+  reçoit le flou, le décalage et le rayon évalués. L'écart avec l'export animé est celui d'un effet statique de même valeur.
+- **Coût** (1080p, 150 images, FFmpeg 6.1.1 / 7.1.5 / 9.0.2) : même temps qu'en statique (×0,9 à ×1,15 ; `tools/measure_sendcmd_cost.py`),
+  à 2 comme à 10 images clés (le fichier a une ligne par changement, pas par image clé). Détail dans l'ADR-0008.
+- **Limites** : le seuil et le gain du Bloom (`lutrgb`, 0,2 s par commande) et la netteté (`unsharp` ignore les commandes) restent
+  statiques. Un clip de plus de ~5 h à 100 i/s dépasse la borne de 2 000 000 d'instructions et est refusé à la construction.
+
 ### Brume de chaleur : pourquoi elle n'est pas enregistrée
 
 - **Coût de `geq`** : `geq` évalue l'expression pour **chaque pixel de chaque plan** ; y mettre la courbe multiplie le coût.
@@ -318,8 +351,8 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   masques (`mask.<id>.*`, une famille par masque) — voir
   `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
   les couleurs ne sont pas animables. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
-  (luminosité, contraste, saturation) et la vignette (intensité) ; les autres réglages d'effets restent statiques (voir la
-  section précédente).
+  (luminosité, contraste, saturation), la vignette, le flou et l'aberration chromatique (intensité) et le rayon du Bloom ; les
+  autres réglages d'effets restent statiques (voir la section précédente).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.

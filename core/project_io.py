@@ -117,7 +117,7 @@ FORMAT_NAME = "kut-studio-project"
 CURRENT_VERSION = 17
 """Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18,
 :data:`COLOR_MATRIX_VERSION` pour la 19, :data:`EFFECT_ANIMATION_VERSION` pour la 20,
-:data:`TRANSITION_CATALOG_VERSION` pour la 21 et :data:`SCENE3D_VERSION` pour la 22).
+:data:`TRANSITION_CATALOG_VERSION` pour la 21, :data:`SCENE3D_VERSION` pour la 22 et :data:`SENDCMD_ANIMATION_VERSION` pour la 23).
 
 La version 22 n'est écrite que par un projet qui contient un calque « scène 3D » (:mod:`core.scene3d`) ; le chargeur la lit
 comme la 17, un ancien Kut-Studio la refuse.
@@ -126,6 +126,9 @@ La version 20 n'est écrite que par un projet dont un clip porte une image clé 
 d'effet animé) ou ``color.<champ>`` (étalonnage animé), voir ``docs/adr/0008-animation-etalonnage-et-effets.md`` ; le
 chargeur la lit comme la 17, un ancien Kut-Studio la refuse (il ignorerait sinon ces images clés en silence et les perdrait
 à la sauvegarde suivante).
+
+La version 23 n'est écrite que par un projet qui anime le flou, l'aberration chromatique ou le rayon du Bloom
+(:data:`SENDCMD_ANIMATION_VERSION`).
 
 La version 19 n'est écrite que par un projet dont un média force son espace colorimétrique (clé ``color_matrix`` du média,
 :mod:`core.color_matrix`) ; le chargeur la lit comme la 17, un ancien Kut-Studio la refuse.
@@ -201,9 +204,19 @@ s'écrit octet pour octet comme avant (17 à 21 selon son contenu) ; un Kut-Stud
 explicite de ``_validate_envelope`` au lieu d'ouvrir un calque de type inconnu (qui perdrait la scène en silence). Le chargeur
 lit 17 à 22 de la même façon."""
 
+SENDCMD_ANIMATION_VERSION = 23
+"""Version écrite par un projet qui contient une image clé sur un paramètre d'effet rendu par ``sendcmd`` (flou, aberration
+chromatique, rayon du Bloom : :data:`core.effect_targets.SENDCMD_EFFECT_PARAMS`, ADR-0008 étape 5). La 0.8.0 publiée lit la
+version 22 mais ne connaît pas ces trois cibles : elle ouvrirait le fichier en rendant ces réglages à leur valeur de base, sans
+rien dire. Même règle « version minimale nécessaire » : une courbe de vignette ou de correction de couleur (déjà publiées) reste
+en 20, un projet sans courbe d'effet s'écrit octet pour octet comme avant, et la 23 l'emporte sur les autres conditions
+(scène 3D comprise). Un Kut-Studio qui ne la connaît pas refuse le fichier avec le message de ``_validate_envelope``. Une
+courbe dont l'effet n'existe pas (orpheline) est ignorée par tous les builds : elle n'exige pas la 23. Le chargeur lit 17 à 23
+de la même façon."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION,
-     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION}
+     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION, SENDCMD_ANIMATION_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -561,6 +574,37 @@ def payload_uses_effect_animation(node: Any) -> bool:
     return False
 
 
+def payload_uses_sendcmd_animation(node: Any) -> bool:
+    """``True`` si un clip sérialisé a une image clé ``fx.<effet>.<paramètre>`` dont l'effet existe et dont le paramètre est un de
+    ceux de :data:`core.effect_targets.SENDCMD_EFFECT_PARAMS` (le registre décide : un futur paramètre ``sendcmd`` y entre sans
+    toucher ici). Le nom du paramètre ne suffit pas (``intensity`` est aussi celui de la vignette) : on lit le type de l'effet
+    dans le même clip."""
+    from .effect_targets import SENDCMD_EFFECT_PARAMS
+    from .effects_model import split_fx_property
+
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            effects, animation = item.get("effects"), item.get("animation")
+            if isinstance(effects, list) and isinstance(animation, list):
+                kinds = {e.get("id"): e.get("type") for e in effects if isinstance(e, dict)}
+                for keyframe in animation:
+                    name = keyframe.get("property_name") if isinstance(keyframe, dict) else None
+                    parts = split_fx_property(name) if isinstance(name, str) else None
+                    if parts is not None and parts[0] in kinds:
+                        try:
+                            wanted = SENDCMD_EFFECT_PARAMS.get(EffectType(kinds[parts[0]]), ())
+                        except ValueError:
+                            continue
+                        if parts[1] in wanted:
+                            return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
 _SCENE3D_VALUE = "scene3d"      # valeur sérialisée de GraphicType.SCENE3D (core.graphics : import différé du module)
 _CATALOG_TYPE_VALUES = frozenset(member.value for member in CATALOG_EXTENSION_TYPES)
 
@@ -619,6 +663,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
         payload[_VERSION_KEY] = TRANSITION_CATALOG_VERSION
     if payload_uses_scene3d(payload[_PROJECT_KEY]):
         payload[_VERSION_KEY] = SCENE3D_VERSION
+    if payload_uses_sendcmd_animation(payload[_PROJECT_KEY]):
+        payload[_VERSION_KEY] = SENDCMD_ANIMATION_VERSION
     return payload
 
 

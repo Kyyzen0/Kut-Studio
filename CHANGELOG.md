@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- Animer le flou, l'aberration chromatique et le rayon du Bloom avec des images clés (losanges ‹ ◆ › sous le réglage, éditeur de courbes, scripts `add_effect_keyframe`), à l'export comme dans le moniteur et l'aperçu fidèle, sans temps d'export en plus ; la netteté, le seuil et l'intensité du Bloom et la brume de chaleur restent fixes. **À savoir** : un projet qui contient une courbe de flou, de rayon du Bloom ou d'aberration chromatique s'enregistre au format 23 et ne s'ouvre plus dans une version antérieure (qui le refuse au lieu de perdre l'animation) ; sans ces courbes le fichier reste écrit comme avant.
 - Interne : Kut-3D : formes de base (cube, sphère, plan, cylindre, cône, tore) décrites par leurs paramètres dans le fichier de scène `.kut3d` (format 2, seulement si la scène en contient ; un fichier sans forme reste identique), générées et rendues comme n'importe quel modèle, avec `Film.primitive(...)` côté script. Dimensions, tessellation et nombre de triangles sont bornés. Voir [docs/kut3d-scene.md](docs/kut3d-scene.md).
 
 ## [0.8.0] - 2026-10-20

@@ -199,3 +199,7 @@ L'expression en `n` compte à partir de la première image que reçoit **ce** fi
 - Plusieurs cibles différentes dans une même ligne (le bloom les commande sur deux lignes de cas séparées).
 - Durées de plusieurs minutes : le coût de `lutrgb` est extrapolé de 150 images, pas mesuré sur 1800.
 - La netteté de nœud (`convolution`) : ses coefficients ne sont pas des options commandables.
+
+## Utilisation dans l'application (étape 5)
+
+Flou (`gblur`), aberration chromatique (`rgbashift`) et rayon du Bloom (`gblur`) sont animés par `sendcmd` à l'export et à l'aperçu fidèle : `core/effect_sendcmd.py`. Le coût mesuré avec le vrai graphe (1080p, 150 images) est celui du statique, sur les trois FFmpeg : voir l'ADR-0008, « Résultats de l'étape 5 », et `tools/measure_sendcmd_cost.py`. L'exposition et les roues (`lutrgb`, 0,2 s et 0,07 s par commande) n'y sont pas.

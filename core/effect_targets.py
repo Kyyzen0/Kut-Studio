@@ -35,24 +35,42 @@ from .effects_model import (
     update_effect_parameters,
 )
 
-ANIMATABLE_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
+EXPRESSION_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
     EffectType.VIGNETTE: ("intensity",),
 }
-"""Paramètres d'effet animables **et rendus** : une seule source (ADR-0008, décision 1). Règle : un paramètre n'est
-enregistré que si son rendu existe **et** tient son budget. L'étape 3 rend ceux qui s'écrivent en **expression** FFmpeg
-(:mod:`core.effect_expressions`) : ``eq`` (``eval=frame``) et ``vignette`` (``angle``), plus le moniteur GPU (paramètres
-évalués à l'instant courant). Aucun nom de paramètre ne contient de point (garde : ``tests/test_effect_targets.py``), ce qui
-rend le découpage par la droite non ambigu."""
+"""Paramètres d'effet rendus par une **expression** FFmpeg (étape 3, :mod:`core.effect_expressions`) : ``eq``
+(``eval=frame``) et ``vignette`` (``angle``)."""
 
-PENDING_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
+SENDCMD_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.BLUR: ("intensity",),
     EffectType.GLOW: ("radius",),
     EffectType.CHROMATIC_ABERRATION: ("intensity",),
+}
+"""Paramètres d'effet rendus par un fichier de commandes ``sendcmd`` (étape 5, :mod:`core.effect_sendcmd`) : ``gblur``
+(``sigma`` et ``sigmaV``) pour le flou et le rayon de la lueur, ``rgbashift`` (``rh`` / ``bh``) pour l'aberration
+chromatique. Validés sur FFmpeg 6.1, 7.1 et 9.0 (``docs/ffmpeg-sendcmd.md``), coût mesuré (ADR-0008, « Résultats de
+l'étape 5 »)."""
+
+
+def _union(*sources: dict[EffectType, tuple[str, ...]]) -> dict[EffectType, tuple[str, ...]]:
+    merged: dict[EffectType, tuple[str, ...]] = {}
+    for source in sources:
+        for kind, names in source.items():
+            merged[kind] = (*merged.get(kind, ()), *names)
+    return merged
+
+
+ANIMATABLE_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = _union(EXPRESSION_EFFECT_PARAMS, SENDCMD_EFFECT_PARAMS)
+"""Paramètres d'effet animables **et rendus** : une seule source (ADR-0008, décision 1). Règle : un paramètre n'est
+enregistré que si son rendu existe **et** tient son budget : l'union des rendus par expression (étape 3) et par
+``sendcmd`` (étape 5), plus le moniteur GPU (paramètres évalués à l'instant courant). Aucun nom de paramètre ne contient
+de point (garde : ``tests/test_effect_targets.py``), ce qui rend le découpage par la droite non ambigu."""
+
+PENDING_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),
 }
-"""Paramètres prévus, **pas encore enregistrés** (pas de cible, pas d'image clé rendue). Flou, rayon de la lueur et aberration
-chromatique viendront à l'étape 5 de l'ADR par ``sendcmd`` (validé sur FFmpeg 6.1, 7.1 et 9.0).
+"""Paramètres prévus, **pas encore enregistrés** (pas de cible, pas d'image clé rendue).
 
 Brume de chaleur : son rendu par expression ``geq`` est **écrit et vérifié** (:func:`core.effect_expressions.heat_haze_shift` ;
 parité export / moniteur et base de temps testées en enregistrant temporairement les paramètres) mais **non enregistré**,
@@ -182,7 +200,9 @@ def evaluated_effects(effects: Any, animation: Any, local_time: float) -> tuple[
 __all__ = [
     "ANIMATABLE_EFFECT_PARAMS",
     "EXCLUDED_EFFECT_PARAMS",
+    "EXPRESSION_EFFECT_PARAMS",
     "PENDING_EFFECT_PARAMS",
+    "SENDCMD_EFFECT_PARAMS",
     "evaluated_effects",
     "effective_effect_parameters",
 ]
