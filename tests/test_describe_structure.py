@@ -164,11 +164,19 @@ def test_a_huge_sample_grid_is_summarised_quickly():
 def test_ten_thousand_tracked_clips_are_described_in_reasonable_time_with_a_bounded_output():
     samples = {index: Sample(10.0, 20.0, 1.0, SampleStatus.MANUAL if index % 10 == 0 else SampleStatus.TRACKED) for index in range(3000)}
     shared = TrackData.from_samples(30.0, samples, source_size=(1920, 1080))          # immuable : partagée sans copie, comme l'historique
+    # Le temps absolu dépend de la machine (la CI Linux mesure sous couverture de code : 62 s pour 5 s en local) : on prouve la
+    # CROISSANCE LINÉAIRE (4 fois plus de clips, au plus ~8 fois plus de temps) et on garde une borne absolue très large contre un blocage.
+    small = _grid_project(2_500, shared)
+    describe(small)                                                                    # chauffe (imports paresseux, caches)
+    started = time.perf_counter()
+    describe(small)
+    small_elapsed = max(time.perf_counter() - started, 1e-3)
     project = _grid_project(10_000, shared)
     started = time.perf_counter()
     data = describe(project)
     elapsed = time.perf_counter() - started
-    assert elapsed < 60.0, f"10 000 clips suivis : {elapsed:.1f} s"
+    assert elapsed < 600.0, f"10 000 clips suivis : {elapsed:.1f} s"
+    assert elapsed / small_elapsed < 8.0, f"croissance non linéaire : 2 500 clips {small_elapsed:.2f} s, 10 000 clips {elapsed:.2f} s"
     clips = _clips(data)
     assert len(clips) == 10_000
     per_tracker = {len(json.dumps(clips[name]["tracking"])) for name in ("c0", "c5000", "c9999")}
