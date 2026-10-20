@@ -1630,9 +1630,11 @@ from .composition_verbs import COMPOSITION_VERBS  # noqa: E402
 from .edit_verbs import CLIP_EDIT_VERBS, MARKER_VERBS, TRACK_VERBS  # noqa: E402
 from .effect_verbs import EFFECT_VERBS  # noqa: E402
 from .guide_verbs import GUIDE_VERBS  # noqa: E402
+from .keyframe_verbs import KEYFRAME_VERBS  # noqa: E402
 from .layer_verbs import LAYER_VERBS  # noqa: E402
 from .library_verbs import LIBRARY_VERBS  # noqa: E402
 from .mask_verbs import MASK_VERBS  # noqa: E402
+from .speed_curve_verbs import SPEED_CURVE_VERBS  # noqa: E402
 from .multicam_verbs import MULTICAM_VERBS  # noqa: E402
 from .sequence_verbs import SEQUENCE_VERBS  # noqa: E402
 from .preset_verbs import PRESET_VERBS  # noqa: E402
@@ -1640,12 +1642,15 @@ from .selection_verbs import SELECTION_VERBS  # noqa: E402
 from .time_verbs import TIME_VERBS  # noqa: E402
 from .tracking_verbs import TRACKING_VERBS  # noqa: E402
 from .transform_verbs import TRANSFORM_VERBS  # noqa: E402
+from .transition_verbs import TRANSITION_VERBS  # noqa: E402
 
 _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "move_clip": CLIP_EDIT_VERBS,               # le montage (rogner, couper, glisser…) juste après le déplacement
     "add_track": TRACK_VERBS,
     "add_marker": MARKER_VERBS + GUIDE_VERBS,    # les guides du moniteur après les repères
     "set_clip_enabled": EFFECT_VERBS,           # les effets d'un clip juste après lui, comme dans la documentation
+    "add_keyframe": KEYFRAME_VERBS + SPEED_CURVE_VERBS,   # images clés d'effet, édition d'une image clé, courbe de vitesse (suite)
+    "add_transition": TRANSITION_VERBS,
     "remove_keyframe": ANIMATION_VERBS,         # les images clés de masque juste après celles du transform
     "clear_crop": MASK_VERBS + TRACKING_VERBS,    # le suivi et la stabilisation juste après les masques
     "remove_transition": TIME_VERBS + TRANSFORM_VERBS,   # vitesse et transform juste avant les images clés
