@@ -66,6 +66,7 @@ from ..sequences import (
     insert_sequence_clip, rename_sequence, set_sequence_format,
 )
 from ..timeline_editing import add_marker
+from .sequence_rules import clips_in, require_sequence_room
 from .path_nodes import ANCHOR_FIELDS, NODE_FIELDS, nodes_to_arrays
 from ..timeline_operations import (
     add_clip_to_track, add_subtitle_clip, delete_clip, find_clip, move_clip, set_clip_enabled,
@@ -1015,6 +1016,7 @@ def _require_free_sequence_name(project: Project, name: str, *, besides: str = "
 
 def _create_sequence(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
+        require_sequence_room(project)
         if a.get("name") is not None:
             _require_free_sequence_name(project, a["name"])
         check_sequence_format(a.get("width"), a.get("height"), a.get("fps"))      # ``create_sequence`` ne vérifie rien : l'interface ne passe jamais de taille
@@ -1050,6 +1052,7 @@ def _set_sequence_format(a: Mapping[str, Any]) -> Operation:
 def _duplicate_sequence(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         sequence_id = _sequence_id(project, a["sequence"])
+        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)))
         if a.get("name") is not None:
             _require_free_sequence_name(project, a["name"])
         return duplicate_sequence(project, sequence_id, a.get("name"), clone_id=a.get("id"))
@@ -1143,6 +1146,7 @@ def _effective_angle_name(name: str | None, asset: Any) -> str:
 
 def _create_multicam_source(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
+        require_sequence_room(project, clips=len(a["angles"]))          # un clip par angle
         source_name = a.get("name", "Multicam")                  # le défaut aussi : le modèle suffixerait « Multicam » s'il est pris
         _require_free_sequence_name(project, source_name)
         listed = a["angles"]
@@ -1627,7 +1631,10 @@ from .edit_verbs import CLIP_EDIT_VERBS, MARKER_VERBS, TRACK_VERBS  # noqa: E402
 from .effect_verbs import EFFECT_VERBS  # noqa: E402
 from .guide_verbs import GUIDE_VERBS  # noqa: E402
 from .layer_verbs import LAYER_VERBS  # noqa: E402
+from .library_verbs import LIBRARY_VERBS  # noqa: E402
 from .mask_verbs import MASK_VERBS  # noqa: E402
+from .multicam_verbs import MULTICAM_VERBS  # noqa: E402
+from .sequence_verbs import SEQUENCE_VERBS  # noqa: E402
 from .preset_verbs import PRESET_VERBS  # noqa: E402
 from .selection_verbs import SELECTION_VERBS  # noqa: E402
 from .time_verbs import TIME_VERBS  # noqa: E402
@@ -1644,6 +1651,9 @@ _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "remove_transition": TIME_VERBS + TRANSFORM_VERBS,   # vitesse et transform juste avant les images clés
     "update_track_insert": CLIP_AUDIO_VERBS,      # l'audio d'un clip après les inserts de piste
     "set_multicam_angle_offset": AUTOMATION_VERBS,   # rythme, plans, sous-titres, effets d'impact, modèles : en fin de table
+    "delete_sequence": SEQUENCE_VERBS,            # nest_clips et les versions de format juste après la gestion des séquences
+    "add_multicam_angle": MULTICAM_VERBS,         # création depuis des clips, aplatir, supprimer un angle, couleur
+    "import_media": LIBRARY_VERBS,                # la bibliothèque juste après l'import
     "delete_clip": SELECTION_VERBS,               # la sélection (supprimer, déplacer plusieurs clips) juste après les verbes d'un clip
     "reset_color_grade": PRESET_VERBS,            # les presets intégrés après l'étalonnage de base
     "set_media_color_matrix": COMPOSITION_VERBS,
