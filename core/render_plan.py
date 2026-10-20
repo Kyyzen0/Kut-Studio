@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 
 from .color_matrix import asset_ffmpeg_override
 from .effects_model import ClipEffect
+from .graphics import GraphicType
 from .project_model import Clip, MediaAsset, Project, Sequence, Track
 from .subtitle_io import SubtitleCue
 from .template_slots import is_photo_slot
@@ -257,6 +258,7 @@ class GraphicLayer:
     color_grade: object = None
     role: str = "draw"
     label: str = ""
+    source_in: float = 0.0           # point d'entrée du clip : le temps d'une scène 3D est source_in + temps local du clip
 
     @property
     def is_rig(self) -> bool:
@@ -670,9 +672,16 @@ class _PlanBuilder:
                         continue
                     if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
                         continue
-                    graphics_layers.append(
-                        _graphic_layer(clip, track, track_index, state=self.effective(clip, sequence))
-                    )
+                    layer = _graphic_layer(clip, track, track_index, state=self.effective(clip, sequence))
+                    if graphic.type == GraphicType.SCENE3D:
+                        # Scène 3D : fichier manquant ou illisible = carte à l'écran, refus à l'export (core.scene3d_card).
+                        from .scene3d_card import checked_scene3d_layer
+
+                        layer, issue = checked_scene3d_layer(layer, clip)
+                        if issue is not None:
+                            self.warnings.append(issue[0])
+                            self.missing_media.append(issue[1])
+                    graphics_layers.append(layer)
                 continue
             if track.type not in {"video", "audio"}:
                 continue
@@ -1079,6 +1088,7 @@ def _graphic_layer(
         color_grade=getattr(clip, "color_grade", None),
         role=role,
         label=clip.label,
+        source_in=float(clip.source_in),
     )
 
 

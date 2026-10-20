@@ -52,6 +52,7 @@ TYPE_NAMES = {  # type de calque -> clé i18n du nom affiché
     GraphicType.ADJUSTMENT: "mograph.type.adjustment",
     GraphicType.NULL: "mograph.type.null",
     GraphicType.LIGHT: "light.library.name",
+    GraphicType.SCENE3D: "mograph.type.scene3d",
 }
 
 

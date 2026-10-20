@@ -431,6 +431,12 @@ class GraphicsScene:
                 values["light_time"] = grain_time(local)          # huit images de grain en boucle (cache)
             elif graphic.light_kind not in STATIC_KINDS:
                 values["light_time"] = round(local, 4)
+        if graphic.type == GraphicType.SCENE3D:
+            # Scène 3D : son instant vient du point d'entrée du clip (une coupe ou un rognage le déplace, la scène reprend où
+            # elle en était) ; une scène sans animation vaut toujours 0 (une seule image rendue, clé d'image stable).
+            from .scene3d import scene_time_at
+
+            values["scene_time"] = scene_time_at(graphic.source_path, float(getattr(layer, "source_in", 0.0)), local)
         if graphic.word_times:
             # Mot par mot ou karaoké posés par les temps des mots : ``reveal`` en découle (il prime sur sa courbe).
             from .text_runs import reveal_from_times, word_count

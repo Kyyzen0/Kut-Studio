@@ -506,6 +506,10 @@ def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, f
         image = IMAGES.get(graphic.source_path)
         if image is not None:
             painter.drawImage(QRectF(0, 0, width, height), image)
+    elif kind == GraphicType.SCENE3D:
+        from .scene3d import draw_scene
+
+        draw_scene(painter, graphic, width, height)
     elif kind == GraphicType.RECTANGLE:
         # Rectangle historique : contour **intérieur** (comme ``drawbox``).
         painter.fillRect(QRectF(0, 0, width, height), qcolor(graphic.fill_color))
@@ -798,6 +802,8 @@ class MographRenderer:
         if isinstance(graphic, GraphicOverlay):
             if graphic.type == GraphicType.IMAGE:
                 key.append(image_signature(graphic.source_path))
+            if graphic.type == GraphicType.SCENE3D:
+                key.append(self._scene3d_identity(graphic, evaluated.box))
             if graphic.type == GraphicType.GROUP:
                 key.append(repr(getattr(self.scene.layers[clip_id], "compositing", None)))
                 key.extend(self.layer_key(member, t) for member in self.scene.members(clip_id))
@@ -817,7 +823,16 @@ class MographRenderer:
         graphic = evaluated.graphic
         if isinstance(graphic, GraphicOverlay) and graphic.type == GraphicType.IMAGE:
             key.append(image_signature(graphic.source_path))
+        if isinstance(graphic, GraphicOverlay) and graphic.type == GraphicType.SCENE3D:
+            key.append(self._scene3d_identity(graphic, evaluated.box))
         return tuple(key)
+
+    @staticmethod
+    def _scene3d_identity(graphic: GraphicOverlay, box: tuple[float, float]) -> tuple:
+        """Instant, signature des fichiers, taille, moteur, échantillons et version du rendu d'une scène 3D (:mod:`core.scene3d`)."""
+        from .scene3d import render_identity
+
+        return render_identity(graphic, box)
 
     def content_texture_eligible(self, clip_id: str, t: float) -> bool:
         """``True`` si le calque peut être une texture locale animée par matrice.
@@ -833,6 +848,14 @@ class MographRenderer:
             return False
         if evaluated.masks:
             return False
+        if graphic.type == GraphicType.SCENE3D:
+            # Une scène animée donne une image neuve à chaque instant : la texture par contenu (rendue pour calculer la clé,
+            # puis encore pour dessiner) doublerait un rendu de ≈ 0,5 s et remplirait le cache. Elle suit le flux plein cadre,
+            # où chaque image distincte ne se rend qu'une fois. Une scène fixe n'a qu'un contenu : texture, posée par matrice.
+            from .scene3d import is_animated
+
+            if is_animated(graphic.source_path):
+                return False
         return len(self._sample_worlds(clip_id, t)) == 1
 
     def render_content(self, clip_id: str, t: float) -> tuple[QImage, float, EvaluatedLayer] | None:

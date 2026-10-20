@@ -41,6 +41,7 @@ from .composition import (
 from .object_ids import clip_ids as _all_clip_ids
 from .object_ids import resolve_object_id
 from .project_model import Clip, Project, Track
+from .scene3d import is_scene3d_clip
 from .visual_effects import ClipTransform
 
 _EPSILON = 1e-9
@@ -87,6 +88,10 @@ def _refusal(clip: Clip, track: Track, project: Project, selected: set[str]) -> 
         return f"« {name} » est déjà une séquence imbriquée ou une composition."
     if clip.template_slot:
         return f"« {name} » est un emplacement de template."
+    if is_scene3d_clip(clip):
+        # Un nœud graphique ne porte que ``start`` et ``duration`` : le point d'entrée de la scène (``source_in``, avancé par
+        # une coupe ou un rognage) serait perdu et la scène rejouée depuis son début. Branché avec le rendu (lot B2b).
+        return f"« {name} » est une scène 3D : elle ne peut pas encore entrer dans une composition."
     if clip.is_time_remapped:
         return f"« {name} » a une vitesse ou un remappage temporel."
     if getattr(clip, "tracking", None) is not None:

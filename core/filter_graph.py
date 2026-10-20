@@ -165,11 +165,26 @@ def _graphic_source_key(graphic) -> str:
     path = getattr(graphic, "source_path", "")
     if not path:
         return ""
+    if getattr(getattr(graphic, "type", None), "value", None) == "scene3d":
+        # Scène 3D : empreinte profonde (le .kut3d, ses modèles, leurs textures et .mtl), pas seulement le .kut3d.
+        from .scene3d import scene_signature
+
+        return scene_signature(path)
     try:
         stat = os.stat(path)
     except OSError:
         return "missing"
     return f"{stat.st_mtime_ns}:{stat.st_size}"
+
+
+def _scene3d_entry(layer) -> dict:
+    """Clés propres à un calque scène 3D (point d'entrée du clip, version et moteur du rendu) ; **vide** pour tout autre calque :
+    l'empreinte d'un plan sans 3D reste identique à celle d'avant (aucun incrément de ``RENDER_ENGINE_VERSION``)."""
+    if getattr(getattr(layer.graphic, "type", None), "value", None) != "scene3d":
+        return {}
+    from .scene3d import RENDER_BACKEND, RENDER_SAMPLES, SCENE3D_RASTER_VERSION
+
+    return {"scene3d": [float(getattr(layer, "source_in", 0.0)), SCENE3D_RASTER_VERSION, RENDER_BACKEND, RENDER_SAMPLES]}
 
 
 def _interpolation_identity(plan, preference: str = "auto"):
@@ -336,6 +351,7 @@ def fingerprint_plan(plan, **kwargs):
         ],
         "graphics": [
             {
+                **_scene3d_entry(layer),
                 "clip_id": layer.clip_id,
                 "start": layer.timeline_start,
                 "end": layer.timeline_end,
