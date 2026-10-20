@@ -33,7 +33,7 @@ import os
 from typing import Any
 
 from ..project_model import Clip, MediaAsset, Project, Sequence, Track
-from . import describe_audio, describe_color, describe_composition, describe_shapes
+from . import describe_audio, describe_color, describe_composition, describe_shapes, describe_structure, describe_tracking
 from .describe_coverage import NOT_DESCRIBED_SECTIONS
 from .describe_values import enum, number, optional_text, text
 
@@ -113,7 +113,7 @@ def _length(clip: Clip) -> float | None:
     return value if math.isfinite(value) else None
 
 
-def _clip(clip: Clip, length: float | None) -> dict[str, Any]:
+def _clip(clip: Clip, length: float | None, lookup: describe_tracking.ClipLookup) -> dict[str, Any]:
     start = float(clip.timeline_start)
     end = start + length if length is not None else None
     return {
@@ -132,10 +132,12 @@ def _clip(clip: Clip, length: float | None) -> dict[str, Any]:
         "compositing": describe_shapes.compositing(clip.compositing),
         "animation": describe_shapes.keyframes(clip.animation),
         "composition": describe_composition.composition(clip.composition),
+        "text_style": describe_shapes.text_style(clip.text_style),
+        "tracking": describe_tracking.tracking(clip, lookup),
     }
 
 
-def _track(track: Track) -> tuple[dict[str, Any], list[float | None], list[bool]]:
+def _track(track: Track, lookup: describe_tracking.ClipLookup) -> tuple[dict[str, Any], list[float | None], list[bool]]:
     """La piste décrite, la durée de chacun de ses clips et leur état (pour la durée de la séquence, sans recalculer)."""
     lengths = [_length(clip) for clip in track.clips]
     data = {
@@ -144,7 +146,7 @@ def _track(track: Track) -> tuple[dict[str, Any], list[float | None], list[bool]
         "volume_db": number(track.volume_db), "pan": number(track.pan), "audio_role": text(track.audio_role),
         "bus_id": describe_audio.bus_id(track), "inserts": describe_shapes.effects(track.inserts),
         "automation": describe_audio.automation(track.automation), "ducking_config": describe_audio.ducking_config(track.ducking_config),
-        "clips": [_clip(clip, length) for clip, length in zip(track.clips, lengths)],
+        "clips": [_clip(clip, length, lookup) for clip, length in zip(track.clips, lengths)],
     }
     return data, lengths, [bool(clip.enabled) for clip in track.clips]
 
@@ -153,8 +155,9 @@ def _sequence(sequence: Sequence, active: bool) -> dict[str, Any]:
     tracks: list[dict[str, Any]] = []
     ends: list[float] = []
     unknown_end = False
+    lookup = describe_tracking.ClipLookup(sequence)
     for track in sequence.tracks:
-        data, lengths, enabled = _track(track)
+        data, lengths, enabled = _track(track, lookup)
         tracks.append(data)
         for clip, length, is_enabled in zip(track.clips, lengths, enabled):
             if not is_enabled:
@@ -182,6 +185,9 @@ def _sequence(sequence: Sequence, active: bool) -> dict[str, Any]:
         ],
         "buses": describe_audio.buses(sequence.buses),
         "ducking_sidechains": describe_audio.sidechains(sequence.ducking_sidechains),
+        "guides": describe_structure.guides(sequence.guides), "motion_blur": describe_structure.motion_blur(sequence.motion_blur),
+        "multicam": describe_structure.multicam(sequence), "beat_grid": describe_structure.beat_grid(sequence.beat_grid),
+        "generated_groups": describe_structure.generated_groups(sequence.generated_groups),
     }
 
 
@@ -219,6 +225,7 @@ def describe(project: Project, *, check_media: bool = False) -> dict[str, Any]:
             "active_sequence": current["id"] if current else None,
         },
         "media": [_media(asset, check_media) for asset in project.media_assets],
+        "library": describe_structure.library(project),
         "color_presets": describe_color.presets(project.color_presets),
         "sequences": sequences,
         "not_described": list(NOT_DESCRIBED_SECTIONS),
