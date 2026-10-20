@@ -153,11 +153,11 @@ def _track(track: Track, lookup: describe_tracking.ClipLookup) -> tuple[dict[str
     return data, lengths, [bool(clip.enabled) for clip in track.clips]
 
 
-def _sequence(sequence: Sequence, active: bool) -> dict[str, Any]:
+def _sequence(sequence: Sequence, active: bool, assets: dict[str, MediaAsset]) -> dict[str, Any]:
     tracks: list[dict[str, Any]] = []
     ends: list[float] = []
     unknown_end = False
-    lookup = describe_tracking.ClipLookup(sequence)
+    lookup = describe_tracking.ClipLookup(sequence, assets)
     for track in sequence.tracks:
         data, lengths, enabled = _track(track, lookup)
         tracks.append(data)
@@ -214,7 +214,8 @@ def describe(project: Project, *, check_media: bool = False) -> dict[str, Any]:
         un dictionnaire strictement sérialisable (:func:`describe_json`), à l'ordre de clés stable.
     """
     active = _active_sequence(project)
-    sequences = [_sequence(sequence, sequence is active) for sequence in project.sequences]
+    assets = {asset.id: asset for asset in project.media_assets}
+    sequences = [_sequence(sequence, sequence is active, assets) for sequence in project.sequences]
     current = next((item for item in sequences if item["active"]), None)
     return {
         "describe_version": DESCRIBE_VERSION,

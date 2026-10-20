@@ -301,3 +301,84 @@ def test_the_gaps_of_part_c_are_real_and_named():
     assert _refused(project, {"op": "add_guide", "orientation": "vertical", "position": 0.1, "locked": True})
     assert not any("motion_blur" in n and n != "set_layer_motion_blur" for n in VERBS)
     assert not any("style" in n for n in VERBS)
+
+
+# --- Média relié à une autre résolution, source coupée avant l'image de référence -----------------------------------------------
+
+
+def _small_tracked(width: int = 100, height: int = 50):
+    from core.project_model import MediaAsset, Project, Track
+    from core.timeline_operations import add_clip_to_track
+
+    project = Project("t", width=1920, height=1080, fps=30.0, media_assets=[MediaAsset("m1", "/m/a.mp4", "a", 20.0, width, height, 30.0, "video")],
+                      tracks=[Track("V1", "V1", "video"), Track("V2", "V2", "video")])
+    add_clip_to_track(project, "m1", "V1", 3.0, clip_id="c1")
+    add_clip_to_track(project, "m1", "V2", 3.0, clip_id="c2")
+    _apply(project, [
+        {"op": "add_tracker", "clip": "c1", "at": 3.5, "x": 50.0, "y": 25.0, "id": "t1"},
+        {"op": "set_tracker_position", "clip": "c1", "tracker": "t1", "at": 5.0, "x": 60.0, "y": 20.0},
+    ])
+    return project
+
+
+def _points(data: dict) -> list[tuple]:
+    tracker = _clips(data)["c1"]["tracking"]["trackers"][0]["data"]
+    return [(p["index"], p["timeline_time"], p["x"], p["y"]) for p in tracker["manual_points"]]
+
+
+def test_points_are_described_in_the_pixels_of_the_current_media_after_a_relink():
+    """Un point est stocké dans la taille d'origine des données ; ``set_tracker_position`` lit des pixels du média courant. Le centre (50, 25) d'un
+    100x50 est, après un relien en 300x200, (150, 100) : le rejouer tel quel ne le déplace pas."""
+    project = _small_tracked()
+    assert _points(describe(project))[0][2:] == (50.0, 25.0)
+    project.media_assets[0].width, project.media_assets[0].height = 300, 200           # ce que fait relink_media (autre résolution, non carré)
+    data = describe(project)
+    tracker = _clips(data)["c1"]["tracking"]["trackers"][0]["data"]
+    assert (tracker["source_width"], tracker["source_height"], tracker["points_width"], tracker["points_height"]) == (100, 50, 300, 200)
+    assert [point[2:] for point in _points(data)] == [(150.0, 100.0), (180.0, 80.0)]
+    replay = [{"op": "set_tracker_position", "clip": "c1", "tracker": "t1", "at": p[1], "x": p[2], "y": p[3]} for p in _points(data)]
+    _apply(project, replay)
+    assert describe(project) == data                                              # rejouer sur le projet lui-même ne change rien
+    fresh = deepcopy(project)
+    fresh.tracks[0].clips[0].tracking = None
+    _apply(fresh, [{"op": "add_tracker", "clip": "c1", "at": _points(data)[0][1], "x": 150.0, "y": 100.0, "id": "t1"}] + replay[1:])
+    assert _points(describe(fresh)) == _points(data)                              # et sur une copie sans le tracker (données à la taille courante)
+
+
+def test_a_missing_media_does_not_raise_and_points_stay_as_stored():
+    project = _small_tracked()
+    project.media_assets.clear()
+    tracker = _clips(describe(project))["c1"]["tracking"]["trackers"][0]["data"]
+    assert tracker["points_width"] is None and tracker["manual_points"][0]["x"] == 50.0
+
+
+def test_the_reference_of_a_link_is_resolved_through_the_cut_halves():
+    project = _small_tracked(1920, 1080)
+    _apply(project, [{"op": "add_link", "clip": "c2", "source": "c1", "trackers": ["t1"], "at": 5.0, "id": "lk1", "target": "transform"}])
+    before = _clips(describe(project))["c2"]["tracking"]["links"][0]
+    assert before["reference_index"] == 60 and before["reference_clip_id"] == "c1" and before["reference_time"] == 5.016667
+    _apply(project, [{"op": "cut_clip", "clip": "c1", "at": 4.0}])                      # la source est coupée AVANT l'image de référence
+    data = describe(project)
+    link = _clips(data)["c2"]["tracking"]["links"][0]
+    right = link["continuation_ids"][0]
+    assert link["source_clip_id"] == "c1" and link["reference_index"] == 60
+    assert link["reference_clip_id"] == right and link["reference_time"] == 5.016667      # la moitié droite montre encore l'image
+    rebuilt = deepcopy(project)
+    _apply(rebuilt, [{"op": "remove_link", "clip": "c2", "link": "lk1"}])
+    _apply(rebuilt, [{"op": "add_link", "clip": "c2", "source": link["reference_clip_id"], "trackers": link["tracker_ids"],
+                      "at": link["reference_time"], "target": link["target"], "id": "lk1"}])
+    again = _clips(describe(rebuilt))["c2"]["tracking"]["links"][0]
+    assert again["reference_index"] == 60 and again["reference_time"] == 5.016667 and again["reference_clip_id"] == right
+
+
+def test_a_source_in_another_sequence_is_not_a_source_for_the_renderer_either():
+    """Le moteur ne cherche les sources d'une liaison que dans la séquence rendue : la description fait pareil (``null``), sans lever."""
+    project = _small_tracked(1920, 1080)
+    _apply(project, [{"op": "add_link", "clip": "c2", "source": "c1", "trackers": ["t1"], "at": 5.0, "id": "lk1"}])
+    from dataclasses import replace
+
+    c2 = project.tracks[1].clips[0]
+    link = replace(c2.tracking.links[0], source_clip_id="ailleurs")
+    c2.tracking = replace(c2.tracking, links=(link,))
+    described = _clips(describe(project))["c2"]["tracking"]["links"][0]
+    assert described["reference_clip_id"] is None and described["reference_time"] is None

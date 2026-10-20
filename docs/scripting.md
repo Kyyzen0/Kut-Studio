@@ -853,18 +853,23 @@ neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting
 points posés à la main (`set_tracker_position` en pose un par appel), **64 au plus** par tracker (`manual_points_truncated` le dit ;
 `counts.manual` donne le total). Chaque point porte `timeline_time`, le `at` que les verbes attendent (l'instant du **milieu** de l'image
 source montrée par le clip, robuste à l'arrondi à 6 décimales de la sortie) ; `links[].reference_time` et `stabilization.reference_time`
-sont de même le `at` de `add_link` et de `set_stabilization`. Une liaison à source `null` est portée par son propre clip.
+sont de même le `at` de `add_link` et de `set_stabilization`. Une liaison à source `null` est portée par son propre clip. Après une coupe de la
+source, `links[].reference_clip_id` dit quelle moitié montre l'image de référence (celle que choisit le rendu) : c'est le `source` à donner à
+`add_link` avec `reference_time`. Les sources d'une liaison sont cherchées dans la séquence du clip lié, comme le fait le rendu.
+Les `x` / `y` des points manuels sont en pixels du média **courant** (`points_width` x `points_height`) : après `relink_media` vers une autre
+résolution, les données gardent leur taille d'origine (`source_width` x `source_height`) et la description remet à l'échelle, comme
+`set_tracker_position` en sens inverse ; rejouer les points décrits ne les déplace donc pas.
 
 ```json
 "tracking": {"trackers": [{"id": "tr1", "name": "Œil", "color": "#36E6C3", "visible": true, "show_path": true, "kind": "point",
                            "settings": {"pattern_width": 48.0, "search_width": 144.0, "adapt": "adaptive", "...": "..."},
                            "data": {"rate": 30.0, "first": 0, "count": 61, "source_width": 1920, "source_height": 1080,
-                                    "valid_range": [0, 60], "counts": {"empty": 58, "tracked": 0, "uncertain": 0, "lost": 0, "manual": 3},
+                                    "points_width": 1920, "points_height": 1080, "valid_range": [0, 60], "counts": {"empty": 58, "tracked": 0, "uncertain": 0, "lost": 0, "manual": 3},
                                     "manual_points": [{"index": 0, "timeline_time": 50.016667, "x": 960.0, "y": 540.0}, "..."],
                                     "manual_points_truncated": false}}],
              "links": [{"id": "lk3", "source_clip_id": null, "tracker_ids": ["tr2"], "target": "anchor", "mask_id": null,
                         "position": true, "rotation": false, "scale": false, "reference_index": 0, "enabled": true,
-                        "continuation_ids": [], "reference_time": 50.016667}],
+                        "continuation_ids": [], "reference_clip_id": "c5", "reference_time": 50.016667}],
              "stabilization": {"enabled": true, "tracker_ids": ["tr1"], "mode": "position", "smoothing": "custom",
                                "smoothing_frames": 8.0, "borders": "crop", "reference_index": 30, "shared_range": null,
                                "reference_time": 51.016667}}

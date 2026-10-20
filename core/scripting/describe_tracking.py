@@ -17,7 +17,7 @@ import math
 from typing import Any
 
 from ..tracking_model import FIXED_POINT, SampleStatus
-from ..tracking_motion import local_time_for_source
+from ..tracking_motion import clip_source_indices, local_time_for_source
 from .describe_values import number, optional_text, text
 
 MAX_MANUAL_POINTS = 64
@@ -31,9 +31,17 @@ _VALID = (SampleStatus.TRACKED, SampleStatus.UNCERTAIN, SampleStatus.MANUAL)
 class ClipLookup:
     """Les clips d'une séquence par identifiant, construits à la première demande (une séquence sans liaison ne paie rien)."""
 
-    def __init__(self, sequence: Any) -> None:
+    def __init__(self, sequence: Any, assets: dict[str, Any] | None = None) -> None:
         self._sequence = sequence
+        self._assets = assets or {}
         self._index: dict[str, Any] | None = None
+
+    def size(self, clip: Any) -> tuple[int, int] | None:
+        """Dimensions COURANTES du média du clip (celles que lit ``set_tracker_position``) ; ``None`` si le média manque ou n'a pas de taille."""
+        asset = self._assets.get(getattr(clip, "asset_id", ""))
+        if asset is None or not asset.width > 0 or not asset.height > 0:
+            return None
+        return int(asset.width), int(asset.height)
 
     def get(self, clip_id: str) -> Any:
         if self._index is None:
@@ -77,7 +85,11 @@ def _valid_range(status: bytes, first: int) -> list[int] | None:
     return [first + min(found), first + max(last)]
 
 
-def _manual_points(clip: Any, data: Any) -> tuple[list[dict[str, Any]], bool]:
+def _manual_points(clip: Any, data: Any, size: tuple[int, int] | None) -> tuple[list[dict[str, Any]], bool]:
+    """Les points posés à la main, en pixels du média **courant** : un point est stocké dans la taille d'origine des données
+    (``source_width`` x ``source_height``) ; ``set_tracker_position`` lit des pixels du média courant et divise par ``scaled_to`` : on multiplie
+    par le même facteur (``scaled_to`` rend 1 sans taille connue), donc rejouer un point décrit retombe sur la valeur stockée."""
+    fx, fy = data.scaled_to(*size) if size else (1.0, 1.0)
     status, manual = bytes(data.status), int(SampleStatus.MANUAL)
     xs, ys = memoryview(data.xs).cast("i"), memoryview(data.ys).cast("i")
     points: list[dict[str, Any]] = []
@@ -86,28 +98,29 @@ def _manual_points(clip: Any, data: Any) -> tuple[list[dict[str, Any]], bool]:
         index = data.first + position
         points.append({
             "index": index, "timeline_time": frame_time(clip, index, data.rate),
-            "x": number(xs[position] / FIXED_POINT), "y": number(ys[position] / FIXED_POINT),
+            "x": number(xs[position] / FIXED_POINT * fx), "y": number(ys[position] / FIXED_POINT * fy),
         })
         position = status.find(manual, position + 1)
     return points, position >= 0
 
 
-def _data(clip: Any, data: Any) -> dict[str, Any]:
+def _data(clip: Any, data: Any, size: tuple[int, int] | None) -> dict[str, Any]:
     status = bytes(data.status)
-    points, truncated = _manual_points(clip, data)
+    points, truncated = _manual_points(clip, data, size)
     return {
         "rate": number(data.rate), "first": number(data.first), "count": len(status),
         "source_width": number(data.source_width), "source_height": number(data.source_height),
+        "points_width": None if size is None else size[0], "points_height": None if size is None else size[1],
         "valid_range": _valid_range(status, int(data.first)),
         "counts": {kind.name.lower(): status.count(int(kind)) for kind in SampleStatus},
         "manual_points": points, "manual_points_truncated": truncated,
     }
 
 
-def _tracker(clip: Any, item: Any) -> dict[str, Any]:
+def _tracker(clip: Any, item: Any, size: tuple[int, int] | None) -> dict[str, Any]:
     return {
         "id": text(item.id), "name": text(item.name), "color": text(item.color), "visible": bool(item.visible),
-        "show_path": bool(item.show_path), "kind": text(item.kind), "settings": _settings(item.settings), "data": _data(clip, item.data),
+        "show_path": bool(item.show_path), "kind": text(item.kind), "settings": _settings(item.settings), "data": _data(clip, item.data, size),
     }
 
 
@@ -120,15 +133,43 @@ def _rate(clip: Any, tracker_ids: Any) -> float:
     return 0.0
 
 
+def _reference_clip(clip: Any, item: Any, lookup: ClipLookup) -> Any:
+    """Le clip qui montre l'image de référence d'une liaison : celui que le moteur de rendu choisit (``LinkMotion``).
+
+    Une liaison suit sa source et, après une coupe, ses prolongements (``source_ids``), tous dans la **même séquence** que le clip lié
+    (``TrackingContext.clip`` ne cherche que dans la séquence rendue : un clip d'une autre séquence n'est pas une source, ``link_issues`` le
+    signale). Comme le moteur : les clips qui existent, ont des données de ces trackers et un média de taille connue ; le premier qui montre
+    l'image de référence, sinon le premier."""
+    if not item.source_clip_id:
+        return clip
+    usable = []
+    for clip_id in item.source_ids:
+        found = lookup.get(clip_id)
+        if found is None or found.graphic is not None or lookup.size(found) is None or found.tracking is None:
+            continue
+        if any(found.tracking.tracker(tracker_id) is not None for tracker_id in item.tracker_ids):
+            usable.append(found)
+    for found in usable:
+        rate = _rate(found, item.tracker_ids)
+        try:
+            low, high = clip_source_indices(found, rate)
+        except (TypeError, ValueError, ArithmeticError, AttributeError):
+            continue
+        if low <= item.reference_index <= high:
+            return found
+    return usable[0] if usable else None
+
+
 def _link(clip: Any, item: Any, lookup: ClipLookup) -> dict[str, Any]:
-    source = clip if not item.source_clip_id else lookup.get(item.source_clip_id)
+    owner = _reference_clip(clip, item, lookup)
     return {
         "id": text(item.id), "source_clip_id": optional_text(item.source_clip_id),
         "tracker_ids": [text(tracker_id) for tracker_id in item.tracker_ids], "target": text(item.target),
         "mask_id": optional_text(item.mask_id), "position": bool(item.position), "rotation": bool(item.rotation),
         "scale": bool(item.scale), "reference_index": number(item.reference_index), "enabled": bool(item.enabled),
         "continuation_ids": [text(clip_id) for clip_id in item.continuation_ids],
-        "reference_time": frame_time(source, item.reference_index, _rate(source, item.tracker_ids)),
+        "reference_clip_id": None if owner is None else text(owner.id),
+        "reference_time": frame_time(owner, item.reference_index, _rate(owner, item.tracker_ids)),
     }
 
 
@@ -150,7 +191,7 @@ def tracking(clip: Any, lookup: ClipLookup) -> dict[str, Any] | None:
     if item is None or item.is_empty:
         return None
     return {
-        "trackers": [_tracker(clip, tracker) for tracker in item.trackers],
+        "trackers": [_tracker(clip, tracker, lookup.size(clip)) for tracker in item.trackers],
         "links": [_link(clip, link, lookup) for link in item.links],
         "stabilization": _stabilization(clip, item.stabilization),
     }

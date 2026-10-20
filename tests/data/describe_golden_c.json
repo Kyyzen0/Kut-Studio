@@ -170,6 +170,8 @@
           "count": 61,
           "source_width": 1920,
           "source_height": 1080,
+          "points_width": 1920,
+          "points_height": 1080,
           "valid_range": [
             0,
             60
@@ -228,6 +230,8 @@
           "count": 61,
           "source_width": 1920,
           "source_height": 1080,
+          "points_width": 1920,
+          "points_height": 1080,
           "valid_range": [
             0,
             60
@@ -272,6 +276,7 @@
         "reference_index": 0,
         "enabled": true,
         "continuation_ids": [],
+        "reference_clip_id": "c5",
         "reference_time": 50.016667
       }
     ],
@@ -306,6 +311,7 @@
         "reference_index": 30,
         "enabled": false,
         "continuation_ids": [],
+        "reference_clip_id": "c5",
         "reference_time": 51.016667
       }
     ],

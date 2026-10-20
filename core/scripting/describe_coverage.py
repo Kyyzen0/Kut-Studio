@@ -271,6 +271,11 @@ DERIVED: dict[str, str] = {
         for name in ("rank", "name", "value", "color")
     },
     f"{_TRACKER}.data.count": "Nombre d'images de la grille d'échantillons (``first`` .. ``first + count - 1``), vides comprises.",
+    f"{_TRACKER}.data.points_width": (
+        "Largeur du média COURANT du clip : l'espace des ``x`` de ``manual_points`` (un point est stocké dans ``source_width`` x ``source_height``, la taille "
+        "d'origine des données ; après ``relink_media`` vers une autre résolution, ``set_tracker_position`` lit des pixels du média courant et remet à "
+        "l'échelle). ``null`` si le média manque ou n'a pas de taille : les points sont alors ceux des données, tels quels."),
+    f"{_TRACKER}.data.points_height": "Hauteur du média courant : l'espace des ``y`` de ``manual_points`` (voir ``points_width``).",
     f"{_TRACKER}.data.valid_range": (
         "``[première, dernière]`` image source dont la position est utilisée par le rendu (suivie, incertaine ou manuelle) ; ``null`` sans point."),
     f"{_TRACKER}.data.counts": "Nombre d'images par état : ``empty``, ``tracked``, ``uncertain``, ``lost``, ``manual`` (les échantillons bruts ne sont pas écrits).",
@@ -288,9 +293,13 @@ DERIVED: dict[str, str] = {
     f"{_TRACKER}.data.manual_points[].x": "Position X en pixels du média.",
     f"{_TRACKER}.data.manual_points[].y": "Position Y en pixels du média.",
     f"{_TRACKER}.data.manual_points_truncated": "``true`` quand le tracker porte plus de points manuels que la liste n'en donne.",
+    f"{_TRACKING}.links[].reference_clip_id": (
+        "Le clip qui montre l'image de référence, à donner à ``source`` de ``add_link`` : la source, ou l'un de ses prolongements après une coupe "
+        "(celui que choisit le moteur de rendu) ; le clip lui-même pour une liaison propre ; ``null`` si aucune source n'existe. Les sources d'une "
+        "liaison sont cherchées dans la séquence du clip lié, comme le fait le rendu."),
     f"{_TRACKING}.links[].reference_time": (
-        "Le ``at`` que ``add_link`` attend pour l'image de référence : instant de timeline (dans le clip source) du milieu de cette image ; "
-        "``null`` si la source est introuvable ou ne la montre pas."),
+        "Le ``at`` que ``add_link`` attend (avec ``reference_clip_id`` pour ``source``) pour l'image de référence : instant de timeline, dans ce "
+        "clip, du milieu de cette image ; ``null`` s'il n'y a pas de source ou si elle ne montre pas cette image."),
     f"{_TRACKING}.stabilization.reference_time": "Le ``at`` que ``set_stabilization`` attend pour l'image de référence (voir ``links[].reference_time``).",
     **{
         f"{_MASK}.points[].{name}": "Un sommet de polygone ou une ancre de courbe : fraction de la boîte du masque (``set_mask_points``)."
