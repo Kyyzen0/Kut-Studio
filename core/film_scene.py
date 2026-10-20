@@ -182,7 +182,9 @@ def _restore(saved: list[tuple[Path, Path]], backup_dir: Path | None) -> None:
     except OSError as error:
         raise FilmError(
             f"Écriture impossible et ancienne scène non restaurée ({short(str(error), 120)}) : "
-            f"ses fichiers sont conservés dans {short(str(backup_dir), 160)}."
+            # Le chemin est donné EN ENTIER : c'est l'information qui permet de retrouver les fichiers, et il vient du dossier
+            # du film, pas d'une entrée non fiable (le tronquer, comme sur un runner à chemins longs, lui ôte son « .bak »).
+            f"ses fichiers sont conservés dans {backup_dir}."
         ) from error
     shutil.rmtree(backup_dir, ignore_errors=True)
 

@@ -478,6 +478,22 @@ def test_a_failed_restore_keeps_the_backup_and_says_where(tmp_path, monkeypatch)
     assert sorted(p.name for p in backups[0].iterdir()) == ["models", "scene.kut3d"]
 
 
+def test_a_failed_restore_names_the_whole_backup_path_even_when_it_is_long(monkeypatch):
+    """Sur un runner à chemins longs (macOS, Windows en CI) le chemin de la sauvegarde dépassait 160 caractères : le message
+    le tronquait et perdait son « .bak ». Le test n'écrit rien sur le disque : une sauvegarde fictive à chemin très long."""
+    backup = Path("/" + "d" * 300) / ".cube.abcd.bak"
+    kept, original = backup / "scene.kut3d", Path("/film_assets/cube.kut3d")
+
+    def refused(src, dst, *a, **k):
+        raise OSError("restauration refusée")
+
+    monkeypatch.setattr(film_scene.os, "replace", refused)
+    with pytest.raises(FilmError) as info:
+        film_scene._restore([(kept, original)], backup)
+    assert str(backup) in str(info.value)
+    assert len(str(info.value)) > 300 and str(info.value).endswith(".bak.")
+
+
 def test_a_successful_overwrite_leaves_the_new_scene_and_no_backup(tmp_path):
     film, other, before = _old_scene_film(tmp_path)
     film.place_scene(other, duration=1.0, name="cube", overwrite=True)
