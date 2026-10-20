@@ -44,6 +44,7 @@ from .film_render import (
     shot_frame_count,
     short,
 )
+from .film_scene import ScenePlacement, write_scene
 
 if TYPE_CHECKING:
     from .project_model import MediaAsset, Project
@@ -122,6 +123,7 @@ class Film:
         self._background: BackgroundSpec | None = None
         self._shots: dict[str, Shot] = {}
         self._placements: list[_Placement] = []
+        self._scenes: list[ScenePlacement] = []
         self._audio: list[_AudioPlacement] = []
         self._assets: dict[str, MediaAsset] = {}
         self._built_background: tuple[str, Path] | None = None
@@ -167,6 +169,8 @@ class Film:
         key = label.lower()                                     # macOS et Windows ignorent la casse des noms de fichiers
         if not overwrite and (key in self._shots or output.exists()):
             raise FilmError(f"Le plan {label!r} existe déjà : choisissez un autre nom ou passez overwrite=True.")
+        if any(item.name.lower() == key for item in self._scenes):
+            raise FilmError(f"Le nom {label!r} est déjà celui d'une scène posée dans ce film.")
         if any(item.shot.name.lower() == key for item in self._placements):
             raise FilmError(f"Le plan {label!r} est déjà posé dans ce film : il ne peut plus être remplacé.")
         folder = self.assets_dir / label
@@ -217,6 +221,42 @@ class Film:
         self._placements.append(_Placement(shot, at, number))
         return _clip_id(shot.name, len(self._placements))
 
+    def place_scene(
+        self, scene: Any, *, duration: float, start: float = 0.0, track: int = 1, name: str, overwrite: bool = False,
+    ) -> str:
+        """Pose ``scene`` comme un **vrai clip « scène 3D »** (calque graphique, éditable dans l'application, rendu fidèle) ; retourne l'id du clip.
+
+        ``scene`` est une ``kut3d.Scene`` (une fonction ``t -> Scene`` ne s'écrit pas dans un fichier : utilisez :meth:`render_shot`).
+        Elle est écrite dans ``<projet>_assets/<name>.kut3d`` ; ses modèles et leurs dépendances sont **copiés** dans
+        ``<projet>_assets/<name>_models/`` (voir :mod:`core.film_scene`). ``track`` est la piste de graphiques (G1, G2...) :
+        un calque graphique passe au-dessus de toute la vidéo. La durée est arrondie à l'image (``frames / fps``). Fond transparent,
+        taille du projet, vitesse fixe. Le projet s'enregistre alors au format ``.kut`` 22. Un nom déjà pris est refusé sans ``overwrite=True``.
+        """
+        import kut3d
+
+        if callable(scene) or not isinstance(scene, kut3d.Scene):
+            raise FilmError("place_scene() attend une Scene, pas une fonction t -> Scene (non sérialisable) : utilisez render_shot() pour une fonction.")
+        label = check_name(name, "scène")
+        count = shot_frame_count(duration, self.fps)
+        length = count / self.fps
+        at = _start_time(start)
+        number = _track_number(track, MAX_VIDEO_TRACKS)
+        if not isinstance(overwrite, bool):
+            raise FilmError("overwrite est un booléen.")
+        key = label.lower()
+        if len(self._placements) + len(self._scenes) >= MAX_PLACEMENTS:
+            raise FilmError(f"Trop de plans posés (maximum {MAX_PLACEMENTS}).")
+        if at + length > MAX_FILM_SECONDS:
+            raise FilmError(f"Le film dépasserait {MAX_FILM_SECONDS:g} s.")
+        if key in self._shots or any(item.shot.name.lower() == key for item in self._placements) or any(item.name.lower() == key for item in self._scenes):
+            raise FilmError(f"Le nom {label!r} est déjà pris dans ce film : choisissez un autre nom.")
+        for other in self._scenes:
+            if other.track == number and at < other.start + other.duration - _TOLERANCE and other.start < at + length - _TOLERANCE:
+                raise FilmError(f"La scène {label!r} chevauche {other.name!r} sur la piste de graphiques {number}.")
+        path = write_scene(scene, self.assets_dir, label, overwrite=overwrite)
+        self._scenes.append(ScenePlacement(label, path, at, length, number))
+        return _scene_clip_id(label, len(self._scenes))
+
     # --- audio -----------------------------------------------------------------------------------------------------------
 
     def audio(
@@ -258,24 +298,31 @@ class Film:
     @property
     def duration(self) -> float:
         """La durée du film : la fin du dernier plan posé (0.0 s'il n'y en a pas)."""
-        return max((item.start + item.shot.duration for item in self._placements), default=0.0)
+        return max(
+            [item.start + item.shot.duration for item in self._placements] + [item.start + item.duration for item in self._scenes],
+            default=0.0,
+        )
 
     def project(self) -> "Project":
         """Construit le projet ordinaire (médias, pistes V1.. et A1.., clips) ; fabrique le fond au besoin."""
         from .media_probe import MediaProbeError, probe_media
+        from .graphics import GraphicType, add_graphic_clip
         from .project_model import Project, Track
+        from .scene3d import Scene3DError
         from .timeline_operations import add_clip_to_track
 
-        if not self._placements:
-            raise FilmError("Aucun plan posé : appelez place() avant save() ou export().")
+        if not self._placements and not self._scenes:
+            raise FilmError("Aucun plan posé : appelez place() ou place_scene() avant save() ou export().")
         total = self.duration
         video_count = max([item.track for item in self._placements] + [1])
         audio_count = max([item.track for item in self._audio], default=0)
+        graphics_count = max([item.track for item in self._scenes], default=0)
         project = Project(
             name=self.path.stem, width=self.size[0], height=self.size[1], fps=self.fps,
             tracks=[
                 *(Track(id=f"V{i}", name=f"V{i}", type="video") for i in range(1, video_count + 1)),
                 *(Track(id=f"A{i}", name=f"A{i}", type="audio") for i in range(1, audio_count + 1)),
+                *(Track(id=f"G{i}", name=f"G{i}", type="graphics") for i in range(1, graphics_count + 1)),
             ],
         )
         tracks = {track.id: track for track in project.tracks}
@@ -310,6 +357,14 @@ class Film:
                 add_asset(shot_asset_id, self._assets[shot_asset_id]).name = placed.shot.name
             clip = add_clip_to_track(project, shot_asset_id, f"V{placed.track}", round(placed.start, 4), clip_id=_clip_id(placed.shot.name, index))
             clip.label = placed.shot.name
+        for index, placed_scene in enumerate(self._scenes, start=1):
+            try:
+                add_graphic_clip(
+                    project, GraphicType.SCENE3D, timeline_start=round(placed_scene.start, 4), duration=placed_scene.duration,
+                    source_path=str(placed_scene.path), track=tracks[f"G{placed_scene.track}"], clip_id=_scene_clip_id(placed_scene.name, index),
+                )
+            except (Scene3DError, OSError) as error:
+                raise FilmError(f"Scène 3D {placed_scene.name!r} illisible : {short(str(error), 300)}") from error
         for index, sound in enumerate(self._audio, start=1):
             if sound.start >= total - _TOLERANCE:
                 raise FilmError(f"Le son {index} commence à {sound.start:g} s, après la fin du film ({total:g} s).")
@@ -404,6 +459,10 @@ class Film:
 
 def _clip_id(shot_name: str, index: int) -> str:
     return f"shot_{shot_name}_{index}"
+
+
+def _scene_clip_id(scene_name: str, index: int) -> str:
+    return f"scene_{scene_name}_{index}"
 
 
 def _check_scene_source(source: object) -> None:

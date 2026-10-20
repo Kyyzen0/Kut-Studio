@@ -440,6 +440,33 @@ def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Ope
     return operation
 
 
+def _add_scene3d_clip(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
+    def operation(project: Project) -> Any:
+        if context is None:
+            raise ValueError("add_scene3d_clip lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        track = _graphics_track(project, a.get("track"))
+        # Toujours confiné au dossier du script : ``--allow-outside`` ne s'applique pas à un fichier de scène (ses modèles le sont aussi).
+        try:
+            path = ScriptContext(context.base_dir, allow_outside=False).resolve_media(a["path"])
+        except (ValueError, OSError) as error:                 # le message d'origine recopie le chemin : on le borne
+            text = str(error)
+            raise type(error)(text if len(text) <= 300 else text[:299] + "…") from None
+        try:
+            from ..scene3d import Scene3DError, validate
+
+            validate(path)                                      # lu AVANT toute écriture : un refus ne laisse rien derrière lui
+        except Scene3DError as error:
+            text = str(error)
+            raise ValueError(f"Scène 3D refusée : {text if len(text) <= 300 else text[:299] + '…'}") from error
+        require_room(project, 1)
+        return add_graphic_clip(
+            project, GraphicType.SCENE3D, timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
+            track=track, clip_id=a.get("id"),
+        )
+
+    return operation
+
+
 _GRAPHIC_FIELDS = ("text", "fill_color", "stroke_color", "stroke_width", "font_size", "width", "height")
 
 
@@ -1368,6 +1395,11 @@ VERBS: dict[str, Verb] = {
               Param("duration", Kind.NUMBER, "Durée en secondes.", minimum=0.04, maximum=MAX_TIME),
               Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track")),
              _add_image_layer, creates="clip", group="graphics", needs_context=True),
+        Verb("add_scene3d_clip", "Pose une scène 3D (fichier .kut3d du dossier du script) en calque graphique, au-dessus de la vidéo.",
+             (Param("path", Kind.PATH, "Chemin du fichier « .kut3d », relatif au dossier du script (toujours dans ce dossier)."), _AT,
+              Param("duration", Kind.NUMBER, "Durée en secondes.", minimum=0.04, maximum=MAX_TIME),
+              Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track")),
+             _add_scene3d_clip, creates="clip", group="graphics", needs_context=True),
         Verb("set_graphic", "Modifie l'apparence d'un calque graphique (au moins un champ).",
              (_CLIP, Param("text", Kind.STRING, "Texte.", required=False, max_length=1000, multiline=True),
               Param("fill_color", Kind.COLOR, _COLOR_DOC, required=False),

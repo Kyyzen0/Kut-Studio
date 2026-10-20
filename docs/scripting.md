@@ -169,6 +169,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
 | `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
+| `add_scene3d_clip` | Pose une **scène 3D** (fichier `.kut3d` du dossier du script) en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Scènes 3D » ci-dessous |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée ; `group` : un groupe déverrouillé où poser le calque, jamais pour un calque d'effets) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) ; refusé pour une propriété **animée** (`graphic.*` : une valeur statique serait masquée par la courbe), comme `set_mask` |
 | `delete_layers` | Supprime des calques graphiques (`clips`, 1 à 200 sans doublon) ; un groupe emporte son contenu, les enfants d'un parent supprimé sont détachés ; refusé si l'un d'eux, ou un groupe qui perdrait un membre, est verrouillé ; voir « Calques graphiques » |
@@ -438,6 +439,19 @@ l'interface), avec une durée que le script donne (`duration`, de 0,04 s à 1 00
 - `track` doit être une piste de **graphiques déverrouillée** (une piste vidéo, audio ou verrouillée est refusée).
 - **Limite** : c'est un calque graphique, donc **au-dessus de toute la vidéo** ; il ne participe pas aux transitions entre clips vidéo ni
   au remappage de temps. Poser une image comme clip d'une piste vidéo viendra plus tard.
+
+## Scènes 3D : `add_scene3d_clip`
+
+Pose une scène [Kut-3D](kut3d-scene.md) (un fichier `.kut3d`) comme **calque graphique** : le même clip que « Scène 3D » dans
+l'interface, rendu à l'export et en aperçu fidèle avec le reste du montage. `duration` est obligatoire (0,04 s à 1 000 000 s).
+
+- Le chemin est **toujours confiné au dossier du script** : `--allow-outside` ne s'y applique pas (les modèles de la scène doivent
+  eux aussi se trouver sous le dossier du `.kut3d`).
+- Le fichier est **lu en entier avant toute écriture** (forme, bornes, modèles confinés) : un `.kut3d` illisible ou d'une autre
+  extension est refusé et le projet reste intact.
+- `track` doit être une piste de **graphiques déverrouillée**. Fond transparent, taille du projet ; une scène se joue à sa propre
+  vitesse (remappage de temps refusé).
+- Le projet enregistré passe au format `.kut` **22**. Depuis Python, `Film.place_scene` ([kut3d-film.md](kut3d-film.md)) écrit la scène et pose ce clip.
 
 ## Montage et pistes
 
