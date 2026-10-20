@@ -215,7 +215,8 @@ def test_another_extension_is_left_to_the_media_import(window, scene, tmp_path, 
     clip = tmp_path / "movie.mp4"
     clip.write_bytes(b"")
     window.dropEvent(_Drop([clip, scene], QPoint(2, 2)))
-    assert imported == [str(clip)]                                      # la scène n'est PAS importée comme un média
+    # Qt donne le chemin d'un fichier déposé avec des « / » même sous Windows (« C:/Users/… ») : on compare des chemins, pas des chaînes.
+    assert [Path(item) for item in imported] == [clip]                  # la scène n'est PAS importée comme un média
     assert len(_scene_clips(window)) == 1
 
 
