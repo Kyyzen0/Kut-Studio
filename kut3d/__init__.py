@@ -18,7 +18,9 @@ from kut3d.errors import (
 )
 from kut3d.gpu import probe_qrhi
 from kut3d.importers import load_model, supported_extensions
-from kut3d.model import Model
+from kut3d.model import Material, Model
+from kut3d.primitive_model import primitive_instance, primitive_model
+from kut3d.primitives import Cone, Cube, Cylinder, Plane, Sphere, Torus
 from kut3d.render import (
     Frame,
     available_backends,
@@ -28,6 +30,7 @@ from kut3d.render import (
     render_sequence,
 )
 from kut3d.scene_io import (
+    PRIMITIVES_FORMAT_VERSION,
     SCENE_FORMAT_VERSION,
     dependency_files,
     load_scene,
@@ -43,15 +46,21 @@ from kut3d.scene import (
 )
 
 __all__ = [
+    "PRIMITIVES_FORMAT_VERSION",
     "SCENE_FORMAT_VERSION",
     "AmbientLight",
     "Camera",
+    "Cone",
+    "Cube",
+    "Cylinder",
     "DirectionalLight",
     "Frame",
     "ImageDecodeError",
     "Instance",
+    "Material",
     "Model",
     "ModelImportError",
+    "Plane",
     "PointLight",
     "Pose",
     "RenderBackendUnavailable",
@@ -59,6 +68,8 @@ __all__ = [
     "Scene",
     "SceneFileError",
     "SceneVersionError",
+    "Sphere",
+    "Torus",
     "UnsupportedFormatError",
     "available_backends",
     "backend_available",
@@ -66,6 +77,8 @@ __all__ = [
     "evaluate_pose",
     "load_model",
     "load_scene",
+    "primitive_instance",
+    "primitive_model",
     "probe_qrhi",
     "register_backend",
     "render_frame",
