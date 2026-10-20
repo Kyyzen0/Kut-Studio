@@ -22,7 +22,7 @@ from ..animation_targets import PropertyTarget, get_target
 from ..compositing import Compositing
 from ..project_model import Clip, Project
 from ..timeline_operations import find_clip
-from .verbs import _editable_clip, _owner_track
+from .verbs import _editable_clip, _owner_track, refuse_grade_property
 
 MAX_BLOCK = 64
 """Images clés ou points de vitesse cités par une seule opération."""
@@ -35,6 +35,7 @@ _TRACKED = ("position_x", "position_y")
 
 def resolve_keyframe_target(project: Project, selector: str, property_name: str, verb: str) -> tuple[str, Clip, PropertyTarget]:
     """``(identifiant du clip, clip, cible)`` pour une propriété animable d'un clip éditable (piste et calque déverrouillés)."""
+    refuse_grade_property(property_name, verb)
     clip_id = _editable_clip(project, selector)
     clip = find_clip(project, clip_id)
     if property_name.startswith("time."):
@@ -137,5 +138,6 @@ def require_effective_tangents(
 
 __all__ = [
     "MAX_BLOCK", "MAX_SLOPE", "keyframe_at", "require_effective_tangents", "require_free_arrivals", "require_value", "require_within",
+    "refuse_grade_property",
     "resolve_keyframe_target",
 ]
