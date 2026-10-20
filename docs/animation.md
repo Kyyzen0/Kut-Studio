@@ -341,10 +341,10 @@ changer d'option en cours de route (`sendcmd`, validé sur FFmpeg 6.1.1, 7.1.5 e
   `∫ v dt`) : `speed` reste statique. `frequency` animé fait glisser la phase de façon voulue (`Y·f(T)`), et l'export et le
   moniteur concordent (même formule, vérifiée aux seuils d'un effet statique).
 
-## Étalonnage animé : `color.*` (ADR-0008, étape 6 : modèle et export)
+## Étalonnage animé : `color.*` (ADR-0008, étapes 6 et 7 : modèle, export et moniteur)
 
-**Pas encore dans l'application** : pas de losange dans le panneau Couleur, pas d'aperçu animé dans le moniteur (il montre l'étalonnage
-de base), pas de verbe de script. Ce qui existe : le modèle et l'**export** (donc l'aperçu fidèle, qui rend le même graphe).
+**Pas encore dans l'interface** : pas de losange dans le panneau Couleur (étape 8), pas de verbe de script (étape 9). Ce qui existe : le
+modèle, l'**export** (donc l'aperçu fidèle, qui rend le même graphe) et, depuis l'étape 7, le **moniteur** (voir plus bas).
 
 - **Propriétés** (`core/grade_targets.py`, 23) : `color.exposure`, `color.contrast`, `color.saturation`, `color.temperature`,
   `color.hue`, `color.shadows`, `color.highlights`, et `color.<roue>.<canal>` pour `lift`, `gamma`, `gain`, `offset` × `r`, `g`, `b`, `y`
@@ -355,7 +355,7 @@ de base), pas de verbe de script. Ce qui existe : le modèle et l'**export** (do
   fenêtré) n'a pas ces cibles (`KeyError`) ; une image clé `color.*` restée dans un tel clip est conservée mais ignorée par le rendu.
 - **Valeur effective** : `effective_grade(clip, t)` (fonction pure) rend l'étalonnage de base dont les champs animés sont remplacés par leur
   courbe, bornée ; sans image clé, **exactement** `clip.color_grade` (le même objet, `None` compris). C'est la fonction que le moniteur
-  appellera à l'étape 7.
+  appelle (étape 7).
 - **Rendu à l'export** (`core/grade_render.py`, `core/grade_tables.py`) : contraste et saturation par `eq=…:eval=frame`, teinte par
   `hue=h='…'` (expressions du temps local du clip, comme les effets) ; ombres et hautes lumières par `colorbalance`, température par
   `colorchannelmixer`, exposition et roues par `curves`, ces trois derniers par un **fichier de commandes `sendcmd`** (un seul par
@@ -376,7 +376,40 @@ de base), pas de verbe de script. Ce qui existe : le modèle et l'**export** (do
   l'emporte sur toutes les autres ; une version antérieure le refuse. Sans ces images clés, le fichier est écrit octet pour octet comme avant, et
   le moteur de rendu (`RENDER_ENGINE_VERSION`) ne change pas : le graphe d'un clip sans image clé `color.*` est identique, caractère pour caractère.
 - **Composition** : convertir en composition un clip qui porte un étalonnage animé est refusé (la composition rend son étalonnage fixe).
-- Le moniteur n'est pas modifié : il applique l'étalonnage de base ; l'export et l'aperçu fidèle suivent la courbe.
+
+### Le moniteur (étape 7)
+
+Le moniteur GPU montre l'étalonnage **que l'export applique à l'instant affiché** : `MainWindow._monitor_color_grade(clip, temps local)`
+appelle `effective_grade` pour le clip du dessus et pour chaque piste vidéo en dessous (même temps local que les effets : tête de lecture
+moins début du clip). Le moniteur n'a toujours aucune formule d'étalonnage : la LUT 3D (`core/gpu_grade.py`) est cuite par FFmpeg avec la
+chaîne de l'export **pour les valeurs évaluées à cet instant**.
+
+- **À l'arrêt** (curseur déplacé, image clé modifiée, pause) : la LUT est cuite exactement à l'instant courant. À la pause, le moniteur est
+  resynchronisé une fois si un clip visible a un étalonnage animé (la LUT du dernier tic de lecture date d'une image au plus).
+- **Pendant la lecture, repli documenté.** Une LUT coûte **≈ 100 ms** à cuire (FFmpeg 9.0.2, M-series, mesuré : 104 ms médian, la même durée
+  pour un réglage simple ou avec température et ombres ; l'ADR disait ≈ 30 ms, valeur de la docstring non remesurée), soit **trois images à
+  30 i/s** : il n'est pas possible de cuire une LUT par image. Le moniteur ne cuit donc que la dernière demande de chaque clip (les
+  intermédiaires ne sont jamais cuites), **jamais d'approximation de la valeur** : on montre la LUT exacte d'un instant récent, pas une
+  valeur interpolée ou arrondie. Mesures sur 6 s de lecture à 25 i/s, un à quatre clips animés à la fois, cuisson réelle (script jetable, non conservé) : **7,7 LUT/s avec un fil de cuisson, ≈ 15/s avec deux (réglage retenu), ≈ 22/s avec trois** ; retard de l'étalonnage affiché
+  sur l'image : **un clip : ≈ 200 ms (médiane), 250 à 290 ms (p95) ; quatre clips : ≈ 280 ms (médiane), ≈ 400 ms (p95)** avec deux fils
+  (un fil : ≈ 400 ms médiane et ≈ 650 ms p95 à quatre clips). Le plancher d'un clip (≈ 200 ms) est la durée d'une cuisson plus l'attente
+  du prochain tic. Un étalonnage qui change lentement (le cas d'un fondu de couleur) est donc fidèle ; une variation plus rapide que
+  ≈ 0,3 s est montrée avec ce retard. Dès que la lecture s'arrête, la LUT de l'instant exact est cuite.
+- **Équité.** Chaque calque étalonné a son emplacement de cuisson (`<source>:<domaine>`) et le cache sert **le moins récemment servi** : sans
+  cela, avec plusieurs clips animés, le dernier demandé aurait été servi à chaque fois et les autres seraient restés figés. Un seul
+  emplacement (un curseur qu'on glisse) se comporte comme avant : la dernière valeur d'abord.
+- **LUT affichée tant que la demandée cuit** : la **dernière LUT cuite avec succès du calque** (`GradeLutCache.latest`). Avant l'étape 7,
+  seule la dernière LUT *obtenue sur demande* servait de repli, ce qui ne montrait jamais rien tant que la LUT demandée change à chaque
+  image.
+- **Clip sans image clé `color.*` : chemin identique.** `effective_grade` rend le même objet que `clip.color_grade`, donc la même clé de
+  LUT d'une image à l'autre, aucune recuisson (testé : une cuisson pour 100 images, `GradeCurves` jamais construit). Coût mesuré par tic et
+  par clip : 0,09 µs avant, 2,0 µs après (le parcours de ses images clés pour y chercher `color.*`), contre ≈ 410 µs pour un clip animé
+  (construction des courbes, six réglages).
+- **Invalidation** : la clé de LUT suit le contenu de la chaîne d'export (pas le clip, pas le temps) : modifier une clé `color.*` ou déplacer
+  le curseur change la clé ; revenir à la valeur d'avant retrouve la LUT déjà cuite ; deux clips de même courbe au même instant partagent la
+  LUT ; rien ne fuit d'un clip à l'autre. Le cache garde 48 LUT (≈ 20 Mo) et 256 emplacements.
+- **Non touché** : l'aperçu rapide et le moniteur sans GPU montrent le média sans étalonnage animé (comme avant) ; l'aperçu fidèle suit la
+  courbe (export). Les calques d'effets (graphiques) ne portent pas de cible `color.*`. Un clip étalonné par un graphe de nœuds n'est pas animé.
 
 ## Limites connues
 

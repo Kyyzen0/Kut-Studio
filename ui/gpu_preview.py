@@ -552,7 +552,9 @@ class GpuPreviewWidget(QRhiWidget):
         # Le fil de cuisson ne touche à aucun objet Qt (il ne garde même pas de référence au widget : la dernière,
         # lâchée dans ce fil, détruirait le widget hors du fil de l'interface) ; le widget se redessine tant qu'une
         # cuisson est en cours (voir ``_poll_grades``).
-        self.grades = GradeLutCache()
+        # Deux fils de cuisson : les LUT d'un étalonnage animé se renouvellent à chaque image (ADR-0008, étape 7) ; une seule
+        # LUT à la fois ferait vieillir celle qu'on montre de plusieurs images.
+        self.grades = GradeLutCache(workers=2)
         self._grade_poll_pending = False
         self._lut_images: OrderedDict[str, QImage] = OrderedDict()
         self._last_luts: dict[str, str] = {}

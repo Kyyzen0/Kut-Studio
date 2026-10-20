@@ -212,6 +212,50 @@ def test_one_slot_keeps_the_last_request_first_like_a_dragged_slider():
     assert calls == [0.1, 0.4]
 
 
+def test_workers_bound_the_simultaneous_bakes_and_the_default_is_one():
+    running, peak, lock = [0], [0], threading.Lock()
+    release = threading.Event()
+
+    def bake(_grade, **_options):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        release.wait(5)
+        with lock:
+            running[0] -= 1
+        return b"x"
+
+    for workers, expected in ((1, 1), (2, 2)):
+        peak[0] = 0
+        release.clear()
+        cache = GradeLutCache(bake=bake, workers=workers)
+        for number in range(5):
+            cache.lookup(ColorGrade(exposure=number / 10), slot=f"s{number}")
+        assert _wait(lambda: peak[0] >= expected)
+        threading.Event().wait(0.1)
+        assert peak[0] == expected
+        release.set()
+        assert _wait(lambda: cache.latest("s4") is not None)
+    assert GradeLutCache()._workers == 1
+
+
+def test_latest_is_the_newest_successful_bake_of_the_slot_only():
+    release = threading.Event()
+    release.set()
+    cache = GradeLutCache(bake=lambda grade, **_o: bytes([int(grade.exposure * 100)]))
+    assert cache.latest("a") is None
+    first, second = ColorGrade(exposure=0.1), ColorGrade(exposure=0.2)
+    cache.lookup(first, slot="a")
+    assert _wait(lambda: cache.latest("a") is not None)
+    assert cache.latest("a") == (lut_key(first), bytes([10])) and cache.latest("b") is None
+    cache.lookup(second, slot="a")
+    assert _wait(lambda: cache.latest("a") == (lut_key(second), bytes([20])))
+    failing = GradeLutCache(bake=lambda *_a, **_o: (_ for _ in ()).throw(__import__("core.gpu_grade", fromlist=["x"]).GradeBakeError("x")))
+    failing.lookup(first, slot="a")
+    assert _wait(lambda: failing.failed(first))
+    assert failing.latest("a") is None, "un échec n'est jamais une « dernière LUT »"
+
+
 # --- l'oracle : moniteur (référence CPU) contre export -----------------------------------------------------------------------
 
 
