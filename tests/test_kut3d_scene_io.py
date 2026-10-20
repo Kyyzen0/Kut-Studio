@@ -198,7 +198,7 @@ def test_optional_sections_default(cube_dir: Path) -> None:
 
 
 def test_newer_version_is_refused(cube_dir: Path) -> None:
-    doc = mutated(("version",), kut3d.PRIMITIVES_FORMAT_VERSION + 1)
+    doc = mutated(("version",), kut3d.TEXT_FORMAT_VERSION + 1)
     doc["scene"]["clef_du_futur"] = (
         1  # un format futur peut avoir d'autres clés : c'est la version qui est dite
     )
