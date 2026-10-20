@@ -1,15 +1,16 @@
-"""``describe`` : lire un projet comme un dictionnaire JSON versionné (ADR-0005, §5 ; étape 5, parties A et B).
+"""``describe`` : lire un projet comme un dictionnaire JSON versionné (ADR-0005, §5 ; étape 5, parties A, B et C).
 
 La sortie est **distincte du format de fichier** ``.kut`` : elle est faite pour être lue (par une personne, un outil, un LLM) et peut
 évoluer pour la lisibilité sans casser les projets. Elle décrit le projet, ses médias, ses séquences, leurs pistes, leurs clips (place,
 source, vitesse, audio de base, transform), leurs transitions et leurs repères (partie A), puis les effets visuels et audio, l'étalonnage
 (réglage et graphe de nœuds), le compositing, la composition nodale, les images clés, les bus, les inserts, l'automation de volume et le
-ducking (partie B). Ce qu'elle ne décrit pas encore (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale,
-style de texte, suivi) est **nommé** dans la clé ``not_described`` : elle ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
+ducking (partie B), enfin la bibliothèque, les guides, le flou de mouvement, la grille rythmique, les classements, la source Multicam, le
+style des calques graphiques, le style de texte et le suivi (partie C). Plus rien n'est « non décrit » : la clé ``not_described`` reste
+(liste vide) pour nommer un futur champ sans décision, et la sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
 
 Les valeurs sont celles **saisies** (statiques) du modèle, jamais celles qu'évalue la scène à un instant : quand des images clés
-(``transform_keyframes``, ``animation``) existent, la valeur rendue vient de la courbe, et un suivi (section ``tracking``, non décrite)
-peut encore l'écraser au rendu.
+(``transform_keyframes``, ``animation``) existent, la valeur rendue vient de la courbe, et un suivi (``tracking``) peut encore l'écraser
+au rendu.
 
 Garanties, que ``tests/test_describe.py`` vérifie :
 
@@ -33,14 +34,15 @@ import os
 from typing import Any
 
 from ..project_model import Clip, MediaAsset, Project, Sequence, Track
-from . import describe_audio, describe_color, describe_composition, describe_shapes
+from . import describe_audio, describe_color, describe_composition, describe_shapes, describe_structure, describe_tracking
 from .describe_coverage import NOT_DESCRIBED_SECTIONS
 from .describe_values import enum, number, optional_text, text
 
 DESCRIBE_VERSION = 1
 """Version du format de la sortie de :func:`describe`. Elle change quand une clé disparaît ou change de sens ; ajouter une clé
-n'est pas une rupture : la partie B (effets, couleur, composition, images clés, bus) ne fait qu'**ajouter** des clés (et retirer des noms de
-``not_described``) à la forme de la partie A, qui n'a pas encore été publiée dans une version : elle reste à ``1``."""
+n'est pas une rupture : les parties B et C (effets, couleur, composition, images clés, bus, puis bibliothèque, Multicam, suivi, style) ne
+font qu'**ajouter** des clés (et retirer des noms de ``not_described``) à la forme de la partie A, qui n'a pas encore été publiée dans
+une version : elle reste à ``1``."""
 
 def _present(asset: MediaAsset) -> bool | None:
     """Le fichier d'un média existe-t-il ? ``None`` quand la question n'a pas de sens (sous-titres en ligne, chemin vide)."""
@@ -113,7 +115,7 @@ def _length(clip: Clip) -> float | None:
     return value if math.isfinite(value) else None
 
 
-def _clip(clip: Clip, length: float | None) -> dict[str, Any]:
+def _clip(clip: Clip, length: float | None, lookup: describe_tracking.ClipLookup) -> dict[str, Any]:
     start = float(clip.timeline_start)
     end = start + length if length is not None else None
     return {
@@ -132,10 +134,12 @@ def _clip(clip: Clip, length: float | None) -> dict[str, Any]:
         "compositing": describe_shapes.compositing(clip.compositing),
         "animation": describe_shapes.keyframes(clip.animation),
         "composition": describe_composition.composition(clip.composition),
+        "text_style": describe_shapes.text_style(clip.text_style),
+        "tracking": describe_tracking.tracking(clip, lookup),
     }
 
 
-def _track(track: Track) -> tuple[dict[str, Any], list[float | None], list[bool]]:
+def _track(track: Track, lookup: describe_tracking.ClipLookup) -> tuple[dict[str, Any], list[float | None], list[bool]]:
     """La piste décrite, la durée de chacun de ses clips et leur état (pour la durée de la séquence, sans recalculer)."""
     lengths = [_length(clip) for clip in track.clips]
     data = {
@@ -144,17 +148,18 @@ def _track(track: Track) -> tuple[dict[str, Any], list[float | None], list[bool]
         "volume_db": number(track.volume_db), "pan": number(track.pan), "audio_role": text(track.audio_role),
         "bus_id": describe_audio.bus_id(track), "inserts": describe_shapes.effects(track.inserts),
         "automation": describe_audio.automation(track.automation), "ducking_config": describe_audio.ducking_config(track.ducking_config),
-        "clips": [_clip(clip, length) for clip, length in zip(track.clips, lengths)],
+        "clips": [_clip(clip, length, lookup) for clip, length in zip(track.clips, lengths)],
     }
     return data, lengths, [bool(clip.enabled) for clip in track.clips]
 
 
-def _sequence(sequence: Sequence, active: bool) -> dict[str, Any]:
+def _sequence(sequence: Sequence, active: bool, assets: dict[str, MediaAsset]) -> dict[str, Any]:
     tracks: list[dict[str, Any]] = []
     ends: list[float] = []
     unknown_end = False
+    lookup = describe_tracking.ClipLookup(sequence, assets)
     for track in sequence.tracks:
-        data, lengths, enabled = _track(track)
+        data, lengths, enabled = _track(track, lookup)
         tracks.append(data)
         for clip, length, is_enabled in zip(track.clips, lengths, enabled):
             if not is_enabled:
@@ -182,6 +187,9 @@ def _sequence(sequence: Sequence, active: bool) -> dict[str, Any]:
         ],
         "buses": describe_audio.buses(sequence.buses),
         "ducking_sidechains": describe_audio.sidechains(sequence.ducking_sidechains),
+        "guides": describe_structure.guides(sequence.guides), "motion_blur": describe_structure.motion_blur(sequence.motion_blur),
+        "multicam": describe_structure.multicam(sequence), "beat_grid": describe_structure.beat_grid(sequence.beat_grid),
+        "generated_groups": describe_structure.generated_groups(sequence.generated_groups),
     }
 
 
@@ -206,7 +214,8 @@ def describe(project: Project, *, check_media: bool = False) -> dict[str, Any]:
         un dictionnaire strictement sérialisable (:func:`describe_json`), à l'ordre de clés stable.
     """
     active = _active_sequence(project)
-    sequences = [_sequence(sequence, sequence is active) for sequence in project.sequences]
+    assets = {asset.id: asset for asset in project.media_assets}
+    sequences = [_sequence(sequence, sequence is active, assets) for sequence in project.sequences]
     current = next((item for item in sequences if item["active"]), None)
     return {
         "describe_version": DESCRIBE_VERSION,
@@ -219,6 +228,7 @@ def describe(project: Project, *, check_media: bool = False) -> dict[str, Any]:
             "active_sequence": current["id"] if current else None,
         },
         "media": [_media(asset, check_media) for asset in project.media_assets],
+        "library": describe_structure.library(project),
         "color_presets": describe_color.presets(project.color_presets),
         "sequences": sequences,
         "not_described": list(NOT_DESCRIBED_SECTIONS),

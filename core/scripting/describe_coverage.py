@@ -22,12 +22,17 @@ COVERED_CLASSES: tuple[str, ...] = (
     "ColorGrade", "ColorCurves", "ColorCurve", "Wheel", "LUTResource", "ColorNodeGraph", "ColorNode", "ColorMixer", "NodeLink",
     "Qualifier", "ColorPreset", "Mask", "MaskKeyframe", "Compositing", "ChromaKey", "Composition", "CompositionGraph", "MediaNode",
     "GraphicNode", "SolidNode", "TransformNode", "MergeNode", "MaskNode", "KeyNode", "EffectsNode", "GradeNode", "OutputNode",
+    "Guide", "MotionBlurSettings", "BeatGrid", "LibraryFolder", "LibraryTag", "AssetAssignment", "MulticamAngle", "MulticamAudio",
+    "MulticamSource", "TextStyle", "TrackData", "TrackerSettings", "Tracker", "TrackLink", "Stabilization", "ClipTracking",
 )
 """Les dataclasses du modèle persisté dont chaque champ doit être décidé (:mod:`core.project_model`, :mod:`core.transitions`,
 :mod:`core.time_remapping`, :mod:`core.visual_effects`, :mod:`core.graphics`, et, depuis la partie B, les effets, l'audio avancé,
 l'étalonnage, le compositing, la composition et les images clés : :mod:`core.animation`, :mod:`core.effects_model`,
 :mod:`core.audio_effects_model`, :mod:`core.audio_buses`, :mod:`core.audio_automation`, :mod:`core.color_grading`,
-:mod:`core.color_nodes`, :mod:`core.color_qualifier`, :mod:`core.node_graph`, :mod:`core.compositing`, :mod:`core.composition`)."""
+:mod:`core.color_nodes`, :mod:`core.color_qualifier`, :mod:`core.node_graph`, :mod:`core.compositing`, :mod:`core.composition` ; et, depuis
+la partie C, la bibliothèque, les guides, le flou de mouvement, la grille rythmique, le multicam, le style de texte et le suivi :
+:mod:`core.library_organization`, :mod:`core.canvas_guides`, :mod:`core.motion_blur`, :mod:`core.beat_grid`, :mod:`core.multicam_model`,
+:mod:`core.text_style`, :mod:`core.tracking_model`)."""
 
 _CLIP = "sequences[].tracks[].clips[]"
 _TRACK = "sequences[].tracks[]"
@@ -35,6 +40,10 @@ _GRADE = f"{_CLIP}.color_grade.nodes[].grade"
 _COMP = f"{_CLIP}.composition"
 _NODES = f"{_COMP}.graph.nodes[]"
 _MASK = f"{_CLIP}.compositing.masks[]"
+_SEQ = "sequences[]"
+_LIBRARY = "library"
+_TRACKING = f"{_CLIP}.tracking"
+_TRACKER = f"{_TRACKING}.trackers[]"
 
 
 def _under(prefix: str, *names: str) -> dict[str, str]:
@@ -50,6 +59,12 @@ _TIME_FIELDS = (
 )
 _GRAPHIC_FIELDS = (
     "type", "text", "source_path", "width", "height", "visible", "locked", "parent_id", "group_id", "z_order",
+    # --- Partie C : le style ---
+    "fill_color", "stroke_color", "stroke_width", "shadow_color", "shadow_offset_x", "shadow_offset_y", "font_family", "font_size",
+    "motion_blur", "layout", "shape", "corner_radius", "polygon_sides", "fill_enabled", "align_h", "align_v", "tracking", "line_spacing",
+    "bold", "italic", "box_text", "autosize", "shadow_blur", "background_enabled", "background_color", "background_padding",
+    "background_radius", "stroke_position", "word_reveal", "reveal", "highlight_color", "highlight_words", "word_times", "glow_color",
+    "glow_radius", "glow_strength", "light_kind", "light_seed", "light_speed", "light_angle", "light_density",
 )
 
 DESCRIBED: dict[str, dict[str, str]] = {
@@ -59,6 +74,7 @@ DESCRIBED: dict[str, dict[str, str]] = {
         "sequences": "sequences",
         "active_sequence_id": "project.active_sequence",
         "color_presets": "color_presets",
+        "library_folders": "library.folders", "library_tags": "library.tags", "library_assignments": "library.assignments",
     },
     "MediaAsset": {
         "id": "media[].id", "path": "media[].path", "name": "media[].name", "duration": "media[].duration",
@@ -73,6 +89,7 @@ DESCRIBED: dict[str, dict[str, str]] = {
         "fps": "sequences[].fps", "tracks": "sequences[].tracks", "markers": "sequences[].markers",
         "transitions": "sequences[].transitions", "format_source": "sequences[].format_source",
         "buses": "sequences[].buses", "ducking_sidechains": "sequences[].ducking_sidechains",
+        **_under(_SEQ, "guides", "motion_blur", "multicam", "beat_grid", "generated_groups"),
     },
     "Track": {
         "id": "sequences[].tracks[].id", "name": "sequences[].tracks[].name", "type": "sequences[].tracks[].type",
@@ -93,7 +110,8 @@ DESCRIBED: dict[str, dict[str, str]] = {
         "time_remapping": "sequences[].tracks[].clips[].time_remapping",
         "graphic": "sequences[].tracks[].clips[].graphic", "sequence_id": "sequences[].tracks[].clips[].sequence_id",
         "angle_id": "sequences[].tracks[].clips[].angle_id", "template_slot": "sequences[].tracks[].clips[].template_slot",
-        **_under(_CLIP, "transform_keyframes", "effects", "audio_effects", "color_grade", "compositing", "animation", "composition"),
+        **_under(_CLIP, "transform_keyframes", "effects", "audio_effects", "color_grade", "compositing", "animation", "composition",
+                   "text_style", "tracking"),
     },
     "Marker": {
         "id": "sequences[].markers[].id", "time_seconds": "sequences[].markers[].time_seconds",
@@ -155,6 +173,29 @@ DESCRIBED: dict[str, dict[str, str]] = {
     "EffectsNode": _under(_NODES, "id", "effects", "label"),
     "GradeNode": _under(_NODES, "id", "grade", "label"),
     "OutputNode": _under(_NODES, "id"),
+    # --- Partie C : bibliothèque, guides, flou de mouvement, grille rythmique, multicam, style de texte, suivi ---
+    "LibraryFolder": _under(f"{_LIBRARY}.folders[]", "id", "name", "parent_id", "color"),
+    "LibraryTag": _under(f"{_LIBRARY}.tags[]", "id", "name", "color"),
+    "AssetAssignment": _under(f"{_LIBRARY}.assignments[]", "asset_id", "folder_id", "tag_ids"),
+    "Guide": _under(f"{_SEQ}.guides[]", "id", "orientation", "position", "locked"),
+    "MotionBlurSettings": _under(f"{_SEQ}.motion_blur", "enabled", "shutter_angle", "samples"),
+    "BeatGrid": _under(f"{_SEQ}.beat_grid", "bpm", "offset", "beats_per_bar"),
+    "MulticamSource": _under(f"{_SEQ}.multicam", "angles", "audio", "sync_method"),
+    "MulticamAngle": _under(f"{_SEQ}.multicam.angles[]", "id", "name", "track_id", "color_index", "sync_method", "sync_status",
+                            "sync_confidence"),
+    "MulticamAudio": _under(f"{_SEQ}.multicam.audio", "mode", "angle_ids"),
+    "TextStyle": _under(f"{_CLIP}.text_style", "font_family", "font_size", "color", "opacity", "outline_color", "outline_width",
+                        "shadow_color", "shadow_offset", "background_color", "background_opacity", "padding_x", "padding_y", "alignment",
+                        "position_x", "position_y", "margin_x", "margin_y"),
+    "ClipTracking": _under(_TRACKING, "trackers", "links", "stabilization"),
+    "Tracker": _under(_TRACKER, "id", "name", "color", "visible", "show_path", "kind", "settings", "data"),
+    "TrackerSettings": _under(f"{_TRACKER}.settings", "pattern_width", "pattern_height", "search_width", "search_height",
+                              "min_confidence", "good_confidence", "adapt", "precision", "stop_on_loss"),
+    "TrackData": _under(f"{_TRACKER}.data", "rate", "first", "source_width", "source_height"),
+    "TrackLink": _under(f"{_TRACKING}.links[]", "id", "source_clip_id", "tracker_ids", "target", "mask_id", "position", "rotation", "scale",
+                        "reference_index", "enabled", "continuation_ids"),
+    "Stabilization": _under(f"{_TRACKING}.stabilization", "enabled", "tracker_ids", "mode", "smoothing", "smoothing_frames", "borders",
+                            "reference_index", "shared_range"),
 }
 """``{classe: {champ: chemin de la clé dans la sortie}}`` ; ``[]`` marque une liste. Le nom de la clé est celui du champ."""
 
@@ -211,6 +252,55 @@ DERIVED: dict[str, str] = {
     "sequences[].tracks[].clips[].composition.graph.nodes[].type": (
         "``media``, ``graphic``, ``solid``, ``transform``, ``merge``, ``mask``, ``key``, ``effects``, ``grade`` ou ``output`` "
         "(la classe du nœud)."),
+    f"{_SEQ}.multicam.angles[].offset": (
+        "Décalage de synchronisation de l'angle : le début de ses premiers clips dans la source (le modèle ne le stocke nulle part "
+        "ailleurs ; ``set_multicam_angle_offset`` le règle) ; ``null`` si la piste de l'angle n'a aucun clip."),
+    f"{_SEQ}.generated_groups[].id": "Identifiant du groupe (la clé du dictionnaire du modèle) : celui que ``update_leaderboard`` attend.",
+    f"{_SEQ}.generated_groups[].kind": "Genre du groupe ; seul ``leaderboard`` (classement) est écrit par l'application.",
+    f"{_SEQ}.generated_groups[].data": (
+        "Pour un classement : ses lignes et sa place (ce que ``update_leaderboard`` récrit) ; ``null`` pour un autre genre, ou si les "
+        "données n'ont pas la forme que l'application écrit (plus de 10 lignes…)."),
+    f"{_SEQ}.generated_groups[].clips": "Les calques que le groupe a produits (identifiants de clips), dans l'ordre du modèle.",
+    **{
+        f"{_SEQ}.generated_groups[].data.{name}": "Place du classement : début et durée en secondes de la timeline, ``top`` en fraction de la hauteur."
+        for name in ("start", "duration", "top", "delay")
+    },
+    f"{_SEQ}.generated_groups[].data.rows": "Les lignes du classement, dans l'ordre (``rank``, ``name``, ``value``, ``color``).",
+    **{
+        f"{_SEQ}.generated_groups[].data.rows[].{name}": "Une cellule d'une ligne de classement."
+        for name in ("rank", "name", "value", "color")
+    },
+    f"{_TRACKER}.data.count": "Nombre d'images de la grille d'échantillons (``first`` .. ``first + count - 1``), vides comprises.",
+    f"{_TRACKER}.data.points_width": (
+        "Largeur du média COURANT du clip : l'espace des ``x`` de ``manual_points`` (un point est stocké dans ``source_width`` x ``source_height``, la taille "
+        "d'origine des données ; après ``relink_media`` vers une autre résolution, ``set_tracker_position`` lit des pixels du média courant et remet à "
+        "l'échelle). ``null`` si le média manque ou n'a pas de taille : les points sont alors ceux des données, tels quels."),
+    f"{_TRACKER}.data.points_height": "Hauteur du média courant : l'espace des ``y`` de ``manual_points`` (voir ``points_width``).",
+    f"{_TRACKER}.data.valid_range": (
+        "``[première, dernière]`` image source dont la position est utilisée par le rendu (suivie, incertaine ou manuelle) ; ``null`` sans point."),
+    f"{_TRACKER}.data.counts": "Nombre d'images par état : ``empty``, ``tracked``, ``uncertain``, ``lost``, ``manual`` (les échantillons bruts ne sont pas écrits).",
+    **{
+        f"{_TRACKER}.data.counts.{name}": "Nombre d'images dans cet état."
+        for name in ("empty", "tracked", "uncertain", "lost", "manual")
+    },
+    f"{_TRACKER}.data.manual_points": (
+        "Les points posés à la main (état « manuel »), au plus 64 : ce que ``set_tracker_position`` pose. ``index`` est l'image source "
+        "(abscisse de la grille, ``first`` compris), ``x`` et ``y`` des pixels du média."),
+    f"{_TRACKER}.data.manual_points[].index": "Image source du point.",
+    f"{_TRACKER}.data.manual_points[].timeline_time": (
+        "Le ``at`` que ``set_tracker_position`` attend pour viser cette image : l'instant de timeline du milieu de l'image montrée par le "
+        "clip ; ``null`` si le clip ne la montre pas."),
+    f"{_TRACKER}.data.manual_points[].x": "Position X en pixels du média.",
+    f"{_TRACKER}.data.manual_points[].y": "Position Y en pixels du média.",
+    f"{_TRACKER}.data.manual_points_truncated": "``true`` quand le tracker porte plus de points manuels que la liste n'en donne.",
+    f"{_TRACKING}.links[].reference_clip_id": (
+        "Le clip qui montre l'image de référence, à donner à ``source`` de ``add_link`` : la source, ou l'un de ses prolongements après une coupe "
+        "(celui que choisit le moteur de rendu) ; le clip lui-même pour une liaison propre ; ``null`` si aucune source n'existe. Les sources d'une "
+        "liaison sont cherchées dans la séquence du clip lié, comme le fait le rendu."),
+    f"{_TRACKING}.links[].reference_time": (
+        "Le ``at`` que ``add_link`` attend (avec ``reference_clip_id`` pour ``source``) pour l'image de référence : instant de timeline, dans ce "
+        "clip, du milieu de cette image ; ``null`` s'il n'y a pas de source ou si elle ne montre pas cette image."),
+    f"{_TRACKING}.stabilization.reference_time": "Le ``at`` que ``set_stabilization`` attend pour l'image de référence (voir ``links[].reference_time``).",
     **{
         f"{_MASK}.points[].{name}": "Un sommet de polygone ou une ancre de courbe : fraction de la boîte du masque (``set_mask_points``)."
         for name in ("x", "y")
@@ -228,6 +318,12 @@ DERIVED: dict[str, str] = {
 ceux du modèle (``EFFECT_PARAMETER_SPECS``, ``AUDIO_EFFECT_PARAMETER_SPECS``) : une table de valeurs, pas des clés fixes."""
 
 EXCLUDED: dict[str, dict[str, str]] = {
+    "TrackData": {
+        "xs": "Échantillons bruts de la grille (octets, une position par image source) : volumineux, et un script ne sait poser que des points manuels. Résumés par ``counts`` et ``valid_range`` ; les points manuels sont dans ``manual_points``.",
+        "ys": "Voir ``xs`` : positions Y des échantillons bruts de la grille.",
+        "confidence": "Confiance quantifiée de chaque échantillon analysé (octets) : valeur d'analyse, que ni un verbe ni un rendu ne demandent à un script ; non décrite.",
+        "status": "État de chaque échantillon (octets) : résumé par ``counts`` et ``valid_range`` plutôt qu'une valeur par image.",
+    },
     "MediaAsset": {
         "color_space": "Valeur d'exécution, sondée à la demande et jamais écrite dans un projet (docstring de MediaAsset).",
     },
@@ -243,6 +339,7 @@ EXCLUDED: dict[str, dict[str, str]] = {
         "track_id": "Étiquette pour les messages d'erreur, hors de la comparaison (docstring de TrackAutomation) : redondante avec la piste qui porte la courbe.",
     },
     "GraphicOverlay": {
+        "light_time": "Temps local de l'image d'un calque de lumière : posé par la scène à chaque rendu (mograph_scene), jamais saisi ; la valeur stockée n'est pas un réglage.",
         "scene_time": "Valeur d'exécution d'un calque scène 3D, posée par la scène à chaque image et jamais écrite dans un projet (core.graphics.RUNTIME_FIELDS).",
     },
     "LUTResource": {
@@ -251,8 +348,9 @@ EXCLUDED: dict[str, dict[str, str]] = {
 }
 """``{classe: {champ: raison}}`` : des champs qu'il est juste de ne pas décrire."""
 
-NOT_DESCRIBED_SECTIONS: tuple[str, ...] = ("graphic_style", "library", "mograph", "multicam", "social", "text_style", "tracking")
+NOT_DESCRIBED_SECTIONS: tuple[str, ...] = ()
 """Les sections de ``tests/data/describe_field_debt.json`` (triées) : la clé ``not_described`` de la sortie. Un test vérifie que
-cette liste est exactement l'ensemble des sections de la dette ; la partie B en retire à mesure qu'elle les décrit."""
+cette liste est exactement l'ensemble des sections de la dette ; les parties B et C en ont retiré toutes les sections : la dette est vide
+et la clé reste (liste vide) pour qu'un champ futur sans décision puisse y être de nouveau nommé."""
 
 __all__ = ["COVERED_CLASSES", "DERIVED", "DESCRIBED", "EXCLUDED", "NOT_DESCRIBED_SECTIONS", "SHAPE_ALIASES"]

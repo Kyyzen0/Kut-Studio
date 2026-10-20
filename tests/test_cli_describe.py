@@ -61,7 +61,7 @@ def test_json_is_one_object_on_stdout_with_the_full_description(kut, capsys):
     assert data["file"] == str(kut) and data["dropped"] == {}
     description = data["description"]
     assert description["describe_version"] == 1 and description["project"]["active_sequence"] == "seq-main"
-    assert [seq["id"] for seq in description["sequences"]] == ["seq-main", "seq-b"]
+    assert [seq["id"] for seq in description["sequences"]] == ["seq-main", "seq-b", "seq_mc"]
     assert "Projet" in err and "--json" in err, "le texte humain va sur la sortie d'erreur"
 
 
@@ -85,13 +85,19 @@ def test_default_output_is_a_readable_summary_on_stdout(kut, capsys):
     assert code == 0 and err == ""
     assert "Projet : Riche" in out and "Séquence principale [seq-main] (active)" in out and "Scène B [seq-b]" in out
     assert "Piste A1 [A1] audio : 1 clip(s)" in out and "1 transition(s), 2 repère(s)" in out
-    assert "Médias : 4 (1 introuvable(s))" in out and "Pas encore décrit : " in out and "--json" in out
+    assert "Médias : 5 (1 introuvable(s))" in out and "--json" in out
+    assert "Pas encore décrit" not in out, "depuis la partie C, rien n'est « non décrit » : la ligne n'apparaît plus"
 
 
 @pytest.mark.parametrize("lang, expected", [("en", "Not described yet"), ("es", "Aún sin describir"), ("fr", "Pas encore décrit")])
-def test_messages_are_translated(kut, capsys, lang, expected):
+def test_messages_are_translated(kut, capsys, monkeypatch, lang, expected):
+    """La ligne « pas encore décrit » ne s'écrit que si la description nomme une section ; on en nomme une pour vérifier les trois langues."""
+    from core.scripting import api
+
+    original = api.describe
+    monkeypatch.setattr(api, "describe", lambda project, **options: original(project, **options) | {"not_described": ["futur"]})
     _code, out, _err = _run("describe", str(kut), "--lang", lang, capsys=capsys)
-    assert expected in out
+    assert expected in out and "futur" in out
 
 
 def test_describe_translations_exist_in_each_language():
