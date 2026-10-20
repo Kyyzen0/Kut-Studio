@@ -415,12 +415,11 @@ def test_six_forms_scene_covers_six_separate_regions() -> None:
             assert cell.sum() > 200, (row, col)
     assert 0.1 < shape.mean() < 0.5
     colors = np.asarray(frame.color)
-    assert tuple(int(v) for v in colors[1, 1]) == (
-        26,
-        26,
-        36,
-        255,
-    )  # fond (0.1, 0.1, 0.14) opaque
+    # Fond (0.1, 0.1, 0.14) opaque : 0,1 x 255 = 25,5 tombe pile entre deux entiers, et l'arrondi du float32 diffère selon la
+    # machine (macOS / Windows : 26 ; Ubuntu CI : 25). On accepte donc ±1 sur les canaux de couleur, l'alpha est exact.
+    background = np.array([int(v) for v in colors[1, 1]])
+    assert np.all(np.abs(background[:3] - np.array([26, 26, 36])) <= 1), background
+    assert background[3] == 255
 
 
 def test_the_scene_is_deterministic() -> None:
