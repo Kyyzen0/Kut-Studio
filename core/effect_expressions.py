@@ -8,7 +8,9 @@ Trois filtres de l'export acceptent une expression du temps pour leurs options e
   enregistré** : voir :data:`core.effect_targets.PENDING_EFFECT_PARAMS` (coût de ``geq`` par pixel). ``speed`` n'y figure pas
   (saut de phase).
 
-Seuls les paramètres de :data:`core.effect_targets.ANIMATABLE_EFFECT_PARAMS` produisent une expression : le registre décide.
+Seuls les paramètres de :data:`core.effect_targets.ANIMATABLE_EFFECT_PARAMS` produisent une expression, hors ceux de
+:data:`core.effect_targets.SENDCMD_EFFECT_PARAMS` (flou, aberration chromatique, rayon de la lueur : fichier de commandes,
+:mod:`core.effect_sendcmd`) : le registre décide.
 
 **Base de temps.** Les images clés d'un effet sont en temps local du clip. L'export remet ``PTS`` à zéro au début du clip
 (``setpts=PTS-STARTPTS``, plus le temps déjà écoulé à l'origine d'un segment d'aperçu) *avant* les effets ; le décalage de
@@ -45,13 +47,16 @@ def animated_effect_expressions(
     comme :meth:`core.animation.AnimatableProperty.evaluate` côté Python. ``{}`` sans image clé : le filtre statique est
     alors construit comme avant.
     """
-    from .effect_targets import ANIMATABLE_EFFECT_PARAMS, _fx_spec
+    from .effect_targets import ANIMATABLE_EFFECT_PARAMS, SENDCMD_EFFECT_PARAMS, _fx_spec
 
     if not animation:
         return {}
     keyframes = list(animation)
     result: dict[str, str] = {}
+    by_command = SENDCMD_EFFECT_PARAMS.get(effect.type, ())      # rendus par ``sendcmd`` (core.effect_sendcmd), pas ici
     for name in ANIMATABLE_EFFECT_PARAMS.get(effect.type, ()):
+        if name in by_command:
+            continue
         property_id = fx_property_id(effect.id, name)
         frames = [kf for kf in keyframes if kf.property_name == property_id]
         if not frames or name not in effect.params:

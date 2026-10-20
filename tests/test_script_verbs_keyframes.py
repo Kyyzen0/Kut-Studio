@@ -154,14 +154,23 @@ def test_add_effect_keyframe_refuses_what_the_model_would_clamp_or_cannot_animat
     for value in (1.0001, -0.1):                                                             # la vignette va de 0 à 1
         report = _refused(_project(), _op("add_effect_keyframe", clip="a", effect="v1", parameter="intensity", at=0, value=value))
         assert "hors bornes" in report.error
-    report = _refused(_project(), _op("add_effect_keyframe", clip="a", effect="bl", parameter="intensity", at=0, value=1.0))
-    assert "pas animable" in report.error                                                    # le flou n'est pas encore animable (étape 5 de l'ADR-0008)
+    sharpened = _project()
+    add_effect_to_clip(sharpened, "a", EffectType.SHARPEN, effect_id="sh")
+    report = _refused(sharpened, _op("add_effect_keyframe", clip="a", effect="sh", parameter="intensity", at=0, value=1.0))
+    assert "pas animable" in report.error                                                    # la netteté (``unsharp``) reste statique
+    glowing = _project()
+    add_effect_to_clip(glowing, "a", EffectType.GLOW, effect_id="gl")
+    # Lueur : seul le rayon est animable. Le gain est refusé par le modèle ; le seuil n'est pas un nom que le verbe connaît.
+    assert "pas animable" in _refused(glowing, _op("add_effect_keyframe", clip="a", effect="gl", parameter="intensity", at=0, value=0.5)).error
+    _invalid(_op("add_effect_keyframe", clip="a", effect="gl", parameter="threshold", at=0, value=0.5))
+    report = _refused(_project(), _op("add_effect_keyframe", clip="a", effect="bl", parameter="intensity", at=0, value=51.0))
+    assert "hors bornes" in report.error                                                     # le flou va de 0 à 50
     report = _refused(_project(), _op("add_effect_keyframe", clip="a", effect="v1", parameter="brightness", at=0, value=0.1))
     assert "pas animable" in report.error
     _refused(_project(), _op("add_effect_keyframe", clip="a", effect="absent", parameter="intensity", at=0, value=0.1))
     report = _refused(_project(), _op("add_effect_keyframe", clip="a", effect="v1", parameter="intensity", at=10.5, value=0.1))
     assert "hors du clip" in report.error
-    _invalid(_op("add_effect_keyframe", clip="a", effect="v1", parameter="radius", at=0, value=0.1))
+    _invalid(_op("add_effect_keyframe", clip="a", effect="v1", parameter="threshold", at=0, value=0.1))
     for bad in (math.nan, math.inf, True, "0.5"):
         _invalid(_op("add_effect_keyframe", clip="a", effect="v1", parameter="intensity", at=0, value=bad))
     for bad in (-1.0, math.nan, 1e12):
@@ -221,7 +230,10 @@ def test_set_keyframe_value_refuses_bounds_missing_keyframes_and_unsuitable_prop
     assert "Aucune image clé" in _refused(_animated(), _op("set_keyframe_value", clip="a", property="fx.v1.intensity", at=1.0, value=0.5)).error
     assert "vitesse" in _refused(_animated(), _op("set_keyframe_value", clip="a", property="time.speed", at=0.0, value=1.0)).error
     assert "n'est pas un nombre" in _refused(_animated(), _op("set_keyframe_value", clip="a", property="flip_h", at=0.0, value=1.0)).error
-    assert "propriété animable" in _refused(_animated(), _op("set_keyframe_value", clip="a", property="fx.bl.intensity", at=0.0, value=1.0)).error
+    sharpened = _animated()
+    add_effect_to_clip(sharpened, "a", EffectType.SHARPEN, effect_id="sh")
+    assert "propriété animable" in _refused(sharpened, _op("set_keyframe_value", clip="a", property="fx.sh.intensity", at=0.0, value=1.0)).error
+    assert "Aucune image clé" in _refused(_animated(), _op("set_keyframe_value", clip="a", property="fx.bl.intensity", at=0.0, value=1.0)).error
     assert "propriété animable" in _refused(_animated(), _op("set_keyframe_value", clip="a", property="nimporte.quoi", at=0.0, value=1.0)).error
     for bad in (math.nan, math.inf, True, "1"):
         _invalid(_op("set_keyframe_value", clip="a", property="position_x", at=0, value=bad))

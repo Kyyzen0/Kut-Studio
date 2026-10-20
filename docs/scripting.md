@@ -256,7 +256,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `reset_transform` | Remet le transform à l'identité et retire toutes ses images clés (`clip`) |
 | `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value` obligatoire, `interpolation`) : `at` est **relatif au clip**. `property` : une propriété du transform (dont `pan_x`, `pan_y`) ou `graphic.*`, voir « Images clés : propriétés et unités » |
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
-| `add_effect_keyframe` | Pose ou remplace une image clé d'un paramètre animable d'un effet vidéo (`clip`, `effect`, `parameter` = `brightness`, `contrast`, `saturation` ou `intensity` selon l'effet, `at`, `value`, `interpolation`) |
+| `add_effect_keyframe` | Pose ou remplace une image clé d'un paramètre animable d'un effet vidéo (`clip`, `effect`, `parameter` = `brightness`, `contrast`, `saturation`, `intensity` ou `radius` (rayon du Bloom) selon l'effet, `at`, `value`, `interpolation`) |
 | `remove_effect_keyframe` | Retire l'image clé d'un paramètre d'effet à un instant (`clip`, `effect`, `parameter`, `at`) |
 | `clear_effect_animation` | Retire toute l'animation d'un effet ; chaque paramètre garde la valeur qu'il montrait à `at` (`clip`, `effect`, `at`) |
 | `set_keyframe_value` | Change la valeur d'une image clé existante (`clip`, `property`, `at`, `value`) |
@@ -709,7 +709,8 @@ leurs contrôles communs sont dans `keyframe_rules.py`.
   L'instant est comparé à la microseconde. La vitesse a ses propres verbes (ci-dessous) : `time.speed` est refusé ici.
 - **Images clés d'effet** : `add_effect_keyframe` / `remove_effect_keyframe` nomment l'effet et son paramètre séparément (comme `add_mask_keyframe` pour un
   masque). Seuls les paramètres que le modèle rend animables sont acceptés (luminosité, contraste et saturation de la correction de couleur, intensité de la
-  vignette) ; les bornes sont celles du type de l'effet. `add_keyframe` n'accepte toujours pas `fx.*`.
+  vignette, du flou et de l'aberration chromatique, rayon du Bloom — `parameter` : `radius`) ; la netteté et le seuil ou l'intensité du Bloom restent
+  statiques et sont refusés (« pas animable ») ; les bornes sont celles du type de l'effet, et le plafond d'images clés par clip s'applique. `add_keyframe` n'accepte toujours pas `fx.*`.
 - **Sans aimantation** : l'interface aligne un déplacement sur une image de la timeline ; un script donne l'instant exact.
 - **Rien n'est ramené ni remplacé en silence** : valeur hors bornes, instant hors du clip, déplacement qui sortirait du clip (le modèle réduirait le décalage)
   ou arriverait sur une autre image clé (le modèle la remplacerait), image clé citée deux fois, décalage nul : refusés. Les propriétés qui ne sont pas des

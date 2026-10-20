@@ -216,7 +216,7 @@ def _set_animation_enabled(a: Mapping[str, Any]) -> Operation:
 
 
 KEYFRAME_VERBS: tuple[Verb, ...] = (
-    Verb("add_effect_keyframe", "Pose (ou remplace) une image clé d'un paramètre animable d'un effet vidéo (correction de couleur, vignette) ; le temps est relatif au clip.",
+    Verb("add_effect_keyframe", "Pose (ou remplace) une image clé d'un paramètre animable d'un effet vidéo (correction de couleur, vignette, flou, aberration chromatique, rayon du Bloom) ; le temps est relatif au clip.",
          (_CLIP, _EFFECT, _PARAMETER, _AT,
           Param("value", Kind.NUMBER, "La valeur (dans les bornes du paramètre de l'effet).", minimum=-MAX_TIME, maximum=MAX_TIME),
           Param("interpolation", Kind.ENUM, "Interpolation vers l'image clé suivante.", required=False, choices=_INTERPOLATIONS)),

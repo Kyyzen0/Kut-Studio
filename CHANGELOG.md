@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Animer le flou, l'aberration chromatique et le rayon du Bloom avec des images clés (losanges ‹ ◆ › sous le réglage, éditeur de courbes, scripts `add_effect_keyframe`), à l'export comme dans le moniteur et l'aperçu fidèle, sans temps d'export en plus ; la netteté, le seuil et l'intensité du Bloom et la brume de chaleur restent fixes.
+
 ## [0.8.0] - 2026-10-20
 
 Version qui ouvre le **mode script** à presque tout le montage et qui apporte un **premier calque scène 3D**. Les scripts disposent maintenant de verbes pour le montage, la vitesse, les calques graphiques, l'audio, l'étalonnage, les effets, les images clés, le suivi, la bibliothèque et le Multicam, avec les mêmes refus que l'interface, des verrous plus stricts et des plafonds qui protègent le projet ; `describe` lit tout le modèle, avec les identifiants que ces verbes attendent. La bibliothèque de transitions passe à **43 types** et six transitions qui n'étaient en réalité que des fondus s'exportent enfin avec leur propre effet.

@@ -17,7 +17,9 @@ from core.animation_targets import animation_curves, get_target, targets_for_cli
 from core.effect_targets import (
     ANIMATABLE_EFFECT_PARAMS,
     EXCLUDED_EFFECT_PARAMS,
+    EXPRESSION_EFFECT_PARAMS,
     PENDING_EFFECT_PARAMS,
+    SENDCMD_EFFECT_PARAMS,
     effective_effect_parameters,
 )
 from core.effects_model import (
@@ -69,11 +71,22 @@ def test_no_parameter_name_contains_a_dot():
 
 
 def test_the_registered_list_is_exactly_the_rendered_one():
-    """Étape 3 : seuls les paramètres qui ont un rendu (expression FFmpeg + moniteur) sont enregistrés."""
+    """Étapes 3 et 5 : seuls les paramètres qui ont un rendu (expression FFmpeg ou ``sendcmd``, et moniteur) sont
+    enregistrés ; la liste est l'union des deux voies de rendu."""
     assert ANIMATABLE_EFFECT_PARAMS == {
         EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
         EffectType.VIGNETTE: ("intensity",),
+        EffectType.BLUR: ("intensity",),
+        EffectType.GLOW: ("radius",),
+        EffectType.CHROMATIC_ABERRATION: ("intensity",),
     }
+    assert EXPRESSION_EFFECT_PARAMS == {EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
+                                        EffectType.VIGNETTE: ("intensity",)}
+    assert SENDCMD_EFFECT_PARAMS == {EffectType.BLUR: ("intensity",), EffectType.GLOW: ("radius",),
+                                     EffectType.CHROMATIC_ABERRATION: ("intensity",)}
+    for kind, names in ANIMATABLE_EFFECT_PARAMS.items():
+        assert set(names) == set(EXPRESSION_EFFECT_PARAMS.get(kind, ())) | set(SENDCMD_EFFECT_PARAMS.get(kind, ()))
+        assert not set(EXPRESSION_EFFECT_PARAMS.get(kind, ())) & set(SENDCMD_EFFECT_PARAMS.get(kind, ())), kind
     declared = {kind: {spec.name for spec in specs} for kind, specs in EFFECT_PARAMETER_SPECS.items()}
     for kind, names in ANIMATABLE_EFFECT_PARAMS.items():
         assert set(names) <= declared[kind]
@@ -88,9 +101,6 @@ def test_every_declared_parameter_is_registered_pending_or_excluded_exactly_once
             assert sum(spec.name in group for group in groups) == 1, (kind, spec.name)
         assert set().union(*groups) <= {spec.name for spec in specs}
     assert PENDING_EFFECT_PARAMS == {
-        EffectType.BLUR: ("intensity",),
-        EffectType.GLOW: ("radius",),
-        EffectType.CHROMATIC_ABERRATION: ("intensity",),
         EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),    # geq : coût, voir docs/animation.md
     }
     assert EXCLUDED_EFFECT_PARAMS == {EffectType.SHARPEN: ("intensity",), EffectType.GLOW: ("threshold", "intensity")}
@@ -167,7 +177,8 @@ def test_missing_effect_or_parameter_is_unknown(pid):
 
 def test_excluded_and_pending_parameters_are_not_animatable():
     """Un paramètre n'est enregistré que si son rendu existe : ni l'exclu (netteté, seuil et gain de la lueur), ni
-    l'en-attente (flou, rayon de la lueur, aberration chromatique, vitesse de la brume : étape 5) n'ont de cible."""
+    l'en-attente (brume de chaleur) n'ont de cible ; le flou, le rayon de la lueur et l'aberration chromatique en ont une
+    depuis l'étape 5."""
     clip = clip_of(make_project([
         create_effect(EffectType.SHARPEN, effect_id="s"),
         create_effect(EffectType.GLOW, effect_id="g"),
@@ -176,11 +187,14 @@ def test_excluded_and_pending_parameters_are_not_animatable():
         create_effect(EffectType.HEAT_HAZE, effect_id="h"),
         create_effect(EffectType.COLOR_CORRECTION, effect_id="cc"),
     ]))
-    for pid in ("fx.s.intensity", "fx.g.threshold", "fx.g.intensity", "fx.g.radius", "fx.b.intensity", "fx.ca.intensity",
+    for pid in ("fx.s.intensity", "fx.g.threshold", "fx.g.intensity",
                 "fx.h.amplitude", "fx.h.frequency", "fx.h.speed", "fx.h.top", "fx.h.span"):
         with pytest.raises(KeyError):
             get_target(pid, clip)
-    assert get_target("fx.cc.saturation", clip)
+    for pid, bounds in (("fx.cc.saturation", (0.0, 3.0)), ("fx.g.radius", (0.0, 100.0)), ("fx.b.intensity", (0.0, 50.0)),
+                        ("fx.ca.intensity", (0.0, 40.0))):
+        target = get_target(pid, clip)
+        assert (target.spec.minimum, target.spec.maximum) == bounds
 
 
 def test_fx_targets_only_exist_on_video_tracks():
@@ -239,12 +253,16 @@ def test_effective_parameters_ignore_other_effects_and_non_animatable_keyframes(
     vignette = create_effect(EffectType.VIGNETTE, effect_id="b", params={"intensity": 0.3})
     sharpen = create_effect(EffectType.SHARPEN, effect_id="s", params={"intensity": 1.0})
     blur = create_effect(EffectType.BLUR, effect_id="u", params={"intensity": 2.0})
+    glow = create_effect(EffectType.GLOW, effect_id="g", params={"threshold": 0.6, "radius": 18.0, "intensity": 1.0})
     animation = [Keyframe("fx.b.intensity", 0.0, 0.9), Keyframe("fx.s.intensity", 0.0, 4.0),
-                 Keyframe("fx.u.intensity", 0.0, 9.0)]
-    clip = clip_of(make_project([vignette, sharpen, blur], animation))
+                 Keyframe("fx.u.intensity", 0.0, 9.0), Keyframe("fx.g.radius", 0.0, 30.0),
+                 Keyframe("fx.g.intensity", 0.0, 3.0), Keyframe("fx.g.threshold", 0.0, 0.2)]
+    clip = clip_of(make_project([vignette, sharpen, blur, glow], animation))
     assert effective_effect_parameters(clip, vignette, 0.5) == {"intensity": 0.9}
     assert effective_effect_parameters(clip, sharpen, 0.5) == {"intensity": 1.0}     # exclu : courbe ignorée
-    assert effective_effect_parameters(clip, blur, 0.5) == {"intensity": 2.0}        # en attente (étape 5) : courbe ignorée
+    assert effective_effect_parameters(clip, blur, 0.5) == {"intensity": 9.0}        # étape 5 : flou animé
+    # Rayon animé ; seuil et gain (lutrgb, trop coûteux) : courbes ignorées.
+    assert effective_effect_parameters(clip, glow, 0.5) == {"threshold": 0.6, "radius": 30.0, "intensity": 1.0}
 
 
 # ---------------------------------------------------------------------------
