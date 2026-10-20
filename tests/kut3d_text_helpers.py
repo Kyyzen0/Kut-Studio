@@ -50,5 +50,9 @@ def volume(positions: Array, indices: Array) -> float:
 def degenerate_triangles(positions: Array, indices: Array) -> int:
     tri = welded(positions, indices)
     return int(
-        np.sum((tri[:, 0] == tri[:, 1]) | (tri[:, 1] == tri[:, 2]) | (tri[:, 0] == tri[:, 2]))
+        np.sum(
+            (tri[:, 0] == tri[:, 1])
+            | (tri[:, 1] == tri[:, 2])
+            | (tri[:, 0] == tri[:, 2])
+        )
     )

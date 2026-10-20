@@ -69,10 +69,7 @@ def _worker_env(platform: str) -> dict[str, str]:
 
 def _worker_command(out_path: str | None = None) -> list[str]:
     """Commande de la sonde ; `out_path` : fichier où elle écrit son résultat (indispensable gelé, stdout y valant None)."""
-    from kut3d.gpu.probe_worker import (
-        OUT_FLAG,
-        PROBE_FLAG,
-    )  # différé : `import kut3d` ne charge pas la sonde
+    from kut3d.gpu.probe_worker import OUT_FLAG, PROBE_FLAG  # différé : `import kut3d` ne charge pas la sonde
 
     extra = [OUT_FLAG, out_path] if out_path else []
     if getattr(sys, "frozen", False):
@@ -141,15 +138,9 @@ def _run_probe(platform: str, timeout: float) -> ProbeResult:
         data = _read_result_file(out_file)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    if (
-        data is None
-    ):  # repli : ligne JSON de stdout (sonde d'une version sans fichier de résultat)
+    if data is None:  # repli : ligne JSON de stdout (sonde d'une version sans fichier de résultat)
         last = next(
-            (
-                ln
-                for ln in reversed((done.stdout or "").splitlines())
-                if ln.startswith("{")
-            ),
+            (ln for ln in reversed((done.stdout or "").splitlines()) if ln.startswith("{")),
             "",
         )
         try:

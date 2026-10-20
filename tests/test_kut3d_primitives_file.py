@@ -345,7 +345,7 @@ def test_a_reader_of_the_previous_format_refuses_a_file_with_a_primitive(
         load_scene(path)
 
 
-@pytest.mark.parametrize("version", [3, 99, 10**9])
+@pytest.mark.parametrize("version", [4, 99, 10**9])  # la version 3 est celle du texte 3D
 def test_an_unknown_newer_version_is_refused(tmp_path: Path, version: int) -> None:
     with pytest.raises(SceneVersionError):
         load_scene(_write(tmp_path / "s.kut3d", _doc(version=version)))

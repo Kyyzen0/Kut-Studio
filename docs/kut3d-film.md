@@ -97,6 +97,28 @@ film.save()
 - Une scène qui mêle fichiers de modèle et formes copie les fichiers seuls ; les formes passent telles quelles.
 - Le verbe de script `add_scene3d_clip` accepte un `.kut3d` à formes de base comme un autre.
 
+## Texte 3D extrudé
+
+`film.text3d(texte, ...)` fabrique l'`Instance` d'un titre en relief ; comme une forme de base, il se décrit par ses paramètres
+([format](kut3d-scene.md#texte-3d-extrude-format-3)) : aucun fichier de police ni de modèle, et `place_scene` écrit un `.kut3d` de
+**version 3** seulement si la scène contient un texte (sans texte : version 2 ou 1, inchangées).
+
+```python
+or_ = Material(base_color=(0.9, 0.6, 0.1, 1.0), metallic=0.8, roughness=0.3)
+titre = film.text3d("Kut Studio", size=1.2, depth=0.3, bevel=0.01, material=or_, position=(0, 1, 0))
+```
+
+- `film.text3d(text, *, font="Anton", size=1.0, depth=0.2, bevel=0.0, align="center", material=None, position=(0, 0, 0), rotation_deg=(0, 0, 0), scale=1.0, name="")` :
+  `font` = `Anton` (défaut), `Saira ExtraCondensed` (+ `SemiBold`, `Bold`, `Black`), toutes livrées avec l'application (même rendu sur toutes les
+  machines), ou une famille installée (propre à la machine, refusée si absente). `text` : latin, grec, cyrillique, 40 caractères au plus, `\n`
+  pour changer de ligne. Une valeur refusée (texte vide, emoji, idéogramme, biseau trop grand, police absente, caractère que la police
+  n'a pas...) est une `FilmError` « Texte 3D refusé : ... » en français, avant toute écriture.
+- `film.primitive("text", text="...")` est équivalent.
+- Le maillage est généré à l'appel (une police s'ouvre) : dans l'application ou un script lancé par elle, l'application Qt existe ; dans un script
+  autonome elle est créée au besoin, dans le fil principal.
+- Le verbe de script `add_scene3d_clip` accepte un `.kut3d` à texte comme un autre ; un fichier hostile (texte démesuré, police absente...) est
+  refusé en une ligne.
+
 ## Ce qui est écrit sur disque
 
 ```

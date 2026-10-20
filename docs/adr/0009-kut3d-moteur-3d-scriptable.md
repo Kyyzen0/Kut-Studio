@@ -219,6 +219,16 @@ Chaque phase est une PR (ou plusieurs) fusionnable seule.
      [1e-6, 1e6], 3 à 256 segments, 2 à 256 anneaux, 1 à 256 subdivisions, **65 536 triangles par forme**, **500 000 triangles pour
      l'ensemble des formes d'un fichier**. Les textures d'une forme ne s'écrivent pas encore dans le fichier (refusées, jamais perdues).
      Doc : [kut3d-scene.md](../kut3d-scene.md#formes-de-base-format-2), [kut3d-film.md](../kut3d-film.md).
+   - **3D. Texte 3D extrudé** (deuxième étape de l'ordre convenu) : **livré.** Une forme de base de genre `text` (texte, famille,
+     taille, profondeur, biseau à 45 degrés, alignement, matériau) décrite par ses paramètres, **sans fichier de police ni de modèle** ;
+     le `.kut3d` passe en **version 3** seulement s'il contient un texte (sans texte : octets inchangés, versions 1 et 2 comprises). Les
+     contours viennent de Qt (`QRawFont`), aplatis par nos soins, triangulés par découpage en oreilles avec ponts pour les trous
+     (numpy, aucune dépendance), maillage fermé, normales sortantes. **Déterminisme** : les familles livrées (Anton, Saira) sont lues
+     dans leurs fichiers, identiques sur toutes les machines ; une famille installée est propre à la machine et refusée si absente (jamais
+     de substitution). **Plafonds** (avant de générer) : 40 caractères, 160 points de contour par caractère, majorant de triangles
+     compté dans les 65 536 par forme et les 500 000 par fichier ; emoji, idéogrammes, écritures complexes, caractères de contrôle et
+     combinants refusés avec leur code. Limites connues : pas de crénage, contours fusionnés décimés pour les polices à contours qui se
+     recouvrent, biseau refusé si les traits sont plus fins (≤ 1 % de la taille). Doc : [kut3d-scene.md](../kut3d-scene.md#texte-3d-extrude-format-3).
 4. **Animation**, en trois temps :
    - **4a** lecture de clips d'animation, animation d'objets et de caméra par courbes ; importeur **FBX** optionnel
      (`assimp` ou `trimesh`, licence à vérifier), ou conversion préalable en glTF ;

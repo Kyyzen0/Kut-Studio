@@ -2,10 +2,11 @@
 
 Un `.kut3d` est une scène 3D sérialisée (caméra, lumières, fond, modèles, instances). Un modèle y est une
 **référence** vers un fichier OBJ, glTF/GLB, PLY ou STL (voir [kut3d-import.md](kut3d-import.md)) **ou une forme de base
-paramétrique** (cube, sphère, plan, cylindre, cône, tore : [voir plus bas](#formes-de-base-format-2)), sans aucun fichier ;
+paramétrique** (cube, sphère, plan, cylindre, cône, tore : [voir plus bas](#formes-de-base-format-2) ; **texte 3D extrudé** :
+[voir plus bas](#texte-3d-extrude-format-3)), sans aucun fichier ;
 le rendu est décrit dans [kut3d-render.md](kut3d-render.md). API : `kut3d.load_scene`, `save_scene`, `dependency_files`.
 
-## Format (version 1, ou 2 avec des formes de base)
+## Format (version 1, 2 avec des formes de base, 3 avec un texte 3D)
 
 ```json
 {
@@ -96,6 +97,66 @@ pour l'ensemble des formes d'un fichier (`MAX_SCENE_PRIMITIVE_TRIANGLES`) : un f
 
 En script : `kut3d.primitive_instance("sphere", radius=1.0, position=(0, 1, 0), material=Material(...))` (ou
 `Film.primitive(...)`) retourne une `Instance` ; `kut3d.primitive_model(Sphere(radius=1.0))` retourne le `Model`.
+
+## Texte 3D extrudé (format 3)
+
+`kind: "text"` est une forme de base comme les autres (même entrée `primitive`, même `material`, même `root_transform`, mêmes plafonds),
+mais **le fichier passe en version 3 SEULEMENT s'il contient un texte** : une scène sans texte reste écrite octet pour octet comme en
+version 1 (sans forme) ou 2 (formes de base), un lecteur de la version 2 refuse un fichier de version 3 (`SceneVersionError`), un
+lecteur récent refuse un texte dans un fichier de version 2 ou 1.
+
+```json
+{"id": "titre", "primitive": {"kind": "text", "text": "Kut Studio", "font": "Anton", "size": 1.0, "depth": 0.2, "bevel": 0.0, "align": "center"},
+ "material": {"base_color": [0.9, 0.6, 0.1, 1.0], "metallic": 0.8, "roughness": 0.3}}
+```
+
+| paramètre (défaut) | sens |
+|---|---|
+| `text` (`"Texte"`) | 1 à **40** caractères, un `\n` sépare les lignes ; au moins un caractère visible |
+| `font` (`"Anton"`) | famille : `Anton`, `Saira ExtraCondensed` (et ses variantes `SemiBold`, `Bold`, `Black`), livrées avec l'application, ou une famille installée sur la machine |
+| `size` (1) | hauteur de l'em (un « H » en occupe 0,86 pour Anton, 0,69 pour Saira), dans [1e-6, 1e6] |
+| `depth` (0.2) | épaisseur, centrée sur z = 0, dans [1e-6, 1e6] |
+| `bevel` (0) | chanfrein à 45 degrés des deux faces : 0 (aucun) ou entre 1e-6 et **1 % de `size`** et la **moitié de `depth`** |
+| `align` (`"center"`) | `left`, `center` ou `right` par rapport à x = 0 |
+
+**Géométrie.** Le texte est dans le plan XY, lisible depuis +Z, extrudé de z = -`depth`/2 à +`depth`/2 ; le bloc est centré sur
+l'origine (horizontalement selon `align`, verticalement sur les capitales de la première à la dernière ligne). Les contours viennent
+de la police (Qt, `QRawFont`), les courbes sont aplaties à ±0,2 % de l'em au plus fin, les faces avant et arrière sont triangulées
+(découpage en oreilles, trous de « O », « A », « B » reliés par un pont), les parois ont des normales lisses le long des courbes et
+franches aux angles de plus de 35 degrés. Le maillage est **fermé** (chaque arête a exactement deux triangles de sens opposés ; deux
+contours qui se touchent en un point, comme la cédille d'un « ç », donnent un point pincé mais restent fermés) et ses normales sortent
+de la matière. Avec un biseau, chaque paroi devient trois bandes (chanfrein, paroi droite, chanfrein) et les faces avant et arrière
+sont celles du contour rétréci. UV : projection plane en XY sur l'étendue du texte (justes sur les faces, approximatifs sur les parois).
+
+**Ce qui dépend de la machine, ce qui n'en dépend pas.** Les familles livrées (`assets/fonts`, SIL OFL) sont lues dans leurs fichiers,
+sans hinting : mêmes contours sur toutes les machines, y compris en `offscreen` sans aucune police système (CI Windows). Une **autre
+famille** est lue dans les polices installées : le même fichier donne un texte différent ailleurs, ou est **refusé** si la famille manque
+ou si Qt la remplace par une autre (jamais de substitution silencieuse). Ni crénage ni ligatures (chaque caractère avance de sa largeur
+nominale). Qt exige une application graphique pour ouvrir une police : celle de l'hôte est réutilisée ; sinon `kut3d` en crée une (fil
+principal seulement, jamais depuis un autre fil). Lire un `.kut3d` qui contient un texte génère donc le maillage au chargement.
+
+**Refus** (tous avant de générer, en français, sans recopier l'entrée) : texte vide ou sans caractère visible, plus de 40 caractères,
+caractère de contrôle (tabulation, `\r`, NUL...), invisible (espace de largeur nulle), combinant (écrire « é » en un seul caractère),
+emoji, idéogramme, écriture à mise en forme complexe (arabe, hébreu, indien, thaï...) : seuls le latin, le grec, le cyrillique, les
+chiffres, la ponctuation courante et les monnaies sont acceptés, avec le code du caractère refusé (`U+1F600`). Un caractère que la
+police n'a pas (le grec n'existe pas dans Anton) est refusé avec son code, jamais remplacé par un carré. Taille et profondeur finies
+dans [1e-6, 1e6] (NaN, infini, booléen, texte refusés), biseau, alignement et nom de police bornés comme ci-dessus.
+
+**Plafonds.** Le nombre de triangles d'un texte n'est connu qu'à la génération ; avant, la description en donne un **majorant** :
+caractères visibles x (au plus **160 points de contour** par caractère, vérifié à la génération ; 852 triangles sans biseau, 1 492 avec).
+Il compte pour le plafond de **65 536 triangles par forme** (40 caractères avec biseau = 59 680, donc toujours sous le plafond) et pour
+les **500 000 triangles du fichier** : un fichier hostile est refusé avant qu'une police soit ouverte. Un caractère trop détaillé
+est décimé (tolérance croissante), puis refusé s'il dépasse encore 160 points.
+
+**Limites connues.** (1) Les polices dérivées de polices variables, comme Saira, ont des contours qui se recouvrent (« e », « Q », « & »...) :
+Qt les fusionne, le contour est alors décimé (écart ≤ 0,12 % de l'em) et les rognures de moins de 0,0015 em² sont ignorées. (2) Le **biseau**
+rétrécit les contours de `bevel` ; aux sommets convexes serrés il est localement plus petit, et il est **refusé** (avec le caractère) si
+des traits sont plus fins que lui : jusqu'à 1 % de la taille Anton passe pour tous les caractères courants, les polices fines (Saira) peuvent
+être refusées avec un biseau de quelques millièmes. (3) Un contour que le découpage ne sait pas trianguler exactement (aire des triangles
+différente de celle du contour) est refusé, jamais approché.
+
+En script : `kut3d.primitive_instance("text", text="Kut", size=1.5, material=...)` ou `Film.text3d(...)` retourne une `Instance` ;
+`kut3d.primitive_model(kut3d.Text3D("Kut"))` retourne le `Model`.
 
 ## Temps de la scène
 
