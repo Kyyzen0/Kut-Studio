@@ -299,6 +299,25 @@ def test_an_unwritable_registry_never_prevents_a_launch(tmp_path, caplog):
     assert any("registre des processus indisponible" in record.getMessage() for record in caplog.records)
 
 
+def test_a_missing_home_directory_never_prevents_a_launch(monkeypatch, caplog):
+    """Sans dossier personnel (``Path.home()`` lève), ni le registre ni le gardien ne peuvent localiser leur dossier : le
+    lancement a lieu quand même, sans protection (revue de la CI Linux : l'exception sortait de ``_reaper_group``)."""
+    caplog.set_level(logging.WARNING, logger="kut_studio.process")
+
+    def cannot_locate(root):
+        # Linux : ``user_cache_dir`` -> ``Path.home()`` -> ``expanduser`` lève ; macOS et Windows n'y passent pas, d'où un
+        # remplaçant direct de l'étape qui échouait, identique sur toutes les plateformes.
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(process_supervisor, "registry_root", cannot_locate)
+    supervisor = ProcessSupervisor(None, use_job=False, use_reaper=True)       # Windows n'a pas de gardien par défaut (il y a un job)
+    try:
+        assert supervisor.run([sys.executable, "-c", "pass"], timeout=DEADLINE).returncode == 0
+    finally:
+        supervisor.close()
+    assert any("gardien impossible à lancer" in record.getMessage() for record in caplog.records)
+
+
 # --- Lancements réels ------------------------------------------------------------------------------------------------
 
 
