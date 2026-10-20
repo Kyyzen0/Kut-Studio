@@ -61,6 +61,42 @@ film.place_scene(scene, duration=3.0, start=0.0, track=1, name="cube")   # -> "s
 Exemple complet : `.venv/bin/python examples/kut3d_scene_film.py out/` (cube texturé OBJ + MTL + PNG fabriqué par le script).
 Un film peut mêler `render_shot` + `place` et `place_scene`.
 
+## Formes de base : un film sans aucun fichier de modèle
+
+Cube, sphère, plan, cylindre, cône et tore se décrivent par leurs dimensions ([format](kut3d-scene.md#formes-de-base-format-2)) :
+aucun fichier OBJ ou glTF, rien à copier. `film.primitive(...)` fabrique l'`Instance` à mettre dans la scène ; `place_scene` écrit un
+`.kut3d` de **version 2** (paramètres seulement) et **aucun** dossier `<nom>_models/` si la scène ne contient que des formes.
+
+```python
+from core.film import Film
+from kut3d import AmbientLight, Camera, DirectionalLight, Material, Scene
+
+film = Film("out/formes.kut", size=(1280, 720), fps=24)
+rouge = Material(base_color=(0.9, 0.2, 0.2, 1.0), roughness=0.4)
+gris = Material(base_color=(0.3, 0.3, 0.35, 1.0), roughness=0.9)
+scene = Scene(
+    instances=[
+        film.primitive("plane", width=8, depth=8, material=gris),
+        film.primitive("sphere", radius=0.5, position=(-1, 0.5, 0), material=rouge),
+        film.primitive("cube", width=0.8, height=0.8, depth=0.8, position=(1, 0.4, 0), rotation_deg=(0, 30, 0)),
+        film.primitive("torus", major_radius=0.4, minor_radius=0.12, position=(0, 0.3, 1.5)),
+    ],
+    lights=[AmbientLight((1, 1, 1), 0.25), DirectionalLight((-0.4, -0.6, -0.7), (1, 1, 1), 2.5)],
+    camera=Camera((0, 2, 6), (0, 0.4, 0)),
+)
+film.place_scene(scene, duration=3.0, name="formes")   # out/formes_assets/formes.kut3d, version 2
+film.save()
+```
+
+- `film.primitive(kind, *, material=None, position=(0, 0, 0), rotation_deg=(0, 0, 0), scale=1.0, name="", **paramètres)` :
+  `kind` est `"cube"`, `"sphere"`, `"plane"`, `"cylinder"`, `"cone"` ou `"torus"` (ou une description `kut3d.Sphere(radius=1)`) ;
+  les paramètres nommés sont ceux du tableau du [format](kut3d-scene.md#formes-de-base-format-2), bornés. `rotation_deg` = angles
+  (X, Y, Z) en degrés (appliqués dans l'ordre Z, Y, X), `scale` un nombre ou trois nombres > 0. Une valeur refusée est une `FilmError`.
+- Le plan est une surface ouverte (une face) : `Material(double_sided=True)` pour le voir de dessous.
+- Un matériau avec **texture** ne s'écrit pas encore dans un `.kut3d` (`place_scene` le refuse) ; `render_shot` le rend normalement.
+- Une scène qui mêle fichiers de modèle et formes copie les fichiers seuls ; les formes passent telles quelles.
+- Le verbe de script `add_scene3d_clip` accepte un `.kut3d` à formes de base comme un autre.
+
 ## Ce qui est écrit sur disque
 
 ```

@@ -105,3 +105,12 @@ def model_id(value: Any, where: str) -> str:
             f"{where} : identifiant invalide {short(s, 40)} (lettres ASCII, chiffres, « _ » et « - », 1 à {MAX_ID_CHARS})."
         )
     return s
+
+
+def integer(value: Any, where: str) -> int:
+    """Un entier JSON (ni booléen, ni flottant même entier : `32.0` n'est pas `32`)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SceneFileError(
+            f"{where} : un entier est attendu (reçu {short(value, 30)})."
+        )
+    return value

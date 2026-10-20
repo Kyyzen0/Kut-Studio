@@ -11,6 +11,7 @@ import numpy as np
 from kut3d.errors import SceneFileError, SceneVersionError, short
 from kut3d.importers import load_model
 from kut3d.model import Model
+from kut3d.primitive_models import primitive_model
 from kut3d.scene import (
     MAX_INSTANCES,
     MAX_LIGHTS,
@@ -35,9 +36,15 @@ from kut3d.scene_io_fields import (
     optional_number,
     text,
 )
+from kut3d.primitives import MAX_SCENE_PRIMITIVE_TRIANGLES
 from kut3d.scene_io_paths import check_relative_path, resolve_model_path
+from kut3d.scene_io_primitives import read_material, read_primitive
 
-SCENE_FORMAT_VERSION = 1
+SCENE_FORMAT_VERSION = 1  # version écrite tant qu'aucune fonction ne demande mieux : un fichier sans forme reste en version 1
+PRIMITIVES_FORMAT_VERSION = 2  # `models[]` peut contenir des formes de base (`primitive`) ; écrite SEULEMENT dans ce cas
+MAX_READ_VERSION = (
+    PRIMITIVES_FORMAT_VERSION  # la plus récente que ce lecteur sache lire
+)
 FORMAT_NAME = "kut3d"
 
 
@@ -208,6 +215,54 @@ def _model_entry(value: Any, index: int) -> tuple[str, str, dict[str, Any], Any]
     return mid, raw_path, options, matrix
 
 
+def _primitive_entry(value: Any, index: int) -> tuple[str, Any, Any, Any]:
+    """Valide une entrée `models[]` de forme de base sans rien générer : (id, description, matériau ou None, matrice)."""
+    where = f"models[{index}]"
+    obj = as_object(value, where)
+    check_keys(obj, where, ("id", "primitive"), ("material", "root_transform"))
+    mid = model_id(obj["id"], f"{where}.id")
+    spec = read_primitive(obj["primitive"], f"{where}.primitive")
+    material = (
+        read_material(obj["material"], f"{where}.material")
+        if "material" in obj
+        else None
+    )
+    matrix = None
+    if "root_transform" in obj:
+        matrix = _model_matrix(obj["root_transform"], f"{where}.root_transform")
+        if not np.isfinite(matrix).all() or abs(np.linalg.det(matrix[:3, :3])) < 1e-18:
+            raise SceneFileError(
+                f"{where}.root_transform : matrice dégénérée (déterminant nul)."
+            )
+    return mid, spec, material, matrix
+
+
+def _primitive_entries(
+    items: list[Any], version: int
+) -> dict[int, tuple[str, Any, Any, Any]]:
+    """Les entrées de forme de base de `models[]` (indice -> (id, description, matériau, matrice)), toutes validées, avec le
+    total de triangles borné par `MAX_SCENE_PRIMITIVE_TRIANGLES` : une entrée hostile ne fait générer aucun maillage."""
+    out: dict[int, tuple[str, Any, Any, Any]] = {}
+    total = 0
+    for i, item in enumerate(items):
+        if not (isinstance(item, dict) and "primitive" in item):
+            continue
+        if version < PRIMITIVES_FORMAT_VERSION:
+            raise SceneFileError(
+                f"models[{i}] : une forme de base exige le format {PRIMITIVES_FORMAT_VERSION} "
+                f"(ce fichier est au format {version})."
+            )
+        entry = _primitive_entry(item, i)
+        total += entry[1].triangle_count
+        if total > MAX_SCENE_PRIMITIVE_TRIANGLES:
+            raise SceneFileError(
+                f"models[{i}] : trop de triangles pour l'ensemble des formes de base "
+                f"(maximum {MAX_SCENE_PRIMITIVE_TRIANGLES})."
+            )
+        out[i] = entry
+    return out
+
+
 def _load_entry(
     index: int,
     raw_path: str,
@@ -288,9 +343,9 @@ def build_scene_with_models(
     version = doc.get("version")
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
         raise SceneFileError(f"version invalide : {short(version, 30)}.")
-    if version > SCENE_FORMAT_VERSION:
+    if version > MAX_READ_VERSION:
         raise SceneVersionError(
-            f"ce fichier est au format {version}, plus récent que le format {SCENE_FORMAT_VERSION} "
+            f"ce fichier est au format {version}, plus récent que le format {MAX_READ_VERSION} "
             "connu ici : mettez Kut-Studio à jour."
         )
     check_keys(doc, "fichier", ("format", "version", "scene"))
@@ -307,7 +362,29 @@ def build_scene_with_models(
     model_items = as_list(scene.get("models", []), "models", MAX_MODELS)
     instance_items = as_list(scene.get("instances", []), "instances", MAX_INSTANCES)
     loaded: dict[str, Model] = {}
+    shapes = _primitive_entries(
+        model_items, version
+    )  # validées et comptées AVANT toute génération ou lecture de fichier
     for i, item in enumerate(model_items):
+        if i in shapes:
+            mid, spec, material, matrix = shapes[i]
+            if mid in loaded:
+                raise SceneFileError(
+                    f"models[{i}] : identifiant {short(mid, 40)} en double."
+                )
+            if models is None:
+                model = primitive_model(spec, material)
+                loaded[mid] = (
+                    model if matrix is None else model.with_root_transform(matrix)
+                )
+            else:
+                known = models.get(mid)
+                if known is None or known.primitive != spec:
+                    raise SceneFileError(
+                        f"models[{i}] : forme {short(mid, 40)} absente ou différente."
+                    )
+                loaded[mid] = known
+            continue
         mid, raw_path, options, matrix = _model_entry(item, i)
         if mid in loaded:
             raise SceneFileError(

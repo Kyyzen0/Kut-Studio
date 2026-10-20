@@ -209,6 +209,16 @@ Chaque phase est une PR (ou plusieurs) fusionnable seule.
    - **3B. Vrai clip « scène 3D »** (fichier `.kut3d`, nouvelle version du format projet : la **22**, pas la 18, les versions 18 à 21
      étant prises par d'autres fonctions ; migration, plan de rendu, aperçu) puis verbes de script et interface. **B2a livré** (modèle
      et format, pas encore de rendu) ; **à décider** pour la suite : voir les décisions ouvertes 9 et 10.
+   - **3C. Formes de base paramétriques** (décision du propriétaire, 2026-10-20 ; ordre convenu : formes de base, puis texte 3D
+     extrudé, puis création dans l'application avec une page « 3D ») : **livrée** pour les formes de base. Cube, sphère, plan, cylindre,
+     cône et tore se décrivent par leurs PARAMÈTRES (genre, dimensions, tessellation, matériau), jamais par des sommets : le `.kut3d`
+     passe en **version 2** seulement s'il en contient (un fichier sans forme reste identique, un lecteur ancien refuse le nouveau
+     proprement). La géométrie est générée par des fonctions pures de `kut3d/` (normales, UV glTF, sens direct vu de l'extérieur) et
+     se rend comme n'importe quel modèle, en numpy comme en QRhi. Écart assumé avec « pas de modélisation » : ce sont des primitives
+     décrites, pas de l'édition de maillage. **Plafonds** (entrée non fiable, vérifiés avant de générer) : dimensions dans
+     [1e-6, 1e6], 3 à 256 segments, 2 à 256 anneaux, 1 à 256 subdivisions, **65 536 triangles par forme**, **500 000 triangles pour
+     l'ensemble des formes d'un fichier**. Les textures d'une forme ne s'écrivent pas encore dans le fichier (refusées, jamais perdues).
+     Doc : [kut3d-scene.md](../kut3d-scene.md#formes-de-base-format-2), [kut3d-film.md](../kut3d-film.md).
 4. **Animation**, en trois temps :
    - **4a** lecture de clips d'animation, animation d'objets et de caméra par courbes ; importeur **FBX** optionnel
      (`assimp` ou `trimesh`, licence à vérifier), ou conversion préalable en glTF ;

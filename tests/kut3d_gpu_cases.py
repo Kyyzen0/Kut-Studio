@@ -447,6 +447,13 @@ def sampler_mixed_nearest() -> Scene:
     )
 
 
+def primitives() -> Scene:
+    """Les six formes de base (damier, matériaux à une face sauf le plan) : normales, UV, sens des triangles, couture."""
+    from tests.kut3d_primitive_scenes import six_forms
+
+    return six_forms(checker=True)
+
+
 CASES: dict[str, Case] = {
     "checker": Case(checker),
     "pbr_lit": Case(pbr_lit),
@@ -479,4 +486,5 @@ CASES: dict[str, Case] = {
     "sampler_clamp": Case(sampler_clamp, size=(96, 96)),
     "sampler_mirror": Case(sampler_mirror, size=(96, 96)),
     "sampler_mixed_nearest": Case(sampler_mixed_nearest, size=(96, 96)),
+    "primitives": Case(primitives, size=(240, 160)),
 }
