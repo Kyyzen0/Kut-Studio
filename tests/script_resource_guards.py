@@ -370,11 +370,13 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
     # --- Séquences (sequence_rules) : le plafond de séquences, puis celui de clips que copient certains chemins ---
     "create_sequence": (Spec("sequences", {}),),
     "duplicate_sequence": (Spec("sequences", dict(_SEQ)), Spec("clips", dict(_SEQ), adds=2, placements=("other",))),
-    "nest_clips": (Spec("sequences", {"clips": ["c1"]}),),
-    "create_format_version": (Spec("sequences", {**_SEQ, "format": "vertical"}),),
+    "nest_clips": (Spec("sequences", {"clips": ["c1"]}),),       # clips : voir DEBT_SPECS (nest_clips:clips)
+    "create_format_version": (Spec("sequences", {**_SEQ, "format": "vertical"}),
+                              Spec("clips", {**_SEQ, "format": "vertical"}, adds=2, placements=("other",))),
     "create_multicam_source": (Spec("sequences", {"angles": [{"asset": "m"}, {"asset": "a"}]}),
                                Spec("clips", {"angles": [{"asset": "m"}, {"asset": "a"}]}, adds=2)),
-    "create_multicam_from_clips": (Spec("sequences", {"clips": [{"clip": "c1"}, {"clip": "a1"}]}),),
+    "create_multicam_from_clips": (Spec("sequences", {"clips": [{"clip": "c1"}, {"clip": "a1"}]}),
+                                   Spec("clips", {"clips": [{"clip": "c1"}, {"clip": "a1"}]})),
     "add_multicam_angle": (Spec("angles", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",)),),
     # --- Audio ---
     "add_bus": (Spec("buses", {}),),
@@ -392,6 +394,17 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
 """Verbes créateurs dont le plafond est PROUVÉ : un projet déjà au plafond (constante abaissée à ``cap``) est refusé sans changement, avec les
 objets déjà là dans la séquence active comme dans une autre. Un verbe peut avoir plusieurs ressources (une entrée par ressource)."""
 
+_LAYER_IN_CLIPS = "un calque est un clip et les deux plafonds valent la même chose (test_layer_and_clip_ceilings_are_equal) : le plafond de clips est atteint au plus tard en même temps que celui de calques."
+
+EXCLUDED_RESOURCES: dict[tuple[str, str], str] = {
+    **{(verb, "clips"): _LAYER_IN_CLIPS for verb in (
+        "add_graphic", "add_image_layer", "duplicate_layers", "group_layers", "apply_layer_preset", "cut_clip", "duplicate_clip")},
+    **{(verb, "layers"): _LAYER_IN_CLIPS for verb in (
+        "add_flash", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "apply_impact_on_cuts")},
+}
+"""``(verbe, ressource)`` dont le compte augmente sans spec propre, avec la raison écrite : le test `test_every_resource_a_verb_consumes_has_a_spec`
+mesure les comptes avant / après l'opération et exige une spec (ou une dette, ou une exclusion ici) pour chaque ressource qui augmente."""
+
 BOUNDED: dict[str, str] = {
     "convert_to_composition": "remplace les clips cités (au moins un) par un seul clip : le nombre de clips ne peut pas croître (vérifié : 3 clips -> 2, 2 -> 2).",
     "set_cover_marker": "remplace le repère de couverture existant : au plus un (vérifié : trois appels, un seul repère « cover »).",
@@ -404,6 +417,8 @@ BOUNDED: dict[str, str] = {
 """Verbes créateurs qui ne peuvent pas faire croître une ressource sans limite : ``{verbe: raison}`` (une raison qui dit comment on l'a vérifié)."""
 
 DEBT_SPECS: dict[str, Spec] = {
+    "nest_clips:clips": Spec("clips", {"clips": ["c1"]}, placements=("active",)),
+    "add_multicam_angle:clips": Spec("clips", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",)),
     "add_clip:clips": Spec("clips", {"track": "V1", "asset": "m", "at": 5.0}, placements=("active",)),
     "add_subtitle:clips": Spec("clips", {"text": "x", "at": 5.0, "duration": 1.0}, prepare=_subtitle_track, placements=("active",)),
     "cut_clip:clips": Spec("clips", {"clip": "c1", "at": 2.0}, placements=("active",)),

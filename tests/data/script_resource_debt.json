@@ -14,6 +14,7 @@
   "add_marker:markers": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
   "add_mask:masks": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
   "add_mask_keyframe:keyframes": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
+  "add_multicam_angle:clips": "Aucun plafond aujourd'hui : prouvé par exécution (le verbe n'est pas refusé au-delà de la limite que la ressource devrait avoir). Le clip de l'angle ajouté n'est pas compté (seul MAX_ANGLES borne la source).",
   "add_speed_point:points": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
   "add_subtitle:clips": "Aucun plafond aujourd'hui : prouvé par exécution (le verbe n'est pas refusé au-delà de la limite que la ressource devrait avoir).",
   "add_track:tracks": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
@@ -31,6 +32,7 @@
   "insert_hold:points": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
   "insert_multicam_clip:clips": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution.",
   "insert_sequence_clip:clips": "Aucun plafond aujourd'hui : prouvé par exécution (le verbe n'est pas refusé au-delà de la limite que la ressource devrait avoir).",
+  "nest_clips:clips": "Aucun plafond aujourd'hui : prouvé par exécution (le verbe n'est pas refusé au-delà de la limite que la ressource devrait avoir). Sa garde de clips compte 1 - len(clips) alors que le total du projet augmente de 1 (les clips déplacés restent comptés).",
   "switch_multicam_angle:clips": "Aucune garde de plafond ni dans le verbe ni dans la fonction du modèle (lecture du code + recherche de MAX_/require_ dans core/scripting/ et le module du modèle, 2026-10-20). Non sondé par exécution."
  }
 }

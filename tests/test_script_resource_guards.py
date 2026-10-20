@@ -15,7 +15,7 @@ import pytest
 from core.scripting.verbs import VERBS
 from tests import script_resource_guards as guards
 from tests.script_resource_guards import (
-    BOUNDED, CAP, CEILINGS, DEBT_SPECS, RESOURCES, Spec, attempt, case, discovered_creators, load_debt, make_context,
+    BOUNDED, CAP, CEILINGS, DEBT_SPECS, EXCLUDED_RESOURCES, RESOURCES, Spec, attempt, case, discovered_creators, load_debt, make_context,
 )
 
 
@@ -166,3 +166,57 @@ def test_the_discovery_sees_creation_through_a_helper(monkeypatch):
     verb = replace(VERBS["add_flash"], name="no_creates_attribute", creates=None)
     monkeypatch.setattr(guards, "VERBS", {"no_creates_attribute": verb})
     assert "no_creates_attribute" in discovered_creators()
+
+
+# --- Une spec par RESSOURCE consommée, pas une par verbe -----------------------------------------------------------------
+
+
+def _counts(project) -> dict[str, int]:
+    counts = {}
+    for name, resource in RESOURCES.items():
+        try:
+            counts[name] = resource.count(project)
+        except (AttributeError, KeyError, StopIteration):          # ressource absente de ce projet minimal (angles sans source Multicam…)
+            counts[name] = 0
+    return counts
+
+
+def test_every_resource_a_verb_consumes_has_a_spec(tmp_path):
+    """Mesure, pour chaque verbe prouvé, les comptes avant / après l'opération : toute ressource qui augmente a sa spec de plafond, sa
+    dette (``verbe:ressource``) ou une exclusion écrite. Retirer une des gardes d'un verbe à deux ressources ne peut plus passer inaperçu."""
+    debt = load_debt()
+    context = make_context(tmp_path)
+    for verb, specs in sorted(CEILINGS.items()):
+        for spec in specs:
+            project = guards.base_project()
+            if spec.prepare is not None:
+                spec.prepare(project)
+            before = _counts(project)
+            build = VERBS[verb].build
+            (build(dict(spec.args), context) if spec.context else build(dict(spec.args)))(project)
+            after = _counts(project)
+            grown = {name for name in after if after[name] > before[name]}
+            covered = {s.resource for s in specs} | {key.split(":", 1)[1] for key in debt if key.split(":", 1)[0] == verb}
+            covered |= {resource for (name, resource) in EXCLUDED_RESOURCES if name == verb}
+            assert grown <= covered, (
+                f"{verb} fait croître {sorted(grown - covered)} sans spec de plafond : ajoutez une Spec à CEILINGS, une dette "
+                "« verbe:ressource », ou une exclusion écrite (EXCLUDED_RESOURCES) dans tests/script_resource_guards.py."
+            )
+    for (verb, resource), reason in EXCLUDED_RESOURCES.items():
+        assert verb in CEILINGS and resource in RESOURCES and reason.strip(), (verb, resource)
+        assert resource not in {s.resource for s in CEILINGS[verb]}, f"{verb}/{resource} : exclu mais aussi prouvé"
+
+
+def test_layer_and_clip_ceilings_are_equal():
+    """Ce qui justifie d'exclure « clips » des verbes de calques (et « calques » de ceux qui ont une spec de clips)."""
+    from core.scripting.auto_rules import MAX_CLIPS_IN_PROJECT
+    from core.scripting.layer_rules import MAX_LAYERS_IN_PROJECT
+
+    assert MAX_LAYERS_IN_PROJECT == MAX_CLIPS_IN_PROJECT
+
+
+def test_a_missing_second_resource_is_caught(monkeypatch):
+    """Un verbe à deux ressources dont on retire la spec de clips est vu par la mesure (preuve que le test n'est pas vide)."""
+    monkeypatch.setitem(CEILINGS, "create_format_version", tuple(s for s in CEILINGS["create_format_version"] if s.resource != "clips"))
+    with pytest.raises(AssertionError, match="create_format_version fait croître"):
+        test_every_resource_a_verb_consumes_has_a_spec(__import__("pathlib").Path(__import__("tempfile").mkdtemp()))
