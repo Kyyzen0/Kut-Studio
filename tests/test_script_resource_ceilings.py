@@ -126,6 +126,20 @@ def test_a_project_already_over_a_ceiling_is_not_corrupted(monkeypatch):
     limits.require_room_in(10, -1, 5, "objets", "Le projet")
 
 
+def test_an_operation_that_shrinks_an_over_full_clip_is_not_refused(monkeypatch):
+    """Un clip au-delà du plafond : ce qui lui retire des images clés (une vitesse constante remplace la courbe) passe ; ce qui en ajoute est refusé."""
+    project = base_project()
+    clip = _find(project, "c1")
+    _animate(clip, 10, "time.speed")
+    _lower(monkeypatch, "MAX_KEYFRAMES_PER_CLIP", 5)
+    assert _run("apply_time_preset", {"clip": "c1", "preset": "ramp_in"}, deepcopy(project)) is None             # 10 points -> 2 : moins qu'avant
+    assert _run("add_speed_point", {"clip": "c1", "at": 2.0, "value": 2.0}, deepcopy(project)) is not None       # un de plus : refusé
+    with pytest.raises(ValueError):
+        limits.require_keyframes_total(clip, 11, "test")
+    limits.require_keyframes_total(clip, 10, "test")
+    limits.require_keyframes_total(clip, 3, "test")
+
+
 def test_the_generic_guard_refuses_only_what_it_adds():
     limits.require_room_in(5, 1, 6, "objets", "Le projet")
     with pytest.raises(ValueError, match="dépasseraient la limite de 6"):

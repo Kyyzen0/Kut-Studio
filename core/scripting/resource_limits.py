@@ -102,12 +102,6 @@ def multicam_switch_adds(project: Project, at: float, angle_id: str, segment: Cl
     return 0 if at - segment.timeline_start <= half_frame else 1
 
 
-def tracker_copies(clip: Clip) -> int:
-    """Suiveurs qu'une copie ou une moitié de coupe de ``clip`` ajoute au projet (la coupe et la copie reprennent ses suiveurs, mêmes identifiants)."""
-    tracking = getattr(clip, "tracking", None)
-    return len(tracking.trackers) if tracking is not None else 0
-
-
 # --- Images clés (UNE mesure par clip) ------------------------------------------------------------------------------------------
 
 
@@ -219,5 +213,4 @@ __all__ = [
     "require_color_window_room", "require_count", "require_effect_room", "require_guide_room", "require_insert_room",
     "require_keyframe_room", "require_keyframe_slot", "require_keyframes_after", "require_keyframes_after_project_edit", "require_keyframes_total", "require_marker_room",
     "require_mask_room", "require_media_room", "require_room_in", "require_track_room", "total_clips",
-    "tracker_copies",
 ]
