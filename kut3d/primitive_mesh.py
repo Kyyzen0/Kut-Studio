@@ -14,7 +14,16 @@ from typing import Any
 import numpy as np
 
 from kut3d.mathutil import Array
-from kut3d.primitives import Cone, Cube, Cylinder, Plane, PrimitiveSpec, Sphere, Torus
+from kut3d.primitives import (
+    Cone,
+    Cube,
+    Cylinder,
+    Plane,
+    PrimitiveSpec,
+    Sphere,
+    Text3D,
+    Torus,
+)
 
 Arrays = tuple[Array, Array, Array, Array]
 
@@ -258,6 +267,12 @@ def torus(spec: Torus) -> Arrays:
     return _finish(pos, nrm, uv, tri)
 
 
+def text(spec: Text3D) -> Arrays:
+    from kut3d.text_mesh import text_arrays  # import tardif : ouvre une police, donc Qt
+
+    return text_arrays(spec)
+
+
 _GENERATORS: dict[type[PrimitiveSpec], Callable[[Any], Arrays]] = {
     Cube: cube,
     Sphere: sphere,
@@ -265,6 +280,7 @@ _GENERATORS: dict[type[PrimitiveSpec], Callable[[Any], Arrays]] = {
     Cylinder: cylinder,
     Cone: cone,
     Torus: torus,
+    Text3D: text,
 }
 
 

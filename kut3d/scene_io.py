@@ -16,6 +16,7 @@ from kut3d.scene_io_paths import filesystem_errors
 from kut3d.scene_io_read import (
     PRIMITIVES_FORMAT_VERSION,
     SCENE_FORMAT_VERSION,
+    TEXT_FORMAT_VERSION,
     build_scene,
     build_scene_with_models,
     read_document,
@@ -25,6 +26,7 @@ from kut3d.scene_io_write import checked_bytes, write_atomic
 __all__ = [
     "PRIMITIVES_FORMAT_VERSION",
     "SCENE_FORMAT_VERSION",
+    "TEXT_FORMAT_VERSION",
     "SceneFileError",
     "SceneVersionError",
     "dependency_files",
@@ -43,7 +45,7 @@ def save_scene(scene: Scene, path: str | Path, *, allow_outside: bool = False) -
     """Écrit la scène (clés triées, ASCII, `\\n`, UTF-8) de façon atomique.
 
     Chaque modèle doit venir d'un fichier source, sauf les formes de base (`primitive_model`, enregistrées par leurs
-    paramètres : le fichier passe alors en version 2) ; `root_transform` est toujours écrite (aller-retour exact).
+    paramètres : le fichier passe alors en version 2, ou 3 pour un texte 3D) ; `root_transform` est toujours écrite (aller-retour exact).
     Un modèle hors du dossier du fichier est refusé sauf `allow_outside=True`. Le contenu est relu par les validateurs
     du lecteur AVANT de remplacer la destination : ce qui serait refusé à la lecture l'est à l'écriture."""
     p = Path(path)

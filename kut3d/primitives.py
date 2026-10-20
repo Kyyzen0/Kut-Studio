@@ -23,6 +23,8 @@ from dataclasses import dataclass, fields
 from numbers import Integral, Real
 from typing import Any, ClassVar
 
+from kut3d import text_rules
+
 MIN_DIMENSION = 1e-6  # sous cette valeur, les triangles deviennent dégénérés en float32
 MAX_DIMENSION = 1e6  # au-delà, le rendu perd sa précision (float32) et la profondeur de vue est dépassée
 MIN_SEGMENTS = 3
@@ -90,6 +92,9 @@ class PrimitiveSpec:
     """Base commune : `kind` (clé du fichier), `params()` (les champs, dans leur forme JSON), comptes de sommets / triangles."""
 
     kind: ClassVar[str] = ""
+    str_limits: ClassVar[
+        dict[str, int]
+    ] = {}  # longueur maximale (lecture d'un fichier) des champs texte, par nom
 
     def params(self) -> dict[str, Any]:
         """Les paramètres, hors `kind` (valeurs JSON : flottants, entiers, booléens)."""
@@ -294,6 +299,72 @@ class Torus(PrimitiveSpec):
         return 2 * self.segments * self.tube_segments
 
 
+@dataclass(frozen=True)
+class Text3D(PrimitiveSpec):
+    """Texte extrudé : `text` (jusqu'à `MAX_TEXT_CHARS` caractères, un saut de ligne sépare les lignes), `font` (famille livrée
+    avec l'application ou installée), `size` (hauteur de l'em, en unités de la scène), `depth` (épaisseur, centrée sur z = 0),
+    `bevel` (chanfrein à 45 degrés des deux faces, 0 = aucun), `align` (« left », « center », « right » par rapport à x = 0).
+    Le texte est dans le plan XY, lisible depuis +Z ; le bloc est centré verticalement sur y = 0.
+
+    Le nombre de triangles n'est connu qu'à la génération : `triangle_count` est un MAJORANT calculé avant (caractères visibles x
+    borne par caractère), jamais atteint en pratique ; `vertex_count` aussi."""
+
+    kind: ClassVar[str] = "text"
+    str_limits: ClassVar[dict[str, int]] = {
+        "text": text_rules.MAX_TEXT_CHARS,
+        "font": text_rules.MAX_FONT_CHARS,
+        "align": 8,
+    }
+    text: str = "Texte"
+    font: str = text_rules.DEFAULT_FONT
+    size: float = 1.0
+    depth: float = 0.2
+    bevel: float = 0.0
+    align: str = "center"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "text", text_rules.check_text(self.text))
+        object.__setattr__(self, "font", text_rules.check_font(self.font))
+        size = _dimension(self.size, "size")
+        depth = _dimension(self.depth, "depth")
+        object.__setattr__(self, "size", size)
+        object.__setattr__(self, "depth", depth)
+        object.__setattr__(self, "bevel", self._checked_bevel(size, depth))
+        object.__setattr__(self, "align", text_rules.check_align(self.align))
+        _check_triangles(self)
+
+    def _checked_bevel(self, size: float, depth: float) -> float:
+        value = self.bevel
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise ValueError(
+                f"bevel : un nombre est attendu (reçu {type(value).__name__})."
+            )
+        bevel = float(value)
+        if not math.isfinite(bevel) or bevel < 0.0:
+            raise ValueError("bevel : un nombre fini >= 0 est attendu.")
+        if bevel == 0.0:
+            return 0.0
+        if bevel < MIN_DIMENSION:
+            raise ValueError(f"bevel : 0 (aucun biseau) ou au moins {MIN_DIMENSION:g}.")
+        limit = min(depth / 2.0, size * text_rules.BEVEL_MAX_RATIO)
+        if bevel > limit:
+            raise ValueError(
+                f"bevel ({bevel:g}) doit être au plus {limit:g} : la moitié de la profondeur et "
+                f"{text_rules.BEVEL_MAX_RATIO:.0%} de la taille (au-delà il dépasse l'épaisseur des traits)."
+            )
+        return bevel
+
+    @property
+    def vertex_count(self) -> int:
+        return text_rules.visible_chars(self.text) * text_rules.glyph_vertex_bound(
+            self.bevel > 0.0
+        )
+
+    @property
+    def triangle_count(self) -> int:
+        return text_rules.triangle_bound(self.text, self.bevel > 0.0)
+
+
 PRIMITIVE_KINDS: dict[str, type[PrimitiveSpec]] = {
-    cls.kind: cls for cls in (Cube, Sphere, Plane, Cylinder, Cone, Torus)
+    cls.kind: cls for cls in (Cube, Sphere, Plane, Cylinder, Cone, Torus, Text3D)
 }

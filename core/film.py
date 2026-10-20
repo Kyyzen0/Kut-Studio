@@ -281,6 +281,29 @@ class Film:
         except ValueError as error:
             raise FilmError(f"Forme de base refusée : {short(str(error), 300)}") from error
 
+    def text3d(
+        self, text: Any, *, font: Any = "Anton", size: Any = 1.0, depth: Any = 0.2, bevel: Any = 0.0, align: Any = "center",
+        material: Any = None, position: Any = (0.0, 0.0, 0.0), rotation_deg: Any = (0.0, 0.0, 0.0), scale: Any = 1.0, name: str = "",
+    ) -> Any:
+        """Un texte extrudé en 3D, posé : ``film.text3d("Kut", size=1.5, depth=0.3, material=or)``, à mettre dans les ``instances`` d'une ``kut3d.Scene``.
+
+        Décrit par ses paramètres (aucun fichier de modèle) ; ``place_scene`` l'écrit dans un ``.kut3d`` de version 3. ``font`` : ``Anton`` (défaut) ou
+        ``Saira ExtraCondensed`` (livrées, même résultat sur toutes les machines) ou une famille installée (résultat propre à la machine, refusée si
+        absente). ``size`` = hauteur de l'em, ``depth`` = épaisseur centrée sur z = 0, ``bevel`` = chanfrein (0 = aucun ; au plus 1 % de la taille et la
+        moitié de la profondeur), ``align`` = ``left`` / ``center`` / ``right`` par rapport à x = 0. Latin, grec et cyrillique, 40 caractères au plus,
+        ``\\n`` pour changer de ligne ; emoji, idéogrammes et écritures à mise en forme complexe sont refusés. Bornes : ``docs/kut3d-scene.md``.
+        Le maillage est généré tout de suite (une police s'ouvre : l'application Qt doit exister ou pouvoir être créée dans le fil principal).
+        """
+        import kut3d
+
+        try:
+            return kut3d.primitive_instance(
+                "text", material=material, position=position, rotation_deg=rotation_deg, scale=scale, name=name,
+                text=text, font=font, size=size, depth=depth, bevel=bevel, align=align,
+            )
+        except ValueError as error:
+            raise FilmError(f"Texte 3D refusé : {short(str(error), 300)}") from error
+
     # --- audio -----------------------------------------------------------------------------------------------------------
 
     def audio(

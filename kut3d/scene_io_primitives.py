@@ -40,6 +40,7 @@ _MATERIAL_KEYS = (
     "double_sided",
 )
 _FIELD_READERS = {"bool": boolean, "int": integer, "float": number}
+_DEFAULT_TEXT_LIMIT = 64
 
 
 def _field_kinds(cls: type[PrimitiveSpec]) -> dict[str, str]:
@@ -48,6 +49,8 @@ def _field_kinds(cls: type[PrimitiveSpec]) -> dict[str, str]:
     return {
         name: "bool"
         if isinstance(value, bool)
+        else "str"
+        if isinstance(value, str)
         else "int"
         if isinstance(value, int)
         else "float"
@@ -105,7 +108,15 @@ def read_primitive(value: Any, where: str) -> PrimitiveSpec:
     kinds = _field_kinds(cls)
     check_keys(obj, where, ("kind",), tuple(kinds))
     kwargs = {
-        name: _FIELD_READERS[kinds[name]](obj[name], f"{where}.{name}")
+        name: (
+            text(
+                obj[name],
+                f"{where}.{name}",
+                cls.str_limits.get(name, _DEFAULT_TEXT_LIMIT),
+            )
+            if kinds[name] == "str"
+            else _FIELD_READERS[kinds[name]](obj[name], f"{where}.{name}")
+        )
         for name in kinds
         if name in obj
     }

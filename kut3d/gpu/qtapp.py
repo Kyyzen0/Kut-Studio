@@ -72,8 +72,9 @@ def _check_platform(app: QApplication) -> QApplication:
     return app
 
 
-def ensure_application() -> QApplication:
-    """La `QApplication` à utiliser (existante ou créée ici). Lève `RenderError` hors du fil de l'application."""
+def ensure_application(*, require_gpu: bool = True) -> QApplication:
+    """La `QApplication` à utiliser (existante ou créée ici). Lève `RenderError` hors du fil de l'application.
+    `require_gpu=False` (texte 3D : seulement des polices) accepte aussi les plateformes sans GPU (`offscreen`, `minimal`...)."""
     global _created
     instance = QCoreApplication.instance()
     if instance is not None:
@@ -86,7 +87,7 @@ def ensure_application() -> QApplication:
             raise RenderError(
                 "le moteur « qrhi » doit être appelé depuis le fil qui possède l'application Qt."
             )
-        return _check_platform(instance)
+        return _check_platform(instance) if require_gpu else instance
     QCoreApplication.setApplicationName(APP_NAME)
     QCoreApplication.setOrganizationName(APP_NAME)
     argv = [APP_NAME]
@@ -95,7 +96,7 @@ def ensure_application() -> QApplication:
     _created = QApplication(argv)
     _created.setQuitOnLastWindowClosed(False)
     _hide_from_dock()
-    return _check_platform(_created)
+    return _check_platform(_created) if require_gpu else _created
 
 
 def created_here() -> bool:
