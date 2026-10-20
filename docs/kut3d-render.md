@@ -160,6 +160,9 @@ quand il en a ; sans normales il passe par le CPU pour rester identique.
 | 640x360, `samples=4` | n. m. | ~76 ms |
 | 160x120, cube | ~25 ms | ~1,2 ms |
 
+Un clip « scène 3D » (export, aperçu fidèle) utilise **toujours** numpy, jamais qrhi : voir
+[kut3d-scene.md](kut3d-scene.md) (coût mesuré : cube 1280x720 ≈ 140 ms, 64x36 ≈ 4 ms ; ≈ 550 ms pour ~20 000 triangles texturés).
+
 La première image d'un processus coûte ~0,4 s (sonde en sous-processus ~0,27 s + création du pipeline).
 
 Tests : `.venv/bin/python -m pytest tests/test_kut3d_gpu.py -q` (partout) et `tests/test_kut3d_gpu_render.py` (rendus réels, sautés

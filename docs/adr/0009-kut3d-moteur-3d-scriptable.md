@@ -207,8 +207,8 @@ Chaque phase est une PR (ou plusieurs) fusionnable seule.
      projet Kut au-dessus d'un fond, ajoute de l'audio, sauve le `.kut` et exporte un MP4. **Aucun changement du format `.kut`**
      (le fichier reste à la version qu'impose son contenu). Doc : [kut3d-film.md](../kut3d-film.md).
    - **3B. Vrai clip « scène 3D »** (fichier `.kut3d`, nouvelle version du format projet : la **22**, pas la 18, les versions 18 à 21
-     étant prises par d'autres fonctions ; migration, plan de rendu, aperçu) puis verbes de script et interface. **À décider** : voir
-     les décisions ouvertes 8 à 10.
+     étant prises par d'autres fonctions ; migration, plan de rendu, aperçu) puis verbes de script et interface. **B2a livré** (modèle
+     et format, pas encore de rendu) ; **à décider** pour la suite : voir les décisions ouvertes 9 et 10.
 4. **Animation**, en trois temps :
    - **4a** lecture de clips d'animation, animation d'objets et de caméra par courbes ; importeur **FBX** optionnel
      (`assimp` ou `trimesh`, licence à vérifier), ou conversion préalable en glTF ;
@@ -234,7 +234,7 @@ Les **phases 0 à 3 suffisent** à réaliser un premier court-métrage entièrem
 7. **Ordre vis-à-vis de l'étape 5 d'ADR-0005** (façade de lecture `describe()`) : la phase 3 de cet ADR la suppose ; faut-il
    la livrer avant, ou en parallèle avec une façade minimale côté `kut3d/` ? *Tranchée pour la tranche 3A : une façade minimale côté `core/film.py`, sans attendre ADR-0005.*
 8. **Format `.kut` 22** (tranche 3B) : un projet qui contient un clip « scène 3D » ne s'ouvrirait plus dans une version antérieure,
-   comme pour les versions 19 à 21. Les projets sans clip 3D restent écrits à l'identique. À valider avant 3B.
+   comme pour les versions 19 à 21. Les projets sans clip 3D restent écrits à l'identique. *Tranchée par le propriétaire du projet ; modèle et format livrés au lot B2a (`GraphicType.SCENE3D`, `SCENE3D_VERSION`, `core/scene3d.py`), rendu au lot B2b.*
 9. **Aperçu d'un clip « scène 3D »** : une image figée et approximative dans le moniteur, avec les segments fidèles par-dessus
    (comme les calques graphiques), ou un rendu 3D en direct dans la boucle de lecture ? La première option réutilise l'existant.
 10. **Packaging** : embarquer les shaders `.qsb` (`build.py`) et corriger la sonde GPU, qui lance `sys.executable -m

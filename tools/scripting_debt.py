@@ -107,6 +107,7 @@ READ_MODULES: dict[str, str] = {
     "preview_segments": "plans de segments de l'aperçu",
     "project_io": "lecture et écriture du fichier .kut",
     "render_plan": "plan de rendu (lecture)",
+    "scene3d": "lecture du fichier .kut3d d'un clip scène 3D et garde-fou de vitesse (refus), appelé par les fonctions d'édition",
     "timeline_evaluator": "évaluation de la timeline (lecture)",
     "timeline_index": "index de la timeline (lecture)",
     "timeline_view_model": "modèle de vue de la timeline (lecture)",

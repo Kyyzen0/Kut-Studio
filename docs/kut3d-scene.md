@@ -78,3 +78,44 @@ chemins ≤ 1024. L'écriture est atomique (fichier temporaire puis remplacement
 `dependency_files(path)` retourne le `.kut3d` puis, triés et sans doublon, les fichiers de tout modèle **déclaré** (même
 sans instance : `load_scene` l'exige), leurs `.mtl`, `.bin`
 externes et textures (`Model.dependencies`).
+
+## Un clip « scène 3D » dans un projet Kut-Studio (lots B2a : modèle et format, B2b : rendu)
+
+Un clip 3D est un **calque graphique** (`GraphicType.SCENE3D`, `core/graphics.py`) dont `source_path` est le chemin d'un `.kut3d`.
+Il vit sur une piste « graphiques », se crée par `add_graphic_clip` (qui lit la scène : `core.scene3d.validate`, sans rien
+rendre) et se coupe, se duplique, se colle, se groupe, se verrouille et se met en solo comme les autres calques. Aucun champ n'est
+ajouté à `Clip` : le temps de la scène est `source_in + (t - timeline_start)` (une coupe ou un rognage à gauche avancent
+`source_in` : la seconde moitié reprend là où la première s'arrête).
+
+* **Format `.kut`** : un projet qui contient un calque 3D (dans n'importe quelle séquence, groupe ou composition sérialisée) s'écrit
+  en **version 22** (`SCENE3D_VERSION`, `payload_uses_scene3d`) et ne s'ouvre plus dans une version antérieure ; un projet sans
+  calque 3D reste écrit octet pour octet comme avant (`tests/test_scene3d_format.py` en fige l'empreinte).
+* **Refusé, explicitement** : toute vitesse, marche arrière, arrêt sur image ou courbe de vitesse (`core.scene3d.ensure_fixed_speed`,
+  appelé par chaque fonction du modèle qui écrit `time_remapping` ; les scripts refusent déjà les pistes graphiques), l'enregistrement
+  en preset (une autre version perdrait le calque en silence), l'entrée dans une composition (le nœud graphique ne porte pas
+  `source_in`), le changement de fichier d'un clip existant. Stabilisation et transitions ne visent que les clips vidéo.
+* **Rendu (lot B2b)** : le clip se rend à l'export et dans l'aperçu fidèle (pas encore dans l'aperçu en direct ni dans
+  l'interface : lot B3). Le chemin de l'image est décrit dans [architecture.md](architecture.md#clip-scène-3d--chemin-de-limage).
+  Taille de rendu = taille de la boîte du calque (par défaut celle du projet), fond transparent sauf `background` de la scène,
+  **moteur numpy en dur** (les images du cache disque doivent être les mêmes partout ; le moteur entre dans la clé d'image),
+  `samples=1`. Transformations, opacité, images clés, effets, masques et fusion s'appliquent comme à un calque image.
+  Une scène **sans animation** (aucune instance n'a de `clip`) vaut toujours l'instant 0 : ses images identiques ne se rendent
+  qu'**une** fois ; une scène animée se rend une fois par instant distinct.
+* **Fichier manquant, illisible, modèle manquant** : à l'écran une carte « Scène 3D indisponible » prend la place du calque
+  (l'aperçu ne lève jamais) ; à l'export le plan porte la scène dans `missing_media` et l'export est refusé (« Média introuvable :
+  scène 3D … »). Une dépendance qui existe mais ne **se rend pas** (texture PNG tronquée,
+  scène hors des bornes de `kut3d`) est **tolérée à l'écran** (la boîte reste vide, journal `kut_studio.scene3d`) et **refusée à
+  l'export** : `check_export_request` (`core/scene3d_check.py`, point d'entrée commun de l'export de l'application, de
+  `run_export` : ligne de commande, scripts, `Film.export`) décode les textures de chaque scène distincte et en fait un rendu d'essai
+  de 16x16 pixels ; un échec refuse l'export en nommant la scène, le clip et la cause. Ce contrôle n'est PAS dans
+  `build_render_plan` (rappelé à chaque rafraîchissement de l'aperçu). Pendant l'export, un échec imprévu (mémoire, texture modifiée
+  en cours de route) fait échouer l'export (`core.scene3d.strict_rendering` : aucune sortie, pas de liste `.ffconcat`) ; les aperçus
+  n'y entrent jamais. Coût du contrôle : ≈ 1 à 2 ms pour une scène de test (une lecture par texture distincte, un rendu 16x16).
+* **Coût** : numpy rend ≈ 550 ms par image en 720p pour une scène de ~20 000 triangles texturés (un cube : ≈ 140 ms ; 64x36 :
+  ≈ 4 ms). Une scène animée de 10 s à 30 i/s en 720p coûte donc de l'ordre de 3 minutes de rendu au premier export ; le second
+  lit les PNG du cache `mograph` (borné par `CacheManager`, éviction des moins récemment utilisés).
+* `core.scene3d` : `scene_image(graphic, size, mode)` (le rendu ; `mode` `"exact"` par défaut, `"interactive"` réduit le plus grand
+  côté à 480 px, réservé à l'aperçu en direct du lot B3), `scene_time_at`, `render_identity`, `load_scene` (au plus 4 scènes en
+  mémoire, revalidées par la signature), `problem(path)`, `validate(path)`, `dependencies(path)` (fichiers de la scène, modèles confinés sous son dossier) et
+  `scene_signature(path)` (empreinte bon marché pour les clés de cache : date, taille, début et fin de chaque fichier, mémorisée
+  et revalidée par `stat` ; `"missing"` si le fichier manque, `"invalid:…"` si la scène ne se lit pas).

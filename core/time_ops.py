@@ -31,6 +31,7 @@ from . import keyframe_editing as keyframes
 from .animation import TIME_EPSILON, AnimationCurve, InterpolationType, Keyframe, normalize_time
 from .keyframe_editing import KeyframeRef
 from .project_model import Clip, Project
+from .scene3d import ensure_fixed_speed
 from .time_editing import free_map
 from .time_map import SPEED_LIMIT, SPEED_PROPERTY
 from .time_targets import SPEED_TARGET
@@ -67,6 +68,7 @@ def _editable_clip(project: Project, clip_id: str) -> Clip:
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)                  # une scène 3D se joue à sa vitesse (core.scene3d)
     if clip.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
         raise ValueError("Un arrêt sur image n'a pas de vitesse : retirez-le d'abord.")
     return clip
@@ -426,6 +428,7 @@ def set_clip_interpolation(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)                  # une scène 3D se joue à sa vitesse (core.scene3d)
     if clip.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
         raise ValueError("Un arrêt sur image n'a pas d'images intermédiaires : aucun calcul n'est nécessaire.")
     mode = TimeInterpolation(interpolation)
@@ -442,6 +445,7 @@ def set_clip_preserve_pitch(project: Project, clip_id: str, enabled: bool) -> Cl
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)                  # une scène 3D se joue à sa vitesse (core.scene3d)
     clip.time_remapping = replace(clip.time_remapping, preserve_pitch=bool(enabled))
     return clip
 
@@ -451,6 +455,7 @@ def set_clip_remap_audio(project: Project, clip_id: str, enabled: bool) -> Clip:
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)                  # une scène 3D se joue à sa vitesse (core.scene3d)
     clip.time_remapping = replace(clip.time_remapping, remap_audio=bool(enabled))
     return clip
 

@@ -242,6 +242,9 @@ EXCLUDED: dict[str, dict[str, str]] = {
     "TrackAutomation": {
         "track_id": "Étiquette pour les messages d'erreur, hors de la comparaison (docstring de TrackAutomation) : redondante avec la piste qui porte la courbe.",
     },
+    "GraphicOverlay": {
+        "scene_time": "Valeur d'exécution d'un calque scène 3D, posée par la scène à chaque image et jamais écrite dans un projet (core.graphics.RUNTIME_FIELDS).",
+    },
     "LUTResource": {
         "source_path": "Chemin absolu de travail, volontairement non sérialisé (docstring de LUTResource) : ``path`` est la référence portable du projet.",
     },
