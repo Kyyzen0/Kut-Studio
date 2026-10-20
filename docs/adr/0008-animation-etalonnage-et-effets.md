@@ -279,8 +279,8 @@ suffit). Nouveau module `core/effect_sendcmd.py` ; le registre se scinde en `EXP
 `SENDCMD_EFFECT_PARAMS`, `ANIMATABLE_EFFECT_PARAMS` en est l'union (`PENDING_EFFECT_PARAMS` ne garde que la brume de chaleur).
 Refusés (interface : pas de losange ; verbes : « pas animable » ou valeur hors du choix de `parameter`) : netteté, seuil et gain de
 la lueur, brume de chaleur. Moteur de rendu inchangé (13) : un projet sans courbe sur ces réglages produit exactement le graphe
-d'avant (testé : aucun `sendcmd`, aucun fichier ; les graphes des tests d'or de l'étape 3 sont inchangés), et la cible `fx.*` ne
-change pas le format (version 20 déjà écrite pour toute courbe d'effet).
+d'avant (testé : aucun `sendcmd`, aucun fichier ; les graphes des tests d'or de l'étape 3 sont inchangés), et le format est
+écrit en **version 23 conditionnelle** (`SENDCMD_ANIMATION_VERSION`) : la 0.8.0 publiée lit la 22 mais n'a pas ces trois cibles et rendrait ces réglages à leur valeur de base sans rien dire. La 23 n'est écrite que si un clip a une image clé sur un paramètre de `SENDCMD_EFFECT_PARAMS` dont l'effet existe (le registre décide, pas une liste en dur) ; une courbe de vignette ou de correction de couleur (déjà publiées) reste en 20 ; la 23 l'emporte sur la 22 (scène 3D) ; un projet sans courbe est écrit octet pour octet comme avant.
 
 **Coût** (`tools/measure_sendcmd_cost.py`, la chaîne et le fichier de commandes de l'application, 1920x1080, 150 images,
 `-f null`, meilleur de deux ; la valeur statique est la moyenne de la courbe). Rapport animé / statique :

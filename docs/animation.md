@@ -225,9 +225,10 @@ menu du losange, au niveau Avancé.
 révèle le groupe Effets) ; le menu du losange n'offre que « Désactiver » et « Supprimer l'animation de l'effet » en Studio,
 l'interpolation, le copier / coller et l'éditeur de courbes en Avancé. Changer de niveau ne perd aucune valeur.
 
-**Format** : un fichier qui contient au moins une courbe d'effet (quel que soit le réglage, flou compris) s'écrit en version 20
-et ne s'ouvre plus dans une version antérieure de Kut-Studio ; les nouveaux réglages animables ne changent pas le format ; sans
-courbe d'effet, le fichier garde la version qu'il avait.
+**Format** : un fichier qui contient une courbe de correction de couleur ou de vignette s'écrit en version 20 ; un fichier qui
+contient une courbe de **flou, de rayon du Bloom ou d'aberration chromatique** (rendues par `sendcmd`) s'écrit en version **23**
+(la 0.8.0 publiée lit la 22 mais ne connaît pas ces réglages : elle les rendrait à leur valeur de base sans rien dire). Une
+version antérieure refuse ces fichiers au lieu de perdre l'animation ; sans courbe d'effet, le fichier garde la version qu'il avait.
 
 ### Modèle et rendu
 
@@ -263,7 +264,7 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   ignorée, puis retirée à la prochaine modification de la chaîne d'effets du clip. Un test de garde
   (`tests/test_effects_write_guard.py`) échoue si une nouvelle écriture de `clip.effects` n'est pas classée.
 - **Format** : un fichier qui contient au moins une image clé `fx.*` (ou `color.*`, réservé à l'étalonnage) s'écrit en version
-  20 (`EFFECT_ANIMATION_VERSION`) ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
+  20 (`EFFECT_ANIMATION_VERSION`), ou 23 (`SENDCMD_ANIMATION_VERSION`) si l'une porte sur le flou, l'aberration chromatique ou le rayon du Bloom ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
 
 ### Rendu (étape 3)
 

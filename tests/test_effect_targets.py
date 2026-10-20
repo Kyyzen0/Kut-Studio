@@ -360,7 +360,14 @@ def test_version_constants():
     assert {17, 18, 19, 20} <= SUPPORTED_VERSIONS
 
 
-@pytest.mark.parametrize("name", ["fx.e-blur.intensity", "color.exposure", "fx.gone.intensity"])
+def test_a_blur_keyframe_writes_version_23_not_20():
+    """Le flou est rendu par ``sendcmd`` (étape 5) : la 0.8.0 publiée l'ignorerait en silence, donc la 23 (``SENDCMD_ANIMATION_VERSION``)."""
+    project = reference_project()
+    clip_of(project).animation.append(Keyframe("fx.e-blur.intensity", 0.5, 1.0, id="kx"))
+    assert project_payload(project)["version"] == 23
+
+
+@pytest.mark.parametrize("name", ["fx.e-vignette.intensity", "color.exposure", "fx.gone.intensity"])
 def test_an_fx_or_color_keyframe_writes_version_20(name):
     project = reference_project()
     clip_of(project).animation.append(Keyframe(name, 0.5, 1.0, id="kx"))

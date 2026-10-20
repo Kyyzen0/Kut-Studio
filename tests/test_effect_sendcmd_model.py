@@ -15,7 +15,7 @@ import pytest
 from core.animation import Keyframe
 from core.composition_ops import CompositionError, convert_to_composition
 from core.effects_model import EffectType, add_effect_to_clip, create_effect, has_live_effect_animation, remove_effect_from_clip
-from core.project_io import EFFECT_ANIMATION_VERSION, load_project, project_payload, save_project
+from core.project_io import EFFECT_ANIMATION_VERSION, SENDCMD_ANIMATION_VERSION, load_project, project_payload, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.scripting import Session, apply_script, parse_script
 from core.timeline_operations import cut_clip, duplicate_clip, find_clip
@@ -33,20 +33,77 @@ def project_with(effect_id, kind, name, value, *, locked=False, track_type="vide
                    tracks=[Track("V1", "V1", track_type, locked=locked, clips=[clip])])
 
 
-# --- (6) Format : la version 20 est celle de toute courbe fx.*, les nouvelles cibles n'en changent pas ---------------------
+# --- (6) Format : 23 pour les courbes de sendcmd (la 0.8.0 publiée les ignorerait en silence), 20 pour les autres ------------
 
 
 @pytest.mark.parametrize("effect_id, kind, name, value", NEW)
-def test_a_new_curve_is_written_in_the_existing_format_version_and_roundtrips(tmp_path, effect_id, kind, name, value):
+def test_a_sendcmd_curve_writes_version_23_and_roundtrips(tmp_path, effect_id, kind, name, value):
     project = project_with(effect_id, kind, name, value)
-    assert project_payload(project)["version"] == EFFECT_ANIMATION_VERSION == 20
+    assert project_payload(project)["version"] == SENDCMD_ANIMATION_VERSION == 23
     path = tmp_path / "p.kut"
     save_project(project, str(path))
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 20
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 23
     reloaded = load_project(str(path))
     clip = reloaded.tracks[0].clips[0]
     assert [(k.property_name, k.time_seconds, k.value) for k in clip.animation] == [
         (f"fx.{effect_id}.{name}", 0.0, 0.0), (f"fx.{effect_id}.{name}", 4.0, value)]
+    again = tmp_path / "again.kut"
+    save_project(reloaded, str(again))
+    assert again.read_bytes() == path.read_bytes()
+
+
+def test_published_effect_curves_stay_in_version_20_and_no_curve_stays_below():
+    vignette = project_with("vg", EffectType.VIGNETTE, "intensity", 0.9)
+    assert project_payload(vignette)["version"] == EFFECT_ANIMATION_VERSION == 20
+    color = project_with("cc", EffectType.COLOR_CORRECTION, "contrast", 1.5)
+    assert project_payload(color)["version"] == 20
+    plain = project_with("bl", EffectType.BLUR, "intensity", 12.0)
+    plain.tracks[0].clips[0].animation = []
+    assert project_payload(plain)["version"] < 20
+    plain.tracks[0].clips[0].animation = [Keyframe("graphic.width", 0.0, 3.0)]
+    assert project_payload(plain)["version"] < 20
+
+
+def test_the_parameter_name_alone_does_not_decide_and_orphans_do_not_count():
+    """``intensity`` est aussi celui de la vignette ; une courbe dont l'effet n'existe plus est ignorée par tous les builds."""
+    project = project_with("vg", EffectType.VIGNETTE, "intensity", 0.9)
+    project.tracks[0].clips[0].animation.append(Keyframe("fx.nobody.intensity", 0.0, 1.0))
+    assert project_payload(project)["version"] == 20
+    glow = project_with("gl", EffectType.GLOW, "intensity", 2.0)             # gain de la lueur : pas un paramètre sendcmd
+    assert project_payload(glow)["version"] == 20
+
+
+def test_the_registry_decides_the_version(monkeypatch):
+    from core import effect_targets
+
+    project = project_with("vg", EffectType.VIGNETTE, "intensity", 0.9)
+    assert project_payload(project)["version"] == 20
+    monkeypatch.setitem(effect_targets.SENDCMD_EFFECT_PARAMS, EffectType.VIGNETTE, ("intensity",))
+    assert project_payload(project)["version"] == 23
+
+
+def test_a_3d_layer_and_a_blur_curve_together_write_23_and_a_3d_layer_alone_stays_22(tmp_path):
+    from tests.scene3d_samples import project_with_scene
+
+    project, clip, _scene = project_with_scene(tmp_path)
+    assert project_payload(project)["version"] == 22
+    clip_with_blur = project.tracks[0].clips[0]
+    clip_with_blur.effects = [create_effect(EffectType.BLUR, effect_id="bl")]
+    clip_with_blur.animation = [Keyframe("fx.bl.intensity", 0.0, 1.0), Keyframe("fx.bl.intensity", 1.0, 9.0)]
+    assert project_payload(project)["version"] == 23
+
+
+def test_a_build_that_does_not_know_version_23_refuses_the_file(tmp_path, monkeypatch):
+    from core import project_io
+
+    path = tmp_path / "p.kut"
+    save_project(project_with("bl", EffectType.BLUR, "intensity", 12.0), str(path))
+    monkeypatch.setattr(project_io, "SUPPORTED_VERSIONS", project_io.SUPPORTED_VERSIONS - {SENDCMD_ANIMATION_VERSION})
+    with pytest.raises(ValueError, match="Versions acceptées"):
+        load_project(str(path))
+    other = tmp_path / "v.kut"
+    save_project(project_with("vg", EffectType.VIGNETTE, "intensity", 0.9), str(other))
+    assert load_project(str(other)).tracks[0].clips[0].animation, "un fichier en 20 reste lisible par ce lecteur"
 
 
 def test_a_project_without_an_fx_curve_stays_below_version_20():

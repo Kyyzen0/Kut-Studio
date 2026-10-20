@@ -16,7 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
-- Animer le flou, l'aberration chromatique et le rayon du Bloom avec des images clés (losanges ‹ ◆ › sous le réglage, éditeur de courbes, scripts `add_effect_keyframe`), à l'export comme dans le moniteur et l'aperçu fidèle, sans temps d'export en plus ; la netteté, le seuil et l'intensité du Bloom et la brume de chaleur restent fixes.
+- Animer le flou, l'aberration chromatique et le rayon du Bloom avec des images clés (losanges ‹ ◆ › sous le réglage, éditeur de courbes, scripts `add_effect_keyframe`), à l'export comme dans le moniteur et l'aperçu fidèle, sans temps d'export en plus ; la netteté, le seuil et l'intensité du Bloom et la brume de chaleur restent fixes. **À savoir** : un projet qui contient une courbe de flou, de rayon du Bloom ou d'aberration chromatique s'enregistre au format 23 et ne s'ouvre plus dans une version antérieure (qui le refuse au lieu de perdre l'animation) ; sans ces courbes le fichier reste écrit comme avant.
 
 ## [0.8.0] - 2026-10-20
 
