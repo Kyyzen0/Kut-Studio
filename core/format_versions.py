@@ -72,11 +72,17 @@ def find_format_version(project: Project, source_id: str, format_id: str) -> Seq
     return None
 
 
-def create_format_version(project: Project, source_id: str, format_id: str) -> tuple[Sequence, list[LayoutChange]]:
+def create_format_version(
+    project: Project, source_id: str, format_id: str, *, version_id: str | None = None, name: str | None = None,
+) -> tuple[Sequence, list[LayoutChange]]:
     """Ajoute au projet la version de ``source_id`` au format ``format_id`` ; une version déjà là est refaite.
 
     Une version refaite garde son identifiant (et donc les clips imbriqués ou exports qui la désignent) : seul son
     contenu repart de la séquence d'origine. Retourne la version et ce que la mise en page a changé.
+
+    ``version_id`` / ``name`` : identifiant imposé et nom de la version (scripts, voir :mod:`core.object_ids`) ; ``None`` garde
+    l'identifiant généré et le nom « <source> · <rapport> » (l'interface ne les passe pas). Une version refaite garde l'identifiant
+    et le nom de la précédente, que ``version_id`` / ``name`` ne remplacent pas.
     """
     from .sequences import duplicate_sequence, find_sequence
 
@@ -85,7 +91,9 @@ def create_format_version(project: Project, source_id: str, format_id: str) -> t
     if (source.width, source.height) == (target.width, target.height):
         raise ValueError(f"La séquence « {source.name} » est déjà au format {target.ratio}.")
     previous = find_format_version(project, source_id, format_id)
-    version = duplicate_sequence(project, source_id, name=f"{source.name} · {target.ratio}")
+    version = duplicate_sequence(
+        project, source_id, name=name or f"{source.name} · {target.ratio}", clone_id=version_id,
+    )
     if previous is not None:
         index = project.sequences.index(previous)
         project.sequences.remove(version)

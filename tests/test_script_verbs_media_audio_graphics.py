@@ -373,5 +373,5 @@ def test_track_inserts_are_for_audio_and_video_tracks_only():
 
 def test_only_file_reading_verbs_need_the_file_context():
     assert [name for name, verb in VERBS.items() if verb.needs_context] == [
-        "import_media", "add_image_layer", "add_scene3d_clip", "import_lut", "fill_slot_with_photo", "fill_slots_with_photos", "add_photo_slideshow",
+        "import_media", "relink_media", "add_image_layer", "add_scene3d_clip", "import_lut", "fill_slot_with_photo", "fill_slots_with_photos", "add_photo_slideshow",
     ]

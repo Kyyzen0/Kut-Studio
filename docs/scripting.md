@@ -126,6 +126,21 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_bus_insert_enabled` | Active ou désactive un insert (`bus`, `insert`, `enabled`) |
 | `update_bus_insert` | Modifie les paramètres d'un insert (`bus`, `insert`, `params`) |
 | `import_media` | Importe un fichier média dans le projet, **en lecture seule** (`path`) ; voir « Fichiers » ci-dessous |
+| `create_library_folder` | Crée un dossier de la bibliothèque, à la racine ou sous un `parent` (`name`, `color`) ; `id` / `as` |
+| `rename_library_folder` | Renomme un dossier (`folder`, `name`) |
+| `recolor_library_folder` | Change la couleur d'un dossier, ou l'efface sans `color` (`folder`, `color`) |
+| `move_library_folder` | Déplace un dossier sous un autre, ou à la racine sans `parent` (`folder`, `parent`) |
+| `delete_library_folder` | Supprime un dossier et ses sous-dossiers ; les médias qu'ils rangeaient reviennent à la racine (`folder`) |
+| `create_library_tag` | Crée une étiquette (`name`, `color`) ; `id` / `as` |
+| `rename_library_tag` | Renomme une étiquette (`tag`, `name`) |
+| `recolor_library_tag` | Change la couleur d'une étiquette (`tag`, `color`) |
+| `delete_library_tag` | Supprime une étiquette et la retire de tous les médias (`tag`) |
+| `move_media_to_folder` | Range un média dans un dossier, ou à la racine sans `folder` (`asset`, `folder`) |
+| `tag_media` | Pose une étiquette sur un média (`asset`, `tag`) |
+| `untag_media` | Retire une étiquette d'un média (`asset`, `tag`) |
+| `rename_media` | Renomme un média de la bibliothèque (`asset`, `name`) |
+| `relink_media` | Relie un média à un autre fichier, **en lecture seule** (`asset`, `path`) ; voir « Bibliothèque » ci-dessous |
+| `remove_media` | Retire un média **inutilisé** de la bibliothèque (`asset`) |
 | `add_clip` | Pose un média **du projet** sur une piste (`track`, `asset`, `at`) |
 | `delete_clip` | Supprime un clip (`clip`) |
 | `delete_clips` | Supprime plusieurs clips (`clips` : 1 à 200, sans doublon, hors calques graphiques ; `ripple` optionnel) ; tout est vérifié avant la première suppression |
@@ -168,6 +183,19 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_muted` | Coupe ou rétablit le son d'une piste (`track`, `muted`) |
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
+| `set_track_role` | Rôle d'une piste **audio** déverrouillée : `voice`, `music`, `sfx` ou `other` (`track`, `role`) ; voir « Audio avancé » |
+| `add_automation_point` | Pose un point sur la courbe de volume d'une piste audio (`track`, `at`, `gain_db` de −24 à 12, `fade_seconds` de 0 à 5) ; un point existe déjà à cet instant : refusé |
+| `update_automation_point` | Modifie le gain ou le maintien du point situé à l'instant `at` (`track`, `at`, `gain_db`, `fade_seconds`, au moins l'un des deux) |
+| `move_automation_point` | Déplace le point situé à `at` vers `to` (`track`, `at`, `to`, `gain_db` facultatif) ; un instant déjà pris est refusé |
+| `remove_automation_point` | Retire le point situé à l'instant `at` (`track`, `at`) |
+| `clear_automation` | Efface la courbe de volume d'une piste audio (`track`) |
+| `set_automation_curve` | Remplace toute la courbe d'une piste audio (`track`, `points` : `time_seconds`, `gain_db`, `fade_seconds`, 0 à 1 000, instants strictement croissants) |
+| `add_ducking_sidechain` | La piste `music` baisse sous la piste `voice` (deux pistes audio déverrouillées ; `preset`, `threshold_db`, `reduction_db`, `attack_seconds`, `release_seconds`) ; `id` / `as` ; refusé pour une boucle, un doublon de paire ou au-delà de 256 associations |
+| `remove_ducking_sidechain` | Retire une association de ducking (`ducking` = son `id`) ; refusé si la piste baissée est verrouillée |
+| `set_ducking_enabled` | Active ou désactive une association sans la retirer (`ducking`, `enabled`) |
+| `update_ducking_config` | Modifie le réglage d'une association (`ducking` et au moins un des quatre réglages ; les autres restent) |
+| `move_track_insert` | Déplace un insert dans la chaîne d'une piste audio ou vidéo (`track`, `insert`, `delta` non nul) ; refusé s'il sortirait de la chaîne |
+| `move_bus_insert` | Déplace un insert dans la chaîne d'un bus (`bus`, `insert`, `delta` non nul) ; refusé s'il sortirait de la chaîne |
 | `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
 | `add_scene3d_clip` | Pose une **scène 3D** (fichier `.kut3d` du dossier du script) en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Scènes 3D » ci-dessous |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée ; `group` : un groupe déverrouillé où poser le calque, jamais pour un calque d'effets) |
@@ -243,6 +271,20 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_mask` | Modifie un masque (`clip`, `mask`, au moins un de `mode`, `inverted`, `name`, `position_x`, `position_y`, `width`, `height`, `rotation`, `feather`, `expansion`, `opacity`) ; la forme ne change pas ; refusé pour une propriété animée et pour le recadrage |
 | `set_mask_points` | Remplace les sommets d'un polygone (`points`) ou les nœuds d'une courbe (`nodes`), un seul des deux selon la forme du masque (`clip`, `mask`) |
 | `remove_mask` | Retire un masque (`clip`, `mask`) avec ses images-clés `mask.<id>.*` et ses liaisons de suivi ; pas le recadrage (`clear_crop`) |
+| `add_tracker` | Ajoute un tracker (un point à suivre) à un clip vidéo (`clip`, `at` dans le clip, `x`, `y` en pixels du média dans l'image, `name`) ; **crée le tracker** (`id` / `as`, uniques dans tout le projet) ; voir « Suivi et stabilisation » |
+| `update_tracker` | Nom, couleur `#RRGGBB`, visibilité, trajectoire d'un tracker (`clip`, `tracker`, au moins un champ) |
+| `set_tracker_settings` | Zones cible et de recherche, confiances, motif, résolution (`clip`, `tracker`, au moins un réglage) ; un réglage que le modèle ramènerait ou qui en changerait un autre est refusé |
+| `set_tracker_position` | Pose un point à l'image montrée à `at` (`clip`, `tracker`, `at`, `x`, `y`) : la façon de fournir des points à un script |
+| `remove_correction` | Retire le point posé à la main à `at` (`clip`, `tracker`, `at`) ; refusé si ce n'en est pas un ou si c'est le dernier |
+| `reset_tracker` | Efface les images analysées, les points posés à la main restent (`clip`, `tracker`, `direction` = `all` / `after` / `before`, `at` avec `after` et `before`) |
+| `remove_tracker` | Supprime un tracker, son usage par la stabilisation et les liaisons qui le suivent (`clip`, `tracker`) |
+| `add_link` | Lie une propriété à des trackers analysés d'un clip (`clip` = la cible, `source`, `trackers`, `at` de référence, `target` = `transform` / `anchor` / `mask`, `mask`, `position`, `rotation`, `scale`) ; **crée la liaison** (`id` / `as`) ; refusé si la propriété a déjà une liaison |
+| `remove_link` | Retire une liaison de suivi (`clip`, `link`) |
+| `set_link_enabled` | Active ou désactive une liaison (`clip`, `link`, `enabled`) |
+| `bake_link` | Convertit une liaison en images clés indépendantes et la retire (`clip`, `link`) |
+| `set_stabilization` | Crée ou règle la stabilisation d'un clip vidéo (`clip`, `trackers`, `enabled`, `mode`, `smoothing`, `smoothing_frames`, `borders`, `at`) |
+| `remove_stabilization` | Retire la stabilisation (`clip`) ; refusé si le clip n'est pas stabilisé |
+| `follow_reframe` | Recadrage vertical suivi : le clip remplit le cadre et son panoramique suit les trackers (`clip`, `trackers`) ; remplace l'animation de `pan_x` / `pan_y` |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 | `set_cover_marker` | Pose le repère de couverture, le seul : l'ancien est remplacé (`at`, `name`) ; `id` / `as` |
 | `remove_marker` | Retire un repère (`marker`, par son identifiant) |
@@ -255,6 +297,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_sequence_format` | Change le cadre et/ou la cadence d'une séquence (`sequence`, au moins un de `width`, `height`, `fps`) |
 | `duplicate_sequence` | Copie indépendante d'une séquence, non activée (`sequence`, `name` libre optionnel) ; les clips de la copie ont des identifiants générés |
 | `insert_sequence_clip` | Insère une séquence comme clip imbriqué sur une piste vidéo ou audio **de la séquence active** (`sequence`, `track`, `at`, `source_in`, `source_out` dans la durée de la source) |
+| `nest_clips` | Déplace des clips de la séquence active dans une nouvelle séquence imbriquée (`clips`, `name`, `clip_id`) ; `id` / `as` |
+| `create_format_version` | Décline une séquence dans un format social (`sequence`, `format`, `name`) ; `id` / `as` |
 | `set_active_sequence` | Rend une séquence active : les verbes de piste, clip, bus et repère agissent ensuite sur elle (`sequence`) |
 | `delete_sequence` | Supprime une séquence ni active, ni dernière, ni imbriquée ailleurs (`sequence`) |
 | `create_multicam_source` | Crée une source Multicam, **non activée** : `angles` (1 à 64 objets `asset`, `offset` ≥ 0 en secondes, `name`), `name` libre optionnel ; le plus petit `offset` vaut 0 |
@@ -264,6 +308,10 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_multicam_audio` | Politique audio d'une source : `mode` = `follow` / `fixed` / `mix`, `angles` selon le mode (`sequence`) |
 | `rename_multicam_angle` | Renomme un angle et sa piste, nom libre dans la source (`sequence`, `angle`, `name`) |
 | `add_multicam_angle` | Ajoute un angle à une source (`sequence`, `asset`, `offset`, `name`) |
+| `create_multicam_from_clips` | Transforme des clips de la séquence active en source Multicam remplacée par un segment (`clips` : 2 à 64 objets `clip`, `name`, `offset` ; `name`, `segment_id`) ; `id` / `as` |
+| `flatten_multicam_segment` | Remplace un segment Multicam par les clips ordinaires qu'il montre (`clip`) |
+| `remove_multicam_angle` | Supprime un angle ; les segments qui le montrent passent à `replace_with` (`sequence`, `angle`, `replace_with`) |
+| `set_multicam_angle_color` | Couleur d'un angle dans la palette de l'interface (`sequence`, `angle`, `color_index` de 0 à 11) |
 | `set_multicam_angle_offset` | Recale un angle : son premier clip commence à `offset` (`sequence`, `angle`, `offset`) |
 | `set_beat_grid` | Pose la grille rythmique de la séquence active (`bpm` 20…300, `offset`, `beats_per_bar` 1…16) ; rien n'est mesuré |
 | `remove_beat_grid` | Supprime la grille rythmique (refusé s'il n'y en a pas) |
@@ -307,7 +355,17 @@ active. Pour remplir une autre séquence, un script la rend active avec `set_act
   qui la contiennent est le même que dans l'interface et figure dans le rapport.
 - Un nom de séquence **déjà pris est refusé** (le modèle numéroterait « Nom 2 » en silence) ; sans `name`, le modèle choisit.
 - `delete_sequence` n'a pas de `force` : une séquence encore utilisée, la séquence active et la dernière sont refusées.
-- Pas encore de verbe pour « créer une séquence à partir de la sélection » (la sélection est un état d'interface).
+- **`nest_clips`** (« Créer une séquence à partir de la sélection ») prend la sélection en liste : des clips de la séquence **active**, sans
+  doublon (200 au plus), éditables (piste et calque déverrouillés). La séquence créée reçoit `id` / `as`, le clip imbriqué `clip_id`. Refusés :
+  un nom pris (le nom par défaut « Séquence imbriquée » aussi), une transition qui relie un clip choisi à un clip resté dehors (le modèle la
+  retirerait), une sélection qui sépare un calque de son parent ou de son groupe, une imbrication de plus de 32 niveaux (ancêtres de la séquence
+  active compris), la séquence active quand c'est une source Multicam, et un clip verrouillé resté dehors que le modèle toucherait.
+- **`create_format_version`** décline une séquence dans un format social (`vertical`, `portrait`, `square`, `landscape`) : une copie mise
+  en page pour le cadre, comme « Exporter en plusieurs formats… ». Une version déjà là est **refusée** (l'interface la refait sur demande ;
+  un script supprime l'ancienne avec `delete_sequence`, puis en crée une neuve), de même qu'une version de version ; le nom par défaut
+  « <séquence> · <rapport> » doit être libre.
+- **Plafonds** : un projet compte au plus 200 séquences et 5 000 clips ; `create_sequence`, `duplicate_sequence`, `create_multicam_source`,
+  `nest_clips`, `create_multicam_from_clips` et `create_format_version` le vérifient avant de créer, toutes séquences comptées.
 
 ### Multicam
 
@@ -339,8 +397,18 @@ et leurs coupes sont ceux de la séquence **active**.
   coupe) ; `set_multicam_angle_offset` aussi pour la piste de l'angle.
 - `set_multicam_audio` : `follow` ne prend aucun angle, `fixed` exactement un, `mix` au moins un, sans doublon, chacun portant du son.
 - Pas de Multicam dans une Multicam, cycles et profondeur : refusés par le contrôle d'imbrication, comme `insert_sequence_clip`.
-- **Pas de verbe** pour la synchronisation automatique (audio, timecode : analyses), la création depuis des clips sélectionnés (la
-  sélection est un état d'interface), l'aplatissement, la couleur d'un angle (rang de palette du thème) ni la suppression d'un angle.
+- **`create_multicam_from_clips`** transforme des clips de la séquence active (vidéo ou son, 2 à 64) en source Multicam et les remplace par un
+  segment sur l'angle 1 (`segment_id`). Les angles se numérotent comme dans l'interface : vidéos d'abord, puis par position. Sans `offset`, les
+  positions actuelles synchronisent ; avec, **chaque** clip en donne un et le plus petit vaut 0, comme pour `create_multicam_source`. Un nom
+  d'angle doit être libre et ne pas ressembler à un `angle-N` d'un autre angle. Sont refusés une transition ou un suivi qui touche un clip choisi
+  (`delete_clip` les nettoierait, ce verbe-ci les laisserait pendre).
+- **`flatten_multicam_segment`** remplace un segment par des clips ordinaires aux identifiants générés ; il refuse ce que le modèle refuse
+  (remappage, étalonnage, transformation, gain, fondus, effets audio propres) et un segment qui porte du suivi.
+- **`remove_multicam_angle`** supprime la piste et les clips de l'angle ; `replace_with` est obligatoire si des segments le montrent (dans
+  **n'importe quelle** séquence, dont les pistes verrouillées sont refusées) et refusé sinon. Une transition, un suivi ou un ducking qui cite
+  l'angle est refusé.
+- **Pas de verbe** pour la synchronisation automatique (`apply_sync` : audio, timecode : des analyses, dont un script ne peut pas se faire
+  passer pour le résultat) ; `set_multicam_angle_offset` pose des décalages à la main.
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
 paramètre inconnu est refusé avec le message du modèle. Le schéma complet (`Kut-Studio schema`) liste les champs de chaque verbe.
@@ -368,6 +436,35 @@ masques du moniteur : le résultat est le même `Mask`, la matte rendue la même
   et un script n'a pas de tête de lecture où poser une image-clé. Les images-clés d'un masque se posent avec `add_mask_keyframe` / `remove_mask_keyframe` (`add_keyframe` n'accepte pas `mask.<id>.*`).
 - Clip sur une piste verrouillée, calque verrouillé, piste audio ou de sous-titres : refus, comme dans l'interface.
 - Un projet qui contient une courbe s'enregistre en version 18 du format `.kut`, les autres en 17.
+
+## Suivi et stabilisation
+
+Ces verbes appellent les fonctions que le panneau **Suivi** appelle (`core/tracking_ops.py`, `core/follow_reframe.py`). Les liaisons et la
+stabilisation ne stockent aucune image clé : elles sont dérivées dans le plan de rendu, et `bake_link` les convertit en images clés.
+
+```json
+{"op": "add_tracker", "clip": "a", "at": 0, "x": 100, "y": 50, "as": "coin"},
+{"op": "add_tracker", "clip": "a", "at": 0, "x": 200, "y": 120, "as": "bord"},
+{"op": "set_tracker_position", "clip": "a", "tracker": {"ref": "coin"}, "at": 3, "x": 130, "y": 60},
+{"op": "set_tracker_position", "clip": "a", "tracker": {"ref": "bord"}, "at": 3, "x": 230, "y": 130},
+{"op": "add_link", "clip": "titre", "source": "a", "trackers": [{"ref": "coin"}, {"ref": "bord"}], "at": 0, "as": "suit"},
+{"op": "bake_link", "clip": "titre", "link": {"ref": "suit"}}
+```
+
+- **Aucune analyse.** Le suivi automatique d'un point lit les images du média : un script est une donnée et n'en lance aucune (ADR-0005), et
+  `apply_tracking_result` reste un geste de l'interface. Un script fournit ses points lui-même : `add_tracker` pose le premier, `set_tracker_position`
+  en ajoute (état « manuel », jamais écrasé par une analyse). Une liaison ou une stabilisation demande des trackers d'au moins deux images.
+- **Bornes.** Un tracker range ses images sur une grille dense, de la première à la dernière : sa plage, le nombre de trackers d'un clip et du projet
+  (toutes les séquences) et le total d'images suivies sont plafonnés avant d'écrire. `bake_link` et `follow_reframe` écrivent une image clé par image du
+  clip : un clip trop long pour la cadence de la séquence est refusé avant tout calcul.
+- **Refusé plutôt que ramené.** Instant hors du clip, point hors de l'image (de −1 à 2 fois la taille pour `set_tracker_position`), réglage que le modèle
+  écrêterait ou qui en changerait un autre, stabilisation sans `trackers` à la création, `smoothing_frames` hors du lissage `custom`, liaison qui
+  remplacerait une liaison existante (`remove_link` d'abord).
+- **Verrous.** Le clip modifié (piste et calque) est vérifié. Les clips qui **suivent** un tracker dont les données changent (ou la stabilisation de la source)
+  le sont aussi, et `remove_tracker` vérifie ceux dont il réécrit la liaison : un seul clip verrouillé fait refuser le verbe, sans rien écrire. C'est
+  plus strict que l'interface. La source d'une liaison n'est que lue : elle peut être verrouillée.
+- Valeurs par défaut de `set_stabilization` à la création : mode `position`, lissage `medium`, bords `zoom`, image de référence au début du clip.
+- `describe` ne lit pas encore le suivi (« Pas encore là ») : un script cite les trackers et les liaisons qu'il a créés (`id` / `as`).
 
 ## Verrou du projet
 
@@ -422,6 +519,23 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 - Le média reçoit l'identifiant `id` (ou l'alias `as`) : `{"op": "import_media", "path": "voix.wav", "as": "voix"}` puis
   `{"op": "add_clip", "track": "A1", "asset": {"ref": "voix"}, "at": 0}`.
 - Le texte d'un chemin ne contient pas de caractère de contrôle et tient en 1 024 caractères.
+
+## Bibliothèque : dossiers, étiquettes, médias
+
+Les dossiers, étiquettes et affectations de la bibliothèque sont des champs du **projet** (enregistrés dans le `.kut`) : ces verbes se défont
+avec le reste du script. Un dossier ou une étiquette se désigne par son identifiant ou son nom exact (unique), `create_library_folder` /
+`create_library_tag` acceptent `id` / `as`.
+
+- Un nom fait 48 caractères au plus ; un nom qui est l'identifiant d'un autre dossier, étiquette ou média est refusé (l'identifiant l'emporterait
+  à la désignation). L'arbre a 32 niveaux au plus (calculés sur l'arbre résultant), un projet 1 000 dossiers et 500 étiquettes.
+- `delete_library_folder` fait comme l'interface (sous-dossiers compris, les médias reviennent à la racine) ; `tag_media` et `untag_media`
+  ne font rien si l'étiquette y est déjà / n'y est pas.
+- Seuls les médias de la bibliothèque (vidéo, son, image) sont visés, pas les médias techniques des calques et des sous-titres.
+- **`remove_media`** refuse un média encore utilisé par un clip de **n'importe quelle** séquence (l'interface le retire et laisse des clips orphelins).
+- **`relink_media`** lit un fichier, comme `import_media` : même dossier du script, même `--allow-outside`, même sonde `ffprobe` en lecture seule.
+  Il relit durée, cadre, cadence et métadonnées de tournage. Il refuse en plus ce que l'interface ne ferait que signaler : un autre genre de média,
+  un fichier plus court que ce que les clips lisent, un fichier déjà utilisé par un autre média, un média d'un clip dont la piste est verrouillée,
+  et du suivi lié à une autre taille ou cadence.
 
 ## Images fixes : `add_image_layer`
 
@@ -582,9 +696,27 @@ Gain, panoramique, fondus, effets audio d'un clip et ducking, comme l'inspecteur
 - **Effets audio de clip** : sur un clip de piste audio **ou vidéo** (comme le rack d'effets de l'inspecteur) ; un clip graphique ou de sous-titres
   est refusé. Les paramètres sont ceux de l'effet (`parametric_eq`, `compressor`…), validés par le modèle : un nom inconnu ou une valeur hors bornes est refusé.
   `add_clip_audio_effect` crée l'effet (`id` / `as`, unique dans le clip) ; sans identifiant, le modèle le nomme `afx-…`.
-- **Ducking** : `duck_music_under_voice` utilise les rôles de piste déjà posés dans le projet (il n'y a pas encore de verbe pour les changer) ; une association
+- **Ducking** : `duck_music_under_voice` utilise les rôles de piste (`set_track_role` les pose) ; une association
   existante reçoit le nouveau réglage et est réactivée, comme avec la commande de menu. Il refuse si une piste « musique » est verrouillée (elle serait atténuée) ;
-  la commande de menu ne regarde pas ce verrou.
+  la commande de menu ne regarde pas ce verrou. Il respecte aussi la limite d'associations du projet.
+
+## Audio avancé : rôle, courbe de volume, ducking, ordre des inserts
+
+Comme le menu ⋯ d'une piste audio, la bande de courbe de volume et les boîtes d'inserts (`core/scripting/audio_verbs.py`, règles dans `audio_rules.py`).
+
+- **Pistes** : la courbe, le rôle et le ducking sont ceux des pistes **audio** (l'interface n'en offre pas pour une piste vidéo, même si le modèle sait
+  lire la courbe d'une piste vidéo : `describe` la montre, aucun verbe ne l'écrit). Une piste verrouillée est refusée.
+- **Un point de la courbe se désigne par son instant** (`at`, secondes de la timeline, tel que `describe` le donne : il n'y a pas d'identifiant de
+  point). La recherche tolère l'arrondi de la description (6 décimales) et refuse une ambiguïté.
+- **Rien n'est remplacé ni ramené en silence** : le modèle remplace un point posé au même instant, un script reçoit un refus (`update_automation_point`
+  modifie). Le gain d'un point va de −24 à 12 dB (la plage de la bande), le maintien de 0 à 5 s, une courbe compte au plus 1 000 points.
+- **`set_automation_curve`** remplace toute la courbe d'une piste en une opération (instants strictement croissants) : c'est la forme qu'un script écrit
+  d'après `tracks[].automation.points[]` de `describe`.
+- **`add_ducking_sidechain`** : comme le menu « Baisser sous… », avec le réglage par défaut du modèle (ou un `preset`, puis des valeurs qui le complètent). Les
+  rôles de piste ne sont pas exigés (l'interface ne les regarde pas et l'export les ignore). Une boucle est refusée sur le graphe résultant (A sous B et B
+  sous A, ou plus long) ; un identifiant (`id` / `as`) ne reprend aucun de ceux du projet, toutes séquences comprises ; le projet compte au plus 256
+  associations, toutes séquences comprises. Retirer, activer ou régler une association exige que la piste baissée soit déverrouillée.
+- **Ordre des inserts** : `move_track_insert` et `move_bus_insert` refusent un déplacement qui sortirait de la chaîne (le modèle le ramènerait au bout).
 
 ## Lire un projet : `describe`
 
@@ -671,7 +803,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 | `clips[].effects[]` | `id`, `type`, `enabled`, `params` (nom -> nombre), dans l'ordre d'application | `add_effect` (`id`), `update_effect`, `set_effect_enabled`, `move_effect`, `remove_effect` (`effect` = `id`) |
 | `clips[].audio_effects[]`, `tracks[].inserts[]`, `buses[].inserts[]` | même forme | `add_clip_audio_effect`, `add_track_insert`, `add_bus_insert` ; `update_*`, `set_*_enabled`, `remove_*` (`effect` / `insert` = `id`) |
 | `sequences[].buses[]`, `tracks[].bus_id` | `id`, `name`, `volume_db`, `muted`, `inserts` ; `bus_id` vaut `null` pour le Master | `add_bus`, `rename_bus`, `set_bus_volume`, `set_bus_muted`, `route_track` (`bus` = `id`) |
-| `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `duck_music_under_voice` (les rôles se lisent dans `audio_role`) |
+| `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `set_track_role` (`audio_role`), `add_automation_point` / `update_automation_point` / `move_automation_point` / `remove_automation_point` (`at` = `time_seconds`), `set_automation_curve`, `add_ducking_sidechain` (`id`), `update_ducking_config`, `set_ducking_enabled`, `remove_ducking_sidechain` (`ducking` = `id`), `duck_music_under_voice` ; `move_track_insert` / `move_bus_insert` pour l'ordre des inserts |
 | `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>` |
 | `clips[].color_grade` | `null` (jamais étalonné) ou `{nodes, links}` : un réglage seul est le nœud `n1` ; un nœud est `corrector` (`grade`, `label`, `qualifier`, `windows`, `blur`, `sharpen`) ou `mixer` (`kind`) | `set_color_grade`, `set_color_curve`, `set_color_wheel`, `set_color_qualifier`, `set_color_detail`, `rename_color_node` (`node` = `id`, absent : le premier), `add_color_window` / `set_color_window` (`window` = `id`) |
 | `clips[].compositing` | `masks[]` (forme, position, taille, `mode`, `points` / `handles`, `nodes` pour une courbe), `chroma_key`, `blend_mode` | `add_mask`, `set_mask`, `set_mask_points` (`mask` = `id`), `set_crop` |
@@ -705,7 +837,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
   antérieurs ; les images clés d'un masque de compositing sont dans `animation` (`mask.<id>.<nom>`).
 - **Ce qu'aucun verbe n'écrit encore** (la lecture est là, l'écriture est à faire) : les images clés d'un paramètre d'effet
   (`fx.*`), le LUT (`import_lut` lit un fichier), la composition nodale, le mode de fusion et l'incrustation (`chroma_key`), la courbe
-  d'automation de volume et les associations de ducking. Un test les nomme : le jour où un verbe existe, il échoue et la liste se met à jour.
+  de volume d'une piste vidéo et `tracks[].ducking_config` (un réglage que rien dans l'application ne lit ni n'édite). Un test les nomme : le jour où un verbe existe, il échoue et la liste se met à jour.
 
 **Complétude.** Deux listes de dette qui ne peuvent que diminuer (`tests/data/`) empêchent la sortie et les verbes de dériver du modèle :
 `describe_field_debt.json` (chaque champ du modèle est décrit, exclu avec une raison, ou en dette avec sa section) et
