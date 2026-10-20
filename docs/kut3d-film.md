@@ -35,6 +35,32 @@ Exemple complet, sans fichier externe : `.venv/bin/python examples/kut3d_hello_f
 - `save() -> Path`, `export(sortie, *, preset=None) -> Path`, `project()` (le `Project` construit), `duration`.
 - Toute erreur est une `FilmError` (une `ValueError`) en français ; les bornes sont vérifiées **avant** de rendre.
 
+## `place_scene` : un vrai clip « scène 3D »
+
+`render_shot` fabrique une **vidéo** (ProRes 4444). `place_scene` pose à la place un **clip natif** : la scène est écrite dans un
+fichier `.kut3d` ([format](kut3d-scene.md)) et le projet reçoit un calque graphique « scène 3D » qui la référence. Le clip s'ouvre et se règle dans
+l'application, se rend avec le reste du montage (aperçu fidèle, export), n'a aucun ProRes à stocker.
+
+```python
+film.place_scene(scene, duration=3.0, start=0.0, track=1, name="cube")   # -> "scene_cube_1"
+```
+
+- `scene` : une `kut3d.Scene`. **Une fonction `t -> Scene` n'est pas sérialisable** : elle est refusée, utilisez `render_shot`.
+- `track` : numéro de la piste de **graphiques** (G1, G2...), au-dessus de toute la vidéo (défaut 1). Un chevauchement sur la même piste est refusé.
+- `duration` est arrondie à l'image (`round(durée x fps)`, comme un plan) ; `name` (lettres, chiffres, `_`) ne peut pas être celui d'un plan
+  ni d'une autre scène du film (casse ignorée) ; `overwrite=True` remplace les fichiers d'une exécution précédente **sans jamais détruire l'ancienne scène avant que la nouvelle soit installée et relue** : l'ancien `.kut3d` et son dossier de modèles sont mis de côté (`.<nom>.XXXX.bak`), puis supprimés seulement après validation ; sur tout échec (ou interruption) ils sont remis en place. Le nombre de plans rendus + scènes est borné par un seul total (`MAX_PLACEMENTS`), quel que soit l'ordre des poses.
+- Fond transparent (celui que la scène déclare, sinon aucun), taille et cadence du film, vitesse fixe (pas de remappage de temps).
+- Le projet s'écrit alors au format `.kut` **22** ; `export()` fonctionne tel quel (les scènes sont vérifiées avant l'export).
+- **Modèles copiés** : un `.kut3d` ne référence que des fichiers **sous son propre dossier**. `place_scene` copie donc chaque modèle (OBJ, glTF,
+  GLB, PLY, STL) avec ses dépendances (MTL, `.bin`, textures en fichier) dans `<projet>_assets/<nom>_models/<modèle>-<empreinte>/`, en gardant
+  l'arborescence relative qui les relie ; une seule copie par fichier source ; la matrice `root_transform` de chaque modèle est conservée.
+  Au plus 1 000 fichiers et 2 Gio par scène. Un modèle construit en code (sans fichier) est refusé : enregistrez-le d'abord.
+  (Les importeurs confinent déjà MTL, `.bin` et textures au dossier du modèle.)
+- Écrits : `scene_assets/<nom>.kut3d` et `scene_assets/<nom>_models/`. Une erreur ne laisse aucun fichier partiel.
+
+Exemple complet : `.venv/bin/python examples/kut3d_scene_film.py out/` (cube texturé OBJ + MTL + PNG fabriqué par le script).
+Un film peut mêler `render_shot` + `place` et `place_scene`.
+
 ## Ce qui est écrit sur disque
 
 ```
@@ -49,8 +75,8 @@ Une erreur ou un Ctrl-C ne laisse aucun fichier partiel. Seuls les fichiers `fra
 
 ## Limites
 
-- Le plan est un **média vidéo ordinaire** : il n'y a pas encore de clip « scène 3D » natif dans la timeline, donc pas de
-  réglage de la scène depuis l'interface. Le `.kut` ne contient aucun script ni aucune scène.
+- Un plan de `render_shot` est un **média vidéo ordinaire** (pas de réglage de la scène depuis l'interface) ; pour un clip natif, voir `place_scene`.
+  Le `.kut` ne contient aucun script ; il ne référence une scène que par le chemin de son `.kut3d`.
 - Le format `.kut` n'est pas modifié : le film s'écrit dans la version que le contenu exige (comme un projet fait à la main).
 - Le ProRes 4444 est lourd (de quelques Mo à plusieurs dizaines de Mo par seconde selon la scène, en 1080p).
 - Un plan dure `round(durée x fps)` images ; durée d'un plan : 3600 s au plus, 100 000 images au plus.

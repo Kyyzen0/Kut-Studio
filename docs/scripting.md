@@ -197,6 +197,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `move_track_insert` | Déplace un insert dans la chaîne d'une piste audio ou vidéo (`track`, `insert`, `delta` non nul) ; refusé s'il sortirait de la chaîne |
 | `move_bus_insert` | Déplace un insert dans la chaîne d'un bus (`bus`, `insert`, `delta` non nul) ; refusé s'il sortirait de la chaîne |
 | `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
+| `add_scene3d_clip` | Pose une **scène 3D** (fichier `.kut3d` du dossier du script) en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Scènes 3D » ci-dessous |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée ; `group` : un groupe déverrouillé où poser le calque, jamais pour un calque d'effets) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) ; refusé pour une propriété **animée** (`graphic.*` : une valeur statique serait masquée par la courbe), comme `set_mask` |
 | `delete_layers` | Supprime des calques graphiques (`clips`, 1 à 200 sans doublon) ; un groupe emporte son contenu, les enfants d'un parent supprimé sont détachés ; refusé si l'un d'eux, ou un groupe qui perdrait un membre, est verrouillé ; voir « Calques graphiques » |
@@ -223,6 +224,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_subtitle` | Pose un sous-titre sur une piste de sous-titres (`text`, `at`, `duration`, `track`) |
 | `add_transition` | Transition entre deux clips vidéo adjacents d'une même piste (`from_clip`, `to_clip`, `transition`, `duration`) |
 | `remove_transition` | Retire une transition (`transition`) |
+| `update_transition` | Change le type et/ou la durée d'une transition (`transition`, `type`, `duration`) ; refusé si un des deux clips est verrouillé, si la durée dépasse la moitié du plus court clip, ou si le recalage du clip entrant en recouvrirait un autre ; voir « Images clés, courbe de vitesse et transitions » |
+| `apply_transition_preset` | Pose un préréglage de transition **intégré** (`preset`, `from_clip`, `to_clip`, `duration` : absente = celle du préréglage) ; **crée la transition** (`id` / `as`) |
 | `set_clip_speed` | Vitesse constante d'un clip **vidéo ou audio** (`clip`, `speed` de 0,05 à 10) ; remplace une courbe de vitesse existante, comme l'inspecteur ; voir « Vitesse et remappage » |
 | `set_clip_reverse` | Joue un clip à l'envers ou à l'endroit (`clip`, `reverse`) |
 | `set_clip_freeze_frame` | Transforme un clip vidéo en arrêt sur image (`clip`, `source_time` dans la fenêtre de source du clip, `duration` de 0,01 à 3 600 s) |
@@ -234,6 +237,11 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_speed_point` | Retire un point, désigné par son instant (`clip`, `at`, `ripple`) |
 | `move_speed_points` | Déplace des points d'un bloc (`clip`, `points` = leurs instants, 1 à 64, `delta` non nul, `ripple`) ; un point qui sortirait du clip ou en recouvrirait un autre est refusé |
 | `clear_speed_curve` | Supprime la courbe de vitesse : vitesse constante, portion de média conservée (`clip`) |
+| `set_speed_point_interpolation` | Interpolation du segment qui part de chaque point cité (`clip`, `points` = leurs instants, `interpolation`, `ripple`) |
+| `set_speed_tangents` | Pentes Bézier de points de vitesse (`clip`, `points`, au moins un de `in_slope`, `out_slope`, `mode`, `auto`, `ripple`) |
+| `edit_speed_points` | Déplace des points (`delta`) et/ou change leur vitesse (`points` = `[{at, value}]`) en une seule transaction (`clip`, `ripple`) |
+| `remove_speed_points` | Retire des points en une seule transaction (`clip`, `points`, `ripple`) |
+| `apply_time_preset` | Préréglage de vitesse intégré : `slow_50`, `slow_25`, `fast_2`, `fast_4`, `ramp_in`, `ramp_out`, `freeze` (`clip`, `preset`, `at` pour `freeze` seulement, `ripple`) ; remplace la courbe existante |
 | `insert_hold` | Arrêt sur image dans la courbe : l'image reste `duration` s (0,01 à 3 600, défaut 1) à l'instant `at` (`clip`, `ripple`) ; `at` doit tomber sur une image de la timeline |
 | `set_clip_interpolation` | Images intermédiaires d'un clip ralenti (`clip`, `interpolation` = `sampling`, `blending`, `optical_flow`, et/ou `quality` = `auto`, `draft`, `balanced`, `best`) |
 | `set_clip_preserve_pitch` | L'audio garde sa hauteur quand la vitesse change (`clip`, `enabled`) |
@@ -242,6 +250,15 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `reset_transform` | Remet le transform à l'identité et retire toutes ses images clés (`clip`) |
 | `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value` obligatoire, `interpolation`) : `at` est **relatif au clip**. `property` : une propriété du transform (dont `pan_x`, `pan_y`) ou `graphic.*`, voir « Images clés : propriétés et unités » |
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
+| `add_effect_keyframe` | Pose ou remplace une image clé d'un paramètre animable d'un effet vidéo (`clip`, `effect`, `parameter` = `brightness`, `contrast`, `saturation` ou `intensity` selon l'effet, `at`, `value`, `interpolation`) |
+| `remove_effect_keyframe` | Retire l'image clé d'un paramètre d'effet à un instant (`clip`, `effect`, `parameter`, `at`) |
+| `clear_effect_animation` | Retire toute l'animation d'un effet ; chaque paramètre garde la valeur qu'il montrait à `at` (`clip`, `effect`, `at`) |
+| `set_keyframe_value` | Change la valeur d'une image clé existante (`clip`, `property`, `at`, `value`) |
+| `set_keyframe_time` | Place une image clé existante à un autre instant (`clip`, `property`, `at`, `to`) |
+| `move_keyframes` | Décale des images clés du même temps, d'un bloc (`clip`, `keyframes` = `[{property, at}]` de 1 à 64, `delta` non nul) |
+| `set_keyframe_interpolation` | Interpolation du segment qui part d'une image clé (`clip`, `property`, `at`, `interpolation`) |
+| `set_keyframe_tangents` | Pentes Bézier d'une image clé (`clip`, `property`, `at`, au moins un de `in_slope`, `out_slope`, `mode` = `linked`/`broken`, `auto`) |
+| `set_animation_enabled` | Anime une propriété (une image clé à `at`) ou retire son animation (`clip`, `property`, `enabled`, `at`) |
 | `add_mask_keyframe` | Pose ou remplace une image clé d'une propriété d'un masque de compositing (`clip`, `mask`, `property` = `position_x`…`opacity`, `at` relatif au clip, `value`, `interpolation`) ; refusé pour le recadrage, une fenêtre d'étalonnage, et la position d'un masque suivi |
 | `remove_mask_keyframe` | Retire l'image clé d'une propriété d'un masque à un instant (`clip`, `mask`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
@@ -553,6 +570,19 @@ l'interface), avec une durée que le script donne (`duration`, de 0,04 s à 1 00
 - **Limite** : c'est un calque graphique, donc **au-dessus de toute la vidéo** ; il ne participe pas aux transitions entre clips vidéo ni
   au remappage de temps. Poser une image comme clip d'une piste vidéo viendra plus tard.
 
+## Scènes 3D : `add_scene3d_clip`
+
+Pose une scène [Kut-3D](kut3d-scene.md) (un fichier `.kut3d`) comme **calque graphique** : le même clip que « Scène 3D » dans
+l'interface, rendu à l'export et en aperçu fidèle avec le reste du montage. `duration` est obligatoire (0,04 s à 1 000 000 s).
+
+- Le chemin est **toujours confiné au dossier du script** : `--allow-outside` ne s'y applique pas (les modèles de la scène doivent
+  eux aussi se trouver sous le dossier du `.kut3d`).
+- Le fichier est **lu en entier avant toute écriture** (forme, bornes, modèles confinés) : un `.kut3d` illisible ou d'une autre
+  extension est refusé et le projet reste intact.
+- `track` doit être une piste de **graphiques déverrouillée**. Fond transparent, taille du projet ; une scène se joue à sa propre
+  vitesse (remappage de temps refusé).
+- Le projet enregistré passe au format `.kut` **22**. Depuis Python, `Film.place_scene` ([kut3d-film.md](kut3d-film.md)) écrit la scène et pose ce clip.
+
 ## Montage et pistes
 
 Ces verbes appellent les fonctions de montage que l'interface appelle (`core/timeline_operations.py`, `core/timeline_editing.py`,
@@ -661,6 +691,40 @@ Ces verbes appellent les fonctions que l'inspecteur de vitesse, le menu « Vites
 - `set_clip_speed`, `set_clip_reverse`, `set_clip_preserve_pitch` et `set_clip_remap_audio` sont refusés sur un clip figé (l'interface les désactive ; la valeur serait jetée à la levée du gel) ; `set_clip_freeze_frame` reste permis sur un clip figé, comme dans l'interface.
 - `remove_clip_freeze_frame` et `set_clip_freeze_duration` ne s'appliquent qu'à un clip figé : le modèle remettrait sinon à zéro la vitesse
   et le sens d'un clip qui n'est pas figé.
+
+## Images clés, courbe de vitesse et transitions
+
+Ces verbes appellent les fonctions que l'inspecteur, la timeline, le Graph Editor et l'inspecteur de transition appellent (`core/keyframe_editing.py`,
+`core/time_ops.py`, `core/time_presets.py`, `core/transitions.py`). Dans `core/scripting/keyframe_verbs.py`, `speed_curve_verbs.py`, `transition_verbs.py` ;
+leurs contrôles communs sont dans `keyframe_rules.py`.
+
+- **Une image clé se désigne par `property` + `at`** (le `property_name` et le `time_seconds` de `describe`), jamais par son identifiant, que le modèle tire au
+  hasard. `property` est le nom du registre d'animation tel que la description le donne : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`.
+  L'instant est comparé à la microseconde. La vitesse a ses propres verbes (ci-dessous) : `time.speed` est refusé ici.
+- **Images clés d'effet** : `add_effect_keyframe` / `remove_effect_keyframe` nomment l'effet et son paramètre séparément (comme `add_mask_keyframe` pour un
+  masque). Seuls les paramètres que le modèle rend animables sont acceptés (luminosité, contraste et saturation de la correction de couleur, intensité de la
+  vignette) ; les bornes sont celles du type de l'effet. `add_keyframe` n'accepte toujours pas `fx.*`.
+- **Sans aimantation** : l'interface aligne un déplacement sur une image de la timeline ; un script donne l'instant exact.
+- **Rien n'est ramené ni remplacé en silence** : valeur hors bornes, instant hors du clip, déplacement qui sortirait du clip (le modèle réduirait le décalage)
+  ou arriverait sur une autre image clé (le modèle la remplacerait), image clé citée deux fois, décalage nul : refusés. Les propriétés qui ne sont pas des
+  nombres (miroirs), le recadrage, une fenêtre d'étalonnage et la **position d'un masque suivi** (écrasée par le suivi) sont refusés.
+- **Pentes** (`set_keyframe_tangents`, `set_speed_tangents`) : les contrôles de l'éditeur de courbes. Une pente sortante ne compte que pour une image clé `bezier`
+  suivie d'une autre, une pente entrante que si la précédente est `bezier` ; le rendu ignorerait les autres, elles sont refusées. En mode `linked` (défaut) les
+  deux pentes sont égales (deux valeurs différentes sont refusées, donnez `mode` = `broken`) et il suffit qu'un côté compte, car la description d'une image clé
+  liée porte les deux ; `auto` exclut les pentes. Les pentes sont en unités de la propriété par seconde, de −1 000 000 à 1 000 000.
+- **Courbe de vitesse** : mêmes règles que « Vitesse et remappage » (point désigné par son instant, `ripple`, clip figé refusé, transaction du temps).
+  `edit_speed_points` déplace et change des valeurs dans **une seule** transaction, comme le glissement de l'éditeur ; `remove_speed_points` retire un groupe
+  de même. `apply_time_preset` prend l'identifiant d'un préréglage **intégré** (jamais celui de l'utilisateur) ; `freeze` demande `at`, sur une image de la
+  timeline, et pose une seconde d'arrêt (comme `insert_hold`) ; les autres préréglages refusent `at` et remplacent la courbe.
+- **`ripple`** : `source` garde la portion de média et la durée sur la timeline change ; `timeline` garde la durée sur la timeline, dans la limite de la fin du média (un clip accéléré au-delà du média est plus court, jamais refusé). Tous les verbes de point de vitesse et `insert_hold` le respectent. `apply_time_preset` n'accepte `timeline` que pour `freeze` : les vitesses constantes et les rampes ne conservent pas la durée de la timeline dans le modèle (l'interface non plus), `timeline` y est refusé.
+- **Transitions** : `update_transition` et `apply_transition_preset` exigent deux clips **vidéo** déverrouillés (piste et calque), comme l'interface. La durée
+  de la transition est celle du chevauchement : la changer recale le clip entrant, et le modèle ne regarde pas ses voisins ; un script reçoit refusé tout
+  recalage qui ferait recouvrir le clip entrant par un autre clip de la piste, ou qui défairait une autre transition. La durée va de 0,05 s à la moitié du plus
+  court des deux clips. `apply_transition_preset` pose le type et la durée par défaut d'un préréglage de la bibliothèque **intégrée** (énumération).
+- **Écartés** : `set_value_at` (valeur statique si la propriété n'est pas animée, image clé sinon) est `set_transform` / `set_graphic` / `update_effect` puis
+  `add_keyframe` ; `set_transform_keyframe` / `remove_transform_keyframe` sont `add_keyframe` / `remove_keyframe` ; `remove_keyframes` (par groupe) et
+  `move_speed_point` sont `remove_keyframe` / `remove_effect_keyframe` / `remove_mask_keyframe` et `move_speed_points`. Ils sont classés « couvert par un verbe »
+  dans la dette.
 
 ## Transform
 
@@ -790,7 +854,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 | `clips[].audio_effects[]`, `tracks[].inserts[]`, `buses[].inserts[]` | même forme | `add_clip_audio_effect`, `add_track_insert`, `add_bus_insert` ; `update_*`, `set_*_enabled`, `remove_*` (`effect` / `insert` = `id`) |
 | `sequences[].buses[]`, `tracks[].bus_id` | `id`, `name`, `volume_db`, `muted`, `inserts` ; `bus_id` vaut `null` pour le Master | `add_bus`, `rename_bus`, `set_bus_volume`, `set_bus_muted`, `route_track` (`bus` = `id`) |
 | `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `set_track_role` (`audio_role`), `add_automation_point` / `update_automation_point` / `move_automation_point` / `remove_automation_point` (`at` = `time_seconds`), `set_automation_curve`, `add_ducking_sidechain` (`id`), `update_ducking_config`, `set_ducking_enabled`, `remove_ducking_sidechain` (`ducking` = `id`), `duck_music_under_voice` ; `move_track_insert` / `move_bus_insert` pour l'ordre des inserts |
-| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>` |
+| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>`, `add_effect_keyframe` pour `fx.<effet>.<paramètre>` (`effect`, `parameter`) ; `set_keyframe_tangents` pour les pentes |
 | `clips[].color_grade` | `null` (jamais étalonné) ou `{nodes, links}` : un réglage seul est le nœud `n1` ; un nœud est `corrector` (`grade`, `label`, `qualifier`, `windows`, `blur`, `sharpen`) ou `mixer` (`kind`) | `set_color_grade`, `set_color_curve`, `set_color_wheel`, `set_color_qualifier`, `set_color_detail`, `rename_color_node` (`node` = `id`, absent : le premier), `add_color_window` / `set_color_window` (`window` = `id`) |
 | `clips[].compositing` | `masks[]` (forme, position, taille, `mode`, `points` / `handles`, `nodes` pour une courbe), `chroma_key`, `blend_mode` | `add_mask`, `set_mask`, `set_mask_points` (`mask` = `id`), `set_crop` |
 | `clips[].composition` | `graph.nodes[]` (`type` : `media`, `graphic`, `solid`, `transform`, `merge`, `mask`, `key`, `effects`, `grade`, `output`), `graph.links[]`, `duration`, `animation[]` | aucun (lecture seule) |
@@ -821,8 +885,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 - **Une courbe de Bézier** : `nodes` réunit `points` et `handles` sous la forme que `set_mask_points` attend (`x`, `y`, `in_dx`, `in_dy`,
   `out_dx`, `out_dy`) ; `null` pour les autres formes. Les `keyframes` d'un masque sont l'ancien format (linéaire) des fichiers
   antérieurs ; les images clés d'un masque de compositing sont dans `animation` (`mask.<id>.<nom>`).
-- **Ce qu'aucun verbe n'écrit encore** (la lecture est là, l'écriture est à faire) : les images clés d'un paramètre d'effet
-  (`fx.*`), le LUT (`import_lut` lit un fichier), la composition nodale, le mode de fusion et l'incrustation (`chroma_key`), la courbe
+- **Ce qu'aucun verbe n'écrit encore** (la lecture est là, l'écriture est à faire) : le LUT (`import_lut` lit un fichier), la composition nodale, le mode de fusion et l'incrustation (`chroma_key`), la courbe
   de volume d'une piste vidéo et `tracks[].ducking_config` (un réglage que rien dans l'application ne lit ni n'édite). Un test les nomme : le jour où un verbe existe, il échoue et la liste se met à jour.
 
 **Complétude.** Deux listes de dette qui ne peuvent que diminuer (`tests/data/`) empêchent la sortie et les verbes de dériver du modèle :
@@ -867,7 +930,7 @@ Une ressource nouvelle s'ajoute à `RESOURCES` (constantes à abaisser, comptage
 
 ## Pas encore là
 
-- **Animation des effets** : la luminosité, le contraste et la saturation de la correction de couleur et l'intensité de la vignette s'animent dans l'application (`fx.<effet>.<paramètre>` dans `animation`) ; `describe` les lit, mais aucun verbe ne pose encore ces images clés.
+- **Animation des effets** : le flou, le rayon de la lueur et l'aberration chromatique ne s'animent pas encore (étape 5 de l'ADR-0008) ; les verbes d'images clés d'effet n'acceptent que les paramètres que le modèle rend animables.
 - Le reste de `describe` (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale, style de texte, suivi : « partie C »), les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 5 partie C, 6 et 7 de l'ADR).
 
 ## Code
@@ -875,7 +938,8 @@ Une ressource nouvelle s'ajoute à `RESOURCES` (constantes à abaisser, comptage
 | Module | Rôle |
 | --- | --- |
 | `core/scripting/verbs.py` | la table `VERBS` : paramètres typés et bornés, fonction du modèle appelée ; `ScriptContext` (le dossier permis) |
-| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py`, `layer_verbs.py`, `guide_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform, d'audio de clip, de calques graphiques et de guides (assemblés dans `VERBS` après leur verbe d'ancrage) |
+| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py`, `layer_verbs.py`, `guide_verbs.py`, `keyframe_verbs.py`, `speed_curve_verbs.py`, `transition_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform, d'audio de clip, de calques graphiques, de guides, d'images clés d'effet et de leur édition, de courbe de vitesse et de transitions (assemblés dans `VERBS` après leur verbe d'ancrage) |
+| `core/scripting/keyframe_rules.py` | les contrôles communs des verbes d'images clés et de points de vitesse : cible du registre, bornes, déplacements, pentes |
 | `core/scripting/preset_verbs.py`, `composition_verbs.py`, `selection_verbs.py`, `selection_rules.py` | les verbes de presets intégrés, de compositions et de sélection multiple, et la photographie des clips verrouillés |
 | `core/scripting/layer_rules.py` | les contrôles communs des verbes de calques : bornes, verrous des tiers, profondeur de la hiérarchie, apparence gardée |
 | `core/scripting/auto_verbs.py`, `impact_verbs.py`, `template_verbs.py`, `auto_rules.py` | les verbes de rythme, de plans, de sous-titres, d'effets d'impact et de modèles, et leurs règles communes (bornes, verrous) |

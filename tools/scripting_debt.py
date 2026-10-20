@@ -131,6 +131,7 @@ FIRST_PARAMS = frozenset({"project", "sequence", "track", "clip"})
 REASONS: dict[str, str] = {
     "lecture seule": "Lit le modèle sans le modifier : pas un verbe (c'est le travail de describe).",
     "interne": "Brique d'une autre fonction (qui est un verbe, ou le sera) ou de la persistance : sans intérêt appelée seule.",
+    "couvert par un verbe": "Équivalent d'un verbe existant (cas particulier, enveloppe ou composition de verbes) : rien à ajouter ; le verbe est nommé dans sa documentation.",
     "interface seulement": "Geste de l'interface (sélection, presse-papiers, aimantation, aperçu) sans équivalent utile dans un script.",
     "interface seulement : persistance": "Écrit hors du projet (bibliothèque de presets de l'utilisateur, dans sa configuration) : une frontière de "
                                          "persistance qu'un script ne franchit pas (ADR-0005, décision 5 : un script ne lit ni n'écrit que le projet qu'on lui donne).",
