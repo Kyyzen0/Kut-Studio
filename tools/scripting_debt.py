@@ -45,6 +45,7 @@ RECLASSIFIED_PATH = ROOT / "tests" / "data" / "script_verb_reclassified.json"
 SCRIPTING_DIR = ROOT / "core" / "scripting"
 _NOT_VERB_MODULES = frozenset({
     "api", "describe", "describe_coverage", "describe_values", "describe_shapes", "describe_color", "describe_audio", "describe_composition",
+    "describe_structure", "describe_tracking",
 })
 """Les modules de ``core/scripting/`` qui ne portent pas de verbe (la lecture) : ils ne comptent pas comme référence."""
 
@@ -384,6 +385,13 @@ def model_classes() -> dict[str, type]:
     from core.time_remapping import TimeRemapping
     from core.transitions import Transition
     from core.visual_effects import ClipTransform
+    from core.beat_grid import BeatGrid
+    from core.canvas_guides import Guide
+    from core.library_organization import AssetAssignment, LibraryFolder, LibraryTag
+    from core.motion_blur import MotionBlurSettings
+    from core.multicam_model import MulticamAngle, MulticamAudio, MulticamSource
+    from core.text_style import TextStyle
+    from core.tracking_model import ClipTracking, Stabilization, TrackData, Tracker, TrackerSettings, TrackLink
 
     classes = (
         Project, MediaAsset, Sequence, Track, Clip, Marker, Transition, TimeRemapping, ClipTransform, GraphicOverlay,
@@ -391,6 +399,8 @@ def model_classes() -> dict[str, type]:
         ColorGrade, ColorCurves, ColorCurve, Wheel, LUTResource, ColorNodeGraph, ColorNode, ColorMixer, NodeLink, Qualifier,
         ColorPreset, Mask, MaskKeyframe, Compositing, ChromaKey, Composition, CompositionGraph, MediaNode, GraphicNode, SolidNode,
         TransformNode, MergeNode, MaskNode, KeyNode, EffectsNode, GradeNode, OutputNode,
+        Guide, MotionBlurSettings, BeatGrid, LibraryFolder, LibraryTag, AssetAssignment, MulticamAngle, MulticamAudio, MulticamSource,
+        TextStyle, TrackData, TrackerSettings, Tracker, TrackLink, Stabilization, ClipTracking,
     )
     return {cls.__name__: cls for cls in classes}
 

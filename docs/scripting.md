@@ -803,6 +803,7 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   "project": {"name": "Démo", "width": 1280, "height": 720, "fps": 25.0, "duration": 4.0, "active_sequence": "seq-main"},
   "media": [{"id": "m1", "name": "a", "path": "/media/a.mp4", "media_type": "video", "duration": 4.0, "width": 1280,
              "height": 720, "fps": 25.0, "has_audio": true, "color_matrix": "auto", "present": null}],
+  "library": {"folders": [], "tags": [], "assignments": []},
   "sequences": [{
     "id": "seq-main", "name": "Séquence principale", "active": true, "width": 1280, "height": 720, "fps": 25.0, "duration": 4.0,
     "format_source": null,
@@ -815,10 +816,13 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
                            "transform": {"position_x": 0.0, "...": "..."}, "gain_db": 0.0, "pan": 0.0, "fade_in": 0.0,
                            "fade_out": 0.0, "graphic": null, "has_keyframes": false, "transform_keyframes": [], "effects": [],
                            "audio_effects": [], "color_grade": null, "compositing": {"masks": [], "chroma_key": {"...": "..."},
-                           "blend_mode": "normal"}, "animation": [], "composition": null}]}],
-    "transitions": [], "markers": [], "buses": [], "ducking_sidechains": []}],
+                           "blend_mode": "normal"}, "animation": [], "composition": null,
+                           "text_style": {"font_family": "Arial", "...": "..."}, "tracking": null}]}],
+    "transitions": [], "markers": [], "buses": [], "ducking_sidechains": [], "guides": [],
+    "motion_blur": {"enabled": true, "shutter_angle": 180.0, "samples": 8}, "multicam": null, "beat_grid": null,
+    "generated_groups": []}],
   "color_presets": [],
-  "not_described": ["graphic_style", "library", "mograph", "multicam", "social", "text_style", "tracking"]
+  "not_described": []
 }
 ```
 
@@ -826,11 +830,13 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   la sonde, `present`), les séquences (format, `format_source`, bus, associations de ducking), les pistes (verrou, visibilité, muet, solo,
   fader, panoramique, rôle, bus, inserts, automation de volume, ducking), les clips (identifiants du média, de la séquence imbriquée, de
   l'angle ; place, durée, plage source ; vitesse et remappage ; transform ; audio de base ; calque graphique ; sous-titre ; **effets
-  visuels et audio, étalonnage, compositing, composition, images clés**), les transitions, les repères et les préréglages d'étalonnage
-  du projet. Le détail des sections de la partie B est dans « Effets, couleur, composition, images clés et bus » ci-dessous.
-- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` (style des calques graphiques, bibliothèque, motion graphics —
-  guides et flou de mouvement —, multicam, vidéo sociale, style de texte, suivi) : la sortie ne met jamais une clé vide à la place d'une
-  donnée qu'elle ne lit pas.
+  visuels et audio, étalonnage, compositing, composition, images clés**, puis **style des calques graphiques, style de texte, suivi**), les
+  transitions, les repères, les préréglages d'étalonnage et, au niveau du projet, la **bibliothèque** ; au niveau de la séquence, les
+  **guides, le flou de mouvement, la grille rythmique, les classements et la source Multicam**. Le détail des parties B et C est dans les
+  deux sections qui suivent.
+- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` : la liste est **vide** depuis la partie C (tous les champs du modèle sont
+  décrits, ou exclus avec une raison écrite : échantillons bruts du suivi, temps de scène d'un calque de lumière). La clé reste, pour qu'un
+  champ futur sans décision puisse y être nommé ; la sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
 - **Les noms de clés sont ceux des champs du modèle** (`timeline_start`, `asset_id`…), en anglais ; les durées sont en **secondes**. Les
   clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `active`, la taille du projet) sont les seules
   qui n'existent pas dans le modèle. `kind` vaut `media`, `sequence` (clip imbriqué), `composition` ou `graphic`.
@@ -840,11 +846,11 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   demande. Les médias techniques (sous-titres, calques) n'ont pas de fichier : `null` aussi.
 - **Une séquence imbriquée est citée** (`sequence_id`), jamais développée : sa description est dans `sequences`.
 - **Distinct du fichier `.kut`** : `describe_version` (entier) change quand une clé disparaît ou change de sens ; ajouter des clés (les
-  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture. La partie B n'a fait qu'**ajouter** des clés à la
-  forme de la partie A (qui n'était pas encore publiée) : la version reste `1`.
+  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture. Les parties B et C n'ont fait qu'**ajouter** des clés
+  à la forme de la partie A (qui n'était pas encore publiée) : la version reste `1`.
 - **Valeurs saisies, pas évaluées.** Une valeur décrite est celle du modèle (`effects[].params`, `transform`, `color_grade`…), pas celle que
-  la scène calcule à un instant : si le clip porte des images clés, la valeur rendue vient de la courbe, et un suivi (`tracking`, non
-  décrit) peut encore la remplacer au rendu.
+  la scène calcule à un instant : si le clip porte des images clés, la valeur rendue vient de la courbe, et un suivi (`tracking`) peut
+  encore la remplacer au rendu.
 - **Avec `schema` et `apply`** : `schema` dit ce qu'un script peut écrire, `apply` l'écrit, `describe` relit le résultat (les identifiants
   d'un script, `id` ou `as`, se retrouvent tels quels dans la description).
 
@@ -899,6 +905,58 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 `script_verb_debt.json` (chaque fonction publique d'édition a un verbe, ou une raison écrite de ne pas en avoir). Un champ ou une fonction
 neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting_debt fields|verbs --list` montre la dette.
 
+### Bibliothèque, guides, Multicam, suivi et style (partie C)
+
+| Clé | Contenu | Verbes qui visent ces objets |
+| --- | --- | --- |
+| `library.folders[]`, `tags[]`, `assignments[]` | dossiers (`id`, `name`, `parent_id`, `color`), étiquettes (`id`, `name`, `color`), rangement des médias (`asset_id`, `folder_id`, `tag_ids`) ; un média absent des `assignments` est à la racine, sans étiquette | `create_library_folder` / `create_library_tag` (`id`), `rename_*`, `recolor_*`, `move_library_folder`, `delete_*` (`folder` / `tag` = `id`), `move_media_to_folder`, `tag_media`, `untag_media` (`asset` = `media[].id`) |
+| `sequences[].guides[]` | `id`, `orientation`, `position`, `locked` | `add_guide` (`id`), `move_guide`, `remove_guide` (`guide` = `id`) |
+| `sequences[].motion_blur`, `beat_grid`, `generated_groups[]` | flou de mouvement de la séquence ; grille rythmique (`null` : aucune) ; classements (`id`, `kind`, `data` = `rows` + `start`, `duration`, `top`, `delay`, `clips`) | `set_beat_grid` / `remove_beat_grid` ; `add_leaderboard` (`id`), `update_leaderboard` (`leaderboard` = `id`) |
+| `sequences[].multicam` | `null` (séquence ordinaire) ou `angles[]` (`id` `angle-N`, `name`, `track_id`, `color_index`, `sync_*`, `offset` dérivé), `audio` (`mode`, `angle_ids`), `sync_method` ; les segments sont les clips `kind: "sequence"` dont `angle_id` est non nul | `create_multicam_source` (`id`), `add_multicam_angle`, `rename_multicam_angle`, `set_multicam_angle_offset` / `_color`, `set_multicam_audio`, `insert_multicam_clip`, `switch_multicam_angle`, `replace_multicam_angle` (`angle` = `id` ou nom) |
+| `clips[].tracking` | `null` (aucun suivi) ou `trackers[]`, `links[]`, `stabilization` | voir ci-dessous |
+| `clips[].graphic` | en plus de la partie A : tout le style (couleurs, contour, ombre, police, forme, alignement, fond, texte animé, néon, lumière) | `set_graphic` (sept champs : voir les manques), `add_graphic` (`shape`) |
+| `clips[].text_style` | le style des sous-titres (police, couleurs, contour, ombre, fond, alignement, marges), présent sur tout clip | aucun |
+
+**Le suivi.** Les échantillons d'un tracker (une position par image source) sont une grille dense : la description ne les écrit **pas**
+(`counts` donne leur nombre par état, `valid_range` la plage utilisée, `count` la taille de la grille). Elle donne `manual_points`, les
+points posés à la main (`set_tracker_position` en pose un par appel), **64 au plus** par tracker (`manual_points_truncated` le dit ;
+`counts.manual` donne le total). Chaque point porte `timeline_time`, le `at` que les verbes attendent (l'instant du **milieu** de l'image
+source montrée par le clip, robuste à l'arrondi à 6 décimales de la sortie) ; `links[].reference_time` et `stabilization.reference_time`
+sont de même le `at` de `add_link` et de `set_stabilization`. Une liaison à source `null` est portée par son propre clip. Après une coupe de la
+source, `links[].reference_clip_id` dit quelle moitié montre l'image de référence (celle que choisit le rendu) : c'est le `source` à donner à
+`add_link` avec `reference_time`. Les sources d'une liaison sont cherchées dans la séquence du clip lié, comme le fait le rendu.
+Les `x` / `y` des points manuels sont en pixels du média **courant** (`points_width` x `points_height`) : après `relink_media` vers une autre
+résolution, les données gardent leur taille d'origine (`source_width` x `source_height`) et la description remet à l'échelle, comme
+`set_tracker_position` en sens inverse ; rejouer les points décrits ne les déplace donc pas.
+
+```json
+"tracking": {"trackers": [{"id": "tr1", "name": "Œil", "color": "#36E6C3", "visible": true, "show_path": true, "kind": "point",
+                           "settings": {"pattern_width": 48.0, "search_width": 144.0, "adapt": "adaptive", "...": "..."},
+                           "data": {"rate": 30.0, "first": 0, "count": 61, "source_width": 1920, "source_height": 1080,
+                                    "points_width": 1920, "points_height": 1080, "valid_range": [0, 60], "counts": {"empty": 58, "tracked": 0, "uncertain": 0, "lost": 0, "manual": 3},
+                                    "manual_points": [{"index": 0, "timeline_time": 50.016667, "x": 960.0, "y": 540.0}, "..."],
+                                    "manual_points_truncated": false}}],
+             "links": [{"id": "lk3", "source_clip_id": null, "tracker_ids": ["tr2"], "target": "anchor", "mask_id": null,
+                        "position": true, "rotation": false, "scale": false, "reference_index": 0, "enabled": true,
+                        "continuation_ids": [], "reference_clip_id": "c5", "reference_time": 50.016667}],
+             "stabilization": {"enabled": true, "tracker_ids": ["tr1"], "mode": "position", "smoothing": "custom",
+                               "smoothing_frames": 8.0, "borders": "crop", "reference_index": 30, "shared_range": null,
+                               "reference_time": 51.016667}}
+```
+
+Verbes : `add_tracker` (`id`, premier point), `set_tracker_position`, `update_tracker`, `set_tracker_settings`, `remove_tracker` (`tracker` = `id`) ;
+`add_link` (`id` ; `source` = `source_clip_id` ou le clip lui-même, `at` = `reference_time`), `set_link_enabled`, `remove_link`, `bake_link`
+(`link` = `id`) ; `set_stabilization` (`at` = `reference_time`), `remove_stabilization`. Un test (`tests/test_describe_roundtrip_c.py`) reconstruit
+la bibliothèque, les guides et la grille, un classement, une source Multicam avec ses segments, les trackers, les liaisons et la stabilisation depuis
+la seule description, et vérifie que `timeline_time` retombe sur la même image à 24, 29,97, 59,94 et 120 i/s.
+
+- **Ce qu'aucun verbe n'écrit encore** : le style des calques graphiques hors de `set_graphic` (ombre, néon, alignement, fond, texte animé,
+  lumière…), un guide verrouillé (`add_guide` ne pose que des guides libres), le flou de mouvement de la séquence et le style de texte des
+  sous-titres. Les points analysés d'un tracker ne s'écrivent pas non plus (un script n'analyse rien : il pose ses points). Un test les nomme.
+- **Pas décrit, par raison écrite** : les échantillons bruts du suivi (`xs`, `ys`, `confidence`, `status` : volumineux, résumés par `counts` et
+  `valid_range`) et `light_time` d'un calque de lumière (posé par la scène à chaque image, jamais saisi).
+- `DESCRIBE_VERSION` reste `1` : tout est ajouté, rien ne change de sens. Pour un projet de 10 000 clips suivis, la sortie reste bornée par tracker.
+
 ## Presets, compositions et sélection multiple
 
 Ces verbes (`core/scripting/preset_verbs.py`, `composition_verbs.py`, `selection_verbs.py`, `selection_rules.py`) appellent les fonctions que la
@@ -937,7 +995,7 @@ Une ressource nouvelle s'ajoute à `RESOURCES` (constantes à abaisser, comptage
 ## Pas encore là
 
 - **Animation des effets** : le flou, le rayon de la lueur et l'aberration chromatique ne s'animent pas encore (étape 5 de l'ADR-0008) ; les verbes d'images clés d'effet n'acceptent que les paramètres que le modèle rend animables.
-- Le reste de `describe` (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale, style de texte, suivi : « partie C »), les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 5 partie C, 6 et 7 de l'ADR).
+- Les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code
 
