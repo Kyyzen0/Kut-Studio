@@ -57,6 +57,15 @@ MAX_COMMAND_BYTES = 32 * 1024 * 1024
 de l'utilisateur) : le fichier partiel est supprimé avec les autres temporaires de l'export. Une table de 256 points de l'étalonnage
 pèse ~4,7 Ko par image ; une instruction d'effet ~60 octets (plus de trois heures à 30 i/s, jamais atteint en pratique)."""
 
+MAX_EFFECT_COMMANDS = 40_000
+"""Commandes ``sendcmd`` au plus pour **un** effet animé (un flou ou un rayon de lueur en écrit deux par valeur, ``sigma`` et ``sigmaV`` ;
+l'aberration chromatique, deux aussi, ``rh`` et ``bh``) : soit ~20 000 images, un peu plus de onze minutes à 30 i/s si la valeur change à
+chaque image. Mesuré (ADR-0008, correctif de l'étape 5 ; ``tools/measure_sendcmd_memory.py``) : FFmpeg 6.1.1 et 7.1.5 gardent ~25 Ko de
+mémoire **par commande**, tant que le filtre vit, quelle que soit la taille du fichier et même coupé en fenêtres (flou animé de dix minutes,
+36 000 commandes : 959 Mo sur 6.1.1, 971 Mo sur 7.1.5, 44 Mo sur 9.0.2). 40 000 commandes restent donc autour du gigaoctet sur ces versions.
+Au-delà, :func:`command_plan` lève ``ValueError`` avec la marche à suivre : un refus clair, jamais un rendu faux. Calculé au fil des
+instructions **avant** d'écrire le moindre fichier."""
+
 WINDOW_BYTES = 192 * 1024
 """Taille maximale du texte d'**un** fichier de commandes. Mesuré (ADR-0008, étapes 5 et 6 ; ``docs/ffmpeg-sendcmd.md``, piège 9) :
 FFmpeg 6.1.1 et 7.1.5 lisent un fichier de commandes avec une mémoire de l'ordre de 1000 fois sa taille et croissante plus vite que
@@ -175,7 +184,7 @@ def frame_count(context: SendcmdContext) -> int:
     remaining = max(0.0, context.duration - context.start)
     count = math.ceil(remaining * float(context.fps)) + 2
     if count > MAX_COMMAND_LINES:
-        raise ValueError("Animation d'effet trop longue pour l'export (trop d'images).")
+        raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la ou découpez le clip.")
     return max(2, count)
 
 
@@ -203,6 +212,8 @@ def command_plan(
     fps = context.fps
     lines: list[str] = []
     size = 0
+    commands = 0
+    per_value = 2                                  # ``sigma`` + ``sigmaV``, ou ``rh`` + ``bh``
     previous: float | None = None
     initial = 0.0
     peak = 0.0
@@ -218,8 +229,10 @@ def command_plan(
         instant = max(0.0, context.start + float((Fraction(index) - _HALF_FRAME) / fps))
         line = f"{instant:.9f} {_commands(effect.type, target, value)};"
         size += len(line) + 1
-        if size > MAX_COMMAND_BYTES:           # le plan complet est vérifié avant d'écrire le moindre fichier
-            raise ValueError("Animation d'effet trop longue pour l'export (trop de données).")
+        commands += per_value
+        if commands > MAX_EFFECT_COMMANDS or size > MAX_COMMAND_BYTES:      # le plan complet est vérifié avant d'écrire le moindre fichier
+            raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la, posez moins d'images clés "
+                             "ou découpez le clip.")
         lines.append(line)
     return CommandPlan(tuple(lines), initial, peak)
 
@@ -304,9 +317,10 @@ def write_command_stream(lines: Iterable[str]) -> str:
     return path
 
 
-def windows(lines: Iterable[str], budget: int = WINDOW_BYTES) -> Iterator[list[str]]:
+def windows(lines: Iterable[str], budget: int | None = None) -> Iterator[list[str]]:
     """``lines`` découpées en fenêtres d'au plus ``budget`` octets (une ligne démesurée a sa propre fenêtre) ; jamais de fenêtre vide
-    (un plan sans aucune ligne n'écrit rien). Une seule fenêtre est en mémoire à la fois."""
+    (un plan sans aucune ligne n'écrit rien). Une seule fenêtre est en mémoire à la fois. ``budget`` : :data:`WINDOW_BYTES` par défaut."""
+    budget = WINDOW_BYTES if budget is None else budget
     current: list[str] = []
     size = 0
     for line in lines:
@@ -354,6 +368,7 @@ def filter_name(kind: EffectType, label: str) -> str:
 __all__ = [
     "MAX_COMMAND_BYTES",
     "MAX_COMMAND_LINES",
+    "MAX_EFFECT_COMMANDS",
     "WINDOW_BYTES",
     "CommandPlan",
     "SendcmdContext",
