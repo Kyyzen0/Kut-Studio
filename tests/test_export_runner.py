@@ -261,14 +261,34 @@ def test_the_request_object_is_never_modified(media, tmp_path):
 # --- Chemin avec « ~ » (revue Codex de la PR 121) ---------------------------------------------------------------------
 
 
+def _fake_home(tmp_path, monkeypatch):
+    """Faux dossier personnel **vide**, tous les emplacements « utilisateur » (journal, données, cache, réglages) ailleurs.
+
+    Le gardien de la supervision des processus (``main.py --kut-process-reaper``) est lancé au premier enfant FFmpeg du
+    processus, avec l'environnement du moment, et crée aussitôt le dossier du journal : sous Linux (XDG)
+    ``$HOME/.local/state/kut-studio``. Le test qui lance ce premier enfant (selon la répartition xdist) y trouvait un
+    ``.local`` dans son faux dossier personnel. Sous macOS le registre des processus va dans ``$HOME/Library/Caches`` (le
+    cache ignore XDG) : les surcharges ``KUT_STUDIO_*_DIR`` couvrent les trois plateformes."""
+    home = tmp_path / "home"
+    home.mkdir()
+    elsewhere = tmp_path / "xdg"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))            # Windows lit celui-ci
+    for name, folder in (("XDG_STATE_HOME", "state"), ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache"),
+                         ("XDG_CONFIG_HOME", "config")):
+        monkeypatch.setenv(name, str(elsewhere / folder))
+    # Les surcharges propres à l'application valent sur TOUTES les plateformes : macOS ignore XDG_CACHE_HOME (registre des
+    # processus sous ``$HOME/Library/Caches``), Windows lit LOCALAPPDATA / APPDATA.
+    for name, folder in (("KUT_STUDIO_LOG_DIR", "logs"), ("KUT_STUDIO_CACHE_DIR", "kut-cache"), ("KUT_STUDIO_DATA_DIR", "kut-data")):
+        monkeypatch.setenv(name, str(elsewhere / folder))
+    return home
+
+
 @pytest.mark.parametrize("atomic", [True, False])
 def test_a_tilde_output_path_is_expanded_once_and_the_finished_file_lands_there(media, tmp_path, monkeypatch, atomic):
     """FFmpeg écrivait le fichier intermédiaire dans le dossier personnel, mais le renommage visait un « ~ » littéral et le rendu
     terminé était supprimé : la destination doit être la même pour l'écriture, le renommage et le résultat."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))            # Windows lit celui-ci
+    home = _fake_home(tmp_path, monkeypatch)
     result = run_export(_request(_project(media), Path("~/film.mp4")), atomic=atomic)
     assert result.ok, result.message
     assert (home / "film.mp4").is_file() and _frames(home / "film.mp4") == FPS
@@ -278,10 +298,7 @@ def test_a_tilde_output_path_is_expanded_once_and_the_finished_file_lands_there(
 
 
 def test_a_failed_export_to_a_tilde_path_reports_the_expanded_path_and_leaves_nothing(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
+    home = _fake_home(tmp_path, monkeypatch)
     broken = tmp_path / "broken.mp4"
     broken.write_text("rien", encoding="utf-8")
     result = run_export(_request(_project(str(broken)), Path("~/film.mp4")))
