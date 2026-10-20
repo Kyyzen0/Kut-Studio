@@ -526,8 +526,9 @@ class ProcessSupervisor:
         if self._reaper_failures >= _REAPER_LAUNCH_ATTEMPTS:
             return None
         registry = self._registry
-        directory = registry.directory if registry is not None else registry_root(self._root) / self.instance_id
         try:
+            # Dans le ``try`` : sans dossier personnel (``Path.home()`` lève), le chemin du registre ne se calcule pas.
+            directory = registry.directory if registry is not None else registry_root(self._root) / self.instance_id
             # Chef d'un groupe neuf (``process_group=0``) ; le bout d'écriture du tube reste au seul parent
             # (descripteur non héritable, ``close_fds``) : sa fermeture, même par le noyau, est l'EOF attendu.
             self._reaper = subprocess.Popen(
