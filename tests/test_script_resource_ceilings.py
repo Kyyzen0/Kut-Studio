@@ -19,7 +19,7 @@ from core.animation import Keyframe
 from core.project_model import Clip, Project, Track
 from core.scripting import resource_limits as limits
 from core.scripting.verbs import VERBS
-from tests.script_resource_guards import CAP, REFUSALS, _effect, _find, _keyframes_of, _mask, base_project
+from tests.script_resource_guards import CAP, REFUSALS, _effect, _find, _keyframes_of, _mask, _segment, base_project
 
 
 def _run(verb: str, args: dict, project: Project) -> Exception | None:
@@ -88,6 +88,19 @@ def test_a_replacement_adds_nothing_and_is_not_refused_at_the_ceiling(monkeypatc
     assert _run("add_keyframe", {"clip": "c1", "property": "scale", "at": 1.0, "value": 1.3}, project) is None
     assert _keyframes_of(clip) == 3
     assert _run("add_keyframe", {"clip": "c1", "property": "scale", "at": 2.0, "value": 1.3}, project) is not None
+
+
+def test_a_multicam_switch_that_cuts_nothing_adds_nothing(monkeypatch):
+    """Le même angle, ou le début du segment : aucune coupe (``switch_angle``), donc aucun clip de plus -- le projet plein l'accepte ; une vraie coupe est refusée."""
+    project = base_project()
+    _segment(project)
+    _lower(monkeypatch, "MAX_CLIPS_IN_PROJECT", limits.total_clips(project))
+    base = {"track": "V1"}
+    assert _run("switch_multicam_angle", {**base, "at": 6.0, "angle": "angle-1"}, project) is None             # déjà cet angle
+    assert _run("switch_multicam_angle", {**base, "at": 5.0, "angle": "angle-2"}, project) is None             # début du segment : l'angle est remplacé
+    before = deepcopy(project)
+    assert _run("switch_multicam_angle", {**base, "at": 7.0, "angle": "angle-1"}, project) is not None          # le segment montre angle-2, la coupe crée un clip
+    assert project == before
 
 
 # --- Un projet qui dépasse déjà un plafond ----------------------------------------------------------------------------------
