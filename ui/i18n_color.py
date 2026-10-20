@@ -23,8 +23,8 @@ def _wheel_tip(fr: str, en: str, es: str) -> dict[str, str]:
 
 
 # --- Propriétés animables de l'étalonnage (``color.<champ>``, ``color.<roue>.<canal>``, ADR-0008) ------------------------
-# Libellés du Graph Editor et des menus d'images clés (étapes 7 à 9) : le nom de la roue reste en anglais, le canal est R / V / B / Y
-# (R / G / B / Y en anglais, R / V / A / Y en espagnol, comme ``color.wheel.readout``).
+# Libellés du Graph Editor et des menus d'images clés (étapes 7 à 9). Le nom de la roue reste en anglais (comme ``color.wheel.lift``),
+# le canal se dit dans la langue : « Lift rouge », « Lift red », « Lift rojo » ; ``y`` est la molette (le maître).
 _SCALAR_PROPERTIES = {
     "exposure": _t("Exposition", "Exposure", "Exposición"),
     "contrast": _t("Contraste", "Contrast", "Contraste"),
@@ -34,10 +34,13 @@ _SCALAR_PROPERTIES = {
     "shadows": _t("Ombres", "Shadows", "Sombras"),
     "highlights": _t("Hautes lumières", "Highlights", "Altas luces"),
 }
-_CHANNEL_LETTERS = {"r": ("R", "R", "R"), "g": ("V", "G", "V"), "b": ("B", "B", "A"), "y": ("Y", "Y", "Y")}
+_CHANNEL_NAMES = {
+    "r": ("rouge", "red", "rojo"), "g": ("vert", "green", "verde"), "b": ("bleu", "blue", "azul"),
+    "y": ("maître", "master", "maestro"),
+}
 _WHEEL_PROPERTIES = {
-    f"{wheel}.{channel}": _t(*(f"{wheel.capitalize()} {letters[index]}" for index in range(3)))
-    for wheel in ("lift", "gamma", "gain", "offset") for channel, letters in _CHANNEL_LETTERS.items()
+    f"{wheel}.{channel}": _t(*(f"{wheel.capitalize()} {names[index]}" for index in range(3)))
+    for wheel in ("lift", "gamma", "gain", "offset") for channel, names in _CHANNEL_NAMES.items()
 }
 GRADE_PROPERTY_TRANSLATIONS: dict[str, dict[str, str]] = {
     f"color.property.{name}": texts for name, texts in {**_SCALAR_PROPERTIES, **_WHEEL_PROPERTIES}.items()

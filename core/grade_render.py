@@ -170,7 +170,8 @@ class AnimatedGrade:
     def _frame_budget(self) -> int:
         """Images du flux ; ``ValueError`` si le fichier de commandes dépasserait :data:`MAX_COMMAND_BYTES` (estimation posée **avant** de
         créer le fichier ou de construire une ligne)."""
-        assert self.context is not None
+        if self.context is None:
+            raise RuntimeError("Étalonnage animé sans contexte de flux.")
         count = frame_count(self.context)
         if count * self._line_bytes() > MAX_COMMAND_BYTES:
             raise ValueError("Animation d'étalonnage trop longue pour l'export (trop de données).")
@@ -180,7 +181,8 @@ class AnimatedGrade:
         """Le fichier de commandes, ligne par ligne (écrit au fil de l'eau, jamais en entier en mémoire) : une ligne par image où une
         valeur change, ``instant cible option valeur[, …];``."""
         context = self.context
-        assert context is not None
+        if context is None:
+            raise RuntimeError("Étalonnage animé sans contexte de flux.")
         fps = context.fps
         exposure_on = self._driven(_EXPOSURE)
         balance_on = self._driven(*_BALANCE)
