@@ -972,6 +972,20 @@ bibliothèque, la page Composition et la sélection de la timeline appellent.
   d'un calque, liaison de suivi, même sur une autre séquence) ne doit pas être verrouillé ; c'est vérifié avant la première suppression.
 - **Identifiant du clip créé** : `id` / `as` ; les fonctions de composition reçoivent pour cela un paramètre optionnel `clip_id` (sans lui, l'interface ne change pas).
 
+## Garde-fous de ressources
+
+Deux garde-fous de tests empêchent qu'un verbe oublie une limite, ou qu'une raison de la dette se perde.
+
+**Un verbe qui crée des objets** (clips, calques, séquences, images clés, associations, suiveurs…) doit avoir décidé de son plafond. Les verbes créateurs sont **découverts** dans la table des verbes (`creates=…`, ou appel d'une fonction de création du modèle, y compris à travers une fonction de `core/scripting/`) : un verbe neuf sans décision fait échouer `tests/test_script_resource_guards.py`. La décision s'écrit dans `tests/script_resource_guards.py` :
+
+- `CEILINGS` : une entrée par ressource plafonnée (arguments minimaux du verbe, nombre d'objets créés). Le test applique l'opération construite **directement**, sans session, à un projet déjà au plafond (constante abaissée) et vérifie le refus et l'absence de changement, avec les objets déjà là dans la séquence active **et** dans une autre (`Project.tracks` ne montre que l'active). Il vérifie aussi qu'il reste la place d'exactement l'opération, pour que l'oubli d'un « combien » (valeur 0) se voie ;
+- `BOUNDED` : le verbe ne peut pas faire croître la ressource ; la raison dit comment on l'a vérifié ;
+- à défaut, une ligne `verbe:ressource` dans `tests/data/script_resource_debt.json` (dette nommée, avec sa raison) : elle ne peut que diminuer. Quand le verbe est sondable (`DEBT_SPECS`), le test échoue dès qu'il se met à refuser, pour qu'on le passe en `CEILINGS`.
+
+Une ressource nouvelle s'ajoute à `RESOURCES` (constantes à abaisser, comptage indépendant des gardes, remplissage).
+
+**Une fonction du modèle sans verbe** reste dans `tests/data/script_verb_debt.json` avec une raison de `tools/scripting_debt.py` (`REASONS`). Les raisons durables (« interne », « interface seulement… », « lecture seule », « remplacé »…) sont recopiées dans `tests/data/script_verb_reclassified.json`, que `tests/test_script_verb_reasons.py` compare à la dette : un merge qui écrase un reclassement fait échouer le test. Pour reclasser une fonction, changez sa raison dans la dette puis lancez `python -m tools.scripting_debt verbs --sync-reclassified` (le diff du fichier est ce que la revue lit) ; `--check-reclassified` vérifie sans rien écrire et liste ce qui reste « à faire ».
+
 ## Pas encore là
 
 - **Animation des effets** : le flou, le rayon de la lueur et l'aberration chromatique ne s'animent pas encore (étape 5 de l'ADR-0008) ; les verbes d'images clés d'effet n'acceptent que les paramètres que le modèle rend animables.

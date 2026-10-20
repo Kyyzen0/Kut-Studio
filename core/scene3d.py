@@ -232,6 +232,30 @@ def scene_signature(path: str | os.PathLike[str]) -> str:
     return signature
 
 
+def forget(path: str | os.PathLike[str]) -> None:
+    """Oublie la signature mémorisée et la scène chargée de ``path`` : la prochaine lecture relit les fichiers sur le disque.
+
+    Le mémo ne se fie qu'à la date et à la taille des fichiers : une modification qui les épargne (même taille, date remise)
+    passe inaperçue. Ne lève jamais (un chemin refusé n'a rien de mémorisé).
+    """
+    try:
+        key = str(_checked_path(path))
+    except Scene3DError:
+        return
+    with _MEMO_LOCK:
+        _MEMO.pop(key, None)
+    with _CACHE_LOCK:
+        _SCENES.pop(key, None)
+
+
+def reload_scene(path: str | os.PathLike[str]) -> None:
+    """Bouton « Recharger » : :func:`forget` + oubli des images figées de l'aperçu (:mod:`core.scene3d_interactive`) de ``path``."""
+    from .scene3d_interactive import forget_preview
+
+    forget(path)
+    forget_preview(path)
+
+
 def clear_signature_cache() -> None:
     """Oublie les signatures mémorisées, les scènes chargées et les dernières images rendues (tests)."""
     with _MEMO_LOCK:
@@ -320,11 +344,12 @@ def problem(path: str | os.PathLike[str]) -> str | None:
 # --- Rendu ------------------------------------------------------------------------------------------------------------------
 
 
-def render_size(box: tuple[float, float], mode: str = MODE_EXACT) -> tuple[int, int]:
+def render_size(box: tuple[float, float], mode: str = MODE_EXACT, side: int | None = None) -> tuple[int, int]:
     """Taille de l'image rendue : la boîte du calque (pixels du projet), bornée par les limites du moteur ``kut3d``.
 
     Au-delà de ``MAX_IMAGE_SIDE`` par côté ou de ``MAX_SAMPLED_PIXELS`` au total, l'image est réduite à proportions égales (le
-    rastériseur la ramène à la boîte). ``interactive`` : plus grand côté ≤ :data:`INTERACTIVE_SIDE`.
+    rastériseur la ramène à la boîte). ``interactive`` : plus grand côté ≤ :data:`INTERACTIVE_SIDE`, ou ≤ ``side`` si
+    elle est donnée et plus petite (aperçu numpy en attendant le moteur GPU) ; ``side`` est sans effet en mode exact.
     """
     from kut3d.render.limits import MAX_IMAGE_SIDE, MAX_SAMPLED_PIXELS
 
@@ -332,7 +357,8 @@ def render_size(box: tuple[float, float], mode: str = MODE_EXACT) -> tuple[int, 
     height = max(1.0, float(box[1]))
     scale = 1.0
     if mode == MODE_INTERACTIVE:
-        scale = min(scale, INTERACTIVE_SIDE / max(width, height))
+        limit = INTERACTIVE_SIDE if side is None else max(1, min(INTERACTIVE_SIDE, int(side)))
+        scale = min(scale, limit / max(width, height))
     scale = min(scale, MAX_IMAGE_SIDE / max(width, height))
     pixels = width * height * RENDER_SAMPLES * RENDER_SAMPLES
     if pixels * scale * scale > MAX_SAMPLED_PIXELS:
@@ -344,14 +370,14 @@ def render_size(box: tuple[float, float], mode: str = MODE_EXACT) -> tuple[int, 
     return out_w, out_h
 
 
-def render_identity(graphic: Any, box: tuple[float, float], mode: str = MODE_EXACT) -> tuple:
+def render_identity(graphic: Any, box: tuple[float, float], mode: str = MODE_EXACT, side: int | None = None) -> tuple:
     """Tout ce qui change l'image d'un clip 3D : ``(instant, signature, taille, moteur, échantillons, version)``.
 
     Entre dans la clé d'image (``layer_key`` / ``content_key``) : un fichier modifié (le ``.kut3d``, un modèle, une texture, un
     ``.mtl``) renomme les images du cache disque, qui se renouvellent seules.
     """
     base = (
-        float(getattr(graphic, "scene_time", 0.0)), scene_signature(graphic.source_path), render_size(box, mode),
+        float(getattr(graphic, "scene_time", 0.0)), scene_signature(graphic.source_path), render_size(box, mode, side),
         RENDER_BACKEND, RENDER_SAMPLES, SCENE3D_RASTER_VERSION,
     )
     # Une image que l'écran n'a pas pu rendre (mémoire, texture) a été écrite vide dans le cache disque : sous une autre clé,
@@ -359,34 +385,46 @@ def render_identity(graphic: Any, box: tuple[float, float], mode: str = MODE_EXA
     return base + ("failed",) if base in _FAILED else base
 
 
-def scene_image(graphic: Any, size: tuple[float, float] | None = None, mode: str = MODE_EXACT) -> Any:
+def scene_image(
+    graphic: Any, size: tuple[float, float] | None = None, mode: str = MODE_EXACT, *,
+    backend: str | None = None, side: int | None = None,
+) -> Any:
     """Image (``QImage`` ARGB32 prémultiplié, fond transparent sauf ``background`` de la scène) de ``graphic`` à ``graphic.scene_time``.
 
     ``size`` : boîte du calque (défaut : ``graphic.width`` x ``graphic.height``). Lève :class:`Scene3DError` (scène illisible)
     ou ``kut3d.RenderError``. Les deux dernières images sont gardées : un calque dessiné plusieurs fois à un instant (flou de
     mouvement) ne rend la scène qu'une fois.
+
+    ``backend`` / ``side`` (aperçu interactif seulement, :mod:`core.scene3d_interactive`) : moteur demandé à ``kut3d`` au lieu
+    de :data:`RENDER_BACKEND` et plus grand côté réduit. Une image d'un autre moteur porte son nom dans la clé du cache : elle ne
+    resservira jamais l'export, dont le cache disque exige les mêmes images partout. Sans ces paramètres (export, segments
+    d'aperçu fidèle, ancien appel) le comportement est inchangé.
     """
     box = size if size is not None else (graphic.width, graphic.height)
     if mode not in (MODE_EXACT, MODE_INTERACTIVE):
         raise ValueError(f"Mode de rendu inconnu : {_short(mode)}.")
-    identity = render_identity(graphic, box, mode)
+    engine = RENDER_BACKEND if backend is None else str(backend)
+    if backend is not None and mode != MODE_INTERACTIVE:
+        raise ValueError("Un autre moteur que numpy n'est permis que pour l'aperçu interactif.")
+    identity = render_identity(graphic, box, mode, side)
+    key = identity if engine == RENDER_BACKEND else identity + ("engine", engine)
     with _CACHE_LOCK:
-        cached = _IMAGES.get(identity)
+        cached = _IMAGES.get(key)
         if cached is not None:
-            _IMAGES.move_to_end(identity)
+            _IMAGES.move_to_end(key)
             return cached
     import kut3d
     from PySide6.QtGui import QImage
 
     scene, _animated = load_scene(graphic.source_path)
     width, height = identity[2]
-    frame = kut3d.render_frame(scene, t=identity[0], size=(width, height), backend=RENDER_BACKEND, samples=RENDER_SAMPLES)
+    frame = kut3d.render_frame(scene, t=identity[0], size=(width, height), backend=engine, samples=RENDER_SAMPLES)
     data = frame.color.tobytes()                  # RGBA 8 bits, alpha droit ; Qt ne possède pas ce tampon : copie ci-dessous
     wrapped = QImage(data, width, height, width * 4, QImage.Format.Format_RGBA8888)
     image = wrapped.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)   # nouvelle mémoire, indépendante de `data`
     del wrapped
     with _CACHE_LOCK:
-        _IMAGES[identity] = image
+        _IMAGES[key] = image
         while len(_IMAGES) > _IMAGES_LIMIT:
             _IMAGES.popitem(last=False)
     return image
@@ -413,14 +451,22 @@ def render_failures() -> tuple[type[BaseException], ...]:
     return (Scene3DError, RenderError, OSError, MemoryError)
 
 
-def draw_scene(painter: Any, graphic: Any, width: float, height: float) -> None:
+def draw_scene(painter: Any, graphic: Any, width: float, height: float, mode: str = MODE_EXACT) -> None:
     """Dessine la scène de ``graphic`` dans la boîte ``(0, 0, width, height)`` (espace calque, transformation déjà posée).
+
+    ``mode`` : ``exact`` (défaut : export, segments d'aperçu fidèle) ; tout autre mode est l'aperçu du moniteur
+    (:func:`core.scene3d_interactive.draw_preview` : image figée et approximative, jamais d'exception).
 
     À l'écran, une scène qui ne se rend pas laisse la boîte vide et le dit dans le journal (l'aperçu ne lève jamais). Dans
     :func:`strict_rendering` (export) elle lève :class:`Scene3DError` : un fichier exporté ne perd jamais une scène en silence.
     """
     from PySide6.QtCore import QRectF
 
+    if mode != MODE_EXACT:
+        from .scene3d_interactive import draw_preview
+
+        draw_preview(painter, graphic, width, height, mode)
+        return
     try:
         image = scene_image(graphic, (width, height))
     except render_failures() as exc:
@@ -439,7 +485,7 @@ def draw_scene(painter: Any, graphic: Any, width: float, height: float) -> None:
 __all__ = [
     "INTERACTIVE_SIDE", "INVALID_PREFIX", "MISSING_SIGNATURE", "MODE_EXACT", "MODE_INTERACTIVE", "RENDER_BACKEND",
     "RENDER_SAMPLES", "SCENE3D_RASTER_VERSION", "SCENE_SUFFIX", "Scene3DError", "clear_signature_cache", "dependencies",
-    "draw_scene", "ensure_fixed_speed", "has_scene_suffix", "is_animated", "is_scene3d_clip", "load_scene", "problem",
-    "render_failures", "render_identity", "render_size", "scene_image", "scene_signature", "scene_time_at", "strict_rendering",
-    "validate",
+    "draw_scene", "ensure_fixed_speed", "forget", "has_scene_suffix", "is_animated", "is_scene3d_clip", "load_scene",
+    "problem", "reload_scene", "render_failures", "render_identity", "render_size", "scene_image", "scene_signature",
+    "scene_time_at", "strict_rendering", "validate",
 ]

@@ -69,6 +69,7 @@ Le niveau indiqué est le **minimal où l'élément est affiché directement**. 
 | Sous-titre : position/marges/remplissage, contour, ombre, fond | Studio | |
 | Calque graphique : type, texte, taille, couleur, police | Simple | visible seulement sur un calque graphique |
 | Calque graphique : contour, ombre et fond, animation de texte | Studio | |
+| Calque scène 3D : fichier `.kut3d` et « Recharger » | Studio | visible seulement sur une scène 3D ; la vitesse y est grisée à tous les niveaux |
 | Calque graphique : lueur néon, lumière, forme, parent, flou de mouvement | Avancé | |
 | Compositing : modes de fusion Normal, Multiplier, Écran, Incrustation, Assombrir, Éclaircir | Studio | |
 | Compositing : modes Addition, Différence | Avancé | le mode déjà choisi dans un projet reste affiché |
@@ -91,7 +92,7 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Séquence : détection de scènes, proxies pour la sélection | Studio |
 | Séquence : nouvelle/renommer/dupliquer/supprimer une séquence, imbriquer, ouvrir/parent/retour/avance, convertir en composition, nouvelle composition, multicam | Avancé |
 | Calques : Ajouter ▸ texte ; réinitialiser le recadrage | Simple |
-| Calques : Ajouter ▸ forme, nul, ajustement ; grouper/dégrouper ; copier/coller (calques, attributs) ; préréglages ; zones de sécurité, repères, grille, aimantation, centre ; Aligner | Studio |
+| Calques : Ajouter ▸ forme, nul, ajustement, scène 3D ; grouper/dégrouper ; copier/coller (calques, attributs) ; préréglages ; zones de sécurité, repères, grille, aimantation, centre ; Aligner | Studio |
 | Calques : flou de mouvement et réglages ; panneau de suivi | Avancé |
 | Réseaux sociaux : nouveau projet social, réglages, zones de plateforme, remplir le cadre, sous-titres automatiques, repère de couverture | Simple |
 | Réseaux sociaux : grille de rythme, Recadrer en suivant le tracker, Ken Burns, Impact, audio social, versions de format, classement, Photos | Studio |
@@ -115,7 +116,7 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Piste (⋯) | hauteur, replier, monter/descendre, renommer, supprimer | idem | + courbe de volume, rôle, « Baisser sous… » (ducking) |
 | Média de la bibliothèque | renommer, sélectionner dans la timeline, dossiers, supprimer | + étiquettes, relier, proxy, matrice couleur | + « Créer une séquence Multicam… » (sélection multiple) |
 | Calque (panneau Calques) | renommer, dupliquer, supprimer | + grouper, dégrouper, entrer dans le groupe, copier / coller les attributs, enregistrer comme préréglage | + parent, flou de mouvement |
-| Ajouter un calque (menu du fond et bouton « Ajouter ») | texte, aplat de couleur, image | + formes, contrôleur nul, calque d'effets | idem |
+| Ajouter un calque (menu du fond et bouton « Ajouter ») | texte, aplat de couleur, image | + formes, contrôleur nul, calque d'effets (la scène 3D n'est que dans le menu Calques, Studio) | idem |
 | Barre du panneau Calques | « Ajouter » | + « Grouper », « Préréglages » | idem |
 | Bande d'automation d'une piste audio | supprimer le point, effacer la courbe | idem | + ajouter un point ici, remettre à 0 dB |
 | Dossiers de la bibliothèque | tout (nouveau, sous-dossier, renommer, supprimer) | idem | idem |

@@ -58,6 +58,7 @@ from ui.mixer_panel import MixerPanel
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.shortcut_manager import ShortcutManager
+from ui.scene3d_actions import handle_scene3d_drop
 from ui.scopes_panel import ScopesPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
@@ -2310,7 +2311,7 @@ class MainWindow(
     def dropEvent(self, event):
         for url in event.mimeData().urls():
             local_path = url.toLocalFile()
-            if local_path:
+            if local_path and not handle_scene3d_drop(self, local_path, event.position().toPoint()):   # .kut3d : clip 3D
                 self.import_video_to_project(local_path)
 
     # ------------------------------------------------------------------
