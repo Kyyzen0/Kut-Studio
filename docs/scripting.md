@@ -242,6 +242,20 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_mask` | Modifie un masque (`clip`, `mask`, au moins un de `mode`, `inverted`, `name`, `position_x`, `position_y`, `width`, `height`, `rotation`, `feather`, `expansion`, `opacity`) ; la forme ne change pas ; refusé pour une propriété animée et pour le recadrage |
 | `set_mask_points` | Remplace les sommets d'un polygone (`points`) ou les nœuds d'une courbe (`nodes`), un seul des deux selon la forme du masque (`clip`, `mask`) |
 | `remove_mask` | Retire un masque (`clip`, `mask`) avec ses images-clés `mask.<id>.*` et ses liaisons de suivi ; pas le recadrage (`clear_crop`) |
+| `add_tracker` | Ajoute un tracker (un point à suivre) à un clip vidéo (`clip`, `at` dans le clip, `x`, `y` en pixels du média dans l'image, `name`) ; **crée le tracker** (`id` / `as`, uniques dans tout le projet) ; voir « Suivi et stabilisation » |
+| `update_tracker` | Nom, couleur `#RRGGBB`, visibilité, trajectoire d'un tracker (`clip`, `tracker`, au moins un champ) |
+| `set_tracker_settings` | Zones cible et de recherche, confiances, motif, résolution (`clip`, `tracker`, au moins un réglage) ; un réglage que le modèle ramènerait ou qui en changerait un autre est refusé |
+| `set_tracker_position` | Pose un point à l'image montrée à `at` (`clip`, `tracker`, `at`, `x`, `y`) : la façon de fournir des points à un script |
+| `remove_correction` | Retire le point posé à la main à `at` (`clip`, `tracker`, `at`) ; refusé si ce n'en est pas un ou si c'est le dernier |
+| `reset_tracker` | Efface les images analysées, les points posés à la main restent (`clip`, `tracker`, `direction` = `all` / `after` / `before`, `at` avec `after` et `before`) |
+| `remove_tracker` | Supprime un tracker, son usage par la stabilisation et les liaisons qui le suivent (`clip`, `tracker`) |
+| `add_link` | Lie une propriété à des trackers analysés d'un clip (`clip` = la cible, `source`, `trackers`, `at` de référence, `target` = `transform` / `anchor` / `mask`, `mask`, `position`, `rotation`, `scale`) ; **crée la liaison** (`id` / `as`) ; refusé si la propriété a déjà une liaison |
+| `remove_link` | Retire une liaison de suivi (`clip`, `link`) |
+| `set_link_enabled` | Active ou désactive une liaison (`clip`, `link`, `enabled`) |
+| `bake_link` | Convertit une liaison en images clés indépendantes et la retire (`clip`, `link`) |
+| `set_stabilization` | Crée ou règle la stabilisation d'un clip vidéo (`clip`, `trackers`, `enabled`, `mode`, `smoothing`, `smoothing_frames`, `borders`, `at`) |
+| `remove_stabilization` | Retire la stabilisation (`clip`) ; refusé si le clip n'est pas stabilisé |
+| `follow_reframe` | Recadrage vertical suivi : le clip remplit le cadre et son panoramique suit les trackers (`clip`, `trackers`) ; remplace l'animation de `pan_x` / `pan_y` |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 | `set_cover_marker` | Pose le repère de couverture, le seul : l'ancien est remplacé (`at`, `name`) ; `id` / `as` |
 | `remove_marker` | Retire un repère (`marker`, par son identifiant) |
@@ -367,6 +381,35 @@ masques du moniteur : le résultat est le même `Mask`, la matte rendue la même
   et un script n'a pas de tête de lecture où poser une image-clé. Les images-clés d'un masque se posent avec `add_mask_keyframe` / `remove_mask_keyframe` (`add_keyframe` n'accepte pas `mask.<id>.*`).
 - Clip sur une piste verrouillée, calque verrouillé, piste audio ou de sous-titres : refus, comme dans l'interface.
 - Un projet qui contient une courbe s'enregistre en version 18 du format `.kut`, les autres en 17.
+
+## Suivi et stabilisation
+
+Ces verbes appellent les fonctions que le panneau **Suivi** appelle (`core/tracking_ops.py`, `core/follow_reframe.py`). Les liaisons et la
+stabilisation ne stockent aucune image clé : elles sont dérivées dans le plan de rendu, et `bake_link` les convertit en images clés.
+
+```json
+{"op": "add_tracker", "clip": "a", "at": 0, "x": 100, "y": 50, "as": "coin"},
+{"op": "add_tracker", "clip": "a", "at": 0, "x": 200, "y": 120, "as": "bord"},
+{"op": "set_tracker_position", "clip": "a", "tracker": {"ref": "coin"}, "at": 3, "x": 130, "y": 60},
+{"op": "set_tracker_position", "clip": "a", "tracker": {"ref": "bord"}, "at": 3, "x": 230, "y": 130},
+{"op": "add_link", "clip": "titre", "source": "a", "trackers": [{"ref": "coin"}, {"ref": "bord"}], "at": 0, "as": "suit"},
+{"op": "bake_link", "clip": "titre", "link": {"ref": "suit"}}
+```
+
+- **Aucune analyse.** Le suivi automatique d'un point lit les images du média : un script est une donnée et n'en lance aucune (ADR-0005), et
+  `apply_tracking_result` reste un geste de l'interface. Un script fournit ses points lui-même : `add_tracker` pose le premier, `set_tracker_position`
+  en ajoute (état « manuel », jamais écrasé par une analyse). Une liaison ou une stabilisation demande des trackers d'au moins deux images.
+- **Bornes.** Un tracker range ses images sur une grille dense, de la première à la dernière : sa plage, le nombre de trackers d'un clip et du projet
+  (toutes les séquences) et le total d'images suivies sont plafonnés avant d'écrire. `bake_link` et `follow_reframe` écrivent une image clé par image du
+  clip : un clip trop long pour la cadence de la séquence est refusé avant tout calcul.
+- **Refusé plutôt que ramené.** Instant hors du clip, point hors de l'image (de −1 à 2 fois la taille pour `set_tracker_position`), réglage que le modèle
+  écrêterait ou qui en changerait un autre, stabilisation sans `trackers` à la création, `smoothing_frames` hors du lissage `custom`, liaison qui
+  remplacerait une liaison existante (`remove_link` d'abord).
+- **Verrous.** Le clip modifié (piste et calque) est vérifié. Les clips qui **suivent** un tracker dont les données changent (ou la stabilisation de la source)
+  le sont aussi, et `remove_tracker` vérifie ceux dont il réécrit la liaison : un seul clip verrouillé fait refuser le verbe, sans rien écrire. C'est
+  plus strict que l'interface. La source d'une liaison n'est que lue : elle peut être verrouillée.
+- Valeurs par défaut de `set_stabilization` à la création : mode `position`, lissage `medium`, bords `zoom`, image de référence au début du clip.
+- `describe` ne lit pas encore le suivi (« Pas encore là ») : un script cite les trackers et les liaisons qu'il a créés (`id` / `as`).
 
 ## Verrou du projet
 
