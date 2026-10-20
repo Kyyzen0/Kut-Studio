@@ -3,8 +3,8 @@
 Déterminisme (ce qui dépend de la machine, et ce qui n'en dépend pas) :
 
 - les familles ``BUNDLED_FAMILIES`` sont lues DANS LES FICHIERS livrés (``assets/fonts``, licence SIL OFL) avec ``QRawFont``,
-  sans hinting : mêmes contours sur toutes les machines et toutes les plateformes, même en `offscreen` sans aucune police
-  système (CI Windows) ;
+  sans hinting : mêmes contours sur toutes les machines, même en `offscreen` sans aucune police système (CI Windows), aux
+  arrondis près de la bibliothèque de polices de la plateforme (CoreText, FreeType : ~1e-5 em, jamais une forme différente) ;
 - toute autre famille vient des polices INSTALLÉES de la machine : le même ``.kut3d`` donne un texte différent (ou est refusé si
   la famille manque) ailleurs. Une famille absente ou substituée par Qt est REFUSÉE, jamais remplacée en silence ;
 - le crénage et les ligatures ne sont pas appliqués : chaque caractère avance de sa largeur nominale ;

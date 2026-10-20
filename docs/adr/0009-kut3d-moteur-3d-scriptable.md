@@ -224,7 +224,7 @@ Chaque phase est une PR (ou plusieurs) fusionnable seule.
      le `.kut3d` passe en **version 3** seulement s'il contient un texte (sans texte : octets inchangés, versions 1 et 2 comprises). Les
      contours viennent de Qt (`QRawFont`), aplatis par nos soins, triangulés par découpage en oreilles avec ponts pour les trous
      (numpy, aucune dépendance), maillage fermé, normales sortantes. **Déterminisme** : les familles livrées (Anton, Saira) sont lues
-     dans leurs fichiers, identiques sur toutes les machines ; une famille installée est propre à la machine et refusée si absente (jamais
+     dans leurs fichiers, mêmes contours sur toutes les machines (aux arrondis de la bibliothèque de polices près) ; une famille installée est propre à la machine et refusée si absente (jamais
      de substitution). **Plafonds** (avant de générer) : 40 caractères, 160 points de contour par caractère, majorant de triangles
      compté dans les 65 536 par forme et les 500 000 par fichier ; emoji, idéogrammes, écritures complexes, caractères de contrôle et
      combinants refusés avec leur code. Limites connues : pas de crénage, contours fusionnés décimés pour les polices à contours qui se

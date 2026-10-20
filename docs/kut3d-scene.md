@@ -129,7 +129,8 @@ de la matière. Avec un biseau, chaque paroi devient trois bandes (chanfrein, pa
 sont celles du contour rétréci. UV : projection plane en XY sur l'étendue du texte (justes sur les faces, approximatifs sur les parois).
 
 **Ce qui dépend de la machine, ce qui n'en dépend pas.** Les familles livrées (`assets/fonts`, SIL OFL) sont lues dans leurs fichiers,
-sans hinting : mêmes contours sur toutes les machines, y compris en `offscreen` sans aucune police système (CI Windows). Une **autre
+sans hinting : mêmes contours sur toutes les machines, y compris en `offscreen` sans aucune police système (CI Windows), aux arrondis près de la
+bibliothèque de polices de la plateforme (CoreText, FreeType : de l'ordre de 1e-5 em, jamais une forme différente). Une **autre
 famille** est lue dans les polices installées : le même fichier donne un texte différent ailleurs, ou est **refusé** si la famille manque
 ou si Qt la remplace par une autre (jamais de substitution silencieuse). Ni crénage ni ligatures (chaque caractère avance de sa largeur
 nominale). Qt exige une application graphique pour ouvrir une police : celle de l'hôte est réutilisée ; sinon `kut3d` en crée une (fil
