@@ -2735,6 +2735,11 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
         # qualifieurs : un sous-graphe, insérable lui aussi dans une chaîne,
         # aux labels préfixés par ``tag`` (unique dans le graphe de l'appelant).
         return render_filters(grade, tag, _build_color_grade_filters, windows=windows, pixel_scale=pixel_scale)
+    if grade is None and animation:
+        from .grade_targets import has_grade_animation
+
+        if has_grade_animation(animation):
+            grade = ColorGrade()          # jamais étalonné, mais animé : les images clés partent du réglage neutre (comme l'inspecteur)
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:

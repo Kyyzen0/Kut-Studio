@@ -244,8 +244,9 @@ def animated_grade(
     (sans image clé, graphe de nœuds, ou aucune propriété d'étalonnage rendue) : la chaîne statique est alors celle d'avant."""
     from .grade_targets import is_animatable_grade
 
-    if not animation or not isinstance(grade, ColorGrade) or not is_animatable_grade(grade):
+    if not animation or not is_animatable_grade(grade):
         return None
+    grade = ColorGrade() if grade is None else grade           # jamais étalonné : les images clés partent du réglage neutre
     curves = GradeCurves(grade, animation)
     return AnimatedGrade(curves, context, tag, fmt) if curves else None
 

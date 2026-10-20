@@ -185,8 +185,9 @@ def _grade_ids(clip: Any) -> Iterator[str]:
 
 
 # ``targets_for_clip(..., include_effects=True)`` (le Graph Editor, les menus) ne liste PAS ces propriétés : l'interface de
-# l'étalonnage est l'étape 8 du plan. Elles se résolvent avec ``get_target(id, clip)`` (scripts, historique, copier / coller).
-register_clip_dynamic_targets(GRADE_PREFIX, _grade_target, _grade_ids)
+# l'étalonnage est l'étape 8 du plan (``include_grade=True``). Elles se résolvent avec ``get_target(id, clip)`` (scripts, historique,
+# copier / coller).
+register_clip_dynamic_targets(GRADE_PREFIX, _grade_target, _grade_ids, group="grade")
 
 
 # ---------------------------------------------------------------------------

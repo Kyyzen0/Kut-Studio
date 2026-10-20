@@ -87,6 +87,9 @@ ClipResolver = Callable[[Any, str], "PropertyTarget | None"]
 bornes, vient du clip)."""
 
 _CLIP_DYNAMIC: dict[str, tuple[ClipResolver, Callable[[Any], Iterable[str]]]] = {}
+_CLIP_DYNAMIC_GROUP: dict[str, str] = {}
+"""Famille de chaque préfixe de :data:`_CLIP_DYNAMIC` : ``"effects"`` (``fx.*``, listé avec ``include_effects``) ou ``"grade"`` (``color.*``,
+listé avec ``include_grade``, que l'interface de l'étalonnage activera à l'étape 8 du plan de l'ADR-0008)."""
 
 
 def register_target(target: PropertyTarget) -> None:
@@ -112,6 +115,8 @@ def register_clip_dynamic_targets(
     prefix: str,
     resolver: ClipResolver,
     ids_for_clip: Callable[[Any], Iterable[str]],
+    *,
+    group: str = "effects",
 ) -> None:
     """Famille de propriétés dont la **description** dépend du clip (ADR-0008 : ``fx.<effet>.<paramètre>``).
 
@@ -120,6 +125,7 @@ def register_clip_dynamic_targets(
     ``KeyError`` pour ces identifiants. ``ids_for_clip`` liste ceux d'un clip.
     """
     _CLIP_DYNAMIC[prefix] = (resolver, ids_for_clip)
+    _CLIP_DYNAMIC_GROUP[prefix] = group
 
 
 def get_target(property_id: str, clip=None) -> PropertyTarget:
@@ -155,11 +161,14 @@ def targets_for(track_type: str) -> tuple[PropertyTarget, ...]:
     return tuple(target for target in _REGISTRY.values() if target.applies_to(track_type))
 
 
-def targets_for_clip(clip, track_type: str, *, include_effects: bool = False) -> tuple[PropertyTarget, ...]:
+def targets_for_clip(
+    clip, track_type: str, *, include_effects: bool = False, include_grade: bool = False,
+) -> tuple[PropertyTarget, ...]:
     """Propriétés animables de **ce** clip : statiques applicables + dynamiques (masques…).
 
     ``include_effects`` (faux par défaut : l'interface actuelle ne change pas) ajoute les paramètres des effets du clip
-    (``fx.*``, ADR-0008 ; l'interface les listera à l'étape 4)."""
+    (``fx.*``, ADR-0008 ; l'interface les listera à l'étape 4). ``include_grade`` (faux par défaut, **aucune** interface ne le passe
+    encore) ajoute les propriétés d'étalonnage du clip (``color.*``) ; ``include_effects`` ne les ajoute pas."""
     result = [
         target for target in targets_for(track_type)
         if target.applies_to_clip is None or target.applies_to_clip(clip)
@@ -169,12 +178,13 @@ def targets_for_clip(clip, track_type: str, *, include_effects: bool = False) ->
             target = resolver(property_id)
             if target is not None and target.applies_to(track_type):
                 result.append(target)
-    if include_effects:
-        for _prefix, (clip_resolver, clip_ids) in _CLIP_DYNAMIC.items():
-            for property_id in clip_ids(clip):
-                target = clip_resolver(clip, property_id)
-                if target is not None and target.applies_to(track_type):
-                    result.append(target)
+    for prefix, (clip_resolver, clip_ids) in _CLIP_DYNAMIC.items():
+        if not (include_grade if _CLIP_DYNAMIC_GROUP.get(prefix) == "grade" else include_effects):
+            continue
+        for property_id in clip_ids(clip):
+            target = clip_resolver(clip, property_id)
+            if target is not None and target.applies_to(track_type):
+                result.append(target)
     return tuple(result)
 
 

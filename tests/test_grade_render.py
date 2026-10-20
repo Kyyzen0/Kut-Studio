@@ -470,6 +470,17 @@ def test_each_animated_frame_equals_the_static_export_at_the_evaluated_value(pro
 
 
 @needs_ffmpeg
+def test_a_clip_that_was_never_graded_is_animated_from_the_neutral_grade():
+    """``Clip.color_grade`` est ``None`` pour un clip jamais étalonné : les images clés partent du réglage neutre (le test de la couche
+    du plan de rendu passe par ce cas)."""
+    animation = curve_for("color.exposure") + curve_for("color.contrast")
+    chain, files = _real_chain(None, animation, context_for(RATE, 0.0, FRAMES / RATE))
+    cleanup(files)
+    assert "curves@v0cge=" in chain and "eq=contrast='1+" in chain
+    _assert_parity(None, animation)
+
+
+@needs_ffmpeg
 def test_all_stages_animated_together_still_match_the_static_render():
     """Les sept réglages et les quatre roues animés ensemble : un seul fichier, des cibles distinctes, chaque image égale le statique."""
     animation = []
@@ -493,22 +504,42 @@ def test_an_exposure_that_passes_through_zero_matches_the_static_chain_which_omi
 
 
 @needs_ffmpeg
-def test_a_value_that_passes_through_neutral_for_the_yuv_stages_stays_within_one_level():
-    """Contraste, saturation et teinte neutres : le statique omet ``eq`` et ``hue``, l'animé les garde. Écart mesuré (ADR)."""
+def test_neutral_yuv_stages_are_exact_when_nothing_before_them_is_rgb():
+    """Contraste 0, saturation 1 et teinte 0 à ``t = 1 s`` : la chaîne fixe omet ``eq`` et ``hue``, l'animée les garde ; dans le flux YUV
+    d'origine ils sont l'identité exacte (mesuré : écart 0)."""
     animation = [kf("color.contrast", 0.0, -0.5), kf("color.contrast", 2.0, 0.5), kf("color.saturation", 0.0, 0.0),
                  kf("color.saturation", 2.0, 2.0), kf("color.hue", 0.0, -60.0), kf("color.hue", 2.0, 60.0)]
-    _assert_parity(ColorGrade(), animation, frames=(4,), tolerance=2)       # t = 1 s : contraste 0, saturation 1, teinte 0
+    _assert_parity(ColorGrade(), animation, frames=(4,), tolerance=0)
 
 
 @needs_ffmpeg
+@pytest.mark.parametrize("animation", [
+    [kf("color.contrast", 0.0, -0.5), kf("color.contrast", 2.0, 0.5)],
+    [kf("color.saturation", 0.0, 0.0), kf("color.saturation", 2.0, 2.0)],
+    [kf("color.hue", 0.0, -60.0), kf("color.hue", 2.0, 60.0)],
+], ids=["contraste", "saturation", "teinte"])
+def test_a_neutral_yuv_stage_after_an_rgb_filter_costs_at_most_two_levels_on_that_frame(animation):
+    """Limite connue (ADR-0008, étape 6) : si un filtre RVB précède (ici l'exposition fixe), l'``eq`` ou le ``hue`` gardé à l'image où
+    sa valeur est exactement neutre ajoute l'aller-retour RVB / YUV que la chaîne fixe n'a pas : mesuré 2 niveaux au plus, sur cette
+    seule image (toutes les autres sont exactes : ``test_each_animated_frame_equals_the_static_export_at_the_evaluated_value``)."""
+    _assert_parity(ColorGrade(exposure=0.5), animation, frames=(4,), tolerance=2)
+
+
 def test_the_siting_conversion_goes_before_the_first_named_rgb_filter():
-    """Une chaîne dont le premier filtre RVB est ``curves@…`` reçoit la conversion de chroma co-sitée, comme ``curves=``."""
-    animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0)]
-    chain, files = _real_chain(ColorGrade(), animation, context_for(RATE, 0.0, 2.0))
-    cleanup(files)
-    assert chain.startswith("sendcmd=") or chain.startswith("scale=flags=bilinear")
-    assert "yuva444p16le,format=rgba,curves@v0cge=" in chain.replace("sendcmd=f='" + chain.split("'")[1] + "',", "") or (
-        "format=rgba,sendcmd" in chain)
+    """Une chaîne dont le premier filtre RVB est nommé (``curves@…``, ``colorbalance@…``) reçoit la conversion de chroma co-sitée
+    devant lui, comme son homologue fixe : sinon FFmpeg insérait sa propre conversion (recopie de la chroma)."""
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
+
+    for animation, first in (
+            ([kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0)], "curves@v0cge="),
+            ([kf("color.shadows", 0.0, -1.0), kf("color.shadows", 2.0, 1.0)], "colorbalance@v0cgb="),
+            ([kf("color.temperature", 0.0, -9.0), kf("color.temperature", 2.0, 9.0)], "colorchannelmixer@v0cgt="),
+            ([kf("color.gain.y", 0.0, -0.1), kf("color.gain.y", 2.0, 0.1)], "curves@v0cgw=")):
+        chain, files = _real_chain(ColorGrade(), animation, context_for(RATE, 0.0, 2.0))
+        cleanup(files)
+        assert chain.count(CHROMA_SITING_TO_RGBA) == 1 and chain.index(CHROMA_SITING_TO_RGBA) < chain.index(first), chain[:300]
+    static = _real_chain(ColorGrade(exposure=0.5), (), None)[0]
+    assert static.count(CHROMA_SITING_TO_RGBA) == 1
 
 
 @needs_ffmpeg
@@ -578,8 +609,8 @@ def test_the_fingerprint_follows_the_curve_and_is_stable():
 def test_animated_grade_returns_none_when_nothing_is_animated():
     assert animated_grade(ColorGrade(), [], None, "t", str) is None
     assert animated_grade(ColorGrade(), [kf("fx.e.intensity", 0.0, 1.0)], None, "t", str) is None
-    assert animated_grade(None, [kf("color.exposure", 0.0, 1.0)], None, "t", str) is None
     assert animated_grade(ColorGrade(), [kf("color.exposure", 0.0, 1.0)], None, "t", str) is not None
+    assert animated_grade(None, [kf("color.exposure", 0.0, 1.0)], None, "t", str) is not None, "jamais étalonné : part du neutre"
 
 
 def test_scalar_and_wheel_ids_are_wired_to_the_model_names():

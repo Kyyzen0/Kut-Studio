@@ -141,6 +141,11 @@ def test_the_graph_editor_listing_does_not_change_in_this_step():
     listed = {t.id for t in targets_for_clip(clip, "video", include_effects=True)} | {t.id for t in targets_for("video")}
     listed |= {t.id for t in all_targets()}
     assert not any(name.startswith(GRADE_PREFIX) for name in listed)
+    colored = lambda c, track, **kw: {t.id for t in targets_for_clip(c, track, **kw) if t.id.startswith(GRADE_PREFIX)}  # noqa: E731
+    assert colored(clip, "video", include_grade=True) == set(ANIMATABLE_GRADE_PARAMS)
+    assert colored(clip, "audio", include_grade=True) == set() == colored(clip, "video", include_effects=True)
+    graph_clip = clip_of(make_project(as_graph(ColorGrade(exposure=0.2))))
+    assert not colored(graph_clip, "video", include_grade=True)
 
 
 def test_a_node_graph_is_not_animatable():
@@ -161,7 +166,7 @@ def clip_with(grade, animation) -> Clip:
 
 
 def test_labels_exist_in_the_three_languages():
-    from ui.i18n import TRANSLATIONS
+    from ui.i18n import _TRANSLATIONS as TRANSLATIONS
 
     for property_id in ANIMATABLE_GRADE_PARAMS:
         entry = TRANSLATIONS[grade_spec(property_id).label_key]
@@ -380,8 +385,8 @@ def test_every_registered_property_demands_version_24(property_id):
 
 
 def test_color_animation_round_trips_byte_for_byte_in_version_24(tmp_path):
-    animation = [Keyframe("color.lift.r", 0.0, -0.3, id="k1"), Keyframe("color.lift.r", 2.0, 0.4, id="k2"),
-                 Keyframe("color.exposure", 1.0, 0.7, id="k3")]
+    animation = [Keyframe("color.exposure", 1.0, 0.7, id="k3"), Keyframe("color.lift.r", 0.0, -0.3, id="k1"),
+                 Keyframe("color.lift.r", 2.0, 0.4, id="k2")]      # l'ordre que le chargeur rend (nom, temps)
     project = make_project(ColorGrade(contrast=0.2, lift=Wheel(0.1, 0.0, 0.0, 0.0)), animation)
     path = tmp_path / "grade.kut"
     save_project(project, path)
