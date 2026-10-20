@@ -92,6 +92,24 @@ def frame_rate(fps: float) -> Fraction:
     return Fraction(float(fps)).limit_denominator(100_000)
 
 
+def segment_start(skip: float, fps: float) -> float:
+    """Temps local (secondes) de la **première image réelle** d'un segment d'aperçu qui commence ``skip`` secondes après le début
+    du clip.
+
+    Le graphe recale ``PTS`` par ``setpts=PTS-STARTPTS+skip/TB`` après ``fps``, et ``setpts`` **tronque** vers zéro le résultat
+    (``(int64_t)d``) : les images sont sur la grille des ticks (``1/cadence``), la première à ``trunc(skip / TB)``, et non à
+    ``skip``. Hors grille (``skip = 0,25 s`` à 10 i/s), c'est le tick d'avant ; sur la grille, l'erreur d'arrondi de la division en
+    flottants (``0,3 / 0,1 = 2,9999999999999996``) peut aussi la ramener d'un tick. Reproduit ici avec les mêmes flottants que
+    FFmpeg (``av_q2d(TB) = num / den``, ``skip`` écrit à six décimales comme dans le graphe) : le fichier de commandes vise les
+    images qui existent. Mesuré contre ``showinfo`` de FFmpeg (``tests/test_effect_sendcmd.py``)."""
+    skip = float(f"{max(0.0, float(skip)):.6f}")
+    if skip <= 0.0:
+        return 0.0
+    rate = frame_rate(fps)
+    tick = math.trunc(skip / (rate.denominator / rate.numerator))
+    return float(Fraction(tick) / rate)
+
+
 def context_for(fps: float, start: float, duration: float) -> SendcmdContext:
     return SendcmdContext(frame_rate(fps), max(0.0, float(start)), max(0.0, float(duration)))
 
@@ -260,6 +278,7 @@ __all__ = [
     "command_plan",
     "context_for",
     "escape_command_path",
+    "segment_start",
     "filter_name",
     "frame_count",
     "frame_rate",

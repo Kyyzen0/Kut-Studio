@@ -28,6 +28,7 @@ from core.effect_sendcmd import (
     filter_name,
     frame_count,
     frame_rate,
+    segment_start,
     sendcmd_filter,
     write_command_file,
 )
@@ -727,6 +728,56 @@ def test_a_segment_starting_mid_clip_renders_the_same_animated_frames_as_the_who
         worst = int(np.abs(segment[index] - static).max())
         assert worst <= 2, (scenario, kind, index, local, worst)
     assert int(np.abs(full[first + len(segment) - 1] - full[first]).max()) > 2, "l'effet doit varier"
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("rate", ["10", "12.5", "24", "25", "30", "29.97", "50", "59.94", "60"])
+def test_segment_start_is_the_first_pts_ffmpeg_gives_the_frame(rate):
+    """``segment_start`` reproduit la troncature de ``setpts`` : la première image du chaîne ``fps`` puis ``setpts=PTS-STARTPTS+skip/TB``
+    est bien à ce temps, pour des ``skip`` sur la grille (erreurs d'arrondi flottant comprises) et hors grille."""
+    fps = float(rate)
+    ffrate = __import__("core.timecode", fromlist=["ffmpeg_rate"]).ffmpeg_rate(fps)
+    for skip in (0.0, 0.05, 0.1, 0.25, 0.3, 0.7, 1.0, 1.001, 2.04, 2.5, 3.3, 7.77, 12.345):
+        text = f"{skip:.6f}".rstrip("0").rstrip(".") or "0"
+        completed = subprocess.run(
+            ["ffmpeg", "-v", "info", "-f", "lavfi", "-i", "testsrc2=s=16x16:r=60:d=20",
+             "-vf", f"trim=start=0:end=19,setpts=PTS-STARTPTS+{text}/TB,fps={ffrate},setpts=PTS-STARTPTS+{text}/TB,showinfo",
+             "-frames:v", "3", "-f", "null", "-"], capture_output=True, text=True)
+        times = [float(m) for m in re.findall(r"pts_time:([0-9.]+)", completed.stderr)]
+        assert len(times) >= 3, completed.stderr[-300:]
+        assert times[0] == pytest.approx(segment_start(skip, fps), abs=2e-6), (rate, skip, times, segment_start(skip, fps))
+        assert times[1] - times[0] == pytest.approx(1.0 / fps, abs=2e-6)
+
+
+@needs_ffmpeg
+def test_a_segment_that_starts_between_two_frames_uses_the_local_time_of_its_first_frame(tmp_path):
+    """Un segment d'aperçu qui commence à ``origin`` hors de la grille des images (ici une demi-image après) : ``setpts`` tronque
+    ``skip / TB`` au tick, ses images sont à ``(trunc(skip x cadence) + k) / cadence`` (0,2 s + k/10), et le fichier de commandes
+    part de ce temps (``segment_start``). Contenu fixe (mire de barres) : seule la valeur du flou distingue les images, chacune égale le rendu STATIQUE."""
+    np = pytest.importorskip("numpy")
+    source = tmp_path / "bars.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"smptebars=s={W}x{H}:r={FPS}:d=6",
+                    "-pix_fmt", "yuv420p", str(source)], check=True)
+
+    def project(effects, animation):
+        built = Project(name="barres", width=W, height=H, fps=float(FPS))
+        built.media_assets.append(MediaAsset("a", str(source), "bars", 6.0, W, H, float(FPS), "video"))
+        clip = Clip("v", "a", "V1", 1.0, 0.0, 5.0)
+        clip.effects, clip.animation = list(effects), list(animation)
+        built.tracks.append(Track("V1", "V1", "video", clips=[clip]))
+        return built
+
+    effects = [create_effect(EffectType.BLUR, effect_id="e")]
+    animation = [kf("fx.e.intensity", 0.0, 0.0), kf("fx.e.intensity", 1.0, 40.0)]
+    start = 1.25                                                  # 0,25 s dans le clip : 2,5 images
+    segment = _render_frames(build_render_plan(project(effects, animation)), tmp_path, "off-grid", start=start, duration=0.6)
+    clip = clip_with(effects, animation)
+    worst = 0
+    for index in (1, 3, 5):                                       # la première image du segment est doublée par le montage
+        fixed = evaluated_effects(tuple(clip.effects), tuple(clip.animation), 0.2 + index / FPS)     # grille des ticks
+        reference = _render_frames(build_render_plan(project(list(fixed), [])), tmp_path, "static", start=2.0, duration=0.3)[0]
+        worst = max(worst, int(np.abs(segment[index] - reference).max()))
+    assert worst <= 2, worst
 
 
 @needs_ffmpeg

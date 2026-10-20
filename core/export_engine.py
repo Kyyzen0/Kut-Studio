@@ -2485,13 +2485,14 @@ def _build_layer_filter(
     )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
     # Flux qui entre dans les effets : ``PTS`` est le temps local du clip (voir ci-dessous), sa première image est celle de
-    # ``origin`` pour un segment d'aperçu (hors arrêt sur image, qui repart de 0). Les paramètres animés par ``sendcmd``.
-    from .effect_sendcmd import context_for
+    # ``origin`` pour un segment d'aperçu, ramenée à la grille des ticks (``segment_start``) (hors arrêt sur image, qui repart de 0). Les paramètres animés par ``sendcmd``.
+    from .effect_sendcmd import context_for, segment_start
 
-    local_start = (
+    local_start = segment_start(
         max(0.0, origin - layer.timeline_start)
         if origin > 0.0 and layer.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
-        else 0.0
+        else 0.0,
+        fps,
     )
     sendcmd_context = (
         context_for(fps, local_start, layer.timeline_end - layer.timeline_start)
