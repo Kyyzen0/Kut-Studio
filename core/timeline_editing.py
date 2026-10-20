@@ -26,6 +26,7 @@ from .timeline_operations import (
     snap_timeline_position,
 )
 from .timeline_view_model import TimelineClipView
+from .tracking_locks import require_release_followers_unlocked
 
 
 def clip_ids_in_range(
@@ -437,7 +438,12 @@ def delete_clips(
     *,
     ripple: bool = False,
 ) -> None:
-    """Supprime plusieurs clips. En ripple, on part de la fin vers le début."""
+    """Supprime plusieurs clips. En ripple, on part de la fin vers le début.
+
+    Un clip verrouillé (piste ou calque, toute séquence) qui suit l'un des clips et verrait sa liaison de suivi réécrite fait refuser
+    (``ValueError``) **toute** l'opération, avant la première suppression (voir :mod:`core.tracking_locks`). Un suiveur supprimé
+    dans la même opération ne compte pas.
+    """
     found = []
     for clip_id in clip_ids:
         try:
@@ -446,15 +452,17 @@ def delete_clips(
             continue
         found.append(_track.clips[index])
     found.sort(key=lambda clip: clip.timeline_start, reverse=True)
+    doomed = [clip.id for clip in found]
+    require_release_followers_unlocked(project, doomed)                # tout ou rien : le ripple ci-dessous saute en silence un clip refusé
     for clip in found:
         if ripple:
             try:
-                ripple_delete_clip(project, clip.id)
+                ripple_delete_clip(project, clip.id, also_removed=doomed)
             except (KeyError, ValueError):
                 continue
         else:
             try:
-                delete_clip(project, clip.id)
+                delete_clip(project, clip.id, also_removed=doomed)
             except KeyError:
                 continue
 

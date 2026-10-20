@@ -94,9 +94,6 @@ def _cut_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
         _room_for_copy(project, clip_id)
-        clip = find_clip(project, clip_id)
-        if clip.timeline_start < float(a["at"]) < clip.timeline_start + clip.duration:     # hors du clip, le modèle refuse sans rien écrire
-            require_followers_unlocked(project, clip_id, "couper")     # ``follow_cut`` ajoute la moitié droite aux liaisons des suiveurs
         _left, right = cut_clip(project, clip_id, float(a["at"]), right_clip_id=a.get("id"))
         return right                                  # l'objet créé : celui que le script peut citer ensuite
 
