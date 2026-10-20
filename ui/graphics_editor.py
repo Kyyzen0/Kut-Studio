@@ -39,6 +39,7 @@ from core.usage_level import UsageLevel
 from ui import i18n
 from ui.design_system import Spacing
 from ui.layers_panel import SHAPE_CHOICES
+from ui.scene3d_inspector import Scene3DSection
 from ui.properties_widgets.level_gate import AdvancedFold, LevelGate, gated
 from ui.theme import label_style
 
@@ -135,6 +136,7 @@ class GraphicsEditor(QGroupBox):
     parent_changed = Signal(str)
     text_animation_requested = Signal(str)
     voice_sync_requested = Signal()
+    scene3d_reload_requested = Signal(str)             # « Recharger » d'un calque scène 3D : chemin du .kut3d
 
     def _add_level_section(self, root: QVBoxLayout, section: QWidget, minimum: UsageLevel) -> None:
         """Crée le conteneur de niveau d'usage d'une section (la logique par type de calque reste sur la section) ; ``_flush_sections``
@@ -147,7 +149,7 @@ class GraphicsEditor(QGroupBox):
         pending = self._pending_sections
         root.addWidget(self.text_section)
         for boundary, sections in (
-            (UsageLevel.STUDIO, (self.stroke_section, self.animation_section, self.style_section)),
+            (UsageLevel.STUDIO, (self.scene3d_section, self.stroke_section, self.animation_section, self.style_section)),
             (UsageLevel.ADVANCED, (self.shape_section, self.glow_section, self.light_section, self.layer_section)),
         ):
             fold = AdvancedFold(boundary)
@@ -189,6 +191,12 @@ class GraphicsEditor(QGroupBox):
         self.source_label.setStyleSheet(label_style(10, "muted", 500))
         self.source_row_label = QLabel(i18n.translate("common.source"))
         form.addRow(self.source_row_label, self.source_label)
+
+        # Scène 3D : nom du fichier .kut3d et « Recharger » (aucun contrôle de texte, de police, de contour ni de remplissage).
+        self.scene3d_section = Scene3DSection()
+        self.scene3d_section.reload_requested.connect(self.scene3d_reload_requested)
+        self.scene3d_section.hide()
+        self._add_level_section(root, self.scene3d_section, UsageLevel.STUDIO)    # Studio : un clip 3D se pose depuis le menu Studio
 
         self.width_spin = self._spin(2, 8192, "width")
         self.height_spin = self._spin(2, 8192, "height")
@@ -423,6 +431,7 @@ class GraphicsEditor(QGroupBox):
                 self.text_edit.clear()
                 self.text_edit.show()
                 self.source_label.setText("--")
+                self.scene3d_section.hide()
                 return
             self._graphic = graphic
             kind = graphic.type
@@ -441,6 +450,9 @@ class GraphicsEditor(QGroupBox):
             for widget in (self.source_label, self.source_row_label):
                 widget.setVisible(kind == GraphicType.IMAGE)
             self.source_label.setText(graphic.source_path or i18n.translate("mograph.graphics.generated"))
+            self.scene3d_section.setVisible(kind == GraphicType.SCENE3D)
+            if kind == GraphicType.SCENE3D:
+                self.scene3d_section.set_path(graphic.source_path)
             for widget in (self.width_spin, self.height_spin, self.size_label):
                 widget.setVisible(sized)
             self.width_spin.parentWidget().setVisible(sized)

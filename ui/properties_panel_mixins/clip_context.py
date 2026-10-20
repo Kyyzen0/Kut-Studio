@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 
+from core.scene3d import is_scene3d_clip
 from core.time_remapping import FreezeFrameMode, TimeRemapping
 from core.visual_effects import (
     ClipTransform,
     TransformKeyframe,
 )
 from ui.i18n import translate
+from ui.scene3d_inspector import set_fixed_speed_tooltips
 
 
 class ClipContextMixin:
@@ -79,6 +81,7 @@ class ClipContextMixin:
                 self.reset_movement_button.setEnabled(False)
                 # Time remapping
                 self.speed_group.setEnabled(False)
+                set_fixed_speed_tooltips(self, False)
                 # Effets : aucun clip vidéo sélectionné.
                 self.update_effects_from_clip([], None)
                 return
@@ -148,7 +151,10 @@ class ClipContextMixin:
             time_remapping = getattr(view, "time_remapping", None) or TimeRemapping()
             is_frozen = time_remapping.freeze_mode == FreezeFrameMode.FREEZE
             is_audio_clip = self.selected_clip_track_type == "audio"
-            enabled_tr = clip_editable
+            # Une scène 3D se joue à sa vitesse (core.scene3d.ensure_fixed_speed) : l'inspecteur ne propose pas ce que le modèle refuse.
+            fixed_speed = is_scene3d_clip(view)
+            enabled_tr = clip_editable and not fixed_speed
+            set_fixed_speed_tooltips(self, fixed_speed)
             
             # Vitesse
             self.speed_spinbox.blockSignals(True)
