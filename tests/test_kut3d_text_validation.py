@@ -307,7 +307,7 @@ def test_every_invisible_separator_control_or_combining_category_is_refused(
     import unicodedata
 
     assert unicodedata.category(char) == category
-    with pytest.raises(ValueError, match=rf"U\+{ord(char):04X}"):
+    with pytest.raises(ValueError, match=rf"U\+{ord(char):04X} \({category}\)"):
         Text3D("a" + char + "b")
 
 
