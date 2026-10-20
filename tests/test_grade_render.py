@@ -744,3 +744,79 @@ def test_color_keyframes_cross_a_stabilized_clip_into_the_render_plan(media, tmp
         assert len(written) == 1 and "curves@" in graph
     finally:
         cleanup(written)
+
+
+# ---------------------------------------------------------------------------
+# (g) Séquence imbriquée : le clip imbriqué et les clips de la séquence interne ont chacun leur étalonnage animé
+# ---------------------------------------------------------------------------
+
+
+def test_a_nested_sequence_clip_and_the_clips_inside_it_are_each_graded_by_their_own_curve():
+    from core.project_model import Sequence
+    from core.sequences import insert_sequence_clip
+
+    media = MediaAsset("m", "/tmp/m.mp4", "m", 10.0, W, H, 25.0, "video", False)
+    inner = Clip("l", "m", "V1", 0.0, 0.0, 4.0)
+    inner.animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 3.0, 1.0)]
+    leaf = Sequence("leaf", "leaf", W, H, 10.0, tracks=[Track("V1", "V1", "video", clips=[inner]), Track("V2", "V2", "video")])
+    main = Sequence("main", "main", W, H, 10.0, tracks=[Track("V1", "V1", "video"), Track("V2", "V2", "video")])
+    project = Project("p", media_assets=[media], sequences=[main, leaf], active_sequence_id="main")
+    outer = insert_sequence_clip(project, "leaf", "V2", 0.0, parent_sequence_id="main")
+    outer.animation = [kf("color.contrast", 0.0, -0.4), kf("color.contrast", 3.0, 0.4)]
+    plan = build_render_plan(project)
+    layer = next(item for item in plan.video_layers if item.clip_id == outer.id)
+    assert layer.nested_key and {k.property_name for k in layer.animation} == {"color.contrast"}
+    graph, *_ = ExportEngine._build_filter_complex(plan, W, H, 25, None, temporary_files=[])
+    assert "eq=contrast='1+" in graph, "le clip imbriqué suit sa propre courbe (expression : pas de fichier)"
+    # La séquence interne, rendue à part, anime l'exposition de son clip.
+    written: list[str] = []
+    inner_graph, *_ = ExportEngine._build_filter_complex(build_render_plan(project, sequence_id="leaf"), W, H, 25, None,
+                                                         temporary_files=written)
+    try:
+        assert "curves@" in inner_graph and len(written) == 1
+    finally:
+        cleanup(written)
+
+
+# ---------------------------------------------------------------------------
+# (h) Écriture du fichier de commandes au fil de l'eau
+# ---------------------------------------------------------------------------
+
+
+def test_the_command_file_is_written_line_by_line_into_the_callers_list():
+    from core.effect_sendcmd import write_command_stream
+
+    written: list[str] = []
+    with command_files(written):
+        path = write_command_stream(line for line in ("0.000000000 a b c;", "0.033333333 a b d;"))
+    try:
+        assert written == [path] and open(path, encoding="utf-8").read() == "0.000000000 a b c;\n0.033333333 a b d;\n"
+    finally:
+        cleanup(written)
+
+
+def test_a_stream_that_fails_leaves_its_partial_file_to_the_caller_and_no_orphan_elsewhere():
+    from core.effect_sendcmd import write_command_stream
+
+    def lines():
+        yield "0 a b c;"
+        raise ValueError("trop long")
+
+    written: list[str] = []
+    with command_files(written):
+        with pytest.raises(ValueError, match="trop long"):
+            write_command_stream(lines())
+    assert len(written) == 1 and os.path.isfile(written[0])         # supprimé avec les autres temporaires de l'export
+    cleanup(written)
+    directory = os.path.dirname(write_command_stream(iter(["0 x y z;"])))       # hors construction : dossier de processus
+    with pytest.raises(ValueError, match="trop long"):
+        write_command_stream(lines())
+    assert not [name for name in os.listdir(directory) if name.endswith(".part")]
+
+
+def test_outside_a_build_the_stream_is_named_by_its_content():
+    from core.effect_sendcmd import write_command_stream
+
+    one, two = write_command_stream(iter(["0 a b c;"])), write_command_stream(iter(["0 a b c;"]))
+    other = write_command_stream(iter(["0 a b d;"]))
+    assert one == two != other and open(one, encoding="utf-8").read() == "0 a b c;\n"

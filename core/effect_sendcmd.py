@@ -246,6 +246,38 @@ def write_command_file(text: str) -> str:
     return path
 
 
+def write_command_stream(lines: Iterable[str]) -> str:
+    """Comme :func:`write_command_file`, mais le texte est écrit **ligne à ligne** (un générateur) : un fichier de plusieurs dizaines de
+    mégaoctets (étalonnage animé, ADR-0008 étape 6) n'existe jamais en entier en mémoire. Chaque ligne reçoit son saut de ligne.
+
+    Dans une construction d'export (:func:`command_files` avec une liste) le chemin est ajouté à la liste **avant** d'écrire : si le
+    générateur lève (borne de taille), le fichier partiel est supprimé avec les autres temporaires. Hors construction : fichier
+    temporaire puis renommage vers un nom tiré du contenu (le condensat se calcule en écrivant)."""
+    sink = _SINK.get()
+    if sink is not None:
+        descriptor, path = tempfile.mkstemp(prefix=_TEMP_PREFIX, suffix=".cmd")
+        sink.append(path)
+        with os.fdopen(descriptor, "wb") as handle:
+            for line in lines:
+                handle.write(line.encode("utf-8") + b"\n")
+        return path
+    digest = hashlib.sha256()
+    descriptor, partial = tempfile.mkstemp(prefix=_TEMP_PREFIX, suffix=".part", dir=_process_directory())
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            for line in lines:
+                data = line.encode("utf-8") + b"\n"
+                digest.update(data)
+                handle.write(data)
+        path = os.path.join(_process_directory(), digest.hexdigest()[:40] + ".cmd")
+        os.replace(partial, path)
+    except BaseException:
+        if os.path.exists(partial):
+            os.remove(partial)
+        raise
+    return path
+
+
 def escape_command_path(path: str) -> str:
     """Chemin prêt à être cité entre apostrophes dans ``sendcmd=f='…'`` : séparateurs Windows en ``/``, ``:`` échappé
     (``C\\:/…`` : la lettre de lecteur n'est pas lue comme une option), apostrophe protégée (fermer, échapper, rouvrir).
@@ -284,4 +316,5 @@ __all__ = [
     "frame_rate",
     "sendcmd_filter",
     "write_command_file",
+    "write_command_stream",
 ]

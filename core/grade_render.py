@@ -22,13 +22,13 @@ au plus l'arrondi d'une conversion YUV (mesuré dans l'ADR).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from fractions import Fraction
 
 from .animation_ffmpeg import curve_expression
 from .color_grading import ColorGrade
 from .color_wheels import channel_transfer
-from .effect_sendcmd import SendcmdContext, frame_count, sendcmd_filter, write_command_file
+from .effect_sendcmd import SendcmdContext, frame_count, sendcmd_filter, write_command_stream
 from .grade_tables import POINT_BYTES, curves_points, exposure_table, wheel_tables
 from .grade_targets import GradeCurves, scalar_property_id, wheel_property_id
 from .color_grading import WHEELS
@@ -74,7 +74,6 @@ class AnimatedGrade:
         self.tag = tag
         self.fmt = fmt
         self._load: str | None = None
-        self._plan_text: str | None = None
         self.first = curves.at(context.start) if context is not None else curves.base
         # Roues : un seul canal ``master`` quand R, V et B restent égaux à tout instant (seule la molette ``y`` s'anime et les
         # palets de base sont égaux). Sinon trois canaux, trois fois plus de texte.
@@ -121,7 +120,7 @@ class AnimatedGrade:
     def _loaded(self, text: str) -> str:
         """``text`` précédé, la première fois, du ``sendcmd`` qui lit le fichier de commandes de l'étalonnage."""
         if self._load is None:
-            self._load = sendcmd_filter(write_command_file(self._commands()))
+            self._load = sendcmd_filter(write_command_stream(self._command_lines(self._frame_budget())))
             return f"{self._load},{text}"
         return text
 
@@ -168,15 +167,20 @@ class AnimatedGrade:
             size += (POINT_BYTES * 256 + 64) * (1 if self.uniform_wheels else 3)
         return size + 256
 
-    def _commands(self) -> str:
-        """Le fichier de commandes : une ligne par image où une valeur change, ``instant cible option valeur[, …];``."""
-        if self._plan_text is not None:
-            return self._plan_text
-        context = self.context
-        assert context is not None
-        count = frame_count(context)
+    def _frame_budget(self) -> int:
+        """Images du flux ; ``ValueError`` si le fichier de commandes dépasserait :data:`MAX_COMMAND_BYTES` (estimation posée **avant** de
+        créer le fichier ou de construire une ligne)."""
+        assert self.context is not None
+        count = frame_count(self.context)
         if count * self._line_bytes() > MAX_COMMAND_BYTES:
             raise ValueError("Animation d'étalonnage trop longue pour l'export (trop de données).")
+        return count
+
+    def _command_lines(self, count: int) -> Iterator[str]:
+        """Le fichier de commandes, ligne par ligne (écrit au fil de l'eau, jamais en entier en mémoire) : une ligne par image où une
+        valeur change, ``instant cible option valeur[, …];``."""
+        context = self.context
+        assert context is not None
         fps = context.fps
         exposure_on = self._driven(_EXPOSURE)
         balance_on = self._driven(*_BALANCE)
@@ -184,7 +188,6 @@ class AnimatedGrade:
         temperature_on = self._driven(_TEMPERATURE)
         wheels_on = self._driven(*_WHEEL_IDS)
         previous: dict[str, object] = {}
-        lines: list[str] = []
         size = 0
         from .export_engine import temperature_gains
 
@@ -218,9 +221,7 @@ class AnimatedGrade:
             size += len(line) + 1
             if size > MAX_COMMAND_BYTES:
                 raise ValueError("Animation d'étalonnage trop longue pour l'export (trop de données).")
-            lines.append(line)
-        self._plan_text = "\n".join(lines) + "\n"
-        return self._plan_text
+            yield line
 
     def _wheel_commands(self, grade: ColorGrade, previous: dict[str, object]) -> list[str]:
         tables = wheel_tables(grade)
