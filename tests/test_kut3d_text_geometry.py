@@ -267,3 +267,50 @@ def test_the_mesh_is_deterministic_in_process_and_across_processes(
     for array in first:
         digest.update(array.tobytes())
     assert out.stdout.strip() == digest.hexdigest()
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="le plugin natif n'avorte que sous Linux sans affichage",
+)
+def test_a_headless_linux_process_without_display_builds_a_text(tmp_path: Path) -> None:
+    code = "from kut3d import Text3D\nfrom kut3d.primitive_mesh import primitive_arrays\nprint(len(primitive_arrays(Text3D('A'))[3]))\n"
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("QT_QPA_PLATFORM", "DISPLAY", "WAYLAND_DISPLAY")
+    }
+    env.update(
+        PYTHONPATH=str(ROOT),
+        KUT_STUDIO_CONFIG_DIR=str(tmp_path / "c"),
+        KUT_STUDIO_CACHE_DIR=str(tmp_path / "k"),
+        KUT_STUDIO_DATA_DIR=str(tmp_path / "d"),
+    )
+    out = subprocess.run(
+        [sys.executable, "-I", "-c", code],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=ROOT,
+    )
+    assert out.returncode == 0 and out.stdout.strip() == "48", out.stderr[-400:]
+
+
+def test_headless_linux_detection_never_overrides_a_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kut3d.gpu import qtapp
+
+    for var in ("QT_QPA_PLATFORM", "DISPLAY", "WAYLAND_DISPLAY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert qtapp._headless_linux()
+    monkeypatch.setenv("DISPLAY", ":0")
+    assert not qtapp._headless_linux()
+    monkeypatch.delenv("DISPLAY")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "xcb")
+    assert not qtapp._headless_linux()
+    monkeypatch.delenv("QT_QPA_PLATFORM")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert not qtapp._headless_linux()

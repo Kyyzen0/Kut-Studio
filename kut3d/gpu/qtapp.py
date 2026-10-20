@@ -72,6 +72,16 @@ def _check_platform(app: QApplication) -> QApplication:
     return app
 
 
+def _headless_linux() -> bool:
+    """Linux sans plateforme Qt choisie ni affichage (X11 / Wayland) : seule `offscreen` peut démarrer."""
+    return (
+        sys.platform.startswith("linux")
+        and not os.environ.get("QT_QPA_PLATFORM")
+        and not os.environ.get("DISPLAY")
+        and not os.environ.get("WAYLAND_DISPLAY")
+    )
+
+
 def ensure_application(*, require_gpu: bool = True) -> QApplication:
     """La `QApplication` à utiliser (existante ou créée ici). Lève `RenderError` hors du fil de l'application.
     `require_gpu=False` (texte 3D : seulement des polices) accepte aussi les plateformes sans GPU (`offscreen`, `minimal`...)."""
@@ -91,6 +101,11 @@ def ensure_application(*, require_gpu: bool = True) -> QApplication:
     QCoreApplication.setApplicationName(APP_NAME)
     QCoreApplication.setOrganizationName(APP_NAME)
     argv = [APP_NAME]
+    if not require_gpu and _headless_linux():
+        argv += [
+            "-platform",
+            "offscreen",
+        ]  # sans affichage, le plugin natif ferait AVORTER Qt (non rattrapable)
     if sys.platform == "darwin" and not os.environ.get("QT_QPA_PLATFORM"):
         argv += ["-platform", "cocoa"]
     _created = QApplication(argv)

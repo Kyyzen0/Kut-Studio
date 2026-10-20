@@ -278,3 +278,38 @@ def test_a_family_that_qt_would_replace_is_refused(
             primitive_arrays(Text3D("A", font="Fantome Sans"))
     finally:
         text_font.glyph.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("char", "category"),
+    [
+        (" ", "Zl"),
+        (" ", "Zp"),
+        (" ", "Zs"),
+        (" ", "Zs"),
+        ("　", "Zs"),
+        (" ", "Zs"),
+        ("\t", "Cc"),
+        ("\x85", "Cc"),
+        ("​", "Cf"),
+        ("­", "Cf"),
+        ("\ud800", "Cs"),
+        ("", "Co"),
+        ("͸", "Cn"),
+        ("́", "Mn"),
+        ("ः", "Mc"),
+        ("⃝", "Me"),
+    ],
+)
+def test_every_invisible_separator_control_or_combining_category_is_refused(
+    char: str, category: str
+) -> None:
+    import unicodedata
+
+    assert unicodedata.category(char) == category
+    with pytest.raises(ValueError, match=rf"U\+{ord(char):04X}"):
+        Text3D("a" + char + "b")
+
+
+def test_only_the_plain_space_the_nbsp_and_newline_are_blank() -> None:
+    assert Text3D("a b c\nd").text == "a b c\nd"

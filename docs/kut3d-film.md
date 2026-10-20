@@ -116,6 +116,9 @@ titre = film.text3d("Kut Studio", size=1.2, depth=0.3, bevel=0.01, material=or_,
 - `film.primitive("text", text="...")` est équivalent.
 - Le maillage est généré à l'appel (une police s'ouvre) : dans l'application ou un script lancé par elle, l'application Qt existe ; dans un script
   autonome elle est créée au besoin, dans le fil principal.
+- Sans application Qt, `kut3d` en crée une pour ouvrir la police ; sous Linux sans `QT_QPA_PLATFORM`, `DISPLAY` ni `WAYLAND_DISPLAY`, elle
+  utilise la plateforme `offscreen` (le plugin natif ferait avorter le processus) ; un choix explicite de `QT_QPA_PLATFORM` n'est jamais écrasé,
+  et macOS / Windows ne sont pas touchés.
 - Le verbe de script `add_scene3d_clip` accepte un `.kut3d` à texte comme un autre ; un fichier hostile (texte démesuré, police absente...) est
   refusé en une ligne.
 

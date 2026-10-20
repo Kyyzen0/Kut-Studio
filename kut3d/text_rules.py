@@ -51,10 +51,16 @@ def check_text(value: object) -> str:
     for char in value:
         if char == "\n":
             continue
-        if unicodedata.category(char)[0] in "CM":
+        category = unicodedata.category(char)
+        if (
+            category[0] in "CM"
+            or category in ("Zl", "Zp")
+            or (category == "Zs" and char not in _BLANKS)
+        ):
             raise ValueError(
-                f"text : caractère de contrôle, combinant ou invisible {code(char)} refusé "
-                "(écrivez le caractère accentué en un seul caractère)."
+                f"text : caractère de contrôle, combinant, séparateur ou invisible {code(char)} ({category}) refusé "
+                "(seuls l'espace, l'espace insécable et le saut de ligne sont admis ; "
+                "écrivez le caractère accentué en un seul caractère)."
             )
         if not any(low <= ord(char) <= high for low, high in _ALLOWED_RANGES):
             raise ValueError(
