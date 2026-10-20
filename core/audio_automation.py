@@ -683,8 +683,11 @@ class AudioAutomationService:
         music_track_id: str,
         voice_track_id: str,
         config: DuckingConfig | None = None,
+        sidechain_id: str | None = None,
     ) -> DuckingSidechain:
-        """Crée une association de ducking musique ← voix."""
+        """Crée une association de ducking musique ← voix.
+
+        ``sidechain_id`` : identifiant imposé (un script) ; absent (``None``), il est généré comme avant. Son unicité est à la charge de l'appelant."""
         music = self._find_audio_track(project, music_track_id)
         voice = self._find_audio_track(project, voice_track_id)
         if music.id == voice.id:
@@ -692,7 +695,7 @@ class AudioAutomationService:
                 "Une piste ne peut pas se ducking elle-même."
             )
         sidechain = DuckingSidechain(
-            id=_new_sidechain_id(),
+            id=_new_sidechain_id() if sidechain_id is None else sidechain_id,
             music_track_id=music.id,
             voice_track_id=voice.id,
             config=config or DuckingConfig(),

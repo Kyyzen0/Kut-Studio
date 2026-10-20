@@ -8,8 +8,8 @@ Deux preuves, pour chaque famille décrite (effets, effets audio, inserts, bus, 
 * **rejeu** : un script de « réglages » qui vise chaque objet décrit par son identifiant, avec ses valeurs, réussit sur le projet
   lui-même et ne change rien (la description reste identique).
 
-Ce qu'aucun verbe ne sait encore écrire (LUT, composition, mode de fusion, incrustation, automation,
-associations de ducking) est listé dans ``GAPS`` et vérifié : le jour où un verbe existe, le test le dit.
+Ce qu'aucun verbe ne sait encore écrire (LUT, composition, mode de fusion, incrustation, réglage de ducking
+``Track.ducking_config``, courbe de volume d'une piste vidéo) est listé dans ``GAPS`` et vérifié : le jour où un verbe existe, le test le dit.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 from describe_project import rich_project
 
+from core.audio_automation import TrackAutomation
 from core.color_grading import ColorGrade
 from core.color_nodes import ColorNode, ColorNodeGraph
 from core.effects_model import split_fx_property
@@ -28,7 +29,7 @@ from core.scripting import ScriptInvalid, Session, apply_script, parse_script
 from core.scripting.describe import describe
 from core.scripting.verbs import VERBS
 
-GAPS = ("LUT", "composition", "blend_mode", "chroma_key", "automation", "ducking_sidechains", "ducking_config")
+GAPS = ("LUT", "composition", "blend_mode", "chroma_key", "ducking_config", "video track automation")
 _IDENTITY_X = [index / 15 for index in range(16)]
 
 
@@ -65,7 +66,10 @@ def _strip(project):
                 if isinstance(node, ColorNode) else node for node in clip.color_grade.nodes))
     for track in copy.tracks:
         track.inserts, track.bus_id = [], ""
+        if track.type == "audio":                                            # la courbe d'une piste vidéo n'a pas de verbe (GAPS)
+            track.audio_role, track.automation = "other", TrackAutomation()
     copy.active_sequence.buses = []
+    copy.active_sequence.ducking_sidechains = []
     return copy
 
 
@@ -108,6 +112,22 @@ def _bus_ops(data: dict) -> list[dict]:
         ops += [{"op": "add_bus_insert", "bus": bus["id"], "effect": i["type"], "id": i["id"], "params": i["params"], "enabled": i["enabled"]}
                 for i in bus["inserts"]]
     ops += [{"op": "route_track", "track": t["id"], "bus": t["bus_id"]} for t in data["sequences"][0]["tracks"] if t["bus_id"]]
+    return ops
+
+
+def _audio_ops(data: dict) -> list[dict]:
+    ops: list[dict] = []
+    audio = [t for t in data["sequences"][0]["tracks"] if t["type"] == "audio"]
+    for track in audio:
+        if track["audio_role"] != "other":
+            ops.append({"op": "set_track_role", "track": track["id"], "role": track["audio_role"]})
+        if track["automation"]["points"]:
+            ops.append({"op": "set_automation_curve", "track": track["id"], "points": track["automation"]["points"]})
+    for sidechain in data["sequences"][0]["ducking_sidechains"]:
+        ops.append({"op": "add_ducking_sidechain", "music": sidechain["music_track_id"], "voice": sidechain["voice_track_id"],
+                    "id": sidechain["id"], **sidechain["config"]})
+        if not sidechain["enabled"]:
+            ops.append({"op": "set_ducking_enabled", "ducking": sidechain["id"], "enabled": False})
     return ops
 
 
@@ -158,7 +178,7 @@ def _color_ops(data: dict) -> list[dict]:
 
 
 FAMILIES = {
-    "effects": _effect_ops, "buses": _bus_ops, "masks": _mask_ops, "keyframes": _keyframe_ops, "color": _color_ops,
+    "effects": _effect_ops, "buses": _bus_ops, "audio": _audio_ops, "masks": _mask_ops, "keyframes": _keyframe_ops, "color": _color_ops,
 }
 
 
@@ -172,6 +192,9 @@ def _family_view(data: dict) -> dict:
         "effects": clip["effects"], "audio_effects": _clip(data, "c4")["audio_effects"], "inserts": _track(data, "A1")["inserts"],
         "bus_id": _track(data, "A1")["bus_id"], "buses": data["sequences"][0]["buses"], "masks": masks,
         "keyframes": sorted(keyframes), "color_grade": clip["color_grade"],
+        "roles": {t["id"]: t["audio_role"] for t in data["sequences"][0]["tracks"]},
+        "automation": {t["id"]: t["automation"] for t in data["sequences"][0]["tracks"] if t["type"] == "audio"},
+        "ducking_sidechains": data["sequences"][0]["ducking_sidechains"],
     }
 
 
@@ -180,11 +203,12 @@ def test_a_script_written_from_the_description_rebuilds_every_family():
     wanted = describe(original)
     rebuilt = _strip(original)
     assert _family_view(describe(rebuilt)) != _family_view(wanted)           # le retrait a bien eu lieu
-    ops = [op for family in ("effects", "buses", "masks", "keyframes", "color") for op in FAMILIES[family](wanted)]
+    ops = [op for family in ("effects", "buses", "audio", "masks", "keyframes", "color") for op in FAMILIES[family](wanted)]
     assert {op["op"] for op in ops} >= {"add_effect", "add_clip_audio_effect", "add_track_insert", "add_bus", "add_bus_insert",
                                        "route_track", "add_mask", "add_keyframe", "add_mask_keyframe", "add_effect_keyframe", "set_color_grade",
                                        "set_color_curve", "set_color_wheel", "set_color_qualifier", "add_color_window",
-                                       "set_color_detail", "rename_color_node"}
+                                       "set_color_detail", "rename_color_node", "set_track_role", "set_automation_curve",
+                                       "add_ducking_sidechain"}
     _apply(rebuilt, ops)
     assert _family_view(describe(rebuilt)) == _family_view(wanted)
 
@@ -199,7 +223,8 @@ def test_each_family_alone_is_rebuilt_from_its_own_description(family):
     _apply(rebuilt, FAMILIES[family](wanted))
     view, target = _family_view(describe(rebuilt)), _family_view(wanted)
     keys = {"effects": ("effects", "audio_effects", "inserts"), "buses": ("buses", "bus_id"), "masks": ("masks",),
-            "keyframes": ("keyframes",), "color": ("color_grade",)}[family]
+            "keyframes": ("keyframes",), "color": ("color_grade",),
+            "audio": ("roles", "automation", "ducking_sidechains")}[family]
     for key in keys:
         assert view[key] == target[key], key
 
@@ -230,6 +255,14 @@ def _replay_ops(data: dict) -> list[dict]:
         for insert in bus["inserts"]:
             ops += [{"op": "update_bus_insert", "bus": bus["id"], "insert": insert["id"], "params": insert["params"]},
                     {"op": "set_bus_insert_enabled", "bus": bus["id"], "insert": insert["id"], "enabled": insert["enabled"]}]
+    for audio_track in (t for t in data["sequences"][0]["tracks"] if t["type"] == "audio"):
+        ops.append({"op": "set_track_role", "track": audio_track["id"], "role": audio_track["audio_role"]})
+        for point in audio_track["automation"]["points"]:
+            ops.append({"op": "update_automation_point", "track": audio_track["id"], "at": point["time_seconds"],
+                        "gain_db": point["gain_db"], "fade_seconds": point["fade_seconds"]})
+    for sidechain in data["sequences"][0]["ducking_sidechains"]:
+        ops += [{"op": "update_ducking_config", "ducking": sidechain["id"], **sidechain["config"]},
+                {"op": "set_ducking_enabled", "ducking": sidechain["id"], "enabled": sidechain["enabled"]}]
     for mask in clip["compositing"]["masks"]:
         fields = {name: mask[name] for name in (*_MASK_NUMBERS, "inverted", "mode", "name") if (mask["id"], name) not in animated}
         ops.append({"op": "set_mask", "clip": "c1", "mask": mask["id"], **fields})
@@ -272,15 +305,21 @@ def test_a_modification_written_from_the_description_is_visible_in_the_next_desc
 # --- Ce qu'aucun verbe n'écrit encore --------------------------------------------------------------------------------------------
 
 
+def _apply_refused(project, op: dict) -> bool:
+    return not apply_script(Session(project), parse_script({"kut_script": 1, "ops": [op]})).ok
+
+
 def test_the_gaps_are_real_and_named():
     """Chaque manque est une décision écrite : le jour où un verbe l'écrit, ce test échoue et ``GAPS`` (et la documentation) se mettent à jour."""
     with pytest.raises(ScriptInvalid):                    # une image clé d'effet : ``property`` de ``add_keyframe`` n'accepte que le registre statique (``add_effect_keyframe`` existe)
         parse_script({"kut_script": 1, "ops": [{"op": "add_keyframe", "clip": "c1", "property": "fx.fx2.intensity", "at": 0, "value": 0.5}]})
     names = set(VERBS)
     # « composition » : un script crée une composition vide ou y range des clips (lot 10), il n'écrit pas encore le contenu des nœuds.
-    assert sorted(n for n in names if any(word in n for word in ("composition", "chroma", "blend", "automation", "sidechain"))) == [
+    assert sorted(n for n in names if any(word in n for word in ("composition", "chroma", "blend"))) == [
         "convert_to_composition", "create_composition"]
+    assert {"set_track_role", "set_automation_curve", "add_ducking_sidechain"} <= names                     # ces familles s'écrivent (voir « audio » ci-dessus)
     assert {n for n in names if "lut" in n} == {"import_lut", "remove_lut"}              # un LUT s'importe depuis un fichier, pas depuis une description
-    assert "set_ducking_config" not in names and "set_track_role" not in names
+    assert not any("ducking_config" in n and n != "update_ducking_config" for n in names)                    # ``Track.ducking_config`` : aucun consommateur, aucun éditeur
+    assert _apply_refused(rich_project(), {"op": "set_automation_curve", "track": "V1", "points": []})     # la courbe d'une piste vidéo : l'interface n'en a pas
     project = rich_project()
     assert _clip_of(project, "x1").composition is not None and GAPS                       # les nœuds d'une composition se lisent, ils ne s'écrivent pas
