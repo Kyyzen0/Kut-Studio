@@ -234,38 +234,58 @@ def test_evaluation_cost_does_not_grow_with_the_number_of_keyframes():
     """Recherche dichotomique : le nombre de sondages par évaluation croît en log2(n), pas en n.
 
     Mesure déterministe (aucun chronomètre) : l'ancienne version comparait des durées de moins d'une milliseconde et
-    échouait sur un runner chargé (×15 mesuré pour une limite ×10). On compte ici les lectures des instants des
-    keyframes (indexation ou itération) faites par une évaluation.
+    échouait sur un runner chargé (×15 mesuré pour une limite ×10). On compte ici les lectures faites par une évaluation
+    dans **toutes** les séquences qu'elle pourrait parcourir (instants, keyframes, segments) : un parcours linéaire de
+    n'importe laquelle ferait exploser le total, pas seulement celui des instants.
     """
     import math
 
-    class CountingTimes(list):
-        probes = 0
+    class Counting(list):
+        probes = 0  # compteur partagé par les trois séquences
 
         def __getitem__(self, index):
-            type(self).probes += 1
-            return super().__getitem__(index)
+            result = super().__getitem__(index)
+            type(self).probes += len(result) if isinstance(index, slice) else 1
+            return result
 
         def __iter__(self):
             for value in super().__iter__():
                 type(self).probes += 1
                 yield value
 
+        def __reversed__(self):
+            for value in super().__reversed__():
+                type(self).probes += 1
+                yield value
+
+        def __contains__(self, value):
+            type(self).probes += len(self)
+            return super().__contains__(value)
+
+        def index(self, *args):
+            type(self).probes += len(self)
+            return super().index(*args)
+
+        def count(self, value):
+            type(self).probes += len(self)
+            return super().count(value)
+
     def worst_probes(count):
         c = curve(*(kf(i * 0.01, float(i % 9), list(I)[i % 6]) for i in range(count)))
         end = c.times[-1]
-        c._times = CountingTimes(c._times)
+        c._times, c._keyframes, c._segments = Counting(c._times), Counting(c._keyframes), Counting(c._segments)
         worst = 0
         for k in range(997):
-            CountingTimes.probes = 0
+            Counting.probes = 0
             c.evaluate(end * k / 997)
-            worst = max(worst, CountingTimes.probes)
+            worst = max(worst, Counting.probes)
         return worst
 
     for count in (10, 100, 1000):
-        # bisect : ~log2(n) comparaisons, plus les lectures des bornes (premier / dernier instant) et du résultat.
+        # Mesuré : ceil(log2 n) + 4 (bisect, plus les lectures des bornes et du premier keyframe) ; marge de 2.
         limit = math.ceil(math.log2(count)) + 6
-        assert worst_probes(count) <= limit, f"{count} keyframes : trop de sondages par évaluation"
+        probes = worst_probes(count)
+        assert probes <= limit, f"{count} keyframes : {probes} sondages par évaluation (limite {limit})"
 
 
 # --- Retours de revue : bornes et insertion hors de la courbe ------------------------------------
