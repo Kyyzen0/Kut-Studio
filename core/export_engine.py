@@ -2985,7 +2985,7 @@ def _build_clip_effect_filters(
     ``sendcmd`` (:class:`core.effect_sendcmd.SendcmdContext`) : cadence, origine et durée du flux, pour les paramètres rendus
     par un fichier de commandes (flou, aberration chromatique, rayon de la lueur). ``None`` (empreintes de cache, calques
     graphiques) : ces paramètres restent à leur valeur de base, comme avant l'étape 5. Le fichier est écrit à la
-    construction (:func:`core.effect_sendcmd.write_command_file`).
+    construction (:func:`core.effect_sendcmd.load_filters`, une fenêtre par fichier).
     """
     from .effect_expressions import (
         EQ_TIME,
@@ -3073,7 +3073,7 @@ def _sendcmd_stage(effect: ClipEffect, animation, context, pixel_scale: float, l
     chaîne statique est alors celle d'avant ; ``load`` vide : la courbe d'une aberration chromatique reste à 0, rien à ajouter)."""
     if context is None or not animation:
         return None
-    from .effect_sendcmd import command_plan, filter_name, sendcmd_filter, write_command_file
+    from .effect_sendcmd import command_plan, filter_name, load_filters
 
     name = filter_name(effect.type, label)
     plan = command_plan(effect, animation, context, name, pixel_scale)
@@ -3081,7 +3081,7 @@ def _sendcmd_stage(effect: ClipEffect, animation, context, pixel_scale: float, l
         return None
     if effect.type is EffectType.CHROMATIC_ABERRATION and plan.peak == 0.0:
         return _SendcmdStage("", name, plan)           # la courbe reste à 0 : aucun décalage, aucun fichier, aucun filtre
-    return _SendcmdStage(sendcmd_filter(write_command_file(plan.text)), name, plan)
+    return _SendcmdStage(load_filters(plan.rows), name, plan)
 
 
 def _layer_space_filters(effects, pixel_scale: float, animation=None) -> str:

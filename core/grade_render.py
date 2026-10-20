@@ -22,30 +22,16 @@ au plus l'arrondi d'une conversion YUV (mesuré dans l'ADR).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterator
 from fractions import Fraction
 
 from .animation_ffmpeg import curve_expression
 from .color_grading import ColorGrade
 from .color_wheels import channel_transfer
-from .effect_sendcmd import SendcmdContext, frame_count, sendcmd_filter, write_command_stream
+from .effect_sendcmd import MAX_COMMAND_BYTES, WINDOW_BYTES, SendcmdContext, frame_count, load_filters
 from .grade_tables import curves_points, exposure_table, wheel_tables
 from .grade_targets import GradeCurves, scalar_property_id, wheel_property_id
 from .color_grading import WHEELS
-
-MAX_COMMAND_BYTES = 32 * 1024 * 1024
-"""Taille maximale du texte de commandes d'un étalonnage (tous fichiers). Mesuré (ADR-0008, étape 6) : FFmpeg 6.1.1 et 7.1.5 gardent en
-mémoire, après lecture, ~40 à 45 fois la taille des fichiers de commandes (9.0.2 : quelques fois). 32 Mo restent sous ~1,5 Go sur ces
-versions ; une table de 256 points pèse ~4,7 Ko par image (exposition : ~7 000 images, quatre minutes à 30 i/s ; roues colorées : deux à
-trois fois moins). Au-delà, :class:`AnimatedGrade` lève ``ValueError`` (message sans donnée de l'utilisateur) : le fichier partiel
-est supprimé avec les autres temporaires de l'export."""
-
-WINDOW_BYTES = 192 * 1024
-"""Taille maximale du texte d'**un** fichier de commandes. Mesuré (ADR-0008, étape 6) : FFmpeg 6.1.1 et 7.1.5 lisent un fichier de
-commandes avec une mémoire de l'ordre de 1000 fois sa taille et croissante plus vite que lui (un fichier de 3,7 Mo, 800 lignes de
-256 points : 4,4 Go de mémoire résidente avant la première image ; la 9.0.2 : 19 Mo). La mémoire est **rendue** après la lecture de
-chaque fichier : l'étalonnage écrit donc **une fenêtre par fichier** (autant de ``sendcmd`` à la suite) et le pic ne dépend plus de la
-durée du clip, seulement de la fenêtre (800 lignes en 8 fichiers : 164 Mo)."""
 
 EXPRESSION_TIME = "t"
 """Variable de temps de ``eq`` et de ``hue`` : le temps local du clip (``PTS`` repart de zéro avant les effets et l'étalonnage)."""
@@ -130,8 +116,7 @@ class AnimatedGrade:
         """``text`` précédé, la première fois, des ``sendcmd`` qui lisent les fichiers de commandes de l'étalonnage (un par fenêtre
         de :data:`WINDOW_BYTES`, voir cette constante)."""
         if self._load is None:
-            windows = _windows(self._command_lines(self._frame_budget()), WINDOW_BYTES)
-            self._load = ",".join(sendcmd_filter(write_command_stream(window)) for window in windows)
+            self._load = load_filters(self._command_lines(self._frame_budget()))
             return f"{self._load},{text}"
         return text
 
@@ -239,21 +224,6 @@ class AnimatedGrade:
         return commands
 
 
-def _windows(lines: Iterable[str], budget: int) -> Iterator[list[str]]:
-    """``lines`` découpées en fenêtres d'au plus ``budget`` octets (une ligne démesurée a sa propre fenêtre) ; jamais de fenêtre vide
-    (un plan sans aucune ligne n'écrit rien). Une seule fenêtre est en mémoire à la fois."""
-    current: list[str] = []
-    size = 0
-    for line in lines:
-        if current and size + len(line) + 1 > budget:
-            yield current
-            current, size = [], 0
-        current.append(line)
-        size += len(line) + 1
-    if current:
-        yield current
-
-
 def animated_grade(
     grade: object, animation, context: SendcmdContext | None, tag: str, fmt: Callable[[float], str],
 ) -> AnimatedGrade | None:
@@ -268,4 +238,4 @@ def animated_grade(
     return AnimatedGrade(curves, context, tag, fmt) if curves else None
 
 
-__all__ = ["EXPRESSION_TIME", "MAX_COMMAND_BYTES", "AnimatedGrade", "animated_grade"]
+__all__ = ["EXPRESSION_TIME", "MAX_COMMAND_BYTES", "WINDOW_BYTES", "AnimatedGrade", "animated_grade"]
