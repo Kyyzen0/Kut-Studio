@@ -26,9 +26,6 @@ from .color_wheels import SRGB_TOE_ENCODED, SRGB_TOE_LINEAR, channel_transfer
 
 LEVELS = 256
 MAX_LEVEL = LEVELS - 1
-POINT_BYTES = 17
-"""Octets d'un point ``x/y`` écrit (``0.003922/0.001961 ``) : sert à borner la taille du fichier de commandes avant de l'écrire."""
-
 _ENCODE_EXPONENT = float(f"{1.0 / 2.4:.6f}")
 _ABSCISSAE: tuple[str, ...] = tuple(
     "0.000000" if i == 0 else "1.000000" if i == MAX_LEVEL else f"{(i * 1_000_000 // MAX_LEVEL + 1) / 1_000_000:.6f}"
@@ -84,7 +81,6 @@ def curves_points(table: tuple[int, ...]) -> str:
 
 __all__ = [
     "LEVELS",
-    "POINT_BYTES",
     "curves_points",
     "exposure_table",
     "transfer_table",

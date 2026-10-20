@@ -162,20 +162,58 @@ def test_an_animated_saturation_and_hue_are_expressions():
     assert re.fullmatch(r"eq=contrast=1\.25:saturation='clip\(.*,0,2\)':eval=frame,hue=h='clip\(.*,-180,180\)'", text), text
 
 
-def test_every_stage_driven_by_sendcmd_shares_one_file_read_before_the_first_one():
+def test_every_stage_driven_by_sendcmd_shares_one_plan_read_before_the_first_one():
+    """Un seul plan de commandes pour tout l'étalonnage (plusieurs cibles dans la même ligne), lu par des ``sendcmd`` qui se suivent,
+    posés devant le premier filtre qu'ils pilotent."""
     grade = ColorGrade(contrast=0.1)
     animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0), kf("color.shadows", 0.0, -0.4),
                  kf("color.shadows", 2.0, 0.4), kf("color.temperature", 0.0, -50.0), kf("color.temperature", 2.0, 50.0),
                  kf("color.gain.y", 0.0, -0.3), kf("color.gain.y", 2.0, 0.3)]
     text, files = chain_of(grade, animation, context_for(10, 0.0, 2.0))
     try:
-        assert len(files) == 1 and text.count("sendcmd=") == 1 and text.startswith("sendcmd=f='")
+        assert files and text.count("sendcmd=") == len(files) and text.startswith("sendcmd=f='")
         order = [text.index(name) for name in ("curves@v0cge=", "eq=contrast=1.1", "colorbalance@v0cgb=",
                                                "colorchannelmixer@v0cgt=", "curves@v0cgw=")]
         assert order == sorted(order), text[:400]
-        assert text.index("sendcmd=") < order[0]
+        assert text.rindex("sendcmd=") < order[0], "tous les sendcmd précèdent le premier filtre piloté"
+        assert text.count("sendcmd=") == text[: order[0]].count("sendcmd=")
     finally:
         cleanup(files)
+
+
+def test_a_long_plan_is_cut_into_windows_each_read_by_its_own_sendcmd():
+    """FFmpeg 6.1 et 7.1 lisent un fichier de commandes avec ~1000x sa taille de mémoire (4,4 Go pour 3,7 Mo, mesuré) : le plan est coupé en
+    fichiers d'au plus ``WINDOW_BYTES``, sans trou ni recouvrement, et la mémoire (rendue après chaque lecture) ne dépend plus de la durée."""
+    from core.grade_render import WINDOW_BYTES
+
+    animation = [kf("color.exposure", 0.0, -1.5), kf("color.exposure", 20.0, 1.5), kf("color.shadows", 0.0, -0.5),
+                 kf("color.shadows", 20.0, 0.5)]
+    context = context_for(30, 0.0, 20.0)
+    text, files = chain_of(ColorGrade(), animation, context)
+    try:
+        assert len(files) > 10 and text.count("sendcmd=") == len(files)
+        sizes = [os.path.getsize(path) for path in files]
+        assert max(sizes) <= WINDOW_BYTES
+        lines = [line for path in files for line in open(path, encoding="utf-8").read().splitlines()]
+        stamps = [float(line.split(" ")[0]) for line in lines]
+        assert stamps == sorted(stamps) and stamps[0] == 0.0 and len(set(stamps)) == len(stamps)
+        states = applied("\n".join(lines), context.fps, frame_count(context))
+        clip = clip_with(ColorGrade(), animation)
+        for index in (0, 1, 299, 300, 599):
+            expected = effective_grade(clip, index / 30)
+            table = states[index][("curves@v0cge", "master")].strip("'").split(" ")
+            assert table == curves_points(exposure_table(expected.exposure)).split(" "), index
+            assert float(states[index][("colorbalance@v0cgb", "rs")]) == pytest.approx(expected.shadows, abs=6e-7)
+    finally:
+        cleanup(files)
+
+
+def test_a_window_never_exceeds_the_budget_unless_a_single_line_does():
+    from core.grade_render import _windows
+
+    assert list(_windows(["a" * 10, "b" * 10, "c" * 10], 25)) == [["a" * 10, "b" * 10], ["c" * 10]]
+    assert list(_windows(["a" * 100], 25)) == [["a" * 100]]
+    assert list(_windows([], 25)) == []
 
 
 def test_without_a_stream_context_the_sendcmd_stages_keep_their_base_value():
@@ -281,20 +319,26 @@ def test_a_non_finite_keyframe_never_reaches_the_graph():
     assert text == _build_color_grade_filters(ColorGrade(contrast=0.3))
 
 
-def test_a_huge_duration_is_refused_before_any_text_is_built():
+def test_a_huge_duration_is_refused_without_a_file_and_a_long_one_stops_at_the_size_bound():
     animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0)]
-    huge = context_for(60, 0.0, 10.0 * 3600)
+    huge = context_for(60, 0.0, 10.0 * 3600)                       # plus de 2 000 000 d'images : refusé avant tout fichier
     written: list[str] = []
     with command_files(written):
         with pytest.raises(ValueError, match="trop longue") as raised:
             _build_color_grade_filters(ColorGrade(), "t", animation=tuple(animation), sendcmd=huge)
     assert written == [] and len(str(raised.value)) < 120
-    # La borne de taille couvre aussi le cas de roues colorées (trois tables par image).
-    wheels = [kf("color.lift.r", 0.0, -0.5), kf("color.lift.r", 2.0, 0.5)]
-    with command_files([]):
-        with pytest.raises(ValueError, match="trop longue"):
-            _build_color_grade_filters(ColorGrade(), "t", animation=tuple(wheels), sendcmd=context_for(60, 0.0, 3600.0))
-    assert MAX_COMMAND_BYTES <= 256 * 1024 * 1024
+    # Sous la borne de lignes mais au-dessus de celle de taille : le texte s'arrête à MAX_COMMAND_BYTES, le fichier partiel part avec les
+    # temporaires de l'appelant (la liste), jamais plus de MAX_COMMAND_BYTES sur le disque, le message ne recopie rien.
+    wheels = [kf("color.lift.r", 18.0 * i, -0.5 if i % 2 else 0.5) for i in range(101)]      # cent allers-retours : la table change presque à chaque image
+    with command_files(written):
+        with pytest.raises(ValueError, match="trop longue") as raised:
+            _build_color_grade_filters(ColorGrade(), "t", animation=tuple(wheels), sendcmd=context_for(30, 0.0, 1800.0))
+    try:
+        assert written and sum(os.path.getsize(path) for path in written) <= MAX_COMMAND_BYTES + 192 * 1024
+        assert len(str(raised.value)) < 120
+    finally:
+        cleanup(written)
+    assert MAX_COMMAND_BYTES <= 64 * 1024 * 1024
 
 
 def test_the_wheel_stage_uses_one_master_channel_only_when_the_three_channels_stay_equal():
@@ -585,7 +629,7 @@ def test_a_project_without_a_color_curve_has_the_same_graph_and_writes_nothing()
     assert other[0] == reference[0] and "sendcmd" not in reference[0] and written == []
 
 
-def test_an_animated_project_writes_one_file_into_the_callers_list_and_cites_it():
+def test_an_animated_project_writes_its_files_into_the_callers_list_and_cites_them():
     from core.effect_sendcmd import escape_command_path
 
     animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0), kf("color.contrast", 0.0, -0.3),
@@ -594,8 +638,8 @@ def test_an_animated_project_writes_one_file_into_the_callers_list_and_cites_it(
     graph, *_ = ExportEngine._build_filter_complex(build_render_plan(_fake_project(ColorGrade(), animation)), W, H, 25, None,
                                                    temporary_files=written)
     try:
-        assert len(written) == 1 and os.path.isfile(written[0])
-        assert escape_command_path(written[0]) in graph and graph.count("sendcmd=") == 1
+        assert written and all(os.path.isfile(path) for path in written)
+        assert all(escape_command_path(path) in graph for path in written) and graph.count("sendcmd=") == len(written)
         assert "curves@v0cge=" in graph and "eq=contrast='1+" in graph
     finally:
         cleanup(written)
@@ -741,7 +785,7 @@ def test_color_keyframes_cross_a_stabilized_clip_into_the_render_plan(media, tmp
     written: list[str] = []
     graph, *_ = ExportEngine._build_filter_complex(build_render_plan(project), 320, 180, 30, None, temporary_files=written)
     try:
-        assert len(written) == 1 and "curves@" in graph
+        assert written and "curves@" in graph
     finally:
         cleanup(written)
 
@@ -773,7 +817,7 @@ def test_a_nested_sequence_clip_and_the_clips_inside_it_are_each_graded_by_their
     inner_graph, *_ = ExportEngine._build_filter_complex(build_render_plan(project, sequence_id="leaf"), W, H, 25, None,
                                                          temporary_files=written)
     try:
-        assert "curves@" in inner_graph and len(written) == 1
+        assert "curves@" in inner_graph and written
     finally:
         cleanup(written)
 
@@ -820,3 +864,27 @@ def test_outside_a_build_the_stream_is_named_by_its_content():
     one, two = write_command_stream(iter(["0 a b c;"])), write_command_stream(iter(["0 a b c;"]))
     other = write_command_stream(iter(["0 a b d;"]))
     assert one == two != other and open(one, encoding="utf-8").read() == "0 a b c;\n"
+
+
+def test_a_rotated_scaled_layer_keeps_the_command_file_after_the_geometry_and_before_the_timeline_offset():
+    """Calque tourné et à l'échelle animée : le fichier de commandes est lu après ``rotate`` (la géométrie ne change pas le temps du flux)
+    et avant le décalage de la timeline (``setpts=PTS+…`` ne doit pas décaler les instants de ``sendcmd``)."""
+    from dataclasses import replace
+
+    from core.export_engine import _build_layer_filter
+    from core.render_plan import RenderLayer
+    from core.visual_effects import ClipTransform, TransformKeyframe
+
+    layer = RenderLayer(
+        clip_id="c", asset_id="a", track_id="V1", track_index=0, source_path="/tmp/s.mp4", source_in=0.0, source_out=3.0,
+        timeline_start=1.0, timeline_end=4.0, animation=(kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0)))
+    layer = replace(layer, transform=ClipTransform(rotation=20.0), transform_keyframes=(
+        TransformKeyframe("scale", 0.0, 1.0), TransformKeyframe("scale", 1.0, 1.4)))
+    written: list[str] = []
+    with command_files(written):
+        chain = _build_layer_filter(0, layer, 0, 640, 360, 30)
+    try:
+        assert written
+        assert chain.index("rotate=") < chain.index("sendcmd=") < chain.index("curves@v0cge=") < chain.index("setpts=PTS+")
+    finally:
+        cleanup(written)
