@@ -39,7 +39,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
-- Les verbes de script refusent désormais de dépasser des plafonds de ressources (pistes, repères, guides, inserts, effets, masques, nœuds et fenêtres d'étalonnage, médias, images clés d'un clip, clips, et suiveurs repris par une coupe ou une copie), avec un message clair et sans rien modifier ; un projet qui dépasse déjà un plafond n'est ni corrigé ni abîmé (le verbe refuse seulement d'y ajouter). L'interface n'est pas concernée. Un seul plafond d'images clés par clip couvre le transform, les effets, les masques et la vitesse ; `nest_clips` et `add_multicam_angle` comptent maintenant le clip qu'ils créent. Voir « Plafonds des verbes » dans [docs/scripting.md](docs/scripting.md).
+- Les verbes de script refusent désormais de dépasser des plafonds de ressources (pistes, repères, guides, inserts, effets, masques, nœuds et fenêtres d'étalonnage, médias, images clés d'un clip, clips, calques, et suiveurs repris par une coupe ou une copie), avec un message clair et sans rien modifier ; un projet qui dépasse déjà un plafond n'est ni corrigé ni abîmé (le verbe refuse seulement d'y ajouter). L'interface n'est pas concernée. Un seul plafond d'images clés par clip couvre le transform, les effets, les masques et la vitesse ; `nest_clips` et `add_multicam_angle` comptent maintenant le clip qu'ils créent. Voir « Plafonds des verbes » dans [docs/scripting.md](docs/scripting.md).
 
 ### Fixed
 

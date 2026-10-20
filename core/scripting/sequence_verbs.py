@@ -29,6 +29,7 @@ from ..project_model import Project
 from ..sequences import MAX_NESTING_DEPTH, create_sequence_from_selection, find_sequence, height_above, nesting_depth
 from ..social_formats import SOCIAL_FORMATS, social_format
 from .auto_rules import MAX_LISTED_CLIPS, editable_clips
+from .layer_rules import layers_in
 from .sequence_rules import clips_in, require_sequence_room
 from .verbs import Kind, Operation, Param, Verb, _SEQUENCE, _require_free_sequence_name, _sequence_id
 
@@ -91,7 +92,7 @@ def _create_format_version(a: Mapping[str, Any]) -> Operation:
                 "(delete_sequence) avant d'en créer une neuve."
             )
         _require_free_sequence_name(project, a.get("name") or f"{source.name} · {target.ratio}")
-        require_sequence_room(project, clips=clips_in(source))
+        require_sequence_room(project, clips=clips_in(source), layers=layers_in(source))
         version, _changes = create_format_version(project, source.id, target.id, version_id=a.get("id"), name=a.get("name"))
         return version
 

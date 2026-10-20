@@ -48,7 +48,7 @@ from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..mograph_targets import graphic_property_id
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..mograph_layers import add_layer, find_layer
-from .layer_rules import graphic_of, require_room, require_shallow
+from .layer_rules import graphic_of, layers_in, require_layers_room, require_shallow
 from .resource_limits import (
     multicam_switch_adds, require_clip_room, require_color_node_room, require_color_window_room, require_insert_room,
     require_keyframe_slot, require_marker_room, require_media_room, require_track_room,
@@ -414,7 +414,7 @@ def _graphic_group(project: Project, selector: str) -> str:
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         track = _graphics_track(project, a.get("track"))
-        require_room(project, 1)
+        require_layers_room(project, 1)
         group_id = ""
         if a.get("group") is not None:
             if a["graphic"] == GraphicType.ADJUSTMENT.value:
@@ -440,7 +440,7 @@ def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Ope
         track = _graphics_track(project, a.get("track"))
         path = context.resolve_media(a["path"])
         width, height = read_image_size(path)                  # tout est vérifié avant la moindre écriture
-        require_room(project, 1)
+        require_layers_room(project, 1)
         clip = add_graphic_clip(
             project, "image", timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -473,7 +473,7 @@ def _add_scene3d_clip(a: Mapping[str, Any], context: ScriptContext | None) -> Op
         except Scene3DError as error:
             text = str(error)
             raise ValueError(f"Scène 3D refusée : {text if len(text) <= 300 else text[:299] + '…'}") from error
-        require_room(project, 1)
+        require_layers_room(project, 1)
         return add_graphic_clip(
             project, GraphicType.SCENE3D, timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -523,6 +523,7 @@ def _add_subtitle(a: Mapping[str, Any]) -> Operation:
                 raise ValueError("Le projet n'a pas de piste de sous-titres : ajoutez-en une avec add_track (type « subtitle »).")
         _require_unlocked(next(track for track in project.tracks if track.id == track_id))
         require_clip_room(project, 1)
+        require_media_room(project)                                   # un média interne par sous-titre
         return add_subtitle_clip(project, a["text"], float(a["at"]), float(a["duration"]), track_id, clip_id=a.get("id"))
 
     return operation
@@ -745,7 +746,9 @@ def _branch_color_node(a: Mapping[str, Any]) -> Operation:
         service = ColorGradingService()
         beside = a["node"]
         service.get_graph(project, clip_id).corrector(beside)
-        require_color_node_room(find_clip(project, clip_id), 2)       # ``with_branch`` : le mélangeur ET le correcteur de la branche
+        # Le nombre exact de nœuds ajoutés : ``with_branch`` réutilise le mélangeur d'une branche existante (1 correcteur), sinon en crée un (2).
+        graph = service.get_graph(project, clip_id)
+        require_color_node_room(find_clip(project, clip_id), len(graph.with_branch(beside, MixerKind(a["kind"]))[0].nodes) - len(graph.nodes))
         created: dict[str, str] = {}
 
         def change(graph):
@@ -1103,7 +1106,7 @@ def _set_sequence_format(a: Mapping[str, Any]) -> Operation:
 def _duplicate_sequence(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         sequence_id = _sequence_id(project, a["sequence"])
-        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)))
+        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)), layers=layers_in(find_sequence(project, sequence_id)))
         if a.get("name") is not None:
             _require_free_sequence_name(project, a["name"])
         return duplicate_sequence(project, sequence_id, a.get("name"), clone_id=a.get("id"))

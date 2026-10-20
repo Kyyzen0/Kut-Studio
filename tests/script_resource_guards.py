@@ -501,6 +501,11 @@ def _portrait_tracked(project: Project) -> None:
     tracking_ops.set_tracker_position(project, "c1", "t1", 3.0, 100.0, 50.0)       # immobile : une courbe de panoramique plate, donc un nombre d'images clés qui ne dépend pas de l'arrondi
 
 
+def _slot(project: Project) -> None:
+    """Un emplacement de modèle vide (``s1``, sur V1) : de quoi y poser une photo."""
+    project.tracks[0].clips.append(Clip("s1", "", "V1", 5.0, 0.0, 2.0, label="s1", template_slot="slot-01"))
+
+
 def _nestable(project: Project) -> None:
     inserted = create_sequence(project, "Ins", sequence_id="ins")
     inserted.tracks.append(Track("iv", "iv", "video"))
@@ -536,11 +541,13 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
     "add_photo_slideshow": (Spec("clips", {"photos": ["p.png"], "start": 20.0}, context=True),),
     # --- Séquences (sequence_rules) : le plafond de séquences, puis celui de clips que copient certains chemins ---
     "create_sequence": (Spec("sequences", {}),),
-    "duplicate_sequence": (Spec("sequences", dict(_SEQ)), Spec("clips", dict(_SEQ), adds=2, placements=("other",))),
+    "duplicate_sequence": (Spec("sequences", dict(_SEQ)), Spec("clips", dict(_SEQ), adds=2, placements=("other",)),
+                           Spec("layers", dict(_SEQ), prepare=_layer, placements=("other",))),
     "nest_clips": (Spec("sequences", {"clips": ["c1"]}),
                    Spec("clips", {"clips": ["c1"]}, placements=("active",))),     # le clip imbriqué : les clips déplacés restent dans le projet
     "create_format_version": (Spec("sequences", {**_SEQ, "format": "vertical"}),
-                              Spec("clips", {**_SEQ, "format": "vertical"}, adds=2, placements=("other",))),
+                              Spec("clips", {**_SEQ, "format": "vertical"}, adds=2, placements=("other",)),
+                              Spec("layers", {**_SEQ, "format": "vertical"}, prepare=_layer, placements=("other",))),
     "create_multicam_source": (Spec("sequences", {"angles": [{"asset": "m"}, {"asset": "a"}]}),
                                Spec("clips", {"angles": [{"asset": "m"}, {"asset": "a"}]}, adds=2)),
     "create_multicam_from_clips": (Spec("sequences", {"clips": [{"clip": "c1"}, {"clip": "a1"}]}),
@@ -559,6 +566,9 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
     "create_library_tag": (Spec("tags", {"name": "Nouvelle"}),),
     # --- Images clés d'un clip (auto_rules.MAX_KEYFRAMES_PER_CLIP) ---
     "apply_camera_shake": (Spec("keyframes", {"clip": "c1", "length": 1.0}, adds=48, cap=60, placements=("active",)),),
+    # --- Médias : photos d'un emplacement de modèle ---
+    "fill_slot_with_photo": (Spec("assets", {"clip": "s1", "path": "p.png"}, prepare=_slot, context=True, placements=("active",)),),
+    "fill_slots_with_photos": (Spec("assets", {"photos": ["p.png"]}, prepare=_slot, context=True, placements=("active",)),),
     # --- Les verbes qui n'avaient aucun plafond : clips, puis chaque ressource propre ---
     "add_clip": (Spec("clips", {"track": "V1", "asset": "m", "at": 5.0}),),
     "add_subtitle": (Spec("clips", {"text": "x", "at": 5.0, "duration": 1.0}, prepare=_subtitle_track),),
@@ -593,30 +603,36 @@ CEILINGS: dict[str, tuple[Spec, ...]] = {
 """Verbes créateurs dont le plafond est PROUVÉ : un projet déjà au plafond (constante abaissée à ``cap``) est refusé sans changement, avec les
 objets déjà là dans la séquence active comme dans une autre. Un verbe peut avoir plusieurs ressources (une entrée par ressource)."""
 
-_LAYER_IN_CLIPS = "un calque est un clip et les deux plafonds valent la même chose (test_layer_and_clip_ceilings_are_equal) : le plafond de clips est atteint au plus tard en même temps que celui de calques."
+def _also(verb: str, resource: str, *, adds: int | None = None, **changes: Any) -> None:
+    """Ajoute à ``verb`` la spec d'une ressource de plus, avec les mêmes arguments que sa première spec (un calque est aussi un clip et crée un média)."""
+    first = CEILINGS[verb][0]
+    CEILINGS[verb] = (*CEILINGS[verb], replace(first, resource=resource, adds=first.adds if adds is None else adds, **changes))
+
+
+# Tout chemin qui crée un calque réserve aussi des clips et des médias (un projet peut avoir 5 000 clips vidéo et peu de calques, ou
+# 10 000 médias importés et peu de clips) : une spec par ressource consommée, sans exclusion de convenance.
+for _verb in ("add_graphic", "add_image_layer", "add_scene3d_clip", "duplicate_layers", "group_layers", "apply_layer_preset"):
+    _also(_verb, "clips")
+    _also(_verb, "assets", placements=("active",))
+for _verb in ("add_flash", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "apply_impact_on_cuts"):
+    _also(_verb, "layers")
+    _also(_verb, "assets", placements=("active",))
+for _verb in ("add_subtitle_lines", "add_subtitle"):
+    _also(_verb, "assets", placements=("active",))
+
 
 EXCLUDED_RESOURCES: dict[tuple[str, str], str] = {
-    **{(verb, "clips"): _LAYER_IN_CLIPS for verb in (
-        "add_graphic", "add_image_layer", "add_scene3d_clip", "duplicate_layers", "group_layers", "apply_layer_preset")},
-    **{(verb, "layers"): _LAYER_IN_CLIPS for verb in (
-        "add_flash", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "apply_impact_on_cuts")},
+    **{(verb, "layers"): "convertit un clip existant en calque image (le nombre de clips ne change pas) : les calques d'un projet sont des clips, donc au plus autant que les clips, que ce verbe ne fait pas croître."
+       for verb in ("fill_slot_with_photo", "fill_slots_with_photos")},
 }
 """``(verbe, ressource)`` dont le compte augmente sans spec propre, avec la raison écrite : le test `test_every_resource_a_verb_consumes_has_a_spec`
 mesure les comptes avant / après l'opération et exige une spec (ou une dette, ou une exclusion ici) pour chaque ressource qui augmente."""
-
-_INTERNAL_MEDIA = "un média interne par calque ou sous-titre créé : borné par le plafond de clips de ce même verbe, et `import_media` compte tous les médias, internes compris (MAX_MEDIA_IN_PROJECT = 2 x MAX_CLIPS_IN_PROJECT)."
-
-EXCLUDED_RESOURCES.update({(verb, "assets"): _INTERNAL_MEDIA for verb in (
-    "add_flash", "add_graphic", "add_image_layer", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "add_scene3d_clip", "add_subtitle",
-    "add_subtitle_lines", "apply_impact_on_cuts", "apply_layer_preset", "duplicate_layers", "group_layers")})
 
 BOUNDED: dict[str, str] = {
     "convert_to_composition": "remplace les clips cités (au moins un) par un seul clip : le nombre de clips ne peut pas croître (vérifié : 3 clips -> 2, 2 -> 2).",
     "set_cover_marker": "remplace le repère de couverture existant : au plus un (vérifié : trois appels, un seul repère « cover »).",
     "tag_media": "au plus une affectation par couple (média, étiquette) : trois appels identiques, une seule affectation (vérifié) ; les étiquettes sont plafonnées.",
     "fill_slot": "remplit un emplacement de modèle existant (le clip change de média, rien n'est ajouté ; lu dans core/template_slots.fill_slot).",
-    "fill_slot_with_photo": "idem : un emplacement existant change de média, l'ancienne photo devenue inutilisée est retirée ; au plus un média par emplacement.",
-    "fill_slots_with_photos": "idem, emplacement par emplacement : le verbe refuse les photos sans emplacement libre ; au plus un média par emplacement.",
     "apply_color_preset": "règle le réglage d'un nœud EXISTANT (`ColorGradingService.apply_preset` -> `set_grade` ; aucun nœud, aucune fenêtre n'est créé) : trois appels, un seul nœud (test_apply_color_preset_creates_nothing).",
     "add_transition": "une transition par jonction, et un clip n'est dans qu'une seule transition (`core.transitions.add_transition` refuse « Un clip ne peut pas avoir deux transitions ») : au plus la moitié des clips de la séquence, eux-mêmes plafonnés (test_transitions_are_bounded_by_the_clips).",
     "apply_transition_preset": "idem : elle appelle `add_transition` du modèle, mêmes refus (test_transitions_are_bounded_by_the_clips).",

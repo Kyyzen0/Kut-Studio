@@ -203,3 +203,44 @@ def test_apply_ken_burns_is_capped(monkeypatch):
     _lower(monkeypatch, "MAX_KEYFRAMES_PER_CLIP", count - 1)
     before = deepcopy(fresh)
     assert _run("apply_ken_burns", {"clip": "c1"}, fresh) is not None and fresh == before
+
+
+# --- Une garde ne réserve que ce que l'opération AJOUTE ---------------------------------------------------------------------------
+
+
+def test_branch_color_node_reserves_one_node_when_the_mixer_is_reused_and_two_otherwise(monkeypatch):
+    project = base_project()
+    assert _run("branch_color_node", {"clip": "c1", "node": "n1", "kind": "parallel"}, project) is None      # n1, la branche, le mélangeur : 3 nœuds
+    assert limits.MAX_COLOR_NODES_PER_CLIP >= 4
+    _lower(monkeypatch, "MAX_COLOR_NODES_PER_CLIP", 4)
+    other_kind = deepcopy(project)
+    before = deepcopy(other_kind)
+    # Un autre genre de mélangeur : il en faudrait un nouveau, 3 -> 5 nœuds : refusé, projet inchangé.
+    assert _run("branch_color_node", {"clip": "c1", "node": "n1", "kind": "layer"}, other_kind) is not None and other_kind == before
+    # Le même genre : la branche rejoint le mélangeur existant, 3 -> 4 nœuds : accepté.
+    assert _run("branch_color_node", {"clip": "c1", "node": "n1", "kind": "parallel"}, project) is None
+    assert _run("branch_color_node", {"clip": "c1", "node": "n1", "kind": "parallel"}, project) is not None     # 4 -> 5 : refusé
+
+
+def test_a_photo_already_in_the_project_adds_no_media(monkeypatch, tmp_path):
+    """Poser une photo dont le média existe déjà (même chemin) n'ajoute rien : le projet plein l'accepte ; une photo neuve est refusée."""
+    from tests.script_resource_guards import _slot, make_context
+
+    context = make_context(tmp_path)
+    project = base_project()
+    _slot(project)
+    assert VERBS["fill_slot_with_photo"].build({"clip": "s1", "path": "p.png"}, context)(project) is not None     # le média de la photo est créé
+    project.tracks[0].clips.append(Clip("s2", "", "V1", 8.0, 0.0, 2.0, label="s2", template_slot="slot-02"))
+    _lower(monkeypatch, "MAX_MEDIA_IN_PROJECT", len(project.media_assets))
+    assert VERBS["fill_slot_with_photo"].build({"clip": "s2", "path": "p.png"}, context)(project) is not None     # même photo : aucun média neuf
+    project.tracks[0].clips.append(Clip("s3", "", "V1", 11.0, 0.0, 2.0, label="s3", template_slot="slot-03"))
+    other = tmp_path / "q.png"
+    other.write_bytes((tmp_path / "p.png").read_bytes())
+    before = deepcopy(project)
+    try:
+        VERBS["fill_slot_with_photo"].build({"clip": "s3", "path": "q.png"}, context)(project)
+    except ValueError as error:
+        assert "médias" in str(error)
+    else:
+        raise AssertionError("une photo neuve au plafond de médias devait être refusée")
+    assert project == before

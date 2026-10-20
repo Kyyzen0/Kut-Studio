@@ -9,16 +9,19 @@ from __future__ import annotations
 
 from ..project_model import Project
 from . import resource_limits
+from .layer_rules import require_room
 from .resource_limits import require_room_in, total_clips
 
 MAX_SEQUENCES_IN_PROJECT = 200
 """Séquences d'un projet au-delà desquelles un script n'en crée plus."""
 
 
-def require_sequence_room(project: Project, adding: int = 1, *, clips: int = 0) -> None:
-    """Refuse, AVANT toute création, ``adding`` séquences (et ``clips`` clips copiés) de plus si le projet dépasserait ses plafonds."""
+def require_sequence_room(project: Project, adding: int = 1, *, clips: int = 0, layers: int = 0) -> None:
+    """Refuse, AVANT toute création, ``adding`` séquences (et ``clips`` clips, dont ``layers`` calques, copiés) de plus si le projet dépasserait ses plafonds."""
     require_room_in(len(project.sequences), adding, MAX_SEQUENCES_IN_PROJECT, "séquences", "Le projet")
     require_room_in(total_clips(project), clips, resource_limits.MAX_CLIPS_IN_PROJECT, "clips", "Le projet")      # lu à l'appel (tests)
+    if layers:
+        require_room(project, layers)
 
 
 def clips_in(sequence) -> int:

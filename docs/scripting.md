@@ -922,7 +922,7 @@ Toutes les constantes vivent dans `core/scripting/resource_limits.py` (les plafo
 
 | Ressource | Plafond | Valeur | Portée |
 | --- | --- | --- | --- |
-| Clips (calques, sous-titres, copies, coupes, segments Multicam compris) | `MAX_CLIPS_IN_PROJECT` | 5 000 | le projet, toutes séquences |
+| Clips (calques, sous-titres, copies, coupes, segments Multicam compris) | `MAX_CLIPS_IN_PROJECT` | 5 000 | le projet, toutes séquences ; tout chemin qui crée un calque réserve aussi ses clips (un projet peut avoir 5 000 clips vidéo et peu de calques) |
 | Clips créés par une opération | `MAX_NEW_CLIPS_PER_OPERATION` | 500 | l'opération |
 | Images clés | `MAX_KEYFRAMES_PER_CLIP` | 2 000 | un clip : une **seule** mesure, transform + animation (effets, masques, vitesse, calques) |
 | Pistes | `MAX_TRACKS_PER_SEQUENCE` | 100 | la séquence active |
@@ -934,10 +934,10 @@ Toutes les constantes vivent dans `core/scripting/resource_limits.py` (les plafo
 | Masques | `MAX_MASKS_PER_CLIP` | 64 | un clip |
 | Nœuds d'étalonnage | `MAX_COLOR_NODES_PER_CLIP` | 64 | un clip |
 | Fenêtres d'étalonnage | `MAX_COLOR_WINDOWS_PER_CLIP` | 64 | un clip, tous nœuds confondus |
-| Médias | `MAX_MEDIA_IN_PROJECT` | 10 000 | le projet : les médias importés et les médias internes (un par calque ou sous-titre) |
+| Médias | `MAX_MEDIA_IN_PROJECT` | 10 000 | le projet : tout chemin qui ajoute un média réserve son nombre exact avant de créer (import, média interne d'un calque ou d'un sous-titre, photo posée dans un emplacement ; une photo déjà dans le projet n'en ajoute pas) |
 | Suiveurs | `MAX_TRACKERS_IN_PROJECT` (`tracking_rules`) | 1 000 | le projet ; une coupe ou une copie d'un clip suivi reprend ses suiveurs |
 | Séquences | `MAX_SEQUENCES_IN_PROJECT` (`sequence_rules`) | 200 | le projet |
-| Calques | `MAX_LAYERS_IN_PROJECT` (`layer_rules`) | 5 000 | le projet, toutes séquences |
+| Calques | `MAX_LAYERS_IN_PROJECT` (`layer_rules`) | 5 000 | le projet, toutes séquences (copie de séquence comprise) |
 | Associations de ducking | `MAX_SIDECHAINS` (`audio_rules`) | 256 | le projet |
 | Points d'une courbe de volume | `MAX_AUTOMATION_POINTS` (`audio_rules`) | 1 000 | une piste |
 

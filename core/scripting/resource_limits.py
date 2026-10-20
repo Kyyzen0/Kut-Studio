@@ -55,8 +55,8 @@ MAX_COLOR_NODES_PER_CLIP = 64
 MAX_COLOR_WINDOWS_PER_CLIP = 64
 """Fenêtres d'étalonnage d'un clip (tous nœuds confondus)."""
 MAX_MEDIA_IN_PROJECT = 10_000
-"""Médias d'un projet : 5 000 importés (chacun est analysé par ``ffprobe``) et jusqu'à 5 000 médias internes, qu'un calque graphique ou un
-sous-titre crée un à un (le plafond de clips les borne). ``import_media`` compte tous les médias, internes compris."""
+"""Médias d'un projet : tout chemin qui AJOUTE un média (import, mais aussi le média interne d'un calque, d'un sous-titre ou d'une photo posée)
+réserve son nombre exact de médias avant de créer (:func:`require_media_room`), sur le projet entier."""
 
 
 # --- Le mécanisme commun ------------------------------------------------------------------------------------------------------
