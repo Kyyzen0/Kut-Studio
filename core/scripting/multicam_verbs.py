@@ -27,7 +27,8 @@ from ..multicam_model import MAX_ANGLES, SyncMethod
 from ..multicam_ops import MulticamError, angle_usages, create_multicam_from_clips, flatten_multicam_clip, remove_angle, set_angle_color
 from ..object_ids import clip_ids, resolve_object_id
 from ..project_model import Clip, Project, Sequence
-from .auto_rules import MAX_CLIPS_IN_PROJECT, total_clips
+from . import resource_limits
+from .resource_limits import total_clips
 from .sequence_rules import require_sequence_room
 from .verbs import (
     MAX_TIME, Kind, Operation, Param, Verb, _ANGLE, _SOURCE, _angle_id, _angles, _editable_clip, _multicam_source,
@@ -131,8 +132,8 @@ def _flatten_multicam_segment(a: Mapping[str, Any]) -> Operation:
                     raise ValueError(f"La transition '{transition.id}' relie le segment à un clip d'une piste verrouillée.")
         source = _source_of(project, segment)
         angle_clips = sum(len(track.clips) for track in source.tracks)        # borne haute des clips créés (un clip d'angle donne au plus une partie)
-        if total_clips(project) - 1 + angle_clips > MAX_CLIPS_IN_PROJECT:
-            raise ValueError(f"Le projet compte déjà {total_clips(project)} clips : aplatir en créerait jusqu'à {angle_clips}, la limite est de {MAX_CLIPS_IN_PROJECT}.")
+        if total_clips(project) - 1 + angle_clips > resource_limits.MAX_CLIPS_IN_PROJECT:
+            raise ValueError(f"Le projet compte déjà {total_clips(project)} clips : aplatir en créerait jusqu'à {angle_clips}, la limite est de {resource_limits.MAX_CLIPS_IN_PROJECT}.")
         flatten_multicam_clip(project, clip_id)
         return None
 

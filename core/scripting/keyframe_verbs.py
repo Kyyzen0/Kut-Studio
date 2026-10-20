@@ -35,6 +35,7 @@ from .keyframe_rules import (
     MAX_BLOCK, MAX_SLOPE, keyframe_at, require_effective_tangents, require_free_arrivals, require_value, require_within,
     resolve_keyframe_target,
 )
+from .resource_limits import require_keyframe_slot
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP
 
 _INTERPOLATIONS = tuple(item.value for item in InterpolationType)
@@ -66,6 +67,7 @@ def _add_effect_keyframe(a: Mapping[str, Any]) -> Operation:
         clip_id, property_id = _effect_property(project, a, "add_effect_keyframe")
         _id, _clip, target = resolve_keyframe_target(project, clip_id, property_id, "add_effect_keyframe")
         value = require_value(target, a["value"], str(a["parameter"]))
+        require_keyframe_slot(_clip, target, float(a["at"]), "add_effect_keyframe")
         # L'instant hors du clip est refusé par le modèle (``add_keyframe`` : « Temps hors du clip »).
         return add_keyframe(project, clip_id, property_id, float(a["at"]), value, interpolation=a.get("interpolation"))
 

@@ -30,6 +30,7 @@ from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MAX_PAN, MIN_GAIN_DB, MIN_PAN, Project
 from ..timeline_operations import find_clip
 from .audio_rules import require_no_ducking_loop, require_sidechain_room
+from .resource_limits import require_audio_effect_room
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip, _pick, _require_unlocked
 
 _MAX_DELTA = 1000
@@ -113,6 +114,7 @@ def _add_clip_audio_effect(a: Mapping[str, Any]) -> Operation:
                                               taken={item.id for item in clip_audio_effects(project, clip_id)})
             except InvalidObjectId as error:
                 raise ValueError(str(error)) from None
+        require_audio_effect_room(find_clip(project, clip_id))
         return add_audio_effect_to_clip(
             project, clip_id, a["type"], effect_id=requested, params=a.get("params"), enabled=bool(a.get("enabled", True)),
         )

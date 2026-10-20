@@ -48,7 +48,11 @@ from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..mograph_targets import graphic_property_id
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..mograph_layers import add_layer, find_layer
-from .layer_rules import graphic_of, require_room, require_shallow
+from .layer_rules import graphic_of, layers_in, require_layers_room, require_shallow
+from .resource_limits import (
+    multicam_switch_adds, require_clip_room, require_color_node_room, require_color_window_room, require_insert_room,
+    require_keyframe_slot, require_marker_room, require_media_room, require_track_room,
+)
 from .image_layer import fitted_size, read_image_size
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_color_ops import set_media_color_matrix
@@ -267,9 +271,14 @@ def _route_track(a: Mapping[str, Any]) -> Operation:
 
 
 def _add_bus_insert(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_bus_insert(
-        p, _bus_id(p, a["bus"]), a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
-    )
+    def operation(project: Project) -> Any:
+        bus_id = _bus_id(project, a["bus"])
+        require_insert_room(next(bus for bus in project.buses if bus.id == bus_id))
+        return add_bus_insert(
+            project, bus_id, a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
+        )
+
+    return operation
 
 
 def _remove_bus_insert(a: Mapping[str, Any]) -> Operation:
@@ -285,9 +294,12 @@ def _update_bus_insert(a: Mapping[str, Any]) -> Operation:
 
 
 def _add_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_clip_to_track(
-        p, _asset_id(p, a["asset"]), _track_id(p, a["track"]), float(a["at"]), clip_id=a.get("id"),
-    )
+    def operation(project: Project) -> Any:
+        asset_id, track_id = _asset_id(project, a["asset"]), _track_id(project, a["track"])
+        require_clip_room(project, 1)
+        return add_clip_to_track(project, asset_id, track_id, float(a["at"]), clip_id=a.get("id"))
+
+    return operation
 
 
 def _delete_clip(a: Mapping[str, Any]) -> Operation:
@@ -330,6 +342,7 @@ def _import_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operat
     def operation(project: Project) -> Any:
         if context is None:
             raise ValueError("import_media lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        require_media_room(project)
         path = context.resolve_media(a["path"])
         normalized = os.path.normpath(os.path.abspath(path))
         for existing in project.media_assets:
@@ -353,6 +366,7 @@ def _add_track_insert(a: Mapping[str, Any]) -> Operation:
         kind = next(item.type for item in project.tracks if item.id == track_id)
         if kind not in ("audio", "video"):             # le rendu traite une piste de graphiques avant tout traitement audio : l'insert ne jouerait jamais
             raise ValueError(f"La piste '{track_id}' est une piste '{kind}' : seules les pistes audio et vidéo portent des inserts.")
+        require_insert_room(next(item for item in project.tracks if item.id == track_id))
         return add_track_insert(
             project, track_id, a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
         )
@@ -414,7 +428,7 @@ def _graphic_group(project: Project, selector: str) -> str:
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         track = _graphics_track(project, a.get("track"))
-        require_room(project, 1)
+        require_layers_room(project, 1)
         group_id = ""
         if a.get("group") is not None:
             if a["graphic"] == GraphicType.ADJUSTMENT.value:
@@ -440,7 +454,7 @@ def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Ope
         track = _graphics_track(project, a.get("track"))
         path = context.resolve_media(a["path"])
         width, height = read_image_size(path)                  # tout est vérifié avant la moindre écriture
-        require_room(project, 1)
+        require_layers_room(project, 1)
         clip = add_graphic_clip(
             project, "image", timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -473,7 +487,7 @@ def _add_scene3d_clip(a: Mapping[str, Any], context: ScriptContext | None) -> Op
         except Scene3DError as error:
             text = str(error)
             raise ValueError(f"Scène 3D refusée : {text if len(text) <= 300 else text[:299] + '…'}") from error
-        require_room(project, 1)
+        require_layers_room(project, 1)
         return add_graphic_clip(
             project, GraphicType.SCENE3D, timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -507,6 +521,7 @@ def _add_track(a: Mapping[str, Any]) -> Operation:
         name = a.get("name")
         if name is not None and any(track.name == name for track in project.tracks):
             raise ValueError(f"Une piste s'appelle déjà {name!r} : le modèle la renommerait, un script ne le permet pas en silence.")
+        require_track_room(project)
         return add_track(project, a["type"], name, track_id=a.get("id"))
 
     return operation
@@ -521,6 +536,8 @@ def _add_subtitle(a: Mapping[str, Any]) -> Operation:
             if not track_id:
                 raise ValueError("Le projet n'a pas de piste de sous-titres : ajoutez-en une avec add_track (type « subtitle »).")
         _require_unlocked(next(track for track in project.tracks if track.id == track_id))
+        require_clip_room(project, 1)
+        require_media_room(project)                                   # un média interne par sous-titre
         return add_subtitle_clip(project, a["text"], float(a["at"]), float(a["duration"]), track_id, clip_id=a.get("id"))
 
     return operation
@@ -579,6 +596,7 @@ def _add_keyframe(a: Mapping[str, Any]) -> Operation:
         at = float(a["at"])
         if at > clip_duration(find_clip(project, clip_id)) + 1e-9:
             raise ValueError(f"L'instant {at} s dépasse la durée du clip : les images clés sont relatives au clip.")
+        require_keyframe_slot(find_clip(project, clip_id), target, at, "add_keyframe")
         return add_keyframe(project, clip_id, a["property"], at, value, interpolation=a.get("interpolation"))
 
     return operation
@@ -713,6 +731,7 @@ def _add_color_node(a: Mapping[str, Any]) -> Operation:
         after = a.get("after")
         if after is not None:
             service.get_graph(project, clip_id).corrector(after)          # KeyError / NodeGraphError → refus clair
+        require_color_node_room(find_clip(project, clip_id))
         created: dict[str, str] = {}
 
         def change(graph):
@@ -741,6 +760,9 @@ def _branch_color_node(a: Mapping[str, Any]) -> Operation:
         service = ColorGradingService()
         beside = a["node"]
         service.get_graph(project, clip_id).corrector(beside)
+        # Le nombre exact de nœuds ajoutés : ``with_branch`` réutilise le mélangeur d'une branche existante (1 correcteur), sinon en crée un (2).
+        graph = service.get_graph(project, clip_id)
+        require_color_node_room(find_clip(project, clip_id), len(graph.with_branch(beside, MixerKind(a["kind"]))[0].nodes) - len(graph.nodes))
         created: dict[str, str] = {}
 
         def change(graph):
@@ -861,6 +883,7 @@ def _add_color_window(a: Mapping[str, Any]) -> Operation:
             mask.id for mask in (getattr(compositing, "masks", ()) or ())
         }
         window_id = resolve_object_id(a.get("id"), prefix="w", kind="fenêtre", taken=taken, length=8)
+        require_color_window_room(clip)
         position_x = _require_mask_number("position_x", float(a.get("position_x", 0.5)))
         position_y = _require_mask_number("position_y", float(a.get("position_y", 0.5)))
         width = _require_mask_number("width", float(a.get("width", 0.4)))
@@ -1046,7 +1069,11 @@ def _clear_crop(a: Mapping[str, Any]) -> Operation:
 
 
 def _add_marker(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
+    def operation(project: Project) -> Any:
+        require_marker_room(project)
+        return add_marker(project, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
+
+    return operation
 
 
 def _require_free_sequence_name(project: Project, name: str, *, besides: str = "") -> None:
@@ -1093,7 +1120,7 @@ def _set_sequence_format(a: Mapping[str, Any]) -> Operation:
 def _duplicate_sequence(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         sequence_id = _sequence_id(project, a["sequence"])
-        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)))
+        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)), layers=layers_in(find_sequence(project, sequence_id)))
         if a.get("name") is not None:
             _require_free_sequence_name(project, a["name"])
         return duplicate_sequence(project, sequence_id, a.get("name"), clone_id=a.get("id"))
@@ -1105,6 +1132,7 @@ def _insert_sequence_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         # La piste est celle de la séquence ACTIVE (comme pour ``add_clip``) ; ``insert_sequence_clip`` vérifie cycle, profondeur,
         # genre et verrou de piste, bornes de la source.
+        require_clip_room(project, 1)
         return insert_sequence_clip(
             project, _sequence_id(project, a["sequence"]), _track_id(project, a["track"]), float(a["at"]),
             source_in=float(a.get("source_in", 0.0)),
@@ -1228,6 +1256,7 @@ def _insert_multicam_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         source = _multicam_source(project, a["sequence"])
         angle = _angle_id(source, a["angle"]) if "angle" in a else ""
+        require_clip_room(project, 1)
         # Piste de la séquence ACTIVE ; cycle, profondeur, « pas de Multicam dans un Multicam », genre et verrou de piste, bornes de la source :
         # ``insert_multicam_clip`` -> ``insert_sequence_clip`` les vérifient (erreurs ``SequenceError`` rendues en ``MulticamError``).
         return insert_multicam_clip(
@@ -1253,6 +1282,7 @@ def _switch_multicam_angle(a: Mapping[str, Any]) -> Operation:
         half_frame = 0.5 / max(1.0, float(project.active_sequence.fps))
         if effective_angle_id(project, segment) != _angle_id(source, a["angle"]) and at - segment.timeline_start > half_frame:
             require_followers_unlocked(project, segment.id, "couper")     # seule une vraie coupe prolonge les liaisons de suivi du segment
+        require_clip_room(project, multicam_switch_adds(project, at, _angle_id(source, a["angle"]), segment))     # la coupe crée un clip
         result = switch_angle(project, at, _angle_id(source, a["angle"]), clip_id=segment.id, segment_id=a.get("id"))
         return result.clip if result is not None else segment             # déjà cet angle : aucune coupe, on rend le segment tel quel
 
@@ -1302,6 +1332,7 @@ def _add_multicam_angle(a: Mapping[str, Any]) -> Operation:
             raise ValueError(f"Une source Multicam compte {MAX_ANGLES} angles au plus (un fichier qui en déclare davantage est refusé).")
         asset = _angle_asset(project, a["asset"])
         _require_angle_name(_effective_angle_name(a.get("name"), asset), [angle.name for angle in existing])
+        require_clip_room(project, 1)                                 # le clip de l'angle, dans la source
         angle = add_angle(project, source.id, AngleSpec(
             asset_id=asset.id, offset=float(a.get("offset", 0.0)), name=a.get("name", ""), sync_method=SyncMethod.MANUAL,
         ))

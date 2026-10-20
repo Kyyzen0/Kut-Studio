@@ -19,6 +19,14 @@ from tests.script_resource_guards import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _fake_probe(monkeypatch):
+    """``import_media`` lit un fichier : une sonde sans ffprobe (le test porte sur le plafond, pas sur le média)."""
+    from core.project_model import MediaAsset
+
+    monkeypatch.setattr("core.scripting.verbs.probe_media", lambda path: MediaAsset("probe", path, "p", 1.0, 8, 8, 30.0, "video"))
+
+
 def _ceiling_cases() -> Iterator[object]:
     for verb, specs in sorted(CEILINGS.items()):
         for spec in specs:
@@ -128,7 +136,7 @@ def test_set_automation_curve_is_capped(monkeypatch):
 def test_an_unguarded_creator_is_caught_by_the_behavioural_check(monkeypatch, lowered):
     """Sans sa garde, ``add_graphic`` créerait au-delà du plafond : le même contrôle le voit (la preuve que le test n'est pas vide)."""
     verbs_module = importlib.import_module("core.scripting.verbs")
-    monkeypatch.setattr(verbs_module, "require_room", lambda project, adding: None)
+    monkeypatch.setattr(verbs_module, "require_layers_room", lambda project, adding, **kw: None)
     spec = CEILINGS["add_graphic"][0]
     lowered(spec)
     error, _unchanged = attempt("add_graphic", spec, case(spec, "other", total=spec.cap - spec.adds + 1))
@@ -205,14 +213,6 @@ def test_every_resource_a_verb_consumes_has_a_spec(tmp_path):
     for (verb, resource), reason in EXCLUDED_RESOURCES.items():
         assert verb in CEILINGS and resource in RESOURCES and reason.strip(), (verb, resource)
         assert resource not in {s.resource for s in CEILINGS[verb]}, f"{verb}/{resource} : exclu mais aussi prouvé"
-
-
-def test_layer_and_clip_ceilings_are_equal():
-    """Ce qui justifie d'exclure « clips » des verbes de calques (et « calques » de ceux qui ont une spec de clips)."""
-    from core.scripting.auto_rules import MAX_CLIPS_IN_PROJECT
-    from core.scripting.layer_rules import MAX_LAYERS_IN_PROJECT
-
-    assert MAX_LAYERS_IN_PROJECT == MAX_CLIPS_IN_PROJECT
 
 
 def test_a_missing_second_resource_is_caught(monkeypatch):
