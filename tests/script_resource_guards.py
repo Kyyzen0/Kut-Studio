@@ -156,7 +156,7 @@ def _fill_sequences(project: Project, n: int) -> None:
 def _fill_sidechains(project: Project, n: int) -> None:
     chains = project.active_sequence.ducking_sidechains
     for _ in range(n):
-        chains.append(DuckingSidechain(f"fd{len(chains)}", "A1", "A1"))
+        chains.append(DuckingSidechain(f"fd{len(chains)}", f"fm{len(chains)}", f"fv{len(chains)}"))
 
 
 def _fill_buses(project: Project, n: int) -> None:
@@ -337,7 +337,10 @@ def _source(project: Project) -> None:
     project.active_sequence_id = MAIN_SEQUENCE_ID
 
 
-def _stray_track(project: Project) -> None:
+def _nestable(project: Project) -> None:
+    inserted = create_sequence(project, "Ins", sequence_id="ins")
+    inserted.tracks.append(Track("iv", "iv", "video"))
+    inserted.tracks[-1].clips.append(Clip("ic", "m", "iv", 0.0, 0.0, 2.0, label="ic"))
     project.tracks.append(Track("V2", "V2", "video"))
 
 
@@ -405,7 +408,7 @@ DEBT_SPECS: dict[str, Spec] = {
     "add_subtitle:clips": Spec("clips", {"text": "x", "at": 5.0, "duration": 1.0}, prepare=_subtitle_track, placements=("active",)),
     "cut_clip:clips": Spec("clips", {"clip": "c1", "at": 2.0}, placements=("active",)),
     "duplicate_clip:clips": Spec("clips", {"clip": "c1"}, placements=("active",)),
-    "insert_sequence_clip:clips": Spec("clips", {**_SEQ, "track": "V2", "at": 0.0}, prepare=_stray_track, placements=("active",)),
+    "insert_sequence_clip:clips": Spec("clips", {"sequence": "ins", "track": "V2", "at": 0.0}, prepare=_nestable, placements=("active",)),
     "add_keyframe:keyframes": Spec("keyframes", {"clip": "c1", "property": "scale", "at": 3.9, "value": 1.2}, placements=("active",)),
 }
 """Pour une dette que l'on sait sonder : de quoi prouver QU'ELLE EXISTE ENCORE (le verbe n'est pas refusé au-delà de ``big`` objets). Le test
