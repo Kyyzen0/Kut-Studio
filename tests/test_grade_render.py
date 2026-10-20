@@ -497,6 +497,15 @@ def test_ntsc_frames_receive_their_own_value():
 
 
 @needs_ffmpeg
+def test_thirty_fps_frames_receive_their_own_value_not_the_previous_one():
+    """À 30 i/s l'instant d'une image (``n/30``) n'est pas un nombre exact de microsecondes : une commande écrite à l'instant exact part
+    une image trop tard une fois sur trois (``docs/ffmpeg-sendcmd.md``). Écrite une demi-image avant, chaque image reçoit sa valeur."""
+    animation = [kf("color.exposure", 0.0, -1.5), kf("color.exposure", 0.3, 1.5), kf("color.shadows", 0.0, -0.8),
+                 kf("color.shadows", 0.3, 0.8), kf("color.temperature", 0.0, -90.0), kf("color.temperature", 0.3, 90.0)]
+    _assert_parity(ColorGrade(), animation, frames=tuple(range(10)), rate=30.0, count=10, ffrate="30")
+
+
+@needs_ffmpeg
 def test_an_exposure_that_passes_through_zero_matches_the_static_chain_which_omits_the_filter():
     """À 0 EV la chaîne statique n'émet pas de filtre ; la chaîne animée garde ``curves`` (table identité) : même image."""
     animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0)]       # 0 exactement à t = 1 s (image 4)
