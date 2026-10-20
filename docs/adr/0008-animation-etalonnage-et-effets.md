@@ -1,6 +1,6 @@
 # ADR-0008 : animer l'étalonnage et les paramètres des effets de clip
 
-**Statut :** Accepté le 2026-10-18 (trois décisions de cadrage prises avec l'utilisateur, voir « Décisions prises »). Étapes 1 à 5 du plan faites (la 4, l'interface, le 2026-10-19 ; la 5, `sendcmd` pour le flou, l'aberration chromatique et le rayon de la lueur, le 2026-10-20).
+**Statut :** Accepté le 2026-10-18 (trois décisions de cadrage prises avec l'utilisateur, voir « Décisions prises »). Étapes 1 à 6 du plan faites (la 4, l'interface, le 2026-10-19 ; la 5, `sendcmd` pour le flou, l'aberration chromatique et le rayon de la lueur, le 2026-10-20 ; la 6, le modèle et l'export de l'étalonnage animé, le 2026-10-20).
 **Date :** 2026-10-18
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -174,7 +174,7 @@ clés » ferait pointer les courbes vers les effets d'origine. La décision :
 3. **Rendu des effets (fait, résultats ci-dessous)** : par expression (`eq`, `vignette`, `geq`) à l'export, uniformes par image dans le moniteur, parité export / GPU sur des images échantillonnées, `RENDER_ENGINE_VERSION`.
 4. **Interface des effets (faite, résultats ci-dessous)** : branche « image clé » dans le panneau Effets, losanges, menu, éditeur de courbes, niveau d'usage, manifeste d'énumération.
 5. **Effets hors expression** via `sendcmd` (fait le 2026-10-20, résultats ci-dessous) : **flou** (`gblur`, `sigma` + `sigmaV`), **aberration chromatique** (`rgbashift`, `rh` / `bh`) et **rayon de la lueur** (`gblur` du bloom) sont rendus et enregistrés ; le **gain et le seuil de la lueur** (`lutrgb`, coût) et la **netteté** (`unsharp`, ignore les commandes) restent statiques.
-6. **Cibles et rendu de l'étalonnage** : `color.*`, `effective_grade`, export par expression (`eq`, `hue`) puis `sendcmd` pour le reste (`colorbalance`, `colorchannelmixer`, `curves`), `RENDER_ENGINE_VERSION`. **Commence par une mesure** : une alternative à `lutrgb` pour l'exposition et les roues (coût de 0,2 s et 0,07 s par image), faute de quoi ces paramètres restent statiques.
+6. **Cibles et rendu de l'étalonnage (fait le 2026-10-20, résultats ci-dessous)** : `color.*` (23 propriétés), `effective_grade`, export par expression (`eq`, `hue`) puis `sendcmd` pour le reste (`colorbalance`, `colorchannelmixer`, et `curves` à 256 points pour l'exposition et les roues, **pas** `lutrgb` : la mesure demandée par le plan a tranché), format 24, moteur de rendu inchangé. Le moniteur n'est pas touché (étape 7).
 7. **Moniteur fidèle d'abord** pour l'étalonnage animé, LUT cuite à l'arrêt avec les valeurs évaluées.
 8. **Interface de l'étalonnage** : losanges dans le panneau Couleur.
 9. **Mode script** : verbes `fx` avec sélecteur `effect`, `color.*` dans la liste dérivée, documentation, tableau des unités.

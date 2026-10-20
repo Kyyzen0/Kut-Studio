@@ -380,3 +380,6 @@ from . import time_targets as _time_targets  # noqa: E402,F401
 
 # Paramètres des effets de clip (ADR-0008) : ``fx.<effet>.<paramètre>``, résolus avec le clip.
 from . import effect_targets as _effect_targets  # noqa: E402,F401
+
+# Étalonnage du clip (ADR-0008, étape 6) : ``color.<champ>`` et ``color.<roue>.<canal>``, résolus avec le clip.
+from . import grade_targets as _grade_targets  # noqa: E402,F401

@@ -341,6 +341,41 @@ changer d'option en cours de route (`sendcmd`, validé sur FFmpeg 6.1.1, 7.1.5 e
   `∫ v dt`) : `speed` reste statique. `frequency` animé fait glisser la phase de façon voulue (`Y·f(T)`), et l'export et le
   moniteur concordent (même formule, vérifiée aux seuils d'un effet statique).
 
+## Étalonnage animé : `color.*` (ADR-0008, étape 6 : modèle et export)
+
+**Pas encore dans l'application** : pas de losange dans le panneau Couleur, pas d'aperçu animé dans le moniteur (il montre l'étalonnage
+de base), pas de verbe de script. Ce qui existe : le modèle et l'**export** (donc l'aperçu fidèle, qui rend le même graphe).
+
+- **Propriétés** (`core/grade_targets.py`, 23) : `color.exposure`, `color.contrast`, `color.saturation`, `color.temperature`,
+  `color.hue`, `color.shadows`, `color.highlights`, et `color.<roue>.<canal>` pour `lift`, `gamma`, `gain`, `offset` × `r`, `g`, `b`, `y`
+  (le palet et la molette de chaque roue). Bornes et valeurs de base lues dans `core/color_grading.py`. Stockées dans `Clip.animation`,
+  résolues avec le clip (`get_target("color.exposure", clip)`). `targets_for_clip` ne les liste pas : le Graph Editor et les menus
+  n'en changent pas.
+- **Ni les courbes ni la LUT**, et **seul le réglage simple du clip** : un clip étalonné par plusieurs nœuds (ou un nœud nommé, qualifié ou
+  fenêtré) n'a pas ces cibles (`KeyError`) ; une image clé `color.*` restée dans un tel clip est conservée mais ignorée par le rendu.
+- **Valeur effective** : `effective_grade(clip, t)` (fonction pure) rend l'étalonnage de base dont les champs animés sont remplacés par leur
+  courbe, bornée ; sans image clé, **exactement** `clip.color_grade` (le même objet, `None` compris). C'est la fonction que le moniteur
+  appellera à l'étape 7.
+- **Rendu à l'export** (`core/grade_render.py`, `core/grade_tables.py`) : contraste et saturation par `eq=…:eval=frame`, teinte par
+  `hue=h='…'` (expressions du temps local du clip, comme les effets) ; ombres et hautes lumières par `colorbalance`, température par
+  `colorchannelmixer`, exposition et roues par `curves`, ces trois derniers par un **fichier de commandes `sendcmd`** (un seul par
+  étalonnage, une instruction par image, une demi-image avant l'image visée). Pourquoi `curves` et pas `lutrgb` (le filtre de l'export
+  fixe) pour l'exposition et les roues : `lutrgb` recalcule sa table à chaque commande (×30 à ×150 le temps d'export), `curves` reçoit sa
+  courbe pour le prix du fixe ; on lui envoie un point par niveau d'entrée (256 points) et le résultat égale la table de `lutrgb`
+  niveau par niveau (testé sur FFmpeg 6.1, 7.1 et 9.0). Mesures : ADR-0008, « Résultats de l'étape 6 ».
+- **Un étage animé est toujours émis**, même aux images où sa valeur est neutre (là où la chaîne fixe l'omet) : `curves`, `colorbalance` et
+  `colorchannelmixer` neutres sont l'identité exacte ; `eq` et `hue` neutres peuvent ajouter l'arrondi d'une conversion YUV (écart mesuré
+  dans l'ADR).
+- **Taille du fichier de commandes** : ~4,6 Ko par image pour l'exposition (une table de 256 points), trois fois plus pour des roues
+  colorées (la molette seule suffit à un seul canal `master`). Borne posée **avant** de construire le texte (192 Mo) : un clip animé plus
+  long que ~40 000 images (exposition) ou ~13 000 (roues colorées), soit une vingtaine de minutes à 30 i/s, est refusé à l'export avec un
+  message, jamais rendu faux.
+- **Format** : un fichier qui contient une image clé d'étalonnage rendue s'écrit en version **24** (`GRADE_ANIMATION_VERSION`), qui
+  l'emporte sur toutes les autres ; une version antérieure le refuse. Sans ces images clés, le fichier est écrit octet pour octet comme avant, et
+  le moteur de rendu (`RENDER_ENGINE_VERSION`) ne change pas : le graphe d'un clip sans image clé `color.*` est identique, caractère pour caractère.
+- **Composition** : convertir en composition un clip qui porte un étalonnage animé est refusé (la composition rend son étalonnage fixe).
+- Le moniteur n'est pas modifié : il applique l'étalonnage de base ; l'export et l'aperçu fidèle suivent la courbe.
+
 ## Limites connues
 
 - Bézier : la tangente règle la **pente**, pas l'« influence » temporelle (la
@@ -350,7 +385,7 @@ changer d'option en cours de route (`sendcmd`, validé sur FFmpeg 6.1.1, 7.1.5 e
   inclinaison, miroirs), propriétés de forme et de texte (`graphic.*`) et
   masques (`mask.<id>.*`, une famille par masque) — voir
   `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
-  les couleurs ne sont pas animables. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
+  les couleurs de l'étalonnage sont animables dans le modèle et à l'export (voir « Étalonnage animé »), pas encore dans l'interface. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
   (luminosité, contraste, saturation), la vignette, le flou et l'aberration chromatique (intensité) et le rayon du Bloom ; les
   autres réglages d'effets restent statiques (voir la section précédente).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.

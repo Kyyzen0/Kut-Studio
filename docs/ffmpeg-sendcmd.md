@@ -202,4 +202,25 @@ L'expression en `n` compte à partir de la première image que reçoit **ce** fi
 
 ## Utilisation dans l'application (étape 5)
 
-Flou (`gblur`), aberration chromatique (`rgbashift`) et rayon du Bloom (`gblur`) sont animés par `sendcmd` à l'export et à l'aperçu fidèle : `core/effect_sendcmd.py`. Le coût mesuré avec le vrai graphe (1080p, 150 images) est celui du statique, sur les trois FFmpeg : voir l'ADR-0008, « Résultats de l'étape 5 », et `tools/measure_sendcmd_cost.py`. L'exposition et les roues (`lutrgb`, 0,2 s et 0,07 s par commande) n'y sont pas.
+Flou (`gblur`), aberration chromatique (`rgbashift`) et rayon du Bloom (`gblur`) sont animés par `sendcmd` à l'export et à l'aperçu fidèle : `core/effect_sendcmd.py`. Le coût mesuré avec le vrai graphe (1080p, 150 images) est celui du statique, sur les trois FFmpeg : voir l'ADR-0008, « Résultats de l'étape 5 », et `tools/measure_sendcmd_cost.py`. L'exposition et les roues (`lutrgb`, 0,2 s et 0,07 s par commande) n'y sont pas : l'étape 6 les anime par `curves` (voir ci-dessous).
+
+## Utilisation dans l'application (étape 6) : l'étalonnage
+
+`core/grade_render.py` : ombres et hautes lumières (`colorbalance`), température (`colorchannelmixer`), exposition et roues (`curves`)
+sont commandés par **un seul fichier** pour tout l'étalonnage d'un clip, plusieurs cibles dans la même ligne (`colorbalance@v0cgb rs …,
+colorbalance@v0cgb gs …, colorchannelmixer@v0cgt rr …`) ; le premier `sendcmd` est posé devant le premier filtre qu'il pilote.
+Contraste, saturation et teinte passent par expression (`eq` en `eval=frame`, `hue`).
+
+**`curves` avec 256 points par commande** (validé pour l'étape 6 sur FFmpeg 6.1.1, 7.1.5 et 9.0.2) :
+
+- `master`, `red`, `green` et `blue` se commandent (`curves@nom red '0.000000/0.001961 0.003922/…'`) ; les points peuvent changer de valeur à
+  chaque image (leur nombre reste constant) ; les guillemets simples du fichier protègent les espaces ;
+- `curves` refuse la commande entière si `(int)(x·255)` ne croît pas strictement d'un point au suivant : l'abscisse du niveau `i` est
+  écrite **juste au-dessus** de `i/255` (division entière exacte, jamais arrondie vers le bas) ;
+- la table de sortie est tronquée : l'ordonnée est le centre de la case (`niveau + 0,5`, ramené à 1 pour le blanc). Avec ces deux règles,
+  la sortie de `curves` égale celle du `lutrgb` de l'export fixe, **niveau par niveau** (écart 0 sur 256 niveaux, exposition et roues,
+  `tools/validate_fx_render.py`, cas `tables`) ;
+- coût : une commande `curves` à 256 points coûte le même temps que le filtre fixe, alors qu'une commande `lutrgb` recalcule sa table (voir
+  l'ADR-0008, « Résultats de l'étape 6 », `tools/measure_grade_cost.py`) ;
+- taille : ~4,6 Ko par image et par table (17 octets par point) : un clip d'une heure animé en exposition demanderait ~500 Mo ; l'application
+  refuse, avant de construire le texte, un fichier de plus de 192 Mo.

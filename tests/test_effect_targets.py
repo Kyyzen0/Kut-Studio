@@ -367,8 +367,9 @@ def test_a_blur_keyframe_writes_version_23_not_20():
     assert project_payload(project)["version"] == 23
 
 
-@pytest.mark.parametrize("name", ["fx.e-vignette.intensity", "color.exposure", "fx.gone.intensity"])
-def test_an_fx_or_color_keyframe_writes_version_20(name):
+@pytest.mark.parametrize("name", ["fx.e-vignette.intensity", "color.curves", "fx.gone.intensity"])
+def test_an_fx_or_unknown_color_keyframe_writes_version_20(name):
+    """``color.curves`` n'est pas une propriété d'étalonnage rendue (étape 6 : ``color.exposure`` demande la 24) : tous les builds l'ignorent."""
     project = reference_project()
     clip_of(project).animation.append(Keyframe(name, 0.5, 1.0, id="kx"))
     assert project_payload(project)["version"] == EFFECT_ANIMATION_VERSION == 20

@@ -3,7 +3,8 @@
 Aucune sémantique propre : chaque verbe appelle la fonction que la page Composition de l'interface appelle
 (``ui/main_window_mixins/composition_page.py`` : ``new_composition``, ``convert_selection_to_composition``) dans
 :mod:`core.composition_ops`. Ce que le modèle refuse (clip imbriqué ou déjà composé, vitesse, suivi, fenêtres de couleur, cadrage
-animé, effets animés ``fx.*`` — :func:`core.effects_model.has_live_effect_animation` —, calque d'effets, groupe ou parentage, piste
+animé, effets animés ``fx.*`` — :func:`core.effects_model.has_live_effect_animation` —, étalonnage animé ``color.*`` —
+:func:`core.grade_targets.has_live_grade_animation` —, calque d'effets, groupe ou parentage, piste
 verrouillée, plage prise sur la piste hôte, durée trop longue) l'est pour un script, sans rien modifier.
 
 Ce que le script ajoute, parce qu'un script est une donnée et ne se contente pas d'un message d'état :
