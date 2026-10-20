@@ -20,7 +20,7 @@ import json
 import re
 import textwrap
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
