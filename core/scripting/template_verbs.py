@@ -33,6 +33,7 @@ from .auto_rules import MAX_PHOTOS, require_grid
 from .layer_rules import require_layers_room
 from .resource_limits import require_media_room
 from .image_layer import read_image_size
+from .selection_rules import require_dependants_editable
 from .verbs import MAX_TIME, Kind, Operation, Param, ScriptContext, Verb, _CLIP, _asset_id, _editable_clip
 
 _NO_CONTEXT = "{verb} lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers)."
@@ -192,7 +193,9 @@ def _update_leaderboard(a: Mapping[str, Any]) -> Operation:
         rows = old.rows if a.get("rows") is None else _rows(a["rows"])
         duration = old.duration if a.get("duration") is None else float(a["duration"])
         board = Leaderboard(rows, old.start, duration, old.top, old.delay, id=old.id)
-        present = _require_replaceable(project, [str(item) for item in group.get("clips", ())])
+        members = [str(item) for item in group.get("clips", ())]
+        present = _require_replaceable(project, members)
+        require_dependants_editable(project, members)    # une liaison de suivi verrouillée qui suit un calque remplacé serait réécrite
         layers = 5 * len(board.rows)
         require_layers_room(project, max(0, layers - present))
         update_leaderboard(project, board)

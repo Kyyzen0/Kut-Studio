@@ -44,6 +44,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Mode script : un script ne supprime, ne déplace ni ne désactive plus un calque verrouillé sur une piste libre (`delete_clip`, `move_clip`, `set_clip_enabled`), et ne réécrit plus, en coupant, supprimant ou déplaçant la source d'un suivi, les liaisons d'un clip suiveur verrouillé (calque, piste ou autre séquence) : le script est refusé avant toute modification.
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
 
 ## [0.7.0] - 2026-10-19
