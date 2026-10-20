@@ -257,6 +257,21 @@ def test_uv_are_in_range_and_unfold_the_surface() -> None:
     assert np.allclose(
         uv[:8, 0], (np.arange(8) + 0.5) / 8
     )  # le sommet de pôle est au milieu de son segment
+    pos, _, uv, _ = (a.astype(np.float64) for a in primitive_arrays(Sphere(1.5, 12, 7)))
+    phi = (
+        np.pi * uv[:, 1]
+    )  # v = angle depuis le pôle nord / pi : croît vers le bas, sur tous les anneaux
+    assert np.allclose(pos[:, 1], 1.5 * np.cos(phi), atol=1e-5)
+    middle = slice(
+        12, 12 + 6 * 13
+    )  # anneaux intérieurs : u = angle autour de l'axe / 2 pi
+    theta = 2 * np.pi * uv[middle, 0]
+    assert np.allclose(
+        pos[middle, 0], 1.5 * np.sin(phi[middle]) * np.cos(theta), atol=1e-5
+    )
+    assert np.allclose(
+        pos[middle, 2], 1.5 * np.sin(phi[middle]) * np.sin(theta), atol=1e-5
+    )
     _, _, uv, _ = primitive_arrays(Plane(2.0, 3.0, 4, 5))
     assert np.allclose(uv[:5, 0], np.arange(5) / 4) and np.allclose(uv[::5, 1][:1], 0.0)
 

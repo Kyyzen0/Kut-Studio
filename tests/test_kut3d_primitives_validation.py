@@ -100,22 +100,25 @@ def _ids(items: list[tuple[type, str]]) -> list[str]:
 @pytest.mark.parametrize(("cls", "field"), FLOAT_FIELDS, ids=_ids(FLOAT_FIELDS))
 def test_every_dimension_refuses_every_hostile_value(cls: type, field: str) -> None:
     for bad in BAD_NUMBERS:
-        if (
-            cls is Torus
-            and field == "minor_radius"
-            and isinstance(bad, float)
-            and bad >= prim.MIN_DIMENSION
-        ):
-            continue
         with pytest.raises(ValueError, match=field):
             cls(**{field: bad})
+
+
+def test_non_finite_dimensions_say_so() -> None:
+    for bad in (math.nan, math.inf, -math.inf, np.float64("nan")):
+        with pytest.raises(ValueError, match="non fini"):
+            Cube(bad)
+    with pytest.raises(ValueError, match="démesuré"):
+        Cube(10**400)
 
 
 @pytest.mark.parametrize(("cls", "field"), INT_FIELDS, ids=_ids(INT_FIELDS))
 def test_every_tessellation_count_refuses_every_hostile_value(
     cls: type, field: str
 ) -> None:
-    low = {"rings": prim.MIN_RINGS}.get(field, 1 if cls is Plane else prim.MIN_SEGMENTS)
+    low = {"rings": 2}.get(
+        field, 1 if cls is Plane else 3
+    )  # valeurs écrites en dur : indépendantes des constantes de production
     for bad in BAD_COUNTS:
         if isinstance(bad, int) and not isinstance(bad, bool) and low <= bad <= 256:
             continue
@@ -132,8 +135,18 @@ def test_flags_refuse_everything_but_a_boolean(cls: type, field: str) -> None:
 
 
 def test_the_boundaries_are_inclusive() -> None:
-    assert Cube(prim.MIN_DIMENSION, prim.MAX_DIMENSION, 1).width == prim.MIN_DIMENSION
-    assert Cube(prim.MIN_DIMENSION, prim.MAX_DIMENSION, 1).height == prim.MAX_DIMENSION
+    assert Cube(1e-6, 1e6, 1).width == 1e-6 and Cube(1e-6, 1e6, 1).height == 1e6
+    assert (
+        prim.MIN_DIMENSION,
+        prim.MAX_DIMENSION,
+        prim.MIN_SEGMENTS,
+        prim.MAX_SEGMENTS,
+    ) == (1e-6, 1e6, 3, 256)
+    assert (prim.MIN_RINGS, prim.MAX_RINGS, prim.MAX_SUBDIVISIONS) == (2, 256, 256)
+    assert (prim.MAX_PRIMITIVE_TRIANGLES, prim.MAX_SCENE_PRIMITIVE_TRIANGLES) == (
+        65_536,
+        500_000,
+    )  # plafonds documentés
     assert (
         Sphere(1, 3, 2).segments == 3
         and Sphere(1, 256, 2).segments == 256

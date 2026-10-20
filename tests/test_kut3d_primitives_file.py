@@ -139,14 +139,19 @@ def test_a_scene_without_a_primitive_stays_in_version_1_with_no_new_key(
     assert json.loads((tmp_path / "e.kut3d").read_bytes())["version"] == 1
 
 
-def test_a_scene_without_a_primitive_is_written_byte_for_byte_as_before(tmp_path: Path) -> None:
+def test_a_scene_without_a_primitive_is_written_byte_for_byte_as_before(
+    tmp_path: Path,
+) -> None:
     """Empreinte relevée sur le code d'avant les formes de base (origin/main 52575b5) pour `rich_scene` : elle ne doit jamais bouger."""
     import hashlib
 
     path = tmp_path / "scene.kut3d"
     save_scene(rich_scene(tmp_path), path)
     assert len(path.read_bytes()) == 2504
-    assert hashlib.sha256(path.read_bytes()).hexdigest() == "89c6402b842cf89ae84599527a3e1dff620194c20b7efce84746b59eff9a90f8"
+    assert (
+        hashlib.sha256(path.read_bytes()).hexdigest()
+        == "89c6402b842cf89ae84599527a3e1dff620194c20b7efce84746b59eff9a90f8"
+    )
 
 
 def test_a_file_model_and_a_primitive_can_share_a_scene(tmp_path: Path) -> None:
@@ -555,3 +560,25 @@ def test_cylinder_flags_round_trip(tmp_path: Path) -> None:
     back = load_scene(tmp_path / "f.kut3d")
     assert back.instances[0].model.primitive == Cylinder(0.5, 1.0, 6, False)
     assert back.instances[1].model.primitive == Cone(0.5, 1.0, 6, False)
+
+
+def test_the_writer_round_trip_check_refuses_a_primitive_that_differs_from_the_document(
+    tmp_path: Path,
+) -> None:
+    from kut3d.scene_io_fields import integer
+    from kut3d.scene_io_write import scene_document
+
+    scene = Scene([primitive_instance(Sphere(1.0, 8, 4))], [], _camera())
+    doc = scene_document(scene, tmp_path)
+    other = {"sphere": primitive_model(Sphere(2.0, 8, 4))}
+    with pytest.raises(SceneFileError, match="absente ou différente"):
+        scene_io_read.build_scene(doc, tmp_path, False, models=other)
+    with pytest.raises(SceneFileError, match="absente ou différente"):
+        scene_io_read.build_scene(doc, tmp_path, False, models={})
+    scene_io_read.build_scene(
+        doc, tmp_path, False, models={"sphere": primitive_model(Sphere(1.0, 8, 4))}
+    )
+    for bad in (32.0, True, "32", None, [32]):
+        with pytest.raises(SceneFileError):
+            integer(bad, "x")
+    assert integer(32, "x") == 32
