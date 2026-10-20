@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, fields
-from numbers import Real
+from numbers import Integral, Real
 from typing import Any, ClassVar
 
 MIN_DIMENSION = 1e-6  # sous cette valeur, les triangles deviennent dégénérés en float32
@@ -29,14 +29,20 @@ MIN_SEGMENTS = 3
 MAX_SEGMENTS = 256  # segments autour d'un axe (sphère, cylindre, cône, tore)
 MIN_RINGS = 2
 MAX_RINGS = 256  # anneaux d'une sphère (de pôle à pôle)
-MAX_SUBDIVISIONS = 256  # cases par côté d'un plan (et segments du petit cercle d'un tore)
+MAX_SUBDIVISIONS = (
+    256  # cases par côté d'un plan (et segments du petit cercle d'un tore)
+)
 MAX_PRIMITIVE_TRIANGLES = 65_536  # une sphère 256 x 128 (65 280) ou un plan 181 x 181 tiennent ; un plan 256 x 256 (131 072) non
-MAX_SCENE_PRIMITIVE_TRIANGLES = 500_000  # cumul pour un fichier de scène (les maillages sont générés à la lecture)
+MAX_SCENE_PRIMITIVE_TRIANGLES = (
+    500_000  # cumul pour un fichier de scène (les maillages sont générés à la lecture)
+)
 
 
 def _dimension(value: Any, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
-        raise ValueError(f"{name} : un nombre est attendu (reçu {type(value).__name__}).")
+        raise ValueError(
+            f"{name} : un nombre est attendu (reçu {type(value).__name__})."
+        )
     try:
         out = float(value)
     except OverflowError:
@@ -44,21 +50,29 @@ def _dimension(value: Any, name: str) -> float:
     if not math.isfinite(out):
         raise ValueError(f"{name} : nombre non fini (NaN ou infini).")
     if not MIN_DIMENSION <= out <= MAX_DIMENSION:
-        raise ValueError(f"{name} doit être dans [{MIN_DIMENSION:g}, {MAX_DIMENSION:g}] (reçu {out:g}).")
+        raise ValueError(
+            f"{name} doit être dans [{MIN_DIMENSION:g}, {MAX_DIMENSION:g}] (reçu {out:g})."
+        )
     return out
 
 
 def _count(value: Any, name: str, low: int, high: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{name} : un entier est attendu (reçu {type(value).__name__}).")
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError(
+            f"{name} : un entier est attendu (reçu {type(value).__name__})."
+        )
     if not low <= value <= high:
-        raise ValueError(f"{name} doit être un entier dans [{low}, {high}] (reçu {value}).")
+        raise ValueError(
+            f"{name} doit être un entier dans [{low}, {high}] (reçu {value})."
+        )
     return int(value)
 
 
 def _flag(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
-        raise ValueError(f"{name} : un booléen est attendu (reçu {type(value).__name__}).")
+        raise ValueError(
+            f"{name} : un booléen est attendu (reçu {type(value).__name__})."
+        )
     return value
 
 
@@ -114,7 +128,7 @@ class Cube(PrimitiveSpec):
 
 @dataclass(frozen=True)
 class Sphere(PrimitiveSpec):
-    """Sphère de rayon `radius` : `segments` méridiens, `rings` anneaux ; normales lisses, couture d'UV dédoublée."""
+    """Sphère de rayon `radius` : `segments` méridiens, `rings` anneaux ; normales lisses, couture d'UV dédoublée, un sommet par segment à chaque pôle."""
 
     kind: ClassVar[str] = "sphere"
     radius: float = 0.5
@@ -123,17 +137,27 @@ class Sphere(PrimitiveSpec):
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "radius", _dimension(self.radius, "radius"))
-        object.__setattr__(self, "segments", _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS))
-        object.__setattr__(self, "rings", _count(self.rings, "rings", MIN_RINGS, MAX_RINGS))
+        object.__setattr__(
+            self,
+            "segments",
+            _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS),
+        )
+        object.__setattr__(
+            self, "rings", _count(self.rings, "rings", MIN_RINGS, MAX_RINGS)
+        )
         _check_triangles(self)
 
     @property
     def vertex_count(self) -> int:
-        return (self.rings + 1) * (self.segments + 1)
+        return (
+            (self.rings - 1) * (self.segments + 1) + 2 * self.segments
+        )  # anneaux intérieurs + un sommet par segment à chaque pôle
 
     @property
     def triangle_count(self) -> int:
-        return self.segments * (2 * self.rings - 2)  # les deux pôles : un triangle par segment au lieu de deux
+        return self.segments * (
+            2 * self.rings - 2
+        )  # les deux pôles : un triangle par segment au lieu de deux
 
 
 @dataclass(frozen=True)
@@ -150,7 +174,9 @@ class Plane(PrimitiveSpec):
         object.__setattr__(self, "width", _dimension(self.width, "width"))
         object.__setattr__(self, "depth", _dimension(self.depth, "depth"))
         for name in ("width_segments", "depth_segments"):
-            object.__setattr__(self, name, _count(getattr(self, name), name, 1, MAX_SUBDIVISIONS))
+            object.__setattr__(
+                self, name, _count(getattr(self, name), name, 1, MAX_SUBDIVISIONS)
+            )
         _check_triangles(self)
 
     @property
@@ -175,7 +201,11 @@ class Cylinder(PrimitiveSpec):
     def __post_init__(self) -> None:
         object.__setattr__(self, "radius", _dimension(self.radius, "radius"))
         object.__setattr__(self, "height", _dimension(self.height, "height"))
-        object.__setattr__(self, "segments", _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS))
+        object.__setattr__(
+            self,
+            "segments",
+            _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS),
+        )
         object.__setattr__(self, "caps", _flag(self.caps, "caps"))
         _check_triangles(self)
 
@@ -202,13 +232,19 @@ class Cone(PrimitiveSpec):
     def __post_init__(self) -> None:
         object.__setattr__(self, "radius", _dimension(self.radius, "radius"))
         object.__setattr__(self, "height", _dimension(self.height, "height"))
-        object.__setattr__(self, "segments", _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS))
+        object.__setattr__(
+            self,
+            "segments",
+            _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS),
+        )
         object.__setattr__(self, "cap", _flag(self.cap, "cap"))
         _check_triangles(self)
 
     @property
     def vertex_count(self) -> int:
-        side = (self.segments + 1) + self.segments  # anneau de base (couture dédoublée) + un sommet par segment
+        side = (
+            self.segments + 1
+        ) + self.segments  # anneau de base (couture dédoublée) + un sommet par segment
         return side + (self.segments + 2 if self.cap else 0)
 
     @property
@@ -237,9 +273,15 @@ class Torus(PrimitiveSpec):
             )
         object.__setattr__(self, "major_radius", major)
         object.__setattr__(self, "minor_radius", minor)
-        object.__setattr__(self, "segments", _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS))
         object.__setattr__(
-            self, "tube_segments", _count(self.tube_segments, "tube_segments", MIN_SEGMENTS, MAX_SEGMENTS)
+            self,
+            "segments",
+            _count(self.segments, "segments", MIN_SEGMENTS, MAX_SEGMENTS),
+        )
+        object.__setattr__(
+            self,
+            "tube_segments",
+            _count(self.tube_segments, "tube_segments", MIN_SEGMENTS, MAX_SEGMENTS),
         )
         _check_triangles(self)
 

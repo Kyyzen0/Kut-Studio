@@ -46,14 +46,20 @@ def _field_kinds(cls: type[PrimitiveSpec]) -> dict[str, str]:
     """Nom du champ -> genre de valeur JSON, d'après le défaut de la description."""
     probe = cls()
     return {
-        name: "bool" if isinstance(value, bool) else "int" if isinstance(value, int) else "float"
+        name: "bool"
+        if isinstance(value, bool)
+        else "int"
+        if isinstance(value, int)
+        else "float"
         for name, value in probe.params().items()
     }
 
 
 def _unit(value: float, where: str) -> float:
     if not 0.0 <= value <= 1.0:
-        raise SceneFileError(f"{where} : un nombre dans [0, 1] est attendu (reçu {value:g}).")
+        raise SceneFileError(
+            f"{where} : un nombre dans [0, 1] est attendu (reçu {value:g})."
+        )
     return value
 
 
@@ -72,12 +78,16 @@ def read_material(value: Any, where: str) -> Material:
     if "emissive" in obj:
         emissive = floats(obj["emissive"], 3, f"{where}.emissive")
         if any(not 0.0 <= c <= MAX_EMISSIVE for c in emissive):
-            raise SceneFileError(f"{where}.emissive : composantes dans [0, {MAX_EMISSIVE:g}] attendues.")
+            raise SceneFileError(
+                f"{where}.emissive : composantes dans [0, {MAX_EMISSIVE:g}] attendues."
+            )
         kwargs["emissive"] = emissive
     if "alpha_mode" in obj:
         mode = text(obj["alpha_mode"], f"{where}.alpha_mode", 16)
         if mode not in ALPHA_MODES:
-            raise SceneFileError(f"{where}.alpha_mode : {short(mode, 20)} inconnu (attendu {', '.join(ALPHA_MODES)}).")
+            raise SceneFileError(
+                f"{where}.alpha_mode : {short(mode, 20)} inconnu (attendu {', '.join(ALPHA_MODES)})."
+            )
         kwargs["alpha_mode"] = mode
     if "double_sided" in obj:
         kwargs["double_sided"] = boolean(obj["double_sided"], f"{where}.double_sided")
@@ -95,7 +105,9 @@ def read_primitive(value: Any, where: str) -> PrimitiveSpec:
     kinds = _field_kinds(cls)
     check_keys(obj, where, ("kind",), tuple(kinds))
     kwargs = {
-        name: _FIELD_READERS[kinds[name]](obj[name], f"{where}.{name}") for name in kinds if name in obj
+        name: _FIELD_READERS[kinds[name]](obj[name], f"{where}.{name}")
+        for name in kinds
+        if name in obj
     }
     try:
         return cls(**kwargs)

@@ -59,30 +59,60 @@ def cube(spec: Cube) -> Arrays:
             uv.append(((su + 1) / 2, 1.0 - (sv + 1) / 2))
         first = 4 * face
         tri += [(first, first + 1, first + 2), (first, first + 2, first + 3)]
-    return _finish(np.array(pos), np.array(nrm, dtype=np.float64), np.array(uv), np.array(tri))
+    return _finish(
+        np.array(pos), np.array(nrm, dtype=np.float64), np.array(uv), np.array(tri)
+    )
 
 
 def sphere(spec: Sphere) -> Arrays:
+    """Anneaux 1 .. rings-1 (couture d'UV dédoublée) ; à chaque pôle, un sommet PAR segment (u au milieu du segment) : pas de
+    triangle dégénéré, pas de pincement de la texture."""
     s, rings = spec.segments, spec.rings
-    phi = np.pi * np.arange(rings + 1) / rings
+    phi = np.pi * np.arange(1, rings) / rings
     theta = 2.0 * np.pi * np.arange(s + 1) / s
     sp, cp = np.sin(phi)[:, None], np.cos(phi)[:, None]
-    unit = np.stack(
-        [sp * np.cos(theta)[None, :], np.broadcast_to(cp, (rings + 1, s + 1)), sp * np.sin(theta)[None, :]], axis=2
+    shape = (rings - 1, s + 1)
+    middle = np.stack(
+        [
+            sp * np.cos(theta)[None, :],
+            np.broadcast_to(cp, shape),
+            sp * np.sin(theta)[None, :],
+        ],
+        axis=2,
     ).reshape(-1, 3)
-    # Aux pôles, sin(pi) vaut ~1e-16 : les sommets sont posés exactement sur l'axe.
-    unit[: s + 1, 0] = unit[: s + 1, 2] = 0.0
-    unit[-(s + 1) :, 0] = unit[-(s + 1) :, 2] = 0.0
-    uv = np.stack(
-        [np.broadcast_to(np.arange(s + 1) / s, (rings + 1, s + 1)), np.broadcast_to((np.arange(rings + 1) / rings)[:, None], (rings + 1, s + 1))],
+    north = np.tile([0.0, 1.0, 0.0], (s, 1))
+    south = np.tile([0.0, -1.0, 0.0], (s, 1))
+    unit = np.vstack([north, middle, south])
+    mid_u = (np.arange(s) + 0.5) / s
+    uv_mid = np.stack(
+        [
+            np.broadcast_to(np.arange(s + 1) / s, shape),
+            np.broadcast_to((np.arange(1, rings) / rings)[:, None], shape),
+        ],
         axis=2,
     ).reshape(-1, 2)
-    a, b, c, d = _grid_quads(s, rings)
-    band = np.repeat(np.arange(rings), s)
-    first = np.stack([a, b, c], axis=1)[band != 0]  # bande du haut : a et b sont au même point (pôle)
-    second = np.stack([b, d, c], axis=1)[band != rings - 1]  # bande du bas : c et d sont au même point
-    tri = np.concatenate([first, second])
-    return _finish(unit * spec.radius, unit, uv, tri)
+    uv = np.vstack(
+        [
+            np.stack([mid_u, np.zeros(s)], axis=1),
+            uv_mid,
+            np.stack([mid_u, np.ones(s)], axis=1),
+        ]
+    )
+    j = np.arange(s)
+
+    def row(r: int) -> int:  # premier sommet de l'anneau r (1 .. rings-1)
+        return s + (r - 1) * (s + 1)
+
+    south_first = s + (rings - 1) * (s + 1)
+    parts = [np.stack([j, row(1) + j + 1, row(1) + j], axis=1)]
+    if rings > 2:
+        a, b, c, d = _grid_quads(s, rings - 2)
+        a, b, c, d = a + row(1), b + row(1), c + row(1), d + row(1)
+        parts += [np.stack([a, b, c], axis=1), np.stack([b, d, c], axis=1)]
+    parts.append(
+        np.stack([row(rings - 1) + j, row(rings - 1) + j + 1, south_first + j], axis=1)
+    )
+    return _finish(unit * spec.radius, unit, uv, np.concatenate(parts))
 
 
 def plane(spec: Plane) -> Arrays:
@@ -104,16 +134,28 @@ def _ring(segments: int) -> tuple[Array, Array]:
     return np.cos(theta), np.sin(theta)
 
 
-def _cap(cx: Array, sz: Array, y: float, radius: float, up: bool, first: int) -> tuple[Array, Array, Array, Array]:
+def _cap(
+    cx: Array, sz: Array, y: float, radius: float, up: bool, first: int
+) -> tuple[Array, Array, Array, Array]:
     """Bouchon plat : un sommet central puis l'anneau (couture dédoublée) ; sens des triangles selon la face (haut / bas)."""
     n = cx.shape[0]
-    pos = np.vstack([[0.0, y, 0.0], np.stack([cx * radius, np.full(n, y), sz * radius], axis=1)])
+    pos = np.vstack(
+        [[0.0, y, 0.0], np.stack([cx * radius, np.full(n, y), sz * radius], axis=1)]
+    )
     nrm = np.tile([0.0, 1.0 if up else -1.0, 0.0], (n + 1, 1))
-    flip = 1.0 if up else -1.0  # vu de dessous, le côté droit de l'image est -X
-    uv = np.vstack([[0.5, 0.5], np.stack([0.5 + 0.5 * flip * cx, 0.5 + 0.5 * sz], axis=1)])
+    flip = (
+        1.0 if up else -1.0
+    )  # comme la face du cube : vu d'en haut le haut de l'image est -Z, vu d'en bas c'est +Z
+    uv = np.vstack(
+        [[0.5, 0.5], np.stack([0.5 + 0.5 * cx, 0.5 + 0.5 * flip * sz], axis=1)]
+    )
     ring = first + 1 + np.arange(n - 1)
     centre = np.full(n - 1, first)
-    tri = np.stack([centre, ring + 1, ring], axis=1) if up else np.stack([centre, ring, ring + 1], axis=1)
+    tri = (
+        np.stack([centre, ring + 1, ring], axis=1)
+        if up
+        else np.stack([centre, ring, ring + 1], axis=1)
+    )
     return pos, nrm, uv, tri
 
 
@@ -128,10 +170,21 @@ def cylinder(spec: Cylinder) -> Arrays:
     u = np.arange(s + 1) / s
     pos = [np.vstack([top, bottom])]
     nrm = [np.vstack([side_n, side_n])]
-    uv = [np.vstack([np.stack([u, np.zeros(s + 1)], axis=1), np.stack([u, np.ones(s + 1)], axis=1)])]
+    uv = [
+        np.vstack(
+            [
+                np.stack([u, np.zeros(s + 1)], axis=1),
+                np.stack([u, np.ones(s + 1)], axis=1),
+            ]
+        )
+    ]
     a = np.arange(s)
     c = a + (s + 1)
-    tri = [np.concatenate([np.stack([a, a + 1, c], axis=1), np.stack([a + 1, c + 1, c], axis=1)])]
+    tri = [
+        np.concatenate(
+            [np.stack([a, a + 1, c], axis=1), np.stack([a + 1, c + 1, c], axis=1)]
+        )
+    ]
     offset = 2 * (s + 1)
     if spec.caps:
         for up, y in ((True, half), (False, -half)):
@@ -149,16 +202,26 @@ def cone(spec: Cone) -> Arrays:
     cx, sz = _ring(s)
     half = spec.height / 2.0
     base = np.stack([cx * spec.radius, np.full(s + 1, -half), sz * spec.radius], axis=1)
-    slant = np.stack([cx * spec.height, np.full(s + 1, spec.radius), sz * spec.height], axis=1)
-    mid = 2.0 * np.pi * (np.arange(s) + 0.5) / s  # le sommet de chaque segment prend la normale du milieu du segment
-    apex_n = np.stack([np.cos(mid) * spec.height, np.full(s, spec.radius), np.sin(mid) * spec.height], axis=1)
+    slant = np.stack(
+        [cx * spec.height, np.full(s + 1, spec.radius), sz * spec.height], axis=1
+    )
+    mid = (
+        2.0 * np.pi * (np.arange(s) + 0.5) / s
+    )  # le sommet de chaque segment prend la normale du milieu du segment
+    apex_n = np.stack(
+        [np.cos(mid) * spec.height, np.full(s, spec.radius), np.sin(mid) * spec.height],
+        axis=1,
+    )
     apex = np.tile([0.0, half, 0.0], (s, 1))
     u = np.arange(s + 1) / s
     pos = [np.vstack([base, apex])]
     nrm = [np.vstack([slant, apex_n])]
     uv = [
         np.vstack(
-            [np.stack([u, np.ones(s + 1)], axis=1), np.stack([(np.arange(s) + 0.5) / s, np.zeros(s)], axis=1)]
+            [
+                np.stack([u, np.ones(s + 1)], axis=1),
+                np.stack([(np.arange(s) + 0.5) / s, np.zeros(s)], axis=1),
+            ]
         )
     ]
     j = np.arange(s)
@@ -184,7 +247,9 @@ def torus(spec: Torus) -> Arrays:
     pos = np.stack(
         [ring * ct, np.broadcast_to(spec.minor_radius * sp, shape), ring * st], axis=2
     ).reshape(-1, 3)
-    nrm = np.stack([cp * ct, np.broadcast_to(sp, shape), cp * st], axis=2).reshape(-1, 3)
+    nrm = np.stack([cp * ct, np.broadcast_to(sp, shape), cp * st], axis=2).reshape(
+        -1, 3
+    )
     uu = np.broadcast_to(np.arange(s + 1) / s, shape)
     vv = np.broadcast_to((1.0 - np.arange(t + 1) / t)[:, None], shape)
     uv = np.stack([uu, vv], axis=2).reshape(-1, 2)

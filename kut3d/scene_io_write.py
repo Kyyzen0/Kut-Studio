@@ -11,7 +11,7 @@ from typing import Any
 
 from kut3d.errors import SceneFileError, short
 from kut3d.model import Model
-from kut3d.primitive_model import pristine_material
+from kut3d.primitive_models import pristine_material
 from kut3d.scene import (
     AmbientLight,
     DirectionalLight,

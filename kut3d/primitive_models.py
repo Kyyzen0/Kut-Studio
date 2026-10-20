@@ -19,12 +19,19 @@ def primitive_model(spec: PrimitiveSpec, material: Material | None = None) -> Mo
     """Le modèle généré par `spec` (un maillage, un nœud) ; `material` None = le gris par défaut du rendu.
     Le modèle porte `primitive=spec` : `save_scene` en écrit les paramètres, jamais les sommets."""
     if not isinstance(spec, PrimitiveSpec):
-        raise ValueError("spec doit être une forme de kut3d.primitives (Cube, Sphere, Plane, Cylinder, Cone, Torus).")
+        raise ValueError(
+            "spec doit être une forme de kut3d.primitives (Cube, Sphere, Plane, Cylinder, Cone, Torus)."
+        )
     if material is not None and not isinstance(material, Material):
         raise ValueError("material doit être un kut3d.model.Material ou None.")
     positions, normals, uvs, indices = primitive_arrays(spec)
     mesh = Mesh(
-        positions, indices, normals=normals, uvs=uvs, material_index=None if material is None else 0, name=spec.kind
+        positions,
+        indices,
+        normals=normals,
+        uvs=uvs,
+        material_index=None if material is None else 0,
+        name=spec.kind,
     )
     return Model(
         nodes=(Node(name=spec.kind, mesh_index=0),),
@@ -61,18 +68,28 @@ def primitive_instance(
     if isinstance(spec, str):
         cls = PRIMITIVE_KINDS.get(spec)
         if cls is None:
-            raise ValueError(f"genre de forme inconnu : {spec[:40]!r} (attendu : {', '.join(PRIMITIVE_KINDS)}).")
+            raise ValueError(
+                f"genre de forme inconnu : {spec[:40]!r} (attendu : {', '.join(PRIMITIVE_KINDS)})."
+            )
         try:
             spec = cls(**params)
         except TypeError:
-            raise ValueError(f"paramètres invalides pour « {cls.kind} » : {', '.join(sorted(map(str, params)))[:80]}.") from None
+            raise ValueError(
+                f"paramètres invalides pour « {cls.kind} » : {', '.join(sorted(map(str, params)))[:80]}."
+            ) from None
     elif params:
-        raise ValueError("des paramètres nommés ne s'ajoutent qu'à un genre de forme (« sphere »), pas à une description.")
+        raise ValueError(
+            "des paramètres nommés ne s'ajoutent qu'à un genre de forme (« sphere »), pas à une description."
+        )
     pos = _vector(position, "position")
     angles = _vector(rotation_deg, "rotation_deg")
     if isinstance(scale, bool):
         raise ValueError("scale : un nombre ou trois nombres sont attendus.")
-    factors = [*_vector([scale] * 3, "scale")] if np.ndim(scale) == 0 else _vector(scale, "scale")
+    factors = (
+        [*_vector([scale] * 3, "scale")]
+        if np.ndim(scale) == 0
+        else _vector(scale, "scale")
+    )
     if not all(math.isfinite(f) and f > 0 for f in factors):
         raise ValueError("scale : des nombres finis > 0 sont attendus.")
     rot = _rotation(angles)

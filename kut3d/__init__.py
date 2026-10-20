@@ -19,7 +19,7 @@ from kut3d.errors import (
 from kut3d.gpu import probe_qrhi
 from kut3d.importers import load_model, supported_extensions
 from kut3d.model import Material, Model
-from kut3d.primitive_model import primitive_instance, primitive_model
+from kut3d.primitive_models import primitive_instance, primitive_model
 from kut3d.primitives import Cone, Cube, Cylinder, Plane, Sphere, Torus
 from kut3d.render import (
     Frame,

@@ -31,12 +31,18 @@ SIX: tuple[PrimitiveSpec, ...] = (
     Cone(0.55, 1.2, 24),
     Torus(0.5, 0.2, 32, 16),
 )
-LIGHTS = [AmbientLight((1, 1, 1), 0.3), DirectionalLight((-0.4, -0.6, -0.7), (1, 1, 1), 2.5)]
+LIGHTS = [
+    AmbientLight((1, 1, 1), 0.3),
+    DirectionalLight((-0.4, -0.6, -0.7), (1, 1, 1), 2.5),
+]
 
 
 def checker_material(**kwargs: Any) -> Material:
     return Material(
-        base_color=(1, 1, 1, 1), base_color_texture=texture_ref(checker_rgba(64, 8)), roughness=0.6, **kwargs
+        base_color=(1, 1, 1, 1),
+        base_color_texture=texture_ref(checker_rgba(64, 8)),
+        roughness=0.6,
+        **kwargs,
     )
 
 
@@ -47,7 +53,11 @@ def six_forms(*, checker: bool = False, rotation: Any = (25.0, 30.0, 0.0)) -> Sc
         material = (
             checker_material(double_sided=isinstance(spec, Plane))
             if checker
-            else Material(base_color=(0.9, 0.3 + 0.1 * i, 0.2, 1.0), roughness=0.5, double_sided=isinstance(spec, Plane))
+            else Material(
+                base_color=(0.9, 0.3 + 0.1 * i, 0.2, 1.0),
+                roughness=0.5,
+                double_sided=isinstance(spec, Plane),
+            )
         )
         instances.append(
             primitive_instance(
@@ -66,7 +76,13 @@ def front_camera(distance: float = 4.0) -> Camera:
     return Camera((0, 0, distance), (0, 0, 0), fov_y_deg=40)
 
 
-def single(spec: PrimitiveSpec, material: Material | None = None, *, camera: Camera | None = None, **pose: Any) -> Scene:
+def single(
+    spec: PrimitiveSpec,
+    material: Material | None = None,
+    *,
+    camera: Camera | None = None,
+    **pose: Any,
+) -> Scene:
     inst = primitive_instance(spec, material=material, **pose)
     return Scene([inst], LIGHTS, camera or front_camera(), background=(0, 0, 0, 1))
 

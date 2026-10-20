@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Interne : Kut-3D : formes de base (cube, sphère, plan, cylindre, cône, tore) décrites par leurs paramètres dans le fichier de scène `.kut3d` (format 2, seulement si la scène en contient ; un fichier sans forme reste identique), générées et rendues comme n'importe quel modèle, avec `Film.primitive(...)` côté script. Dimensions, tessellation et nombre de triangles sont bornés. Voir [docs/kut3d-scene.md](docs/kut3d-scene.md).
+
 ## [0.8.0] - 2026-10-20
 
 Version qui ouvre le **mode script** à presque tout le montage et qui apporte un **premier calque scène 3D**. Les scripts disposent maintenant de verbes pour le montage, la vitesse, les calques graphiques, l'audio, l'étalonnage, les effets, les images clés, le suivi, la bibliothèque et le Multicam, avec les mêmes refus que l'interface, des verrous plus stricts et des plafonds qui protègent le projet ; `describe` lit tout le modèle, avec les identifiants que ces verbes attendent. La bibliothèque de transitions passe à **43 types** et six transitions qui n'étaient en réalité que des fondus s'exportent enfin avec leur propre effet.
