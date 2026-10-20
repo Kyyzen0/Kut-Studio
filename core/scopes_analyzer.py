@@ -301,6 +301,8 @@ class ScopeAnalyzer:
         self._idle = threading.Event()
         self._idle.set()
         self._closed = False
+        # Tenu pendant chaque rappel (résultat, erreur) : ``close`` l'attend, puis plus aucun rappel ne part.
+        self._callback_lock = threading.RLock()
         self._thread: Optional[threading.Thread] = None
         self._ensure_thread()
 
@@ -317,8 +319,14 @@ class ScopeAnalyzer:
         )
         self._thread.start()
 
-    def close(self) -> None:
-        """Arrête le thread de travail (fermeture de l'application)."""
+    def close(self, join_timeout: float = 2.0) -> None:
+        """Arrête le thread de travail (fermeture de l'application).
+
+        Au retour, plus aucun rappel (``on_result``, ``on_error``) n'est en cours ni ne partira : si l'extraction dure
+        plus que ``join_timeout`` (FFmpeg lent sur un runner chargé), le thread finit seul mais son résultat est jeté.
+        Sans cela, il appelait le rappel d'une fenêtre déjà détruite par le fil de l'interface (``emit`` sur un
+        ``QObject`` mort : segfault intermittent de la CI Linux, pendant le démontage d'un test).
+        """
         with self._lock:
             self._closed = True
             pending = self._pending
@@ -329,7 +337,19 @@ class ScopeAnalyzer:
         self._wake.set()
         thread = self._thread
         if thread is not None and thread.is_alive():
-            thread.join(timeout=2.0)
+            thread.join(timeout=join_timeout)
+        with self._callback_lock:          # attend un rappel déjà parti ; les suivants sont refusés par ``_closed``
+            pass
+
+    def _notify(self, callback: Callable[..., None] | None, *args: object) -> None:
+        """Appelle un rappel du propriétaire, sauf si l'analyseur est fermé (voir :meth:`close`)."""
+        if callback is None:
+            return
+        with self._callback_lock:
+            with self._lock:
+                if self._closed:
+                    return
+            callback(*args)
 
     def wait_idle(self, timeout: float = 5.0) -> bool:
         """Attend que la file soit vide et qu'aucune analyse ne tourne.
@@ -594,8 +614,7 @@ class ScopeAnalyzer:
                     )
                 self._emit(request, extracted)
         except BaseException as exc:  # noqa: BLE001 - le thread survit
-            if self._on_error is not None:
-                self._on_error(request, exc)
+            self._notify(self._on_error, request, exc)
         finally:
             cleanup_temporary_paths(request.temporary_paths)
             with self._lock:
@@ -636,7 +655,8 @@ class ScopeAnalyzer:
             with self._lock:
                 self._cancelled += 1
             if self._on_result is not None:
-                self._on_result(
+                self._notify(
+                    self._on_result,
                     ScopeAnalysis(
                         request=request,
                         result=ScopeResult.empty(
@@ -670,8 +690,7 @@ class ScopeAnalyzer:
             elapsed_seconds=elapsed,
             stale=stale,
         )
-        if self._on_result is not None:
-            self._on_result(analysis)
+        self._notify(self._on_result, analysis)
 
 
 __all__ = [
