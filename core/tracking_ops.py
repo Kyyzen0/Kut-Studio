@@ -117,8 +117,11 @@ def add_tracker(
     y: float | None = None,
     name: str = "",
     settings: TrackerSettings | None = None,
+    tracker_id: str | None = None,
 ) -> Tracker:
-    """Ajoute un point (pixels du média ; centre par défaut) à l'image affichée."""
+    """Ajoute un point (pixels du média ; centre par défaut) à l'image affichée.
+
+    ``tracker_id`` : identifiant imposé (un script, déjà vérifié par l'appelant) ; ``None`` : généré, comme l'interface."""
     clip, asset = trackable_clip(project, clip_id)
     rate = media_rate(asset)
     tracking = tracking_of(clip)
@@ -134,7 +137,7 @@ def add_tracker(
     )
     number = len(tracking.trackers) + 1
     tracker = Tracker(
-        name=name or f"Tracker {number}", color=next_tracker_color(tracking.trackers),
+        id=tracker_id or "", name=name or f"Tracker {number}", color=next_tracker_color(tracking.trackers),
         settings=settings or _default_settings(asset), data=data,
     )
     _store(clip, tracking.with_tracker(tracker))
@@ -494,11 +497,13 @@ def add_link(
     rotation: bool = False,
     scale: bool = False,
     timeline_time: float = 0.0,
+    link_id: str | None = None,
 ) -> TrackLink:
     """Lie une propriété de ``target_clip_id`` aux trackers de ``source_clip_id``.
 
     L'image de référence est celle affichée : la cible ne bouge pas à cet
-    instant, elle suit ensuite le mouvement mesuré.
+    instant, elle suit ensuite le mouvement mesuré. ``link_id`` : identifiant imposé (un script, déjà
+    vérifié par l'appelant) ; ``None`` : généré, comme l'interface.
     """
     source, asset = trackable_clip(project, source_clip_id)
     target_clip, target_track = find_clip_and_track(project, target_clip_id)
@@ -532,7 +537,7 @@ def add_link(
     rate = trackers[0].data.rate or media_rate(asset)
     reference = source_index_at(source, rate, timeline_time)
     link = TrackLink(
-        source_clip_id=SELF_CLIP if same else source.id, tracker_ids=ids, target=target, mask_id=mask_id,
+        id=link_id or "", source_clip_id=SELF_CLIP if same else source.id, tracker_ids=ids, target=target, mask_id=mask_id,
         position=position or target == TrackTarget.ANCHOR, rotation=rotation, scale=scale,
         reference_index=reference,
     )

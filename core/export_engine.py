@@ -543,7 +543,9 @@ def check_export_request(request: ExportRequest) -> None:
     """Refuse une requête qui ne peut pas aboutir, avant tout calcul : ``ValueError`` ou ``RuntimeError`` au message lisible.
 
     - le plan ne contient aucun clip visuel (ni calque graphique) ;
-    - le plan porte des sous-titres et la build FFmpeg n'a pas le filtre ``subtitles`` (libass).
+    - le plan porte des sous-titres et la build FFmpeg n'a pas le filtre ``subtitles`` (libass) ;
+    - une scène 3D du plan ne se rend pas (texture illisible, bornes du moteur : :mod:`core.scene3d_check`). L'écran la laisse
+      vide ; un fichier exporté ne l'omet jamais en silence.
     """
     plan = request.render_plan
     if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
@@ -554,6 +556,9 @@ def check_export_request(request: ExportRequest) -> None:
             "(libass requis). Installez un FFmpeg avec libass pour "
             "incruster les sous-titres."
         )
+    from .scene3d_check import check_export_scenes
+
+    check_export_scenes(plan)
 
 
 def export_needs_preparation(request: ExportRequest, preference: BackendPreference = BackendPreference.AUTO) -> bool:
@@ -633,9 +638,12 @@ def build_export_command(
             f"Le dossier de sortie est introuvable : {output_path.parent}"
         )
 
-    filter_complex, video_label, audio_label, input_paths = (
-        ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared)
-    )
+    from .scene3d import strict_rendering
+
+    with strict_rendering():                  # un échec de rendu d'une scène 3D fait échouer l'export (l'écran le tolère)
+        filter_complex, video_label, audio_label, input_paths = (
+            ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared)
+        )
 
     command: list[str] = [
         *_ffmpeg_command_prefix(),

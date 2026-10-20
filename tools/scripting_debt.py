@@ -107,6 +107,7 @@ READ_MODULES: dict[str, str] = {
     "preview_segments": "plans de segments de l'aperçu",
     "project_io": "lecture et écriture du fichier .kut",
     "render_plan": "plan de rendu (lecture)",
+    "scene3d": "lecture du fichier .kut3d d'un clip scène 3D et garde-fou de vitesse (refus), appelé par les fonctions d'édition",
     "timeline_evaluator": "évaluation de la timeline (lecture)",
     "timeline_index": "index de la timeline (lecture)",
     "timeline_view_model": "modèle de vue de la timeline (lecture)",
@@ -130,8 +131,9 @@ REASONS: dict[str, str] = {
     "interface seulement": "Geste de l'interface (sélection, presse-papiers, aimantation, aperçu) sans équivalent utile dans un script.",
     "interface seulement : persistance": "Écrit hors du projet (bibliothèque de presets de l'utilisateur, dans sa configuration) : une frontière de "
                                          "persistance qu'un script ne franchit pas (ADR-0005, décision 5 : un script ne lit ni n'écrit que le projet qu'on lui donne).",
-    "interface seulement : analyse": "Applique le résultat d'une analyse de média (corrélation audio, timecode) avec sa méthode, son statut et sa fiabilité : "
-                                     "un script n'analyse rien (ADR-0005) et ne peut pas se faire passer pour une mesure ; il pose des décalages à la main.",
+    "interface seulement : analyse": "Applique le résultat d'une analyse de médias (suivi de points, corrélation audio, timecode) avec sa méthode, son statut "
+                                     "et sa fiabilité : un script est une donnée, il n'analyse rien (ADR-0005, R1/R2) et ne peut pas se faire passer pour une "
+                                     "mesure ; il pose ses points avec set_tracker_position et ses décalages à la main.",
     "remplacé": "Variante historique sans appelant, remplacée par une fonction qui a son verbe (la sienne copie moins : ni effets ni étalonnage).",
     "à faire : montage": "Édition de la timeline qui aura un verbe.",
     "à faire : vitesse": "Vitesse et remappage : verbes à venir.",

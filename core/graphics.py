@@ -19,6 +19,8 @@ graphics ; seul ``type`` change ce qui est dessiné :
 ``group``      groupe : ses membres (``group_id``) sont composés ensemble
 ``adjustment`` adjustment layer : applique ses effets à tout ce qui est dessous
 ``null``       contrôleur invisible, sert de parent
+``light``      lumière (fuite, flare, grain...)
+``scene3d``    scène 3D : ``source_path`` est un fichier ``.kut3d`` (:mod:`core.scene3d`) ; rendue par le moteur Kut-3D
 =============  ==============================================================
 
 Ce qui est commun à tout calque vit ailleurs, sans duplication :
@@ -34,11 +36,12 @@ Ajouter un type de calque : voir ``docs/motion-graphics.md``.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from pathlib import Path
 
 from .project_model import Clip, MediaAsset, Project, Track
+from .scene3d import has_scene_suffix
 
 
 class GraphicType(str, Enum):
@@ -51,6 +54,7 @@ class GraphicType(str, Enum):
     ADJUSTMENT = "adjustment"
     NULL = "null"
     LIGHT = "light"
+    SCENE3D = "scene3d"
 
 
 class ShapeKind(str, Enum):
@@ -198,6 +202,10 @@ class GraphicOverlay:
     light_angle: float = 0.0
     light_density: float = 1.0
     light_time: float = 0.0          # temps local de l'image dessinée : posé par la scène, jamais saisi
+    # scène 3D : instant de la scène rendue (core.scene3d), posé par la scène, JAMAIS sérialisé. Hors du repr : l'empreinte d'un
+    # plan (fingerprint_plan) et les clés d'image reposent sur repr(graphic), qui ne doit pas changer pour les projets sans 3D ;
+    # le rendu 3D met l'instant dans sa propre clé (core.scene3d.render_identity).
+    scene_time: float = field(default=0.0, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "type", GraphicType(self.type))
@@ -265,8 +273,11 @@ class GraphicOverlay:
         object.__setattr__(self, "light_angle", _bounded(self.light_angle, -360.0, 360.0, 0.0))
         object.__setattr__(self, "light_density", _bounded(self.light_density, 0.1, 4.0, 1.0))
         object.__setattr__(self, "light_time", _bounded(self.light_time, 0.0, 86400.0, 0.0))
+        object.__setattr__(self, "scene_time", _bounded(self.scene_time, 0.0, 86400.0, 0.0))
         if self.type == GraphicType.IMAGE and not self.source_path:
             raise ValueError("Un calque image doit référencer un fichier source.")
+        if self.type == GraphicType.SCENE3D and not has_scene_suffix(self.source_path):
+            raise ValueError("Un calque scène 3D doit référencer un fichier « .kut3d ».")
 
     @property
     def is_container(self) -> bool:
@@ -278,7 +289,11 @@ class GraphicOverlay:
         return self.type in (GraphicType.SHAPE, GraphicType.RECTANGLE)
 
 
-_GRAPHIC_FIELDS = frozenset(f.name for f in fields(GraphicOverlay))
+RUNTIME_FIELDS = frozenset({"scene_time"})
+"""Champs d'exécution : posés par la scène à chaque image (comme ``light_time``), mais ni écrits dans le projet ni lus ni
+modifiables : l'ajout d'un champ d'exécution ne change aucun octet d'un projet existant."""
+
+_GRAPHIC_FIELDS = frozenset(f.name for f in fields(GraphicOverlay)) - RUNTIME_FIELDS
 
 
 def graphic_defaults(
@@ -328,6 +343,12 @@ def graphic_defaults(
             type=kind, text="", width=project_width, height=project_height, fill_color="#FFB040",
             glow_color="#22B8FF", shadow_offset_x=0, shadow_offset_y=0,
         )
+    if kind == GraphicType.SCENE3D:
+        # Taille de rendu = taille du projet ; fond transparent (c'est la scène qui dessine). Rendu : lot B2b.
+        return GraphicOverlay(
+            type=kind, text="", source_path=source_path, width=project_width, height=project_height,
+            shadow_offset_x=0, shadow_offset_y=0,
+        )
     return GraphicOverlay(
         type=kind, text="", source_path=source_path,
         width=min(960, project_width), height=min(540, project_height),
@@ -366,6 +387,7 @@ _LABELS = {
     GraphicType.ADJUSTMENT: "Calque d'effets",
     GraphicType.NULL: "Contrôleur",
     GraphicType.LIGHT: "Lumière",
+    GraphicType.SCENE3D: "Scène 3D",
 }
 
 _SHAPE_LABELS = {
@@ -421,6 +443,13 @@ def add_graphic_clip(
         if not path.is_file():
             raise FileNotFoundError(f"Image graphique introuvable : {path}")
         source_path = str(path.resolve())
+    elif kind == GraphicType.SCENE3D:
+        # Fichier de scène lisible exigé AVANT de créer la piste G ou le média : un refus ne laisse rien derrière lui.
+        from .scene3d import validate
+
+        path = Path(graphic.source_path if graphic is not None else source_path).expanduser()
+        validate(path)
+        source_path = str(path.resolve())
     if graphic is None:
         graphic = graphic_defaults(
             kind,
@@ -429,12 +458,14 @@ def add_graphic_clip(
             source_path=source_path,
             shape=shape,
         )
-    elif kind == GraphicType.IMAGE:
+    elif kind in (GraphicType.IMAGE, GraphicType.SCENE3D):
         graphic = replace(graphic, source_path=source_path)
     target_track = track if track is not None else ensure_graphics_track(project)
     graphic = replace(graphic, z_order=next_z_order(target_track))
     if kind == GraphicType.IMAGE:
         label = Path(source_path).stem or "Image"
+    elif kind == GraphicType.SCENE3D:
+        label = Path(source_path).stem or _LABELS[kind]
     elif kind == GraphicType.SHAPE:
         label = _SHAPE_LABELS[graphic.shape]
     else:
@@ -484,6 +515,10 @@ def update_graphic(clip: Clip, field_name: str, value: object) -> GraphicOverlay
     if field_name not in _GRAPHIC_FIELDS or field_name == "type":
         raise ValueError(f"Propriété graphique inconnue : {field_name!r}.")
     current = clip.graphic
+    if current.type == GraphicType.SCENE3D and field_name == "source_path" and str(value or "") != current.source_path:
+        # Le média technique du clip (chemin du .kut3d) et la scène à relire iraient chacun de leur côté : un autre
+        # fichier se pose sur un nouveau clip.
+        raise ValueError("Le fichier d'une scène 3D ne se change pas : ajoutez un nouveau clip pour une autre scène.")
     graphic = replace(current, **{field_name: value})
     if graphic == current:
         return current
@@ -498,6 +533,8 @@ def graphic_to_dict(graphic: GraphicOverlay | None) -> dict | None:
         return None
     data = {}
     for item in fields(GraphicOverlay):
+        if item.name in RUNTIME_FIELDS:
+            continue
         value = getattr(graphic, item.name)
         if isinstance(value, tuple):
             value = list(value)

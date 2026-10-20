@@ -116,8 +116,11 @@ FORMAT_NAME = "kut-studio-project"
 
 CURRENT_VERSION = 17
 """Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18,
-:data:`COLOR_MATRIX_VERSION` pour la 19, :data:`EFFECT_ANIMATION_VERSION` pour la 20 et
-:data:`TRANSITION_CATALOG_VERSION` pour la 21).
+:data:`COLOR_MATRIX_VERSION` pour la 19, :data:`EFFECT_ANIMATION_VERSION` pour la 20,
+:data:`TRANSITION_CATALOG_VERSION` pour la 21 et :data:`SCENE3D_VERSION` pour la 22).
+
+La version 22 n'est écrite que par un projet qui contient un calque « scène 3D » (:mod:`core.scene3d`) ; le chargeur la lit
+comme la 17, un ancien Kut-Studio la refuse.
 
 La version 20 n'est écrite que par un projet dont un clip porte une image clé générique ``fx.<effet>.<paramètre>`` (paramètre
 d'effet animé) ou ``color.<champ>`` (étalonnage animé), voir ``docs/adr/0008-animation-etalonnage-et-effets.md`` ; le
@@ -191,9 +194,16 @@ de fondu). Même règle « version minimale nécessaire » : un projet qui n'en 
 avant ; un Kut-Studio plus ancien refuse le fichier avec le message explicite de ``_validate_envelope`` au lieu d'échouer
 sur un type de transition inconnu. Le chargeur lit 17 à 21 de la même façon."""
 
+SCENE3D_VERSION = 22
+"""Version écrite par un projet qui contient au moins un calque « scène 3D » (``GraphicType.SCENE3D``, :mod:`core.scene3d`),
+dans n'importe quelle séquence, composition ou groupe. Même règle « version minimale nécessaire » : un projet sans calque 3D
+s'écrit octet pour octet comme avant (17 à 21 selon son contenu) ; un Kut-Studio plus ancien refuse le fichier avec le message
+explicite de ``_validate_envelope`` au lieu d'ouvrir un calque de type inconnu (qui perdrait la scène en silence). Le chargeur
+lit 17 à 22 de la même façon."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION,
-     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION}
+     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -551,6 +561,7 @@ def payload_uses_effect_animation(node: Any) -> bool:
     return False
 
 
+_SCENE3D_VALUE = "scene3d"      # valeur sérialisée de GraphicType.SCENE3D (core.graphics : import différé du module)
 _CATALOG_TYPE_VALUES = frozenset(member.value for member in CATALOG_EXTENSION_TYPES)
 
 
@@ -565,6 +576,24 @@ def payload_uses_catalog_transitions(node: Any) -> bool:
         item = stack.pop()
         if isinstance(item, dict):
             if "from_clip_id" in item and item.get("type") in _CATALOG_TYPE_VALUES:
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
+def payload_uses_scene3d(node: Any) -> bool:
+    """``True`` si un calque graphique sérialisé (``type`` + ``source_path``) est une scène 3D.
+
+    Même principe que :func:`payload_uses_catalog_transitions` : on lit le résultat de la sérialisation, donc les clips de
+    toutes les séquences, les compositions imbriquées et les groupes sont vus.
+    """
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("type") == _SCENE3D_VALUE and "source_path" in item:
                 return True
             stack.extend(item.values())
         elif isinstance(item, list):
@@ -588,6 +617,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
         payload[_VERSION_KEY] = EFFECT_ANIMATION_VERSION
     if payload_uses_catalog_transitions(payload[_PROJECT_KEY]):
         payload[_VERSION_KEY] = TRANSITION_CATALOG_VERSION
+    if payload_uses_scene3d(payload[_PROJECT_KEY]):
+        payload[_VERSION_KEY] = SCENE3D_VERSION
     return payload
 
 
