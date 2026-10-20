@@ -24,6 +24,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Un flou, un rayon de Bloom ou une aberration chromatique animés **trop longs sont refusés à l'export avec un message clair** (« raccourcissez-la, posez moins d'images clés ou découpez le clip ») au lieu d'épuiser la mémoire de FFmpeg 6.1 et 7.1 : ces versions gardent ~25 Ko par commande `sendcmd` (un flou animé de dix minutes, changeant à chaque image : ~1 Go ; FFmpeg 9.0.2 : 44 Mo). Le plafond est de 40 000 commandes (≈ 20 000 images, plus de onze minutes à 30 i/s) ; en dessous, le rendu est identique octet pour octet à celui d'avant. Les fichiers de commandes longs sont aussi écrits par fenêtres de 192 Ko, mécanisme partagé avec l'étalonnage animé (il ne réduit pas la mémoire des effets, mesuré). Voir [docs/ffmpeg-sendcmd.md](docs/ffmpeg-sendcmd.md), piège 9.
 - Couper ou supprimer un clip qui sert de source de suivi ne modifie plus en silence les clips verrouillés (piste ou calque) qui le suivent : l'interface (coupe, suppression, ripple, sélection multiple, Multicam, coupes sur les temps ou aux changements de plan) refuse l'opération entière avant d'écrire et dit quel clip verrouillé en est la cause, comme les scripts le faisaient déjà. Un suiveur qui suit une autre source, ou qu'une suppression laisse telle quelle, ne bloque rien.
 
 ## [0.8.0] - 2026-10-20
