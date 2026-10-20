@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-20
+
+Version qui ouvre le **mode script** à presque tout le montage et qui apporte un **premier calque scène 3D**. Les scripts disposent maintenant de verbes pour le montage, la vitesse, les calques graphiques, l'audio, l'étalonnage, les effets, les images clés, le suivi, la bibliothèque et le Multicam, avec les mêmes refus que l'interface, des verrous plus stricts et des plafonds qui protègent le projet ; `describe` lit tout le modèle, avec les identifiants que ces verbes attendent. La bibliothèque de transitions passe à **43 types** et six transitions qui n'étaient en réalité que des fondus s'exportent enfin avec leur propre effet.
+
+**À savoir** : c'est une version « mineure » parce qu'elle ajoute deux **formats de projet**. Un projet qui utilise l'une des 25 nouvelles transitions s'enregistre au format 21, et un projet qui contient un clip scène 3D au format 22 : une version antérieure les refuse au lieu de perdre ces éléments. Un projet qui n'utilise ni l'un ni l'autre reste écrit exactement comme avant et s'ouvre partout. La partie 3D est une **première version** : un calque scène 3D se pose depuis le menu Calques ou par glisser-déposer d'un fichier `.kut3d`, mais l'aperçu est approximatif.
+
 ### Added
 
 - La lecture d'un projet (`describe`) couvre maintenant tout le modèle : bibliothèque (dossiers, étiquettes, rangement), guides, flou de mouvement, grille rythmique, classements, source Multicam (angles, décalage, audio), style complet des calques graphiques, style de texte et suivi (trackers, points posés à la main, liaisons, stabilisation), avec les identifiants et les instants que les verbes de script attendent ; les échantillons bruts du suivi, trop volumineux, sont résumés. `not_described` est vide.
@@ -763,7 +769,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.5...v0.7.0
 [0.6.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.3...v0.6.4
