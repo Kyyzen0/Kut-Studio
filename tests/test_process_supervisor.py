@@ -310,7 +310,7 @@ def test_a_missing_home_directory_never_prevents_a_launch(monkeypatch, caplog):
         raise RuntimeError("Could not determine home directory.")
 
     monkeypatch.setattr(process_supervisor, "registry_root", cannot_locate)
-    supervisor = ProcessSupervisor(None, use_job=False)
+    supervisor = ProcessSupervisor(None, use_job=False, use_reaper=True)       # Windows n'a pas de gardien par défaut (il y a un job)
     try:
         assert supervisor.run([sys.executable, "-c", "pass"], timeout=DEADLINE).returncode == 0
     finally:
