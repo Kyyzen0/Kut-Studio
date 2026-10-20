@@ -177,6 +177,28 @@ def _fill_keyframes(project: Project, n: int) -> None:
     clip.transform_keyframes.extend(TransformKeyframe("scale", 0.0005 * (start + index), 1.0) for index in range(n))
 
 
+def _fx_property() -> str:
+    from core.effect_targets import fx_property_id
+
+    return fx_property_id("fx1", "brightness")
+
+
+def _fill_effect_keyframes(project: Project, n: int) -> None:
+    from core.keyframe_editing import add_keyframe
+
+    clip = project.tracks[0].clips[0]
+    start = len(_effect_curve(project))
+    for index in range(start, start + n):
+        add_keyframe(project, clip.id, _fx_property(), 0.0005 * index, 0.1)
+
+
+def _effect_curve(project: Project):
+    from core.animation_targets import get_target
+
+    clip = project.tracks[0].clips[0]
+    return get_target(_fx_property(), clip).get_keyframes(clip)
+
+
 def _fill_points(project: Project, n: int) -> None:
     curve = next(track for track in project.tracks if track.id == "A1").automation
     start = len(curve.points)
@@ -223,6 +245,7 @@ RESOURCES: dict[str, Resource] = {
     "trackers": Resource((("core.scripting.tracking_rules", "MAX_TRACKERS_IN_PROJECT"),), _count_trackers, _fill_trackers, 1_001),
     "keyframes": Resource((("core.scripting.auto_rules", "MAX_KEYFRAMES_PER_CLIP"),), lambda p: len(p.tracks[0].clips[0].transform_keyframes),
                           _fill_keyframes, 2_001, cross_sequence=False),
+    "effect_keyframes": Resource((), lambda p: len(_effect_curve(p)), _fill_effect_keyframes, 2_001, cross_sequence=False),
     "points": Resource((("core.scripting.audio_rules", "MAX_AUTOMATION_POINTS"),),
                        lambda p: len(next(t for t in p.tracks if t.id == "A1").automation.points), _fill_points, 1_001, cross_sequence=False),
     "folders": Resource((("core.scripting.library_rules", "MAX_LIBRARY_FOLDERS"),), lambda p: len(p.library_folders), _fill_folders, 1_001,
@@ -300,6 +323,9 @@ def make_context(directory: Path) -> Any:
     image = QImage(8, 8, QImage.Format.Format_RGB32)
     image.fill(0xFF336699)
     assert image.save(str(directory / "p.png"), "PNG")
+    from tests.scene3d_render_samples import write_static_scene
+
+    write_static_scene(directory)                                   # ``static.kut3d`` : une scène 3D valide, pour add_scene3d_clip
     return ScriptContext(base_dir=directory)
 
 
@@ -337,6 +363,10 @@ def _source(project: Project) -> None:
     project.active_sequence_id = MAIN_SEQUENCE_ID
 
 
+def _effect(project: Project) -> None:
+    VERBS["add_effect"].build({"clip": "c1", "type": "color_correction", "id": "fx1"})(project)
+
+
 def _nestable(project: Project) -> None:
     inserted = create_sequence(project, "Ins", sequence_id="ins")
     inserted.tracks.append(Track("iv", "iv", "video"))
@@ -350,6 +380,7 @@ _ROW = [{"rank": "1", "name": "A", "value": "1"}]
 CEILINGS: dict[str, tuple[Spec, ...]] = {
     # --- Calques graphiques (layer_rules.MAX_LAYERS_IN_PROJECT) ---
     "add_graphic": (Spec("layers", {"graphic": "text", "at": 0.0, "duration": 2.0}),),
+    "add_scene3d_clip": (Spec("layers", {"path": "static.kut3d", "at": 0.0, "duration": 2.0}, context=True),),
     "add_image_layer": (Spec("layers", {"path": "p.png", "at": 0.0, "duration": 2.0}, context=True),),
     "duplicate_layers": (Spec("layers", {"clips": ["g1"]}, prepare=_layer),),
     "group_layers": (Spec("layers", {"clips": ["g1"]}, prepare=_layer),),
@@ -398,7 +429,7 @@ _LAYER_IN_CLIPS = "un calque est un clip et les deux plafonds valent la même ch
 
 EXCLUDED_RESOURCES: dict[tuple[str, str], str] = {
     **{(verb, "clips"): _LAYER_IN_CLIPS for verb in (
-        "add_graphic", "add_image_layer", "duplicate_layers", "group_layers", "apply_layer_preset", "cut_clip", "duplicate_clip")},
+        "add_graphic", "add_image_layer", "add_scene3d_clip", "duplicate_layers", "group_layers", "apply_layer_preset", "cut_clip", "duplicate_clip")},
     **{(verb, "layers"): _LAYER_IN_CLIPS for verb in (
         "add_flash", "add_karaoke_lines", "add_leaderboard", "add_photo_slideshow", "apply_impact_on_cuts")},
 }
@@ -417,6 +448,9 @@ BOUNDED: dict[str, str] = {
 """Verbes créateurs qui ne peuvent pas faire croître une ressource sans limite : ``{verbe: raison}`` (une raison qui dit comment on l'a vérifié)."""
 
 DEBT_SPECS: dict[str, Spec] = {
+    "add_effect_keyframe:effect_keyframes": Spec(
+        "effect_keyframes", {"clip": "c1", "effect": "fx1", "parameter": "brightness", "at": 3.9, "value": 0.3}, prepare=_effect,
+        placements=("active",)),
     "nest_clips:clips": Spec("clips", {"clips": ["c1"]}, placements=("active",)),
     "add_multicam_angle:clips": Spec("clips", {"sequence": "mc", "asset": "a", "name": "Nouveau"}, prepare=_source, placements=("active",)),
     "add_clip:clips": Spec("clips", {"track": "V1", "asset": "m", "at": 5.0}, placements=("active",)),
