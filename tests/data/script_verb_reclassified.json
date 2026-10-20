@@ -57,7 +57,6 @@
   "core.mograph_presets.style_social_text": "interne",
   "core.multicam_ops.angle_has_audio": "lecture seule",
   "core.multicam_ops.apply_sync": "interface seulement : analyse",
-  "core.multicam_ops.effective_angle_id": "lecture seule",
   "core.sequences.check_can_nest": "interne",
   "core.sequences.clip_media_type": "lecture seule",
   "core.sequences.clip_source_limit": "lecture seule",
