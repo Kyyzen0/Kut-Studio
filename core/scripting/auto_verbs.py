@@ -28,6 +28,7 @@ from .auto_rules import (
     MAX_LISTED_CLIPS, MAX_NEW_CLIPS_PER_OPERATION, TOLERANCE, editable_clips, require_count, require_grid, require_room,
 )
 from .impact_verbs import IMPACT_VERBS
+from .lock_rules import require_followers_unlocked
 from .template_verbs import TEMPLATE_VERBS
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip
 
@@ -75,6 +76,8 @@ def _cut_clips_on_beats(a: Mapping[str, Any]) -> Operation:
     def operation(project: Any) -> Any:
         grid = require_grid(project)
         ids = editable_clips(project, a["clips"])
+        for clip_id in ids:
+            require_followers_unlocked(project, clip_id, "couper")
         every = int(a.get("every", 1))
         pieces = sum(_cut_count(grid, find_clip(project, clip_id), every) for clip_id in ids)
         require_room(project, pieces)
@@ -114,6 +117,7 @@ def _cut_clip_at_scenes(a: Mapping[str, Any]) -> Operation:
                 f"fenêtre du clip ({clip.source_in:g}–{clip.source_out:g} s du média) ou d'un autre instant."
             )
         require_room(project, len(kept))
+        require_followers_unlocked(project, clip_id, "couper")
         return cut_clip_at_scenes(project, clip_id, times)
 
     return operation

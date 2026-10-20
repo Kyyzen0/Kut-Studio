@@ -66,6 +66,8 @@ from ..sequences import (
     insert_sequence_clip, rename_sequence, set_sequence_format,
 )
 from ..timeline_editing import add_marker
+from .lock_rules import is_locked, require_followers_unlocked
+from .selection_rules import require_dependants_editable
 from .sequence_rules import clips_in, require_sequence_room
 from .path_nodes import ANCHOR_FIELDS, NODE_FIELDS, nodes_to_arrays
 from ..timeline_operations import (
@@ -288,15 +290,25 @@ def _add_clip(a: Mapping[str, Any]) -> Operation:
 
 
 def _delete_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: delete_clip(p, _clip_id(p, a["clip"]))
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])                 # piste ET calque (le modèle ne regarde que la piste)
+        require_dependants_editable(project, [clip_id])              # parent / groupe / source de suivi verrouillés : réécrits par la suppression
+        return delete_clip(project, clip_id)
+
+    return operation
 
 
 def _move_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: move_clip(p, _clip_id(p, a["clip"]), float(a["at"]))
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])
+        require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
+        return move_clip(project, clip_id, float(a["at"]))
+
+    return operation
 
 
 def _set_clip_enabled(a: Mapping[str, Any]) -> Operation:
-    return lambda p: set_clip_enabled(p, _clip_id(p, a["clip"]), bool(a["enabled"]))
+    return lambda p: set_clip_enabled(p, _editable_clip(p, a["clip"]), bool(a["enabled"]))
 
 
 def _set_media_color_matrix(a: Mapping[str, Any]) -> Operation:
@@ -1234,7 +1246,8 @@ def _switch_multicam_angle(a: Mapping[str, Any]) -> Operation:
         if segment is None:
             raise MulticamError("Aucun segment Multicam sous cet instant (piste vidéo de la séquence active).")
         # ``switch_angle`` ne vérifie le verrou que par ``cut_clip`` : au début d'un segment il change l'angle sans coupe, donc sans contrôle.
-        _require_unlocked(_owner_track(project, segment.id))
+        _editable_clip(project, segment.id)                               # piste ET calque verrouillés
+        require_followers_unlocked(project, segment.id, "couper")         # la coupe prolonge les liaisons de suivi qui suivent le segment
         source = find_sequence(project, segment.sequence_id)
         result = switch_angle(project, at, _angle_id(source, a["angle"]), clip_id=segment.id, segment_id=a.get("id"))
         return result.clip if result is not None else segment             # déjà cet angle : aucune coupe, on rend le segment tel quel
@@ -1303,6 +1316,9 @@ def _set_multicam_angle_offset(a: Mapping[str, Any]) -> Operation:
         track = next((item for item in source.tracks if item.id == angle.track_id), None)
         if track is not None:
             _require_unlocked(track)                                      # ``set_angle_offset`` déplace les clips sans regarder le verrou
+            for clip in track.clips:
+                if is_locked(track, clip):                                # ... ni celui du calque de chacun d'eux
+                    raise ValueError(f"Le calque '{clip.id}' de l'angle est verrouillé : le décalage le déplacerait.")
         return set_angle_offset(project, source.id, angle_id, float(a["offset"]))
 
     return operation

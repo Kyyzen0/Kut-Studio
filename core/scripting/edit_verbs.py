@@ -27,6 +27,8 @@ from ..timeline_editing import (
 from ..timeline_operations import cut_clip, duplicate_clip, find_clip, ripple_delete_clip, trim_clip_left, trim_clip_right
 from ..track_operations import move_track, remove_track, rename_track
 from .layer_rules import require_room
+from .lock_rules import require_followers_unlocked
+from .selection_rules import require_dependants_editable
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _owner_track, _pick, _require_unlocked, _track_id
 
 _MAX_INDEX = 10_000
@@ -88,6 +90,7 @@ def _cut_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
         _room_for_copy(project, clip_id)
+        require_followers_unlocked(project, clip_id, "couper")     # ``follow_cut`` ajoute la moitié droite aux liaisons des suiveurs
         _left, right = cut_clip(project, clip_id, float(a["at"]), right_clip_id=a.get("id"))
         return right                                  # l'objet créé : celui que le script peut citer ensuite
 
@@ -108,6 +111,7 @@ def _ripple_delete_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
         _require_editable_followers(project, clip_id, tracks=project.tracks)
+        require_dependants_editable(project, [clip_id])            # parent / groupe / source de suivi verrouillés : réécrits par la suppression
         return ripple_delete_clip(project, clip_id)
 
     return operation
@@ -161,6 +165,7 @@ def _roll_edit(a: Mapping[str, Any]) -> Operation:
 def _move_clip_to_track(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
+        require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
         return relocate_clip(project, clip_id, _track_id(project, a["track"]), float(a["at"]))
 
     return operation
