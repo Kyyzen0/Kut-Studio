@@ -525,6 +525,27 @@ def test_a_clip_that_was_never_graded_is_animated_from_the_neutral_grade():
 
 
 @needs_ffmpeg
+def test_a_plan_cut_into_several_windows_stays_exact_across_the_window_boundaries():
+    """80 images d'exposition et de roue colorée (~0,6 Mo) : plusieurs fenêtres de 192 Ko, donc plusieurs ``sendcmd`` à la suite ; les
+    images de part et d'autre de chaque frontière reçoivent leur valeur (écart 0 contre le rendu statique)."""
+    from core.grade_render import WINDOW_BYTES
+
+    animation = [kf("color.exposure", 0.0, -1.2), kf("color.exposure", 80 / 30, 1.2), kf("color.lift.r", 0.0, -0.3),
+                 kf("color.lift.r", 80 / 30, 0.3)]
+    chain, files = chain_of(ColorGrade(), animation, context_for(30.0, 0.0, 80 / 30))
+    try:
+        assert len(files) >= 3 and max(os.path.getsize(path) for path in files) <= WINDOW_BYTES
+        edges = []
+        for path in files[1:]:                                    # la première instruction de chaque fenêtre suivante
+            first = float(open(path, encoding="utf-8").readline().split(" ")[0])
+            edges.append(round(first * 30))
+    finally:
+        cleanup(files)
+    frames = sorted({0, 79, *(index + delta for index in edges for delta in (-1, 0, 1, 2) if 0 <= index + delta < 80)})
+    _assert_parity(ColorGrade(), animation, frames=tuple(frames), rate=30.0, count=80, ffrate="30")
+
+
+@needs_ffmpeg
 def test_all_stages_animated_together_still_match_the_static_render():
     """Les sept réglages et les quatre roues animés ensemble : un seul fichier, des cibles distinctes, chaque image égale le statique."""
     animation = []

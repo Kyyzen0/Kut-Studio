@@ -174,6 +174,16 @@ L'expression en `n` compte à partir de la première image que reçoit **ce** fi
 8. **`sendcmd` devant le filtre** (c'est la seule disposition mesurée) : il envoie la commande en traitant l'image,
    avant de la transmettre au filtre.
 
+9. **La mémoire de `sendcmd` sur FFmpeg 6.1 et 7.1** (trouvé à l'étape 6, mesuré sur 6.1.1 et 7.1.5, `docs/adr/0008-*.md`). Un fichier de
+   commandes est lu en entier à l'initialisation avec une mémoire de l'ordre de **1000 fois sa taille** (pic) : 800 lignes de 4,7 Ko
+   (3,7 Mo) font monter FFmpeg 7.1.5 à **4,4 Go avant la première image** (6.1.1 : pareil ; 9.0.2 : 19 Mo). Deux conséquences :
+   (a) la mémoire du pic est **rendue** après la lecture de chaque fichier : couper les commandes en fenêtres (un `sendcmd` par fenêtre,
+   `core/grade_render.py`) ramène le pic de 4,4 Go à 164 Mo (8 fenêtres de 100 lignes) ; (b) il reste, après lecture, ~40 à 45 fois la
+   taille des fichiers en mémoire résidente (7.1.5 : 1,98 Go pour 41,8 Mo de commandes ; 9.0.2 : 124 Mo). L'étalonnage animé borne donc le
+   total à 32 Mo. Les fichiers courts (flou, aberration chromatique, rayon du Bloom : une instruction de ~60 octets par image) coûtent
+   ~50 Ko de mémoire par instruction sur 6.1 / 7.1 (7 200 instructions : 427 Mo sur 7.1.5, 413 Mo sur 6.1.1) : un flou animé de dix minutes
+   approcherait le gigaoctet sur ces versions, sans fenêtres (non traité à l'étape 6).
+
 ## Méthode à utiliser
 
 - Un fichier de commandes par segment rendu, une ligne par image : `<instant> <cible> <option> <valeur>[, <cible>
@@ -222,5 +232,5 @@ Contraste, saturation et teinte passent par expression (`eq` en `eval=frame`, `h
   `tools/validate_fx_render.py`, cas `tables`) ;
 - coût : une commande `curves` à 256 points coûte le même temps que le filtre fixe, alors qu'une commande `lutrgb` recalcule sa table (voir
   l'ADR-0008, « Résultats de l'étape 6 », `tools/measure_grade_cost.py`) ;
-- taille : ~4,6 Ko par image et par table (17 octets par point) : un clip d'une heure animé en exposition demanderait ~500 Mo ; l'application
-  refuse, avant de construire le texte, un fichier de plus de 192 Mo.
+- taille : ~4,7 Ko par image et par table (17 octets par point). Les fichiers sont écrits **par fenêtres de 192 Ko** et le total est borné à
+  32 Mo : voir le piège 9 (mémoire de `sendcmd` sur 6.1 / 7.1).

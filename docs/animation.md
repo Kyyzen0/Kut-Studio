@@ -367,9 +367,11 @@ de base), pas de verbe de script. Ce qui existe : le modèle et l'**export** (do
   `colorchannelmixer` neutres sont l'identité exacte ; `eq` et `hue` neutres peuvent ajouter l'arrondi d'une conversion YUV (écart mesuré
   dans l'ADR).
 - **Taille du fichier de commandes** : ~4,6 Ko par image pour l'exposition (une table de 256 points), trois fois plus pour des roues
-  colorées (la molette seule suffit à un seul canal `master`). Le fichier est écrit ligne à ligne ; borne posée **avant** de le créer
-  (192 Mo) : un clip animé plus long que ~41 900 images (exposition, 23 min à 30 i/s) ou ~14 700 (roues colorées, 8 min) est refusé à
-  l'export avec un message, jamais rendu faux.
+  colorées (la molette seule suffit à un seul canal `master`). Le texte est écrit ligne à ligne, **par fenêtres de 192 Ko** (un `sendcmd`
+  par fenêtre : FFmpeg 6.1 et 7.1 lisent un fichier avec ~1000 fois sa taille de mémoire, voir `docs/ffmpeg-sendcmd.md`, piège 9), et le
+  total est borné à **32 Mo** (FFmpeg 6.1 / 7.1 en gardent ~45 fois la taille en mémoire : 32 Mo restent sous ~1,5 Go). Un clip dont
+  l'étalonnage animé dépasse cette borne (de l'ordre de quatre minutes d'exposition, d'une à deux minutes de roues colorées, à 30 i/s ;
+  une courbe qui reste constante ne coûte rien) est refusé à l'export avec un message, jamais rendu faux.
 - **Format** : un fichier qui contient une image clé d'étalonnage rendue s'écrit en version **24** (`GRADE_ANIMATION_VERSION`), qui
   l'emporte sur toutes les autres ; une version antérieure le refuse. Sans ces images clés, le fichier est écrit octet pour octet comme avant, et
   le moteur de rendu (`RENDER_ENGINE_VERSION`) ne change pas : le graphe d'un clip sans image clé `color.*` est identique, caractère pour caractère.
