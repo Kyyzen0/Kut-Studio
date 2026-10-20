@@ -116,6 +116,7 @@ READ_MODULES: dict[str, str] = {
     "timeline_index": "index de la timeline (lecture)",
     "timeline_view_model": "modèle de vue de la timeline (lecture)",
     "tracking_bindings": "images clés dérivées d'un suivi (lecture)",
+    "tracking_locks": "garde-fous de verrou des suiveurs d'un suivi (refus), appelés par la coupe et la suppression du modèle",
 }
 """Les modules de ``core/`` qui ont des fonctions publiques à premier paramètre ``project`` mais qui **ne sont pas** une surface d'édition
 du modèle (rendu, cache, persistance, gardes). Un module de ``core/`` absent des deux tables est refusé par le test."""

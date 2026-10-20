@@ -63,7 +63,6 @@ from ..multicam_ops import (
     AngleSpec, MulticamError, add_angle, create_multicam_source, insert_multicam_clip, multicam_segment_at, rename_angle,
     replace_angle, set_angle_offset, set_audio_policy, switch_angle,
 )
-from ..multicam_ops import effective_angle_id
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Sequence
 from ..sequences import (
@@ -1279,9 +1278,6 @@ def _switch_multicam_angle(a: Mapping[str, Any]) -> Operation:
         # ``switch_angle`` ne vérifie le verrou que par ``cut_clip`` : au début d'un segment il change l'angle sans coupe, donc sans contrôle.
         _editable_clip(project, segment.id)                               # piste ET calque verrouillés
         source = find_sequence(project, segment.sequence_id)
-        half_frame = 0.5 / max(1.0, float(project.active_sequence.fps))
-        if effective_angle_id(project, segment) != _angle_id(source, a["angle"]) and at - segment.timeline_start > half_frame:
-            require_followers_unlocked(project, segment.id, "couper")     # seule une vraie coupe prolonge les liaisons de suivi du segment
         require_clip_room(project, multicam_switch_adds(project, at, _angle_id(source, a["angle"]), segment))     # la coupe crée un clip
         result = switch_angle(project, at, _angle_id(source, a["angle"]), clip_id=segment.id, segment_id=a.get("id"))
         return result.clip if result is not None else segment             # déjà cet angle : aucune coupe, on rend le segment tel quel
