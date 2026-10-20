@@ -1,5 +1,5 @@
 {
- "_comment": "Raisons DURABLES de la dette des verbes (la fonction n'est pas un verbe : lecture seule, interne, interface seulement…). Un merge qui écrase un de ces reclassements fait échouer tests/test_script_verb_completeness.py. Ne s'édite pas à la main : python -m tools.scripting_debt verbs --sync-reclassified.",
+ "_comment": "Raisons DURABLES de la dette des verbes (la fonction n'est pas un verbe : lecture seule, interne, interface seulement…). Un merge qui écrase un de ces reclassements fait échouer tests/test_script_verb_reasons.py. Ne s'édite pas à la main : python -m tools.scripting_debt verbs --sync-reclassified.",
  "version": 1,
  "verbs": {
   "core.audio_automation.AudioAutomationService.all_sidechains": "lecture seule",
@@ -29,6 +29,8 @@
   "core.keyframe_editing.next_keyframe_time": "lecture seule",
   "core.keyframe_editing.paste_keyframes": "interface seulement",
   "core.keyframe_editing.previous_keyframe_time": "lecture seule",
+  "core.keyframe_editing.remove_keyframes": "couvert par un verbe",
+  "core.keyframe_editing.set_value_at": "couvert par un verbe",
   "core.keyframe_editing.value_at": "lecture seule",
   "core.leaderboard.leaderboard_of": "lecture seule",
   "core.library_organization.LibraryOrganization.all_folders": "lecture seule",
@@ -84,6 +86,7 @@
   "core.time_commands.apply_time_command": "interface seulement",
   "core.time_ops.capture_time_state": "interne",
   "core.time_ops.ensure_interpolation_possible": "interne",
+  "core.time_ops.move_speed_point": "couvert par un verbe",
   "core.time_ops.project_clip": "interne",
   "core.time_ops.restore_time_state": "interne",
   "core.time_ops.speed_points": "lecture seule",
@@ -100,6 +103,8 @@
   "core.timeline_operations.clip_keyframes_remain_valid_after_trim": "interne",
   "core.timeline_operations.duplicate_clip_preserving_transform": "remplacé",
   "core.timeline_operations.find_track": "lecture seule",
+  "core.timeline_operations.remove_transform_keyframe": "couvert par un verbe",
+  "core.timeline_operations.set_transform_keyframe": "couvert par un verbe",
   "core.timeline_operations.snap_timeline_position": "interface seulement",
   "core.timeline_operations.subtitle_cues_from_project": "lecture seule",
   "core.track_operations.collect_track_ids": "lecture seule",
