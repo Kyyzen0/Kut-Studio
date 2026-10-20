@@ -11,6 +11,7 @@ from typing import Any
 
 from kut3d.errors import SceneFileError, short
 from kut3d.model import Model
+from kut3d.primitive_models import pristine_material
 from kut3d.scene import (
     AmbientLight,
     DirectionalLight,
@@ -21,8 +22,10 @@ from kut3d.scene import (
 )
 from kut3d.scene_io_fields import MAX_MODELS, MAX_SCENE_BYTES, model_id
 from kut3d.scene_io_paths import check_relative_path, filesystem_errors
+from kut3d.scene_io_primitives import material_document, primitive_document
 from kut3d.scene_io_read import (
     FORMAT_NAME,
+    PRIMITIVES_FORMAT_VERSION,
     SCENE_FORMAT_VERSION,
     build_scene,
     parse_document,
@@ -86,8 +89,26 @@ def _relative_path(
     return rel
 
 
+def _primitive_entry(model: Model, mid: str, label: str) -> dict[str, Any]:
+    assert model.primitive is not None
+    try:
+        material = pristine_material(model)
+    except ValueError as exc:
+        raise SceneFileError(f"{label} : {short(str(exc), 200)}") from exc
+    entry: dict[str, Any] = {
+        "id": mid,
+        "primitive": primitive_document(model.primitive),
+        "root_transform": [float(x) for x in model.root_transform.reshape(-1)],
+    }
+    document = material_document(material, label)
+    if document is not None:
+        entry["material"] = document
+    return entry
+
+
 def _unique_id(model: Model, taken: set[str]) -> str:
-    stem = re.sub(r"[^A-Za-z0-9_-]", "_", model.source.stem)[:48] or "model"
+    base = model.primitive.kind if model.primitive is not None else model.source.stem
+    stem = re.sub(r"[^A-Za-z0-9_-]", "_", base)[:48] or "model"
     candidate, n = stem, 1
     while candidate in taken:
         n += 1
@@ -134,6 +155,9 @@ def _document_and_models(
         ids[id(model)] = mid
         by_id[mid] = model
         label = f"modèle {mid}"
+        if model.primitive is not None:
+            models.append(_primitive_entry(model, mid, label))
+            continue
         models.append(
             {
                 "id": mid,
@@ -144,7 +168,10 @@ def _document_and_models(
     camera = scene.camera
     doc = {
         "format": FORMAT_NAME,
-        "version": SCENE_FORMAT_VERSION,
+        # Version 2 SEULEMENT si une forme de base y figure : une scène sans forme s'écrit octet pour octet comme en version 1.
+        "version": PRIMITIVES_FORMAT_VERSION
+        if any("primitive" in entry for entry in models)
+        else SCENE_FORMAT_VERSION,
         "scene": {
             "camera": {
                 "position": _vec(camera.position),

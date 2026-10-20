@@ -260,6 +260,27 @@ class Film:
         self._scenes.append(ScenePlacement(label, path, at, length, number))
         return _scene_clip_id(label, len(self._scenes))
 
+    # --- formes de base --------------------------------------------------------------------------------------------------
+
+    def primitive(
+        self, kind: Any, *, material: Any = None, position: Any = (0.0, 0.0, 0.0), rotation_deg: Any = (0.0, 0.0, 0.0),
+        scale: Any = 1.0, name: str = "", **params: Any,
+    ) -> Any:
+        """Une forme de base posée, à mettre dans les ``instances`` d'une ``kut3d.Scene`` : ``film.primitive("sphere", radius=1.0, position=(0, 1, 0))``.
+
+        ``kind`` : ``cube``, ``sphere``, ``plane``, ``cylinder``, ``cone`` ou ``torus`` (ou une description ``kut3d.Sphere(...)``) ; les dimensions
+        et la tessellation sont des paramètres nommés (bornes : ``docs/kut3d-scene.md``). Une scène qui ne contient que des formes se pose avec
+        :meth:`place_scene` sans aucun fichier de modèle. Ne dépend pas du film (aucun état) : c'est le raccourci de ``kut3d.primitive_instance``.
+        """
+        import kut3d
+
+        try:
+            return kut3d.primitive_instance(
+                kind, material=material, position=position, rotation_deg=rotation_deg, scale=scale, name=name, **params,
+            )
+        except ValueError as error:
+            raise FilmError(f"Forme de base refusée : {short(str(error), 300)}") from error
+
     # --- audio -----------------------------------------------------------------------------------------------------------
 
     def audio(

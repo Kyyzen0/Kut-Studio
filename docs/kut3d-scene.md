@@ -1,10 +1,11 @@
 # Fichier de scène `.kut3d`
 
 Un `.kut3d` est une scène 3D sérialisée (caméra, lumières, fond, modèles, instances). Un modèle y est une
-**référence** vers un fichier OBJ, glTF/GLB, PLY ou STL (voir [kut3d-import.md](kut3d-import.md)) ; le rendu est décrit
-dans [kut3d-render.md](kut3d-render.md). API : `kut3d.load_scene`, `save_scene`, `dependency_files`.
+**référence** vers un fichier OBJ, glTF/GLB, PLY ou STL (voir [kut3d-import.md](kut3d-import.md)) **ou une forme de base
+paramétrique** (cube, sphère, plan, cylindre, cône, tore : [voir plus bas](#formes-de-base-format-2)), sans aucun fichier ;
+le rendu est décrit dans [kut3d-render.md](kut3d-render.md). API : `kut3d.load_scene`, `save_scene`, `dependency_files`.
 
-## Format (version 1)
+## Format (version 1, ou 2 avec des formes de base)
 
 ```json
 {
@@ -38,6 +39,64 @@ dans [kut3d-render.md](kut3d-render.md). API : `kut3d.load_scene`, `save_scene`,
   (aller-retour exact) ; si les deux sont présents, **`root_transform` prime**.
 - `clip` : nom ou indice d'une animation du modèle, ou `null`. Deux instances du même modèle partagent une entrée de `models`.
 
+## Formes de base (format 2)
+
+Une entrée de `models[]` peut porter **`primitive`** à la place de `path` : les PARAMÈTRES de la forme, jamais ses sommets (la
+géométrie est générée à la lecture, de façon déterministe). Un fichier qui contient au moins une forme est écrit en
+**version 2** ; un fichier sans forme reste écrit **octet pour octet comme en version 1**. Un lecteur plus ancien refuse un
+fichier de version 2 (`SceneVersionError`) au lieu de l'ignorer ; un lecteur récent refuse une forme dans un fichier de version 1.
+
+```json
+{
+  "format": "kut3d",
+  "version": 2,
+  "scene": {
+    "camera": {"position": [0, 1, 5], "target": [0, 0, 0]},
+    "lights": [{"type": "directional", "direction": [-0.4, -0.6, -0.7], "intensity": 2.5}],
+    "models": [
+      {"id": "sol", "primitive": {"kind": "plane", "width": 8.0, "depth": 8.0, "width_segments": 1, "depth_segments": 1},
+       "material": {"base_color": [0.3, 0.3, 0.35, 1.0], "roughness": 0.9}},
+      {"id": "boule", "primitive": {"kind": "sphere", "radius": 0.5, "segments": 32, "rings": 16},
+       "material": {"base_color": [0.9, 0.2, 0.2, 1.0], "metallic": 0.1, "roughness": 0.4}}
+    ],
+    "instances": [
+      {"model": "sol"},
+      {"model": "boule", "transform": [1,0,0,0, 0,1,0,0.5, 0,0,1,0, 0,0,0,1]}
+    ]
+  }
+}
+```
+
+| `kind` | paramètres (défaut) | géométrie |
+|---|---|---|
+| `cube` | `width` 1, `height` 1, `depth` 1 | boîte centrée, 24 sommets (normales plates), 12 triangles |
+| `sphere` | `radius` 0.5, `segments` 32, `rings` 16 | normales lisses, un sommet par segment à chaque pôle |
+| `plane` | `width` 1, `depth` 1, `width_segments` 1, `depth_segments` 1 | dans XZ à y = 0, normale +Y, surface OUVERTE |
+| `cylinder` | `radius` 0.5, `height` 1, `segments` 32, `caps` true | axe Y ; bouchons plats si `caps` |
+| `cone` | `radius` 0.5, `height` 1, `segments` 32, `cap` true | axe Y, base en bas, sommet en haut ; bouchon plat si `cap` |
+| `torus` | `major_radius` 0.5, `minor_radius` 0.2, `segments` 32, `tube_segments` 16 | axe Y ; `minor_radius` < `major_radius` |
+
+Toutes les formes sont centrées sur l'origine (main droite, Y vers le haut), leurs triangles sont en sens direct vu de
+l'extérieur (un matériau à une seule face les montre correctement) et leurs UV suivent glTF (origine en haut à gauche,
+V vers le bas) : une texture s'y pose à l'endroit, sans miroir, sur chaque face du cube, sur le plan et sur les bouchons.
+Le plan, un cylindre sans `caps` et un cône sans `cap` sont des surfaces ouvertes : `"double_sided": true` pour les voir des
+deux côtés.
+
+**Matériau** (`material`, facultatif ; absent = le gris par défaut du rendu) : `name`, `base_color` (RGBA dans [0, 1]),
+`metallic`, `roughness`, `alpha_cutoff` (dans [0, 1]), `emissive` (RVB dans [0, 16]), `alpha_mode` (`opaque`, `mask`, `blend`),
+`double_sided`. Les **textures** d'une forme ne s'enregistrent pas encore : `save_scene` refuse un matériau avec texture
+(`SceneFileError`) au lieu de la perdre ; elles marchent pour un rendu en mémoire. `root_transform` (16 nombres) est accepté,
+`normalize` ne l'est pas. Un modèle de forme dont le maillage a été changé après coup (`dataclasses.replace`) est refusé à l'écriture.
+
+**Bornes** (constantes de `kut3d.primitives`, vérifiées AVANT de générer quoi que ce soit, à la lecture comme à la construction) :
+dimensions dans [1e-6, 1e6] (finies ; ni booléen ni texte), `segments` dans [3, 256], `rings` dans [2, 256], `width_segments` et
+`depth_segments` dans [1, 256], `tube_segments` dans [3, 256], **entiers** (`32.0` est refusé). **65 536 triangles** au plus par forme
+(`MAX_PRIMITIVE_TRIANGLES` ; une sphère 256 x 128 ou un plan 181 x 181 tiennent, un plan 256 x 256 non) et **500 000 triangles** au plus
+pour l'ensemble des formes d'un fichier (`MAX_SCENE_PRIMITIVE_TRIANGLES`) : un fichier hostile n'alloue jamais plus.
+
+En script : `kut3d.primitive_instance("sphere", radius=1.0, position=(0, 1, 0), material=Material(...))` (ou
+`Film.primitive(...)`) retourne une `Instance` ; `kut3d.primitive_model(Sphere(radius=1.0))` retourne le `Model`.
+
 ## Temps de la scène
 
 Le temps est en **secondes locales du clip** qui référencera la scène. La scène elle-même ne boucle pas : chaque
@@ -56,10 +115,10 @@ symboliques, dossier en lecture seule) devient une `SceneFileError` courte, sans
 
 ## Refus à la lecture (`SceneFileError`, en français)
 
-Version plus récente que 1 (`SceneVersionError`) ; clé inconnue à n'importe quel niveau ; clé en double ; NaN, infini
+Version plus récente que 2 (`SceneVersionError`) ; clé inconnue à n'importe quel niveau ; clé en double ; NaN, infini
 ou nombre démesuré ; type faux (un booléen n'est pas un nombre) ; tableau de la mauvaise longueur ; valeur refusée par
 `Camera`, les lumières ou `Instance` ; modèle introuvable ou illisible ; clip inexistant ; identifiant de modèle en double
-(1 à 64 caractères parmi lettres ASCII, chiffres, `_`, `-`). `save_scene` refuse un modèle sans fichier source.
+(1 à 64 caractères parmi lettres ASCII, chiffres, `_`, `-`). `save_scene` refuse un modèle sans fichier source (géométrie construite en code), sauf une forme de base.
 
 ## Écriture aussi stricte que la lecture
 
@@ -74,7 +133,7 @@ la normalisation est idempotente, donc `save → load → save` redonne exacteme
 ## Limites
 
 Fichier ≤ 16 Mio, JSON de profondeur bornée, ≤ 16 lumières, ≤ 2048 instances, ≤ 256 modèles, noms ≤ 200 caractères,
-chemins ≤ 1024. L'écriture est atomique (fichier temporaire puis remplacement), triée, en ASCII, terminée par `\n`.
+chemins ≤ 1024, formes de base : voir plus haut. L'écriture est atomique (fichier temporaire puis remplacement), triée, en ASCII, terminée par `\n`.
 `dependency_files(path)` retourne le `.kut3d` puis, triés et sans doublon, les fichiers de tout modèle **déclaré** (même
 sans instance : `load_scene` l'exige), leurs `.mtl`, `.bin`
 externes et textures (`Model.dependencies`).
