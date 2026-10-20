@@ -495,5 +495,5 @@ def test_the_documentation_lists_exactly_the_verbs_of_the_table():
 
     text = (Path(__file__).resolve().parent.parent / "docs" / "scripting.md").read_text(encoding="utf-8")
     table = text[text.index("## Les verbes"):text.index("## Pas encore là")]
-    documented = set(re.findall(r"^\| `([a-z_]+)` \|", table, flags=re.M))
+    documented = set(re.findall(r"^\| `([a-z0-9_]+)` \|", table, flags=re.M))
     assert documented == set(VERBS)

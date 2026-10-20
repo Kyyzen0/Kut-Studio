@@ -139,29 +139,35 @@ def _remove_speed_point(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+def _checked_move(project: Project, clip_id: str, moments: list[float], delta: float, verb: str) -> list[str]:
+    """Les identifiants des points aux instants ``moments``, après avoir vérifié qu'un déplacement de ``delta`` s les laisse dans le clip et
+    sur aucun point qui ne bouge pas. Le modèle borne le groupe entier au clip (un décalage trop grand est réduit) et remplace un point non
+    déplacé qu'il rejoint : un script reçoit l'un comme l'autre refusés, jamais un autre déplacement que celui qu'il a écrit."""
+    clip = find_clip(project, clip_id)
+    ids = [_speed_point(project, clip_id, float(moment)) for moment in moments]
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"{verb} : deux instants désignent le même point.")
+    moved = {str(point.id): point for point in SPEED_TARGET.curve(clip).keyframes}
+    duration = float(clip.duration)
+    arrivals = []
+    for point_id in ids:
+        arrival = normalize_time(moved[point_id].time_seconds + delta)
+        if arrival < -TIME_EPSILON or arrival > duration + TIME_EPSILON:
+            raise ValueError(f"{verb} : le point à {moved[point_id].time_seconds:g} s sortirait du clip (de 0 à {duration:g} s).")
+        arrivals.append(arrival)
+    for other in moved.values():
+        if str(other.id) not in ids and any(abs(other.time_seconds - arrival) <= 2 * TIME_EPSILON for arrival in arrivals):
+            raise ValueError(f"{verb} : un point arriverait sur celui de {other.time_seconds:g} s, qu'il remplacerait.")
+    return ids
+
+
 def _move_speed_points(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _time_clip(project, a["clip"])
-        clip = find_clip(project, clip_id)
         delta = float(a["delta"])
         if abs(delta) <= _TOLERANCE:
             raise ValueError("move_speed_points : un décalage nul ne déplace rien.")
-        ids = [_speed_point(project, clip_id, float(moment)) for moment in a["points"]]
-        if len(set(ids)) != len(ids):
-            raise ValueError("move_speed_points : deux instants désignent le même point.")
-        moved = {str(point.id): point for point in SPEED_TARGET.curve(clip).keyframes}
-        duration = float(clip.duration)
-        # Le modèle borne le groupe entier au clip (un décalage trop grand est réduit) et remplace un point non déplacé qu'il rejoint : un
-        # script reçoit l'un comme l'autre refusés, jamais un autre déplacement que celui qu'il a écrit.
-        arrivals = []
-        for point_id in ids:
-            arrival = normalize_time(moved[point_id].time_seconds + delta)
-            if arrival < -TIME_EPSILON or arrival > duration + TIME_EPSILON:
-                raise ValueError(f"move_speed_points : le point à {moved[point_id].time_seconds:g} s sortirait du clip (de 0 à {duration:g} s).")
-            arrivals.append(arrival)
-        for other in moved.values():
-            if str(other.id) not in ids and any(abs(other.time_seconds - arrival) <= 2 * TIME_EPSILON for arrival in arrivals):
-                raise ValueError(f"move_speed_points : un point arriverait sur celui de {other.time_seconds:g} s, qu'il remplacerait.")
+        ids = _checked_move(project, clip_id, list(a["points"]), delta, "move_speed_points")
         refs = [KeyframeRef(clip_id, SPEED_PROPERTY, point_id) for point_id in ids]
         return move_speed_points(project, refs, delta, mode=_mode(a))
 
@@ -176,18 +182,22 @@ def _clear_speed_curve(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+def _require_aligned(project: Project, clip: Any, at: float, verb: str) -> None:
+    """L'interface aligne l'instant sur une image de la timeline (et le ramène dans le clip) : un script reçoit un instant non aligné refusé."""
+    aligned = snap_to_frame(clip, at, float(project.fps))
+    if abs(aligned - normalize_time(at)) > 1e-6:
+        raise ValueError(
+            f"{verb} : l'instant {at:g} s n'est pas sur une image de la timeline ({project.fps:g} i/s) ou sort du clip ; "
+            f"le plus proche est {aligned:g} s."
+        )
+
+
 def _insert_hold(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _time_clip(project, a["clip"])
         clip = find_clip(project, clip_id)
         at = float(a["at"])
-        # L'interface aligne l'instant sur une image de la timeline (et le ramène dans le clip) : un script reçoit un instant non aligné refusé.
-        aligned = snap_to_frame(clip, at, float(project.fps))
-        if abs(aligned - normalize_time(at)) > 1e-6:
-            raise ValueError(
-                f"insert_hold : l'instant {at:g} s n'est pas sur une image de la timeline ({project.fps:g} i/s) ou sort du clip ; "
-                f"le plus proche est {aligned:g} s."
-            )
+        _require_aligned(project, clip, at, "insert_hold")
         return insert_hold(project, clip_id, at, float(a.get("duration", 1.0)), fps=float(project.fps), mode=_mode(a))
 
     return operation
