@@ -120,3 +120,17 @@ def test_a_locked_follower_of_the_right_half_is_still_covered_after_a_free_cut()
     _left, right = cut_clip(project, "a", 2.0)
     find_clip(project, "f").graphic = GraphicOverlay(type=GraphicType.TEXT, locked=True)
     _refused(project, lambda p: delete_clip(p, right.id))
+
+
+def test_updating_a_leaderboard_refuses_before_removing_anything_when_a_locked_follower_would_be_rewritten():
+    from core.leaderboard import Leaderboard, LeaderboardRow, build_leaderboard, update_leaderboard
+
+    project = _project()
+    board = Leaderboard((LeaderboardRow("1", "A", "9"),), start=0.0, duration=3.0, id="lb1")
+    clips = build_leaderboard(project, board)
+    layers = [clip.id for clip in project.active_sequence.tracks[-1].clips] if clips else []
+    assert layers
+    # Un clip verrouillé suit le premier calque ET une moitié qui le prolonge : sa liaison serait réécrite.
+    _follow(project, "f", layers[0], continuation=(layers[1],) if len(layers) > 1 else ("b",))
+    find_clip(project, "f").graphic = GraphicOverlay(type=GraphicType.TEXT, locked=True)
+    _refused(project, lambda p: update_leaderboard(p, board))
