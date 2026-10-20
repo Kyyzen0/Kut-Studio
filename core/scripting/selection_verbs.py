@@ -26,6 +26,7 @@ from typing import Any
 
 from ..project_model import Project
 from ..timeline_editing import ClipPlacement, delete_clips, move_clips
+from ..timeline_operations import find_clip
 from .auto_rules import MAX_LISTED_CLIPS, editable_clips
 from .edit_verbs import _require_editable_followers
 from .lock_rules import require_followers_unlocked
@@ -65,7 +66,8 @@ def _move_clips(a: Mapping[str, Any]) -> Operation:
         for clip_id, item in zip(ids, wanted, strict=True):
             destination = _pick(project.tracks, item["track"], "Piste")
             _require_unlocked(destination)
-            require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
+            if float(item["at"]) != find_clip(project, clip_id).timeline_start:
+                require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
             placements.append(ClipPlacement(clip_id, float(item["at"]), destination.id))
         move_clips(project, placements)
         return None

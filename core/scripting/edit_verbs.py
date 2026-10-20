@@ -90,7 +90,9 @@ def _cut_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
         _room_for_copy(project, clip_id)
-        require_followers_unlocked(project, clip_id, "couper")     # ``follow_cut`` ajoute la moitié droite aux liaisons des suiveurs
+        clip = find_clip(project, clip_id)
+        if clip.timeline_start < float(a["at"]) < clip.timeline_start + clip.duration:     # hors du clip, le modèle refuse sans rien écrire
+            require_followers_unlocked(project, clip_id, "couper")     # ``follow_cut`` ajoute la moitié droite aux liaisons des suiveurs
         _left, right = cut_clip(project, clip_id, float(a["at"]), right_clip_id=a.get("id"))
         return right                                  # l'objet créé : celui que le script peut citer ensuite
 
@@ -165,7 +167,8 @@ def _roll_edit(a: Mapping[str, Any]) -> Operation:
 def _move_clip_to_track(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
-        require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
+        if float(a["at"]) != find_clip(project, clip_id).timeline_start:      # seul un changement d'instant déplace le mouvement des suiveurs
+            require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
         return relocate_clip(project, clip_id, _track_id(project, a["track"]), float(a["at"]))
 
     return operation

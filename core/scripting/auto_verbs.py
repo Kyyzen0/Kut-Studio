@@ -76,10 +76,12 @@ def _cut_clips_on_beats(a: Mapping[str, Any]) -> Operation:
     def operation(project: Any) -> Any:
         grid = require_grid(project)
         ids = editable_clips(project, a["clips"])
-        for clip_id in ids:
-            require_followers_unlocked(project, clip_id, "couper")
         every = int(a.get("every", 1))
-        pieces = sum(_cut_count(grid, find_clip(project, clip_id), every) for clip_id in ids)
+        counts = {clip_id: _cut_count(grid, find_clip(project, clip_id), every) for clip_id in ids}
+        for clip_id in ids:
+            if counts[clip_id] > 0:                       # un clip sans temps fort intérieur reste intact : ni lien ni source ne changent
+                require_followers_unlocked(project, clip_id, "couper")
+        pieces = sum(counts.values())
         require_room(project, pieces)
         return cut_clips_on_beats(project, ids, grid, every=every)
 

@@ -59,6 +59,7 @@ from ..multicam_ops import (
     AngleSpec, MulticamError, add_angle, create_multicam_source, insert_multicam_clip, multicam_segment_at, rename_angle,
     replace_angle, set_angle_offset, set_audio_policy, switch_angle,
 )
+from ..multicam_ops import effective_angle_id
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Sequence
 from ..sequences import (
@@ -301,7 +302,8 @@ def _delete_clip(a: Mapping[str, Any]) -> Operation:
 def _move_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
-        require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
+        if float(a["at"]) != find_clip(project, clip_id).timeline_start:     # seul un changement d'instant déplace le mouvement des suiveurs
+            require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
         return move_clip(project, clip_id, float(a["at"]))
 
     return operation
@@ -1247,8 +1249,10 @@ def _switch_multicam_angle(a: Mapping[str, Any]) -> Operation:
             raise MulticamError("Aucun segment Multicam sous cet instant (piste vidéo de la séquence active).")
         # ``switch_angle`` ne vérifie le verrou que par ``cut_clip`` : au début d'un segment il change l'angle sans coupe, donc sans contrôle.
         _editable_clip(project, segment.id)                               # piste ET calque verrouillés
-        require_followers_unlocked(project, segment.id, "couper")         # la coupe prolonge les liaisons de suivi qui suivent le segment
         source = find_sequence(project, segment.sequence_id)
+        half_frame = 0.5 / max(1.0, float(project.active_sequence.fps))
+        if effective_angle_id(project, segment) != _angle_id(source, a["angle"]) and at - segment.timeline_start > half_frame:
+            require_followers_unlocked(project, segment.id, "couper")     # seule une vraie coupe prolonge les liaisons de suivi du segment
         result = switch_angle(project, at, _angle_id(source, a["angle"]), clip_id=segment.id, segment_id=a.get("id"))
         return result.clip if result is not None else segment             # déjà cet angle : aucune coupe, on rend le segment tel quel
 

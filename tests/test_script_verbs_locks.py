@@ -271,3 +271,40 @@ def test_updating_a_leaderboard_refuses_when_a_locked_clip_follows_one_of_its_la
     _refuse_both_ways(project, _op("update_leaderboard", leaderboard="lb", duration=9.0), "verrouillé")
     project.tracks[1].clips[0].graphic = None
     assert _applies(project, _op("update_leaderboard", leaderboard="lb", duration=9.0))
+
+
+# --- Une garde ne refuse que ce que l'opération modifierait -------------------------------------------------------------------
+
+
+def test_a_batch_cut_on_beats_leaves_an_uncut_clip_alone_even_when_a_locked_clip_follows_it():
+    project = _project()
+    project.tracks[2].clips.append(Clip("s", "m", "V3", 20.0, 0.0, 0.3))          # plus court qu'un temps : aucune coupe intérieure
+    _follow(project, source="s")
+    _lock_layer(project, "f")
+    before = copy.deepcopy(find_clip(project, "f").tracking)
+    cut = _applies(project, _op("cut_clips_on_beats", clips=["a", "s"]))
+    assert find_clip(cut, "f").tracking == before and find_clip(cut, "a").duration < 4.0
+    followed = _project()
+    followed.tracks[2].clips.append(Clip("s", "m", "V3", 20.0, 0.0, 0.3))
+    _follow(followed, source="a")
+    _lock_layer(followed, "f")
+    _refuse_both_ways(followed, _op("cut_clips_on_beats", clips=["a", "s"]), "le clip verrouillé 'f'")
+
+
+def test_switching_to_the_angle_already_shown_or_at_the_start_of_the_segment_changes_no_link_so_it_is_not_refused():
+    project = _with_segment()
+    project.tracks.append(Track("V9", "V9", "video", locked=True, clips=[Clip("fol", "cam1", "V9", 0.0, 0.0, 1.0)]))
+    find_clip(project, "fol").tracking = ClipTracking(links=(TrackLink(source_clip_id="seg", tracker_ids=("t1",)),))
+    before = copy.deepcopy(project)
+    session, report = _apply_multicam(project, {"op": "switch_multicam_angle", "at": 4, "angle": "angle-1"})      # déjà l'angle montré
+    assert report.ok and session.project == before
+    session, report = _apply_multicam(project, {"op": "switch_multicam_angle", "at": 0, "angle": "angle-2"})      # début : angle remplacé, sans coupe
+    assert report.ok and find_clip(session.project, "fol").tracking == find_clip(before, "fol").tracking
+
+
+def test_a_cut_outside_the_clip_keeps_the_models_own_refusal_and_a_move_to_the_same_instant_is_not_blocked():
+    project = _locked_follower("layer")
+    _refuse_both_ways(project, _op("cut_clip", clip="a", at=9.0), "strictement")
+    for op in (_op("move_clip", clip="a", at=0.0), _op("move_clips", placements=[{"clip": "a", "track": "V1", "at": 0.0}]),
+               _op("move_clip_to_track", clip="a", track="V3", at=0.0)):
+        assert _applies(_locked_follower("layer"), op)
