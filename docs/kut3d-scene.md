@@ -94,8 +94,7 @@ ajouté à `Clip` : le temps de la scène est `source_in + (t - timeline_start)`
   appelé par chaque fonction du modèle qui écrit `time_remapping` ; les scripts refusent déjà les pistes graphiques), l'enregistrement
   en preset (une autre version perdrait le calque en silence), l'entrée dans une composition (le nœud graphique ne porte pas
   `source_in`), le changement de fichier d'un clip existant. Stabilisation et transitions ne visent que les clips vidéo.
-* **Rendu (lot B2b)** : le clip se rend à l'export et dans l'aperçu fidèle (pas encore dans l'aperçu en direct ni dans
-  l'interface : lot B3). Le chemin de l'image est décrit dans [architecture.md](architecture.md#clip-scène-3d--chemin-de-limage).
+* **Rendu (lot B2b)** : le clip se rend à l'export et dans l'aperçu fidèle ; l'interface (lot B3) est décrite plus bas. Le chemin de l'image est décrit dans [architecture.md](architecture.md#clip-scène-3d--chemin-de-limage).
   Taille de rendu = taille de la boîte du calque (par défaut celle du projet), fond transparent sauf `background` de la scène,
   **moteur numpy en dur** (les images du cache disque doivent être les mêmes partout ; le moteur entre dans la clé d'image),
   `samples=1`. Transformations, opacité, images clés, effets, masques et fusion s'appliquent comme à un calque image.
@@ -115,7 +114,39 @@ ajouté à `Clip` : le temps de la scène est `source_in + (t - timeline_start)`
   ≈ 4 ms). Une scène animée de 10 s à 30 i/s en 720p coûte donc de l'ordre de 3 minutes de rendu au premier export ; le second
   lit les PNG du cache `mograph` (borné par `CacheManager`, éviction des moins récemment utilisés).
 * `core.scene3d` : `scene_image(graphic, size, mode)` (le rendu ; `mode` `"exact"` par défaut, `"interactive"` réduit le plus grand
-  côté à 480 px, réservé à l'aperçu en direct du lot B3), `scene_time_at`, `render_identity`, `load_scene` (au plus 4 scènes en
+  côté à 480 px, réservé au moniteur ; ``backend`` / ``side`` optionnels pour ce seul mode), `scene_time_at`, `render_identity`, `load_scene` (au plus 4 scènes en
   mémoire, revalidées par la signature), `problem(path)`, `validate(path)`, `dependencies(path)` (fichiers de la scène, modèles confinés sous son dossier) et
   `scene_signature(path)` (empreinte bon marché pour les clés de cache : date, taille, début et fin de chaque fichier, mémorisée
   et revalidée par `stat` ; `"missing"` si le fichier manque, `"invalid:…"` si la scène ne se lit pas).
+
+## Dans l'interface (lot B3)
+
+**Poser une scène.** Menu Calques > Ajouter > « Scène 3D… » (niveau Studio, sans raccourci) : sélecteur de fichier `.kut3d`, clip de
+5 s à la tête de lecture sur une piste graphique, une entrée d'historique. Glisser-déposer d'un `.kut3d` sur la fenêtre : sur la
+timeline, le clip se pose à l'instant et sur la piste graphique visés (une piste graphique verrouillée refuse, un autre type de piste
+reçoit la scène sur une piste graphique à cet instant) ; ailleurs, à la tête de lecture. Un fichier illisible, introuvable ou d'une
+autre extension est refusé par un message (boîte de dialogue pour le menu, barre d'état pour un dépôt) et rien n'est créé. Les autres
+fichiers déposés restent importés comme des médias. Glisser un `.obj` / `.glb` pour créer une scène par défaut : pas encore.
+(`ui/scene3d_actions.py`)
+
+**Aperçu du moniteur : une image figée et approximative, jamais de 3D en direct.** `MographRenderer(scene3d_mode=...)` : `exact`
+(défaut : export, segments d'aperçu fidèle, inchangé), `interactive` (moniteur à l'arrêt ou au défilement) et `frozen` (moniteur en
+lecture). `core/scene3d_interactive.py` en porte les règles : en `interactive`, rendu sur le fil principal à 480 px au plus ; en
+`frozen`, **aucun rendu** (l'image figée de cet instant, sinon la dernière image rendue pour ce fichier, sinon une carte « Scène 3D ») ;
+petit cache LRU (24) des images figées ; un rendu qui échoue donne la carte « Scène 3D indisponible » et un avertissement
+(`kut_studio.scene3d`) une seule fois par image, sans exception vers le moniteur. La clé d'image du moniteur (`content_key`,
+`layer_key`) porte la taille réduite, le moteur et le mode : jamais prise pour l'image exacte. Une étiquette « Aperçu approximatif »
+couvre le moniteur tant qu'un calque 3D y est dessiné par Qt ; quand un segment d'aperçu fidèle prend le relais (même graphe que
+l'export), l'étiquette disparaît. **Moteur** : la sonde GPU de `kut3d` (jusqu'à 30 s, sous-processus) est lancée au premier clip 3D vu,
+dans un fil Python ordinaire qui ne touche à aucun objet Qt (`ui/scene3d_preview.py` : `GpuProbe`, lue par un `QTimer`) ; en attendant,
+numpy en 240 px ; ensuite `auto` (GPU si la sonde a réussi, sinon numpy). Ces images ne servent jamais l'export (le moteur est dans leur
+clé de cache). Le moniteur n'a pas de moteur 3D natif : sur une machine sans GPU l'aperçu est plus lent (numpy) et reste figé en lecture.
+
+**Inspecteur.** Un calque scène 3D montre son type, le nom du fichier (chemin complet en infobulle) et « Recharger » (niveau Studio),
+qui oublie la signature mémoïsée (`core.scene3d.reload_scene` : le mémo ne se fie qu'à la date et à la taille) et les images figées,
+puis redessine le moniteur ; il est désactivé avec le reste de l'éditeur sur un calque ou une piste verrouillés. Aucun contrôle de
+texte, de police, de contour, de remplissage, de forme, de lueur, de lumière ni de taille n'est affiché (règle de visibilité par type de
+`GraphicsEditor.set_graphic`) ; transformation, opacité, fusion, effets, masques, parent et flou de mouvement restent. La vitesse et le
+remappage sont **grisés avec une infobulle** (le modèle les refuse : `ensure_fixed_speed`).
+
+**Pas encore** : éditer la scène (caméra, lumières, modèles) dans l'application, créer une scène depuis un modèle `.obj` / `.glb`. Le fichier se modifie dans un autre outil puis se recharge.

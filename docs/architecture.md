@@ -220,6 +220,9 @@ empreinte → `.ffconcat` → FFmpeg) ; seule l'encre change :
    scène **fixe** passe par la texture par contenu (une encre, posée par matrice).
 5. `fingerprint_plan` : signature profonde du `.kut3d` + `source_in` + `SCENE3D_RASTER_VERSION` **pour ces calques seulement**
    (`RENDER_ENGINE_VERSION` inchangé : un plan sans 3D garde son empreinte, `tests/test_scene3d_render.py`).
+6. Moniteur (lot B3) : `MographRenderer(scene3d_mode="interactive" | "frozen")` → `draw_scene(mode)` → `core/scene3d_interactive.py` (image
+   figée réduite, aucun rendu 3D en lecture, carte en cas d'échec) ; l'export et les segments fidèles gardent `exact`. Voir
+   [kut3d-scene.md](kut3d-scene.md#dans-linterface-lot-b3).
 
 ## Format `.kut`
 

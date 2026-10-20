@@ -50,7 +50,7 @@ MENU_GATES: dict[str, dict[str, Gate]] = {
     "layers_menu": {
         "common.add>": (UsageLevel.SIMPLE, {
             "menu.item.add_shape_layer": _STUDIO, "menu.item.add_null_layer": _STUDIO,
-            "menu.item.add_adjustment_layer": _STUDIO}),
+            "menu.item.add_adjustment_layer": _STUDIO, "menu.item.add_scene3d": _STUDIO}),
         **{key: _STUDIO for key in (
             "menu.item.group_layers", "menu.item.ungroup_layers", "menu.item.copy_layers", "menu.item.paste_layers",
             "menu.item.copy_attributes", "menu.item.paste_attributes", "menu.item.save_preset",
