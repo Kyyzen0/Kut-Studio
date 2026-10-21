@@ -323,7 +323,7 @@ la retirer, l'activer ou la désactiver, la convertir en images clés). Sa piste
 toutes les séquences). L'interface attrape le refus : message dans la barre d'état, aucune écriture, aucune entrée d'historique ; le glisser d'un
 point ou d'une zone dans le viewer est refusé **avant** de commencer le geste (rien à annuler), et une analyse qui se termine sur un clip verrouillé
 entre-temps n'écrit rien. La **source** d'une liaison n'est que lue : elle peut être verrouillée. Une opération sans effet (même nom, même valeur, rien
-à retirer) n'est pas refusée. Les verbes de script n'ont plus de copie de la règle ; `follow_reframe` garde celle de l'interface (le recadrage
+à retirer, `reset_tracker` d'une plage qui ne contient que des points posés à la main, résultat d'analyse vide) n'est pas refusée, même sur un clip verrouillé ; `analysis_request` reste refusée (elle annonce une écriture). Un refus de verrou à la fin d'une analyse vide aussi la file des suites de l'auto-stabilisation. Les verbes de script n'ont plus de copie de la règle ; `follow_reframe` garde celle de l'interface (le recadrage
 suivi réécrit les images clés du clip). Une liaison retirée par un autre geste (suppression d'une fenêtre d'étalonnage, de séquence) n'est pas couverte
 par cette règle. Tests : `tests/test_tracker_locked_clip.py`, `tests/test_tracker_locked_clip_ui.py`.
 
