@@ -330,3 +330,47 @@ def test_the_monitor_image_at_an_instant_matches_the_export_of_the_same_instant(
     assert wrong.mean() > 3 * error.mean(), "l'oracle distingue l'étalonnage de l'instant du réglage de base"
     other = _monitor_image(monitor_grade(clip, t + 0.4), yuv)        # le mauvais instant
     assert np.abs(other - exported)[flat].mean() * 255 > 1.5 * error.mean()
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("base", [None, ColorGrade(saturation=1.2)], ids=["sans-etalonnage", "avec-base"])
+def test_a_before_after_comparison_keeps_the_animated_grade_on_the_compared_side(tmp_path, base):
+    """Segment fidèle avec l'avant / après actif (``Compare`` posé par ``apply_grade_overrides``) : la partie étalonnée suit
+    ``effective_grade(t)`` à chaque instant (comme l'export), la partie gauche reste sans étalonnage. Sans la transmission des images
+    clés, la partie étalonnée restait figée sur le réglage de base."""
+    from core.color_render import Compare
+    from core.preview_segments import segment_plan
+
+    media = _media(tmp_path)
+    clip = animated_clip(base)
+    project = _project(media, clip)
+    split = 0.5
+    shown = Compare(monitor_grade(clip), split)
+    plain = Clip(id="c", asset_id="v", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)
+    plain.color_grade = None
+    ungraded = _project(media, plain)
+    half = W // 2
+    gaps = []
+    for t in (0.4, 1.0, 1.6):
+        compared = render_frame(segment_plan(project, 0.0, 2.0, grade_overrides={"c": shown}), W, H, t).astype(float)
+        exported = render_frame(build_render_plan(project), W, H, t).astype(float)
+        original = render_frame(build_render_plan(ungraded), W, H, t).astype(float)
+        right = slice(half + 8, None)
+        assert np.abs(compared[:, right] - exported[:, right]).mean() < 1.0, t
+        assert np.abs(compared[:, : half - 8] - original[:, : half - 8]).mean() < 1.0, t
+        static = Clip(id="c", asset_id="v", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)
+        static.color_grade = base
+        frozen = render_frame(build_render_plan(_project(media, static)), W, H, t).astype(float)
+        gaps.append(np.abs(frozen[:, right] - exported[:, right]).mean())
+    assert min(gaps) > 3.0, "le réglage de base seul est loin de l'étalonnage animé : le test distingue l'animation"
+
+
+def test_a_before_after_comparison_without_animation_is_unchanged():
+    from core.color_render import Compare
+    from core.export_engine import _build_color_grade_filters
+
+    grade = ColorGrade(exposure=0.3, saturation=1.2)
+    assert _build_color_grade_filters(Compare(grade, 0.5), tag="t") == _build_color_grade_filters(Compare(grade, 0.5), tag="t",
+                                                                                                  animation=[], sendcmd=None)
+    assert _build_color_grade_filters(Compare(grade, 0.5), tag="t", animation=[kf("transform.position_x", 0.0, 0.0)]) \
+        == _build_color_grade_filters(Compare(grade, 0.5), tag="t")
