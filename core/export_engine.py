@@ -545,7 +545,9 @@ def check_export_request(request: ExportRequest) -> None:
     - le plan ne contient aucun clip visuel (ni calque graphique) ;
     - le plan porte des sous-titres et la build FFmpeg n'a pas le filtre ``subtitles`` (libass) ;
     - une scène 3D du plan ne se rend pas (texture illisible, bornes du moteur : :mod:`core.scene3d_check`). L'écran la laisse
-      vide ; un fichier exporté ne l'omet jamais en silence.
+      vide ; un fichier exporté ne l'omet jamais en silence ;
+    - la file d'images que FFmpeg devrait garder (plusieurs morceaux éloignés d'un même média ou d'un même angle multicam)
+      dépasse la mémoire de la machine (:mod:`core.export_memory`, défaut D-002 de la recette).
     """
     plan = request.render_plan
     if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
@@ -559,6 +561,9 @@ def check_export_request(request: ExportRequest) -> None:
     from .scene3d_check import check_export_scenes
 
     check_export_scenes(plan)
+    from .export_memory import check_export_memory
+
+    check_export_memory(request)
 
 
 def export_needs_preparation(request: ExportRequest, preference: BackendPreference = BackendPreference.AUTO) -> bool:

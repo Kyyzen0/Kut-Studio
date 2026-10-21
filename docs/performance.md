@@ -350,3 +350,86 @@ Segments d'aperçu fidèle (2 s, qualité standard) : −19 à −44 % sur le ba
   est l'étape « calques en textures » de l'[ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md).
 - **Plans à échelle animée** (Ken Burns, zoom d'impact) : `rotate` y sert de cadre fixe (2 384 px pour du 1080×1920),
   avec le même demi-pixel quand la largeur mise à l'échelle est impaire.
+
+## 11. Mémoire d'un export : médias découpés et multicam (défaut D-002 de la recette, 2026-10-21)
+
+**Constat.** Le banc de recette a vu l'export d'un montage multicam de 20 min (3 angles, 50 clips) dépasser 9 Go puis
+remplir le disque par le swap, alors que la sortie pèse 0,66 Go. Le processus Python n'y est pour rien (133 Mo mesurés) :
+**c'est FFmpeg**.
+
+**Cause (mesurée).** Les clips d'un même média partagent une seule entrée FFmpeg, et les segments d'un même angle multicam
+partagent un seul rendu (`split`). Chaque clip est une fenêtre `trim` de ce flux, posée dans la chaîne d'`overlay` du plan.
+`overlay` n'émet son premier cadre qu'une fois la première image de **chaque** étage reçue : FFmpeg décode donc le flux
+partagé jusqu'au clip qui commence le plus tard dans la source, et garde en RGBA pleine trame tout ce que les autres clips
+lisent avant. La sortie reste à 0 s pendant que la mémoire monte, puis l'export avance (trace `out_time` / RSS dans
+`core/export_memory.py`). Ni le nombre de segments, ni les calques graphiques, ni la durée seule n'y changent rien :
+
+| Montage (1080p, 25 i/s, FFmpeg 9.0) | Pic FFmpeg | Estimation de la file |
+| --- | ---: | ---: |
+| 1 clip de 130 s (référence) | 0,9 Go | 0 |
+| 1 clip coupé en deux à 12 s | 3,3 Go | 2,5 Go |
+| 1 clip coupé en deux à 20 s | 4,9 Go | 4,1 Go |
+| 1 clip coupé en deux à 60 s | > 7,3 Go (arrêté) | 12,4 Go |
+| multicam 30 s, 3 angles, 5 / 13 / 30 segments | 3,8 / 4,6 / 5,0 Go | 2,5 / 4,8 / 5,6 Go |
+| multicam 20 min, 3 angles, ≈ 30 changements | 9,9 Go à t = 696 s, sans fin | > 200 Go |
+
+La file vaut `Σ max(0, min(fin, M) − début) / (fin − début) × durée × cadence × largeur × hauteur × 4`, `M` étant le plus
+grand point d'entrée source de la famille (même fichier, ou même angle). Les mêmes valeurs sortent de FFmpeg 6.1 et 7.1
+(Docker : ils dépassent 5 Go sur la même commande). Sur le vrai FFmpeg, 480×270 : surcoût mesuré 195 / 384 / 572 Mo pour des
+coupes à 15 / 30 / 45 s, estimé 194 / 389 / 583 Mo (`tests/test_export_memory.py`).
+
+**Ce qui a été fait (phase 1).** `core/export_memory.py` calcule cette file **avant** de lancer FFmpeg, sur le plan seul, et
+`check_export_request` (donc le script, l'interface et la file de rendu) refuse l'export quand elle dépasse 85 % de la mémoire
+**disponible** : « ce montage est trop complexe pour être exporté d'un seul tenant, mémoire estimée … Go, mémoire disponible
+sur cette machine ≈ … Go ». Un clip seul, des clips de
+médias différents ou des morceaux pris au même endroit de la source ont une estimation nulle et ne sont jamais refusés. Le
+rendu des exports qui passent est inchangé (`RENDER_ENGINE_VERSION` aussi : le graphe n'est pas touché).
+
+**Ce qui reste (phase 2, moteur).** Le refus ne fait pas passer le montage : il évite de remplir le disque. Le correctif de
+fond change la structure du graphe, donc le rendu à valider image par image sur FFmpeg 6.1, 7.1 et 9 : donner à chaque clip son
+propre décodeur positionné (`-ss` en entrée, une entrée par segment), ou composer par tranches de temps (concat de tranches),
+ou remplacer la chaîne d'`overlay` par un `concat` quand les clips d'une piste se suivent. Le même mécanisme contribue sans
+doute à D-003 (90 clips de quelques médias) : à mesurer une fois le montage reproduit.
+
+### Précisions de la revue (taille des images, plans imbriqués, mémoire disponible)
+
+- **Taille des images en file : celle du cadre, pas celle après transformation.** Mesuré (480×270, coupe à 15 s, surcoût de
+  FFmpeg 9.0) : 196 Mo sans transformation, 191 Mo à l'échelle 0,5, 209 Mo à l'échelle 3, 199 Mo à 45°, 200 Mo en cadrage
+  « remplir » (vertical, média 16:9), 240 Mo pour une échelle animée 1 → 3. Une échelle 3 dont les images agrandies feraient 1,7 Go
+  tient dans 700 Mo sous FFmpeg 6.1 et 7.1 (Docker) : la file se forme avant le `scale` / `rotate` du clip. L'estimation compte
+  donc `largeur × hauteur × 4` de la composition **sans** facteur d'échelle (la première version réduisait la file d'une échelle
+  < 1 : c'était une sous-estimation, corrigée).
+- **Familles sur toute la hiérarchie.** Un fichier lu par la racine et par une séquence imbriquée est une seule entrée FFmpeg
+  (`_build_input_list`) ; la famille est donc calculée sur tous les plans, avec le chemin du fichier (ou la clé de la séquence
+  imbriquée, un seul `split`) comme clé. Le décodage avance dans le temps du fichier : le décalage d'imbrication et la vitesse ne
+  déplacent pas `M`, ils ne changent que la durée sur la timeline du calque (déjà dans la formule). Les images d'un plan imbriqué
+  sont comptées à la taille de **sa** composition.
+- **Mémoire disponible, pas installée.** La référence est `available_bytes` de `core/memory_monitor.py` (Linux `MemAvailable`,
+  Windows `AvailPhys`, macOS le pourcentage libre du noyau), 85 % de cette valeur. Compromis de stabilité : la mesure est un instantané
+  (un navigateur qui grossit la change d'un lancement à l'autre), donc la référence ne descend jamais sous **25 % de la mémoire installée**.
+  Un export qui passait deux minutes plus tôt n'est ainsi refusé que si la file est nettement hors de portée (celle de D-002 vaut
+  dix fois la machine). Mesure impossible : la moitié de la mémoire installée ; rien du tout : 16 Go. Le message dit ce qui est mesuré
+  (« mémoire disponible sur cette machine ≈ 9 Go sur 24 Go », ou « disponible non mesurée »).
+
+- **Selon la version de FFmpeg** (surcoût d'une coupe à 15 / 30 / 45 s, 480×270, médiane de 3, au-dessus du même montage sans
+  coupe ; estimé 185 / 371 / 556 Mo) : FFmpeg 9.0 et 7.1.5 donnent 191 / 377 / 563 Mo (à 3 % de l'estimation) ; **FFmpeg 6.1.1 donne
+  430 / 535 / 640 Mo** (natif arm64 et amd64 émulé : 414 / 524 / 635 Mo), c'est-à-dire une pente de 7 Mo/s au lieu de 12,4 (57 % de
+  l'estimation) et environ 245 Mo fixes en plus (la seconde chaîne de filtres), quelle que soit la transformation du clip. Sous 6.1
+  l'estimation surestime donc la pente de 1,7 fois : c'est un majorant, jamais une sous-estimation. Les tests comparent des **pentes**
+  (différence entre deux coupes du même montage : le décalage fixe disparaît) : l'estimation ne doit jamais sous-estimer la pente
+  mesurée et ne la surestime pas de plus de 2,2 fois.
+
+### Ce que l'estimateur NE couvre PAS (sous-estimations connues)
+
+- **Clips remappés dans le temps** (vitesse, courbe, sens inverse, flux optique) : leur chaîne passe par un `TimeMap` ; ils sont
+  ignorés (file supposée nulle), alors que leur flux partagé met aussi des images en file.
+- **Images fixes** (photos) : `loop` ne met qu'une image en file ; ignorées.
+- **Compositions nodales** et leurs sources : ignorées.
+- **Transitions** (`xfade`) : leurs branches peuvent retenir des images en plus ; non comptées.
+- **Effets qui changent la taille de l'image** (cadres de flou, pavés, stabilisation / suivi avec marge) : l'image est supposée de la taille
+  du cadre ; une échelle animée ajoute quelques images de la taille du cadre agrandi (≈ +25 % mesuré à 1 → 3).
+- **Calques graphiques (listes `.ffconcat`) et mattes** : sources indépendantes, jamais comptées ; ils ne partagent pas de décodeur,
+  mais peuvent retenir des images si leur étage attend.
+- **Plan imbriqué utilisé seulement en partie** : tous ses calques sont comptés (surestimation possible).
+- **Multicam** : de −20 % à +40 % mesurés ; l'audio (`amix`, `adelay`) n'est pas compté (petit : 23 Mo par minute en stéréo flottant).
+- **Mémoire de FFmpeg hors file** (décodeurs, encodeur, ~1 Go) : non ajoutée.

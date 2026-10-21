@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Export : un montage dont FFmpeg devrait garder des dizaines de gigaoctets d'images en mémoire (plusieurs morceaux d'un même média ou d'un même angle multicam séparés par un long passage, par exemple 20 min de multicam) est refusé **avant** le lancement, avec la mémoire estimée, au lieu de remplir la mémoire puis le disque (défaut D-002 de la recette). Voir `docs/performance.md`, section 11.
+
 ### Added
 
 - Interne : ADR-0011 feuille de route vers la v1 (acceptée le 2026-10-21) : sept phases à portes de sortie mesurables (recette sur machines réelles, moteur, interopérabilité et livraison, noyau de motion design, extensibilité, page signature), backlog d'intelligence, parallélisation, décisions à prendre et tableau croisé des écarts par public. Aucun changement de comportement. Voir [docs/adr/0011-feuille-de-route-v1.md](docs/adr/0011-feuille-de-route-v1.md).
