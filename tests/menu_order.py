@@ -12,16 +12,8 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QMenu
 
-TOOLBAR_BUTTONS = (
-    "snap_button",
-    "blade_button",
-    "roll_button",
-    "slip_button",
-    "slide_button",
-    "record_button",
-    "ripple_button",
-    "marker_button",
-)
+TOOLBAR_BUTTONS = ("snap_button", "blade_button", "roll_button", "slip_button", "slide_button", "record_button",
+                   "ripple_button", "marker_button")
 
 
 def menu_tree(menu: QMenu) -> list:
@@ -45,18 +37,10 @@ def window_dump(window) -> dict:
         if menu is not None:
             menus[menu.objectName()] = menu_tree(menu)
     timeline = window.timeline_panel
-    toolbar = [
-        name for name in TOOLBAR_BUTTONS if not getattr(timeline, name).isHidden()
-    ]
+    toolbar = [name for name in TOOLBAR_BUTTONS if not getattr(timeline, name).isHidden()]
     rail = window.side_rail
-    rail_ids = [
-        section.id
-        for section in rail._sections
-        if not rail._buttons[section.id].isHidden()
-    ]
-    pages = [
-        page for page, button in window.page_buttons.items() if not button.isHidden()
-    ]
+    rail_ids = [section.id for section in rail._sections if not rail._buttons[section.id].isHidden()]
+    pages = [page for page, button in window.page_buttons.items() if not button.isHidden()]
     return {"menus": menus, "toolbar": toolbar, "rail": rail_ids, "pages": pages}
 
 
@@ -123,41 +107,19 @@ def load_scenario(window, monkeypatch) -> dict[str, str]:
     """Projet de relevé : une vidéo simple, un segment multicam, deux pistes audio. Renvoie les identifiants utiles."""
     from multicam_stubs import keep_preview_player_off_the_disk
 
-    from core.multicam_ops import (
-        AngleSpec,
-        create_multicam_source,
-        insert_multicam_clip,
-    )
+    from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip
     from core.project_model import Clip, MediaAsset, Project, Track
 
     def video(asset_id: str) -> MediaAsset:
-        return MediaAsset(
-            asset_id,
-            f"/media/{asset_id}.mp4",
-            asset_id,
-            60.0,
-            1920,
-            1080,
-            30.0,
-            "video",
-            True,
-        )
+        return MediaAsset(asset_id, f"/media/{asset_id}.mp4", asset_id, 60.0, 1920, 1080, 30.0, "video", True)
 
     project = Project(
-        "Relevé",
-        media_assets=[video("camA"), video("camB")],
-        tracks=[
-            Track("V1", "V1", "video"),
-            Track("V2", "V2", "video"),
-            Track("A1", "A1", "audio"),
-            Track("A2", "A2", "audio"),
-        ],
+        "Relevé", media_assets=[video("camA"), video("camB")],
+        tracks=[Track("V1", "V1", "video"), Track("V2", "V2", "video"), Track("A1", "A1", "audio"),
+                Track("A2", "A2", "audio")],
     )
-    source = create_multicam_source(
-        project,
-        [AngleSpec(asset_id="camA", name="A"), AngleSpec(asset_id="camB", name="B")],
-        name="Concert",
-    )
+    source = create_multicam_source(project, [AngleSpec(asset_id="camA", name="A"), AngleSpec(asset_id="camB", name="B")],
+                                    name="Concert")
     segment = insert_multicam_clip(project, source.id, "V2", 0.0, angle_id="angle-1")
     plain = Clip("plain", "camA", "V1", 0.0, 0.0, 5.0)
     project.tracks[0].clips.append(plain)

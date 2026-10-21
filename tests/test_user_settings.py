@@ -83,7 +83,9 @@ def test_load_returns_defaults_when_payload_is_not_dict(tmp_path):
 def test_load_invalid_value_for_field_falls_back(tmp_path, field, bad, good):
     payload = {"theme_mode": "dark", "language": "fr"}
     payload[field] = bad
-    (tmp_path / "user_settings.json").write_text(json.dumps(payload), encoding="utf-8")
+    (tmp_path / "user_settings.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
     settings = load_user_settings(tmp_path)
     assert getattr(settings, field) == good
 

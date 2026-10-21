@@ -18,21 +18,13 @@ from PySide6.QtWidgets import QInputDialog, QMessageBox
 class Dialogs:
     """Boîtes présentées pendant le test, et réponses à donner."""
 
-    shown: list[tuple[str, str, str]] = field(
-        default_factory=list
-    )  # (genre, titre, texte)
+    shown: list[tuple[str, str, str]] = field(default_factory=list)   # (genre, titre, texte)
     answer: QMessageBox.StandardButton = QMessageBox.Yes
     text_reply: tuple[str, bool] = ("", False)
-    inputs: list[tuple[str, str]] = field(
-        default_factory=list
-    )  # (titre, texte proposé)
+    inputs: list[tuple[str, str]] = field(default_factory=list)       # (titre, texte proposé)
 
     def of_kind(self, kind: str) -> list[tuple[str, str]]:
-        return [
-            (title, text)
-            for shown_kind, title, text in self.shown
-            if shown_kind == kind
-        ]
+        return [(title, text) for shown_kind, title, text in self.shown if shown_kind == kind]
 
 
 def install_dialogs(monkeypatch) -> Dialogs:
@@ -42,7 +34,6 @@ def install_dialogs(monkeypatch) -> Dialogs:
         def show(_parent, title, text, *_args, **_kwargs):
             dialogs.shown.append((kind, str(title), str(text)))
             return dialogs.answer if kind == "question" else QMessageBox.Ok
-
         return show
 
     for kind in ("information", "warning", "critical", "question"):

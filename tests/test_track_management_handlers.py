@@ -8,13 +8,7 @@ refus présenté à l'utilisateur, l'entrée d'historique et ce qu'annuler / ré
 from __future__ import annotations
 
 import pytest
-from main_window_harness import (
-    build_window,
-    install_dialogs,
-    menu_action,
-    track,
-    track_ids,
-)
+from main_window_harness import build_window, install_dialogs, menu_action, track, track_ids
 
 from ui import i18n
 
@@ -36,14 +30,11 @@ def _warnings(dialogs) -> list[str]:
 # --- ajout --------------------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("kind", "label_key"),
-    [
-        ("video", "tracks.add_video_long"),
-        ("audio", "tracks.add_audio_long"),
-        ("subtitle", "tracks.add_subtitle_long"),
-    ],
-)
+@pytest.mark.parametrize(("kind", "label_key"), [
+    ("video", "tracks.add_video_long"),
+    ("audio", "tracks.add_audio_long"),
+    ("subtitle", "tracks.add_subtitle_long"),
+])
 def test_adding_a_track_from_the_timeline_is_one_undoable_step(window, kind, label_key):
     before = track_ids(window)
 
@@ -56,9 +47,7 @@ def test_adding_a_track_from_the_timeline_is_one_undoable_step(window, kind, lab
     window.undo_last()
     assert track_ids(window) == before
     window.redo_last()
-    assert [item.id for item in window.project.tracks if item.id not in before] == [
-        added[0].id
-    ]
+    assert [item.id for item in window.project.tracks if item.id not in before] == [added[0].id]
 
 
 def test_the_sequence_menu_adds_an_audio_track(window):
@@ -71,9 +60,7 @@ def test_the_sequence_menu_adds_an_audio_track(window):
     assert window.history.undo_label == i18n.translate("tracks.add_audio_long")
 
 
-def test_an_unknown_track_type_is_refused_with_a_message_and_no_history(
-    window, dialogs
-):
+def test_an_unknown_track_type_is_refused_with_a_message_and_no_history(window, dialogs):
     before = track_ids(window)
 
     window.timeline_panel.add_track_requested.emit("midi")
@@ -95,14 +82,10 @@ def test_removing_an_empty_track_then_undoing_puts_it_back_in_place(window):
     assert "A1" not in track_ids(window)
     assert window.history.undo_label == i18n.translate("tracks.remove")
     window.undo_last()
-    assert track_ids(window) == before, (
-        "l'ordre des pistes est restauré, pas seulement leur présence"
-    )
+    assert track_ids(window) == before, "l'ordre des pistes est restauré, pas seulement leur présence"
 
 
-def test_a_track_that_holds_clips_is_not_removed_and_the_user_is_told_why(
-    window, dialogs
-):
+def test_a_track_that_holds_clips_is_not_removed_and_the_user_is_told_why(window, dialogs):
     before = track_ids(window)
     clips = [clip.id for clip in track(window, "V1").clips]
 
@@ -110,21 +93,12 @@ def test_a_track_that_holds_clips_is_not_removed_and_the_user_is_told_why(
 
     assert track_ids(window) == before
     assert [clip.id for clip in track(window, "V1").clips] == clips
-    assert (
-        len(_warnings(dialogs)) == 1
-        and "V1" in _warnings(dialogs)[0]
-        and "2 clip" in _warnings(dialogs)[0]
-    )
+    assert len(_warnings(dialogs)) == 1 and "V1" in _warnings(dialogs)[0] and "2 clip" in _warnings(dialogs)[0]
     assert not window.history.can_undo
 
 
-def test_the_remove_menu_without_a_selection_explains_and_removes_nothing(
-    window, dialogs
-):
-    assert (
-        window.timeline_panel.selected_clip_id is None
-        and window.properties_panel.selected_clip is None
-    )
+def test_the_remove_menu_without_a_selection_explains_and_removes_nothing(window, dialogs):
+    assert window.timeline_panel.selected_clip_id is None and window.properties_panel.selected_clip is None
     before = track_ids(window)
 
     menu_action(window, "tracks.remove").trigger()
@@ -143,9 +117,7 @@ def test_the_remove_menu_targets_the_track_of_the_selected_clip(window, dialogs)
     assert "V2" in _warnings(dialogs)[0]
 
 
-def test_removing_the_last_track_leaves_an_empty_project_that_accepts_a_new_track(
-    window,
-):
+def test_removing_the_last_track_leaves_an_empty_project_that_accepts_a_new_track(window):
     for item in window.project.tracks:
         item.clips.clear()
     window.project.transitions.clear()
@@ -194,9 +166,7 @@ def test_the_rename_menu_asks_for_the_name_of_the_selected_clip_track(window, di
 
     menu_action(window, "tracks.rename").trigger()
 
-    assert dialogs.inputs and dialogs.inputs[-1][1] == "V2", (
-        "le dialogue propose le nom actuel"
-    )
+    assert dialogs.inputs and dialogs.inputs[-1][1] == "V2", "le dialogue propose le nom actuel"
     assert track(window, "V2").name == "Plans de coupe"
 
 
@@ -228,9 +198,7 @@ def test_a_locked_track_refuses_moves_solo_mute_and_arm(window, dialogs):
     assert track_ids(window) == order
     assert (a1.solo, a1.muted, a1.armed) == (False, False, False)
     assert len(_warnings(dialogs)) == 1 and "verrouill" in _warnings(dialogs)[0].lower()
-    assert len(window.history._undo_stack) == steps, (
-        "aucune entrée d'historique pour une action refusée"
-    )
+    assert len(window.history._undo_stack) == steps, "aucune entrée d'historique pour une action refusée"
 
 
 def test_unlocking_restores_the_actions(window):
@@ -260,14 +228,11 @@ def test_muting_from_the_timeline_is_reflected_in_the_mixer(window):
     assert strip is not None and strip.mute_button.isChecked()
 
 
-@pytest.mark.parametrize(
-    ("key", "attribute"),
-    [
-        ("tracks.toggle_lock", "locked"),
-        ("tracks.toggle_visible", "visible"),
-        ("tracks.toggle_mute", "muted"),
-    ],
-)
+@pytest.mark.parametrize(("key", "attribute"), [
+    ("tracks.toggle_lock", "locked"),
+    ("tracks.toggle_visible", "visible"),
+    ("tracks.toggle_mute", "muted"),
+])
 def test_the_sequence_menu_toggles_the_selected_clip_track(window, key, attribute):
     window.timeline_panel.select_clip("b_roll")
     before = getattr(track(window, "V2"), attribute)
@@ -275,9 +240,7 @@ def test_the_sequence_menu_toggles_the_selected_clip_track(window, key, attribut
     menu_action(window, key).trigger()
 
     assert getattr(track(window, "V2"), attribute) is (not before)
-    assert getattr(track(window, "V1"), attribute) is before, (
-        "seule la piste du clip sélectionné change"
-    )
+    assert getattr(track(window, "V1"), attribute) is before, "seule la piste du clip sélectionné change"
     assert window.history.undo_label == i18n.translate(key)
 
 
@@ -359,18 +322,12 @@ def test_collapsing_a_track_is_undoable(window):
 
 
 def test_an_unknown_track_id_changes_nothing(window, dialogs):
-    before = [
-        (item.id, item.solo, item.collapsed, item.height_mode)
-        for item in window.project.tracks
-    ]
+    before = [(item.id, item.solo, item.collapsed, item.height_mode) for item in window.project.tracks]
 
     window.timeline_panel.solo_toggled.emit("ZZ", True)
     window.timeline_panel.height_cycle_requested.emit("ZZ")
     window.timeline_panel.collapse_toggled.emit("ZZ", True)
     window.timeline_panel.move_track_up_requested.emit("ZZ")
 
-    assert [
-        (item.id, item.solo, item.collapsed, item.height_mode)
-        for item in window.project.tracks
-    ] == before
+    assert [(item.id, item.solo, item.collapsed, item.height_mode) for item in window.project.tracks] == before
     assert not window.history.can_undo

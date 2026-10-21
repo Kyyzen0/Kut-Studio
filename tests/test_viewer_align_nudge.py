@@ -8,11 +8,7 @@ import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 
-from core.frame_alignment import (
-    FrameEdge,
-    align_to_frame,
-    screen_delta_to_position_delta,
-)
+from core.frame_alignment import FrameEdge, align_to_frame, screen_delta_to_position_delta
 from core.mograph_layers import layer_clips
 from core.mograph_scene import map_box
 from core.project_model import Project
@@ -36,12 +32,8 @@ IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
     ],
 )
 def test_align_to_frame_six_edges(edge, expected):
-    assert align_to_frame((100.0, 50.0, 300.0, 250.0), CANVAS, edge) == pytest.approx(
-        expected
-    )
-    assert align_to_frame(
-        (100.0, 50.0, 300.0, 250.0), CANVAS, edge.value
-    ) == pytest.approx(expected)
+    assert align_to_frame((100.0, 50.0, 300.0, 250.0), CANVAS, edge) == pytest.approx(expected)
+    assert align_to_frame((100.0, 50.0, 300.0, 250.0), CANVAS, edge.value) == pytest.approx(expected)
 
 
 def test_align_to_frame_only_moves_one_axis():
@@ -52,26 +44,17 @@ def test_align_to_frame_only_moves_one_axis():
 
 
 def test_align_to_frame_layer_larger_than_frame():
-    box = (-200.0, -100.0, 1600.0, 900.0)  # 1800 x 1000 dans un cadre 1280 x 720
+    box = (-200.0, -100.0, 1600.0, 900.0)            # 1800 x 1000 dans un cadre 1280 x 720
     assert align_to_frame(box, CANVAS, "left") == pytest.approx((200.0, 0.0))
     assert align_to_frame(box, CANVAS, "right") == pytest.approx((1280.0 - 1600.0, 0.0))
-    assert align_to_frame(box, CANVAS, "center_h") == pytest.approx(
-        (640.0 - 700.0, 0.0)
-    )
+    assert align_to_frame(box, CANVAS, "center_h") == pytest.approx((640.0 - 700.0, 0.0))
     assert align_to_frame(box, CANVAS, "bottom") == pytest.approx((0.0, 720.0 - 900.0))
 
 
 def test_align_to_frame_uses_the_bounding_box_of_a_rotated_layer():
     angle = math.radians(45)
     c, s = math.cos(angle), math.sin(angle)
-    world = (
-        c,
-        s,
-        -s,
-        c,
-        600.0,
-        300.0,
-    )  # carré 100 x 100 tourné de 45°, origine en (600, 300)
+    world = (c, s, -s, c, 600.0, 300.0)               # carré 100 x 100 tourné de 45°, origine en (600, 300)
     bounds = map_box(world, 100.0, 100.0)
     dx, _dy = align_to_frame(bounds, CANVAS, "left")
     moved = map_box((c, s, -s, c, 600.0 + dx, 300.0), 100.0, 100.0)
@@ -85,15 +68,13 @@ def test_align_to_frame_rejects_unknown_edge():
 
 
 def test_screen_delta_identity_parent_is_a_fraction_of_the_frame():
-    assert screen_delta_to_position_delta(
-        IDENTITY, 128.0, -72.0, CANVAS
-    ) == pytest.approx((0.1, -0.1))
+    assert screen_delta_to_position_delta(IDENTITY, 128.0, -72.0, CANVAS) == pytest.approx((0.1, -0.1))
 
 
 def test_screen_delta_through_a_scaled_and_rotated_parent():
     angle = math.radians(90)
     c, s = math.cos(angle), math.sin(angle)
-    parent = (2 * c, 2 * s, -2 * s, 2 * c, 40.0, 10.0)  # échelle 2, rotation 90°
+    parent = (2 * c, 2 * s, -2 * s, 2 * c, 40.0, 10.0)   # échelle 2, rotation 90°
     px, py = screen_delta_to_position_delta(parent, 100.0, 0.0, CANVAS)
     # Appliquer la matrice (partie linéaire) au déplacement local doit redonner le déplacement écran.
     lx, ly = px * CANVAS[0], py * CANVAS[1]
@@ -102,18 +83,8 @@ def test_screen_delta_through_a_scaled_and_rotated_parent():
 
 
 def test_screen_delta_singular_parent_is_refused():
-    assert (
-        screen_delta_to_position_delta(
-            (0.0, 0.0, 0.0, 0.0, 5.0, 5.0), 10.0, 10.0, CANVAS
-        )
-        is None
-    )
-    assert (
-        screen_delta_to_position_delta(
-            (1.0, 2.0, 2.0, 4.0, 0.0, 0.0), 10.0, 10.0, CANVAS
-        )
-        is None
-    )
+    assert screen_delta_to_position_delta((0.0, 0.0, 0.0, 0.0, 5.0, 5.0), 10.0, 10.0, CANVAS) is None
+    assert screen_delta_to_position_delta((1.0, 2.0, 2.0, 4.0, 0.0, 0.0), 10.0, 10.0, CANVAS) is None
 
 
 # ---------------------------------------------------------------- fenêtre principale
@@ -125,12 +96,8 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
+    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
@@ -189,12 +156,8 @@ def test_every_edge_aligns_the_bounding_box(window):
         assert window.align_selected_layer_to_frame(edge) is True
         x0, y0, x1, y1 = _bounds(window, layer.id)
         expected = {
-            FrameEdge.LEFT: x0,
-            FrameEdge.RIGHT: x1 - canvas_w,
-            FrameEdge.TOP: y0,
-            FrameEdge.BOTTOM: y1 - canvas_h,
-            FrameEdge.CENTER_H: (x0 + x1) / 2 - canvas_w / 2,
-            FrameEdge.MIDDLE_V: (y0 + y1) / 2 - canvas_h / 2,
+            FrameEdge.LEFT: x0, FrameEdge.RIGHT: x1 - canvas_w, FrameEdge.TOP: y0, FrameEdge.BOTTOM: y1 - canvas_h,
+            FrameEdge.CENTER_H: (x0 + x1) / 2 - canvas_w / 2, FrameEdge.MIDDLE_V: (y0 + y1) / 2 - canvas_h / 2,
         }[edge]
         assert expected == pytest.approx(0.0, abs=1e-6), edge
 
@@ -203,18 +166,14 @@ def test_align_an_animated_layer_writes_a_keyframe_at_the_playhead(window):
     layer = _shape(window)
     window.on_transform_keyframe_added(layer.id, "position_x", 0.0, 0.0)
     window.on_transform_keyframe_added(layer.id, "position_x", 1.0, 0.1)
-    window.playhead_seconds = 0.48  # sur une image (25 i/s)
+    window.playhead_seconds = 0.48            # sur une image (25 i/s)
     window._refresh_viewer_overlay(0.48)
-    before = len(
-        [k for k in layer.transform_keyframes if k.property_name == "position_x"]
-    )
+    before = len([k for k in layer.transform_keyframes if k.property_name == "position_x"])
     assert window.align_selected_layer_to_frame("right") is True
     keys = [k for k in layer.transform_keyframes if k.property_name == "position_x"]
     assert len(keys) == before + 1
     assert any(abs(k.time_seconds - 0.48) < 1e-6 for k in keys)
-    assert _bounds(window, layer.id)[2] == pytest.approx(
-        float(window.project.width), abs=1e-6
-    )
+    assert _bounds(window, layer.id)[2] == pytest.approx(float(window.project.width), abs=1e-6)
 
 
 def test_align_refuses_a_locked_layer_without_changes(window):
@@ -245,9 +204,7 @@ def test_align_buttons_menu_and_commands_are_wired(window):
     row.buttons[FrameEdge.LEFT].click()
     assert _bounds(window, layer.id)[0] == pytest.approx(0.0, abs=1e-6)
     window.shortcuts.trigger("layer_align_right")
-    assert _bounds(window, layer.id)[2] == pytest.approx(
-        float(window.project.width), abs=1e-6
-    )
+    assert _bounds(window, layer.id)[2] == pytest.approx(float(window.project.width), abs=1e-6)
     assert window.shortcuts.missing_handlers() == []
 
 
@@ -277,9 +234,7 @@ def test_arrow_keys_nudge_by_one_pixel_and_shift_by_ten(window):
     _key(window, Qt.Key_Left)
     _key(window, Qt.Key_Up)
     back = _bounds(window, layer.id)
-    assert (back[0], back[1]) == pytest.approx(
-        (start[0], start[1] + 10.0 - 1.0), abs=1e-6
-    )
+    assert (back[0], back[1]) == pytest.approx((start[0], start[1] + 10.0 - 1.0), abs=1e-6)
 
 
 def test_rapid_nudges_merge_into_one_history_step(window):
@@ -306,28 +261,13 @@ def test_ctrl_arrow_is_not_captured(window):
     assert _bounds(window, layer.id) == pytest.approx(before)
 
 
+
 def test_align_works_on_a_video_clip_and_leaves_scale_alone(window):
     from core.project_model import Clip, MediaAsset, Track
 
-    asset = MediaAsset(
-        id="a1",
-        path="/nonexistent/clip.mp4",
-        name="clip",
-        media_type="video",
-        duration=5.0,
-        width=640,
-        height=360,
-        fps=25.0,
-    )
+    asset = MediaAsset(id="a1", path="/nonexistent/clip.mp4", name="clip", media_type="video", duration=5.0, width=640, height=360, fps=25.0)
     track = Track(id="v1", name="V1", type="video")
-    clip = Clip(
-        id="c1",
-        asset_id="a1",
-        track_id="v1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=5.0,
-    )
+    clip = Clip(id="c1", asset_id="a1", track_id="v1", timeline_start=0.0, source_in=0.0, source_out=5.0)
     clip.transform = clip.transform.with_property("scale", 0.5)
     track.clips.append(clip)
     window.project.media_assets.append(asset)
@@ -340,9 +280,7 @@ def test_align_works_on_a_video_clip_and_leaves_scale_alone(window):
     assert _bounds(window, "c1")[0] == pytest.approx(0.0, abs=1e-6)
     assert clip.transform.scale == pytest.approx(0.5)
     assert window.align_selected_layer_to_frame("bottom") is True
-    assert _bounds(window, "c1")[3] == pytest.approx(
-        float(window.project.height), abs=1e-6
-    )
+    assert _bounds(window, "c1")[3] == pytest.approx(float(window.project.height), abs=1e-6)
 
 
 def test_a_position_beyond_the_model_limits_is_refused_not_clamped_silently(window):
@@ -355,12 +293,7 @@ def test_a_position_beyond_the_model_limits_is_refused_not_clamped_silently(wind
     assert window._move_selected_layer_on_screen(selection, 1.0e7, 0.0, "x") is False
     assert layer.transform.position_x == x_before and len(window.history) == entries
     # Une flèche, elle, consomme la touche : elle ne doit pas changer d'image à la place.
-    assert (
-        window._move_selected_layer_on_screen(
-            selection, 1.0e7, 0.0, "x", swallow_refusal=True
-        )
-        is True
-    )
+    assert window._move_selected_layer_on_screen(selection, 1.0e7, 0.0, "x", swallow_refusal=True) is True
     assert layer.transform.position_x == x_before and len(window.history) == entries
 
 
@@ -377,8 +310,5 @@ def test_a_nested_sequence_clip_gets_a_precise_refusal(window):
     window._select_layer(nested.id)
     entries = len(window.history)
     assert window.align_selected_layer_to_frame("left") is False
-    assert (
-        "imbriquée" in window.statusBar().currentMessage()
-        or "nested" in window.statusBar().currentMessage()
-    )
+    assert "imbriquée" in window.statusBar().currentMessage() or "nested" in window.statusBar().currentMessage()
     assert len(window.history) == entries

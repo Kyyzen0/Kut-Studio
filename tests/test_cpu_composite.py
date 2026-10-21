@@ -13,14 +13,8 @@ def test_compose_frame_at_quarter_resolution():
     rgb = np.zeros((80, 120, 3), dtype=np.float64)
     rgb[:, :, 0] = 0.8
     frame = CompositeFrame(
-        120,
-        80,
-        0.25,
-        (
-            CompositeLayer(
-                "main", (1, 0, 0, 1, 0, 0), (0, 0, 120, 80), program=program_for(())
-            ),
-        ),
+        120, 80, 0.25,
+        (CompositeLayer("main", (1, 0, 0, 1, 0, 0), (0, 0, 120, 80), program=program_for(())),),
         (VideoSource("main", "rgba", 120, 80),),
     )
     result = compose_frame(frame, {"main": rgb}, render_scale=0.25)
@@ -32,14 +26,8 @@ def test_compose_frame_at_quarter_resolution():
 def test_compose_frame_async_returns_same_bytes():
     rgb = np.full((40, 40, 3), 0.5, dtype=np.float64)
     frame = CompositeFrame(
-        40,
-        40,
-        1.0,
-        (
-            CompositeLayer(
-                "main", (1, 0, 0, 1, 0, 0), (0, 0, 40, 40), program=program_for(())
-            ),
-        ),
+        40, 40, 1.0,
+        (CompositeLayer("main", (1, 0, 0, 1, 0, 0), (0, 0, 40, 40), program=program_for(())),),
         (VideoSource("main", "rgba", 40, 40),),
     )
     future = compose_frame_async(frame, {"main": rgb}, render_scale=0.5)
@@ -53,17 +41,10 @@ def test_compose_frame_keeps_logical_translation_at_quarter_scale():
     rgb[:, :, 1] = 1.0  # vert plein
     # Décale le calque de 20 px à droite sur un cadre 80×40.
     layer = CompositeLayer(
-        "main",
-        (1, 0, 0, 1, 20, 0),
-        (0, 0, 40, 40),
-        program=program_for(()),
+        "main", (1, 0, 0, 1, 20, 0), (0, 0, 40, 40), program=program_for(()),
     )
     frame = CompositeFrame(
-        80,
-        40,
-        0.25,
-        (layer,),
-        (VideoSource("main", "rgba", 40, 40),),
+        80, 40, 0.25, (layer,), (VideoSource("main", "rgba", 40, 40),),
     )
     result = compose_frame(frame, {"main": rgb}, render_scale=0.25)
     assert result.width == 20 and result.height == 10

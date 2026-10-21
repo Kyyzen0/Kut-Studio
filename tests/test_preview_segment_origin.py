@@ -33,40 +33,18 @@ def _project(tmp_path: Path, *, with_video: bool = True) -> Project:
     project = Project(name="Origine", width=W, height=H, fps=float(FPS))
     if with_video:
         source = tmp_path / "src.mp4"
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-loglevel",
-                "error",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                f"testsrc2=s={W}x{H}:r={FPS}:d={LENGTH}",
-                "-pix_fmt",
-                "yuv420p",
-                str(source),
-            ],
-            check=True,
-        )
-        project.media_assets.append(
-            MediaAsset("a", str(source), "src", LENGTH, W, H, FPS, "video")
-        )
-        project.tracks.append(
-            Track("V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, LENGTH)])
-        )
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                        f"testsrc2=s={W}x{H}:r={FPS}:d={LENGTH}", "-pix_fmt", "yuv420p", str(source)], check=True)
+        project.media_assets.append(MediaAsset("a", str(source), "src", LENGTH, W, H, FPS, "video"))
+        project.tracks.append(Track("V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, LENGTH)]))
     title = add_graphic_clip(project, "text", timeline_start=0.5, duration=LENGTH - 0.5)
     update_graphic(title, "text", "Kut")
     update_graphic(title, "font_size", 24)
-    apply_text_animation(
-        title, "bounce"
-    )  # change à chaque image : rien n'est réutilisable
+    apply_text_animation(title, "bounce")                     # change à chaque image : rien n'est réutilisable
     shape = add_graphic_clip(project, "shape", timeline_start=0.0, duration=LENGTH)
     update_graphic(shape, "fill_color", "#E0A040")
     shape.compositing = Compositing(blend_mode=BlendMode.MULTIPLY)
-    adjustment = add_graphic_clip(
-        project, "adjustment", timeline_start=1.0, duration=LENGTH - 1.0
-    )
+    adjustment = add_graphic_clip(project, "adjustment", timeline_start=1.0, duration=LENGTH - 1.0)
     adjustment.effects = [create_effect(EffectType.BLACK_AND_WHITE)]
     grain = add_graphic_clip(project, "light", timeline_start=0.0, duration=LENGTH)
     update_graphic(grain, "light_kind", "grain")
@@ -78,38 +56,18 @@ def _segment_command(plan, output: Path, *, legacy: bool, monkeypatch) -> list[s
 
     if legacy:  # le graphe d'avant : tout depuis 0, puis ``-ss`` de sortie
         original = filter_graph.build_filter_complex
-        monkeypatch.setattr(
-            filter_graph,
-            "build_filter_complex",
-            lambda *args, **kwargs: original(*args, **{**kwargs, "origin": 0.0}),
-        )
-    command = filter_graph.build_preview_command(
-        plan,
-        width=W,
-        height=H,
-        fps=FPS,
-        quality="high",
-        start=START,
-        duration=SEGMENT,
-        output_path=str(output),
-    )
+        monkeypatch.setattr(filter_graph, "build_filter_complex",
+                            lambda *args, **kwargs: original(*args, **{**kwargs, "origin": 0.0}))
+    command = filter_graph.build_preview_command(plan, width=W, height=H, fps=FPS, quality="high", start=START,
+                                                 duration=SEGMENT, output_path=str(output))
     monkeypatch.undo()
     return command
 
 
 def _decoded_md5(path: Path) -> list[str]:
-    completed = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-f", "framemd5", "-"],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=60,
-    )
-    return [
-        line.rsplit(",", 1)[-1].strip()
-        for line in completed.stdout.splitlines()
-        if line and line[0] != "#"
-    ]
+    completed = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "framemd5", "-"],
+                               capture_output=True, text=True, check=True, timeout=60)
+    return [line.rsplit(",", 1)[-1].strip() for line in completed.stdout.splitlines() if line and line[0] != "#"]
 
 
 def test_export_graph_is_unchanged_without_origin(tmp_path):
@@ -137,26 +95,12 @@ def test_segment_graph_starts_at_its_origin(tmp_path):
     from core.filter_graph import build_preview_command
 
     plan = build_render_plan(_project(tmp_path, with_video=False))
-    command = build_preview_command(
-        plan,
-        width=W,
-        height=H,
-        fps=FPS,
-        quality="high",
-        start=START,
-        duration=SEGMENT,
-        output_path=str(tmp_path / "s.mp4"),
-    )
+    command = build_preview_command(plan, width=W, height=H, fps=FPS, quality="high", start=START,
+                                    duration=SEGMENT, output_path=str(tmp_path / "s.mp4"))
     graph = command[command.index("-filter_complex") + 1]
-    background = next(
-        part for part in graph.split(";") if part.startswith("color=c=black:")
-    )
-    assert background.endswith(
-        "trim=start=4.0,format=rgba[bg]"
-    )  # composition en RVBA dès le fond
-    assert (
-        command[command.index("-ss") + 1] == "4.000"
-    )  # la sortie se cale toujours sur le segment
+    background = next(part for part in graph.split(";") if part.startswith("color=c=black:"))
+    assert background.endswith("trim=start=4.0,format=rgba[bg]")         # composition en RVBA dès le fond
+    assert command[command.index("-ss") + 1] == "4.000"     # la sortie se cale toujours sur le segment
 
 
 def test_no_layer_frame_is_prepared_before_the_origin(tmp_path, monkeypatch):
@@ -166,35 +110,17 @@ def test_no_layer_frame_is_prepared_before_the_origin(tmp_path, monkeypatch):
 
     asked: list[float] = []
     original = MographRenderer.any_active
-    monkeypatch.setattr(
-        MographRenderer,
-        "any_active",
-        lambda self, ids, t: asked.append(t) or original(self, ids, t),
-    )
-    monkeypatch.setattr(
-        MographRenderer,
-        "coverage_key",
-        lambda self, clip_id, t, _o=MographRenderer.coverage_key: (
-            asked.append(t) or _o(self, clip_id, t)
-        ),
-    )
+    monkeypatch.setattr(MographRenderer, "any_active",
+                        lambda self, ids, t: asked.append(t) or original(self, ids, t))
+    monkeypatch.setattr(MographRenderer, "coverage_key",
+                        lambda self, clip_id, t, _o=MographRenderer.coverage_key: asked.append(t) or _o(self, clip_id, t))
     plan = build_render_plan(_project(tmp_path, with_video=False))
-    build_preview_command(
-        plan,
-        width=W,
-        height=H,
-        fps=FPS,
-        quality="high",
-        start=START,
-        duration=SEGMENT,
-        output_path=str(tmp_path / "s.mp4"),
-    )
+    build_preview_command(plan, width=W, height=H, fps=FPS, quality="high", start=START, duration=SEGMENT,
+                          output_path=str(tmp_path / "s.mp4"))
     assert asked
     # Une image de marge au plus (arrondi de la grille de ``write_stream``).
     assert min(asked) >= START - 1.0 / FPS - 1e-9
-    assert (
-        len(asked) <= 5 * (LENGTH - START + 1.0 / FPS) * FPS + 5
-    )  # 5 éléments, jamais toute la timeline
+    assert len(asked) <= 5 * (LENGTH - START + 1.0 / FPS) * FPS + 5  # 5 éléments, jamais toute la timeline
 
 
 @needs_ffmpeg
@@ -207,10 +133,8 @@ def test_late_segment_frames_are_identical_to_full_composition(tmp_path, monkeyp
         completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
         assert completed.returncode == 0, completed.stderr
         outputs[legacy] = _decoded_md5(output)
-    assert len(outputs[False]) >= SEGMENT * FPS  # images + paquets audio du segment
-    assert (
-        outputs[False] == outputs[True]
-    )  # au bit près, image par image et son compris
+    assert len(outputs[False]) >= SEGMENT * FPS                # images + paquets audio du segment
+    assert outputs[False] == outputs[True]                     # au bit près, image par image et son compris
 
 
 def test_running_video_layer_is_cut_before_its_chain(tmp_path):
@@ -219,30 +143,17 @@ def test_running_video_layer_is_cut_before_its_chain(tmp_path):
 
     plan = build_render_plan(_project(tmp_path, with_video=True))
     command = build_preview_command(
-        plan,
-        width=W,
-        height=H,
-        fps=FPS,
-        quality="high",
-        start=START,
-        duration=SEGMENT,
+        plan, width=W, height=H, fps=FPS, quality="high", start=START, duration=SEGMENT,
         output_path=str(tmp_path / "s.mp4"),
     )
     graph = command[command.index("-filter_complex") + 1]
     video_chain = next(
-        part
-        for part in graph.split(";")
+        part for part in graph.split(";")
         if part.startswith("[0:v]") and "trim=start=" in part and "overlay=" not in part
     )
     # Clip à 0, segment à 4 s → source_in 0 + skip 4.
-    assert (
-        "trim=start=4.0:end=6.0" in video_chain
-        or "trim=start=4.000000:end=6.000000" in video_chain
-    )
-    assert (
-        "setpts=PTS-STARTPTS+4.0/TB" in video_chain
-        or "setpts=PTS-STARTPTS+4.000000/TB" in video_chain
-    )
+    assert "trim=start=4.0:end=6.0" in video_chain or "trim=start=4.000000:end=6.000000" in video_chain
+    assert "setpts=PTS-STARTPTS+4.0/TB" in video_chain or "setpts=PTS-STARTPTS+4.000000/TB" in video_chain
     assert video_chain.index("trim=start=") < video_chain.index("fps=")
 
 
@@ -253,12 +164,8 @@ def test_export_video_layer_chain_unchanged_without_origin(tmp_path):
     plan = build_render_plan(_project(tmp_path, with_video=True))
     graph, *_ = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     video_chain = next(
-        part
-        for part in graph.split(";")
+        part for part in graph.split(";")
         if part.startswith("[0:v]") and "trim=start=" in part and "overlay=" not in part
     )
-    assert (
-        "trim=start=0.0:end=6.0" in video_chain
-        or "trim=start=0.000000:end=6.000000" in video_chain
-    )
+    assert "trim=start=0.0:end=6.0" in video_chain or "trim=start=0.000000:end=6.000000" in video_chain
     assert "setpts=PTS-STARTPTS+4" not in video_chain

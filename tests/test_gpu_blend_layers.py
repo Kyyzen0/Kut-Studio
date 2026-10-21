@@ -11,12 +11,7 @@ import numpy as np
 import pytest
 
 from core.blend_modes import BlendMode
-from core.gpu_composite import (
-    CompositeFrame,
-    CompositeLayer,
-    VideoSource,
-    reference_frame,
-)
+from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, reference_frame
 from core.gpu_effects import program_for
 from core.graphics import add_graphic_clip, update_graphic
 from core.project_model import Project
@@ -30,36 +25,19 @@ def _straight_rgba(image) -> np.ndarray:
     from PySide6.QtGui import QImage
 
     image = image.convertToFormat(QImage.Format_RGBA8888)
-    data = np.frombuffer(image.constBits(), np.uint8).reshape(
-        image.height(), image.bytesPerLine()
-    )
-    return (
-        data[:, : image.width() * 4].reshape(image.height(), image.width(), 4) / 255.0
-    )
+    data = np.frombuffer(image.constBits(), np.uint8).reshape(image.height(), image.bytesPerLine())
+    return data[:, : image.width() * 4].reshape(image.height(), image.width(), 4) / 255.0
 
 
 def _compose(background: np.ndarray, light: np.ndarray, mode: BlendMode) -> np.ndarray:
     identity = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
     frame = CompositeFrame(
-        W,
-        H,
-        1.0,
-        (
-            CompositeLayer("bg", identity, (0.0, 0.0, W, H), program=program_for(())),
-            CompositeLayer(
-                "light",
-                identity,
-                (0.0, 0.0, W, H),
-                blend=mode,
-                program=program_for(()),
-                matte="m",
-            ),
-        ),
+        W, H, 1.0,
+        (CompositeLayer("bg", identity, (0.0, 0.0, W, H), program=program_for(())),
+         CompositeLayer("light", identity, (0.0, 0.0, W, H), blend=mode, program=program_for(()), matte="m")),
         (VideoSource("bg", "rgba", W, H), VideoSource("light", "rgba", W, H)),
     )
-    return reference_frame(
-        frame, {"bg": background, "light": light[..., :3]}, {"m": light[..., 3]}
-    )
+    return reference_frame(frame, {"bg": background, "light": light[..., :3]}, {"m": light[..., 3]})
 
 
 @needs_ffmpeg
@@ -80,13 +58,11 @@ def test_the_gpu_composes_a_light_layer_like_the_export(qapp, mode, kind):
     dark = render_frame(build_render_plan(project), W, H, 0.4) / 255.0
     light.enabled = True
     scene = scene_for_plan(build_render_plan(project))
-    image = MographRenderer(scene, W, H, fps=25.0, quality="draft").render(
-        [light.id], 0.4, blend_modes=False
-    )
+    image = MographRenderer(scene, W, H, fps=25.0, quality="draft").render([light.id], 0.4, blend_modes=False)
     composed = _compose(dark, _straight_rgba(image), mode)
     error = np.abs(composed - lit).mean() * 255
     assert error <= 3.0, error
-    assert np.abs(lit - dark).max() * 255 > 30.0  # la lumière se voit vraiment
+    assert np.abs(lit - dark).max() * 255 > 30.0                 # la lumière se voit vraiment
 
 
 class _FakeView:
@@ -108,9 +84,7 @@ def test_the_preview_panel_sends_blend_layers_once_and_composes_them(qtbot):
 
     from ui.preview_panel import PreviewPanel
 
-    panel = PreviewPanel(
-        lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None
-    )
+    panel = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
     qtbot.addWidget(panel)
     view = _FakeView()
     panel.gpu_view = view
@@ -121,11 +95,7 @@ def test_the_preview_panel_sends_blend_layers_once_and_composes_them(qtbot):
     assert list(view.frames) == ["graphics0"]
     frame, mattes = view.composite
     layer = frame.layers[-1]
-    assert (
-        layer.source == "graphics0"
-        and layer.blend is BlendMode.ADD
-        and layer.matte in mattes
-    )
+    assert layer.source == "graphics0" and layer.blend is BlendMode.ADD and layer.matte in mattes
     panel.set_blend_layers([])
     assert view.forgotten == ["graphics0"]
     panel.gpu_view = None

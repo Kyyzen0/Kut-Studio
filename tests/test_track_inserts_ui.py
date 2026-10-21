@@ -33,14 +33,9 @@ def test_the_fx_button_opens_the_chain_of_its_track_and_counts_its_inserts(windo
     dialog.add_requested.emit("A1", AudioEffectType.COMPRESSOR.value)
     dialog.add_requested.emit("A1", AudioEffectType.LIMITER.value)
     track = next(t for t in window.project.tracks if t.id == "A1")
-    assert [e.type for e in track.inserts] == [
-        AudioEffectType.COMPRESSOR,
-        AudioEffectType.LIMITER,
-    ]
+    assert [e.type for e in track.inserts] == [AudioEffectType.COMPRESSOR, AudioEffectType.LIMITER]
     assert window.mixer_panel.strip_for("A1").inserts_button.text() == "FX 2"
-    assert dialog.list.count() == 2 and dialog.list.currentRow() == 1, (
-        "l'insert ajouté est sélectionné"
-    )
+    assert dialog.list.count() == 2 and dialog.list.currentRow() == 1, "l'insert ajouté est sélectionné"
 
 
 def test_each_structural_edit_is_one_undo_step_and_undo_updates_the_open_dialog(window):
@@ -56,15 +51,10 @@ def test_each_structural_edit_is_one_undo_step_and_undo_updates_the_open_dialog(
     window.undo_last()
     track = next(t for t in window.project.tracks if t.id == "A1")
     assert track.inserts[0].enabled is True
-    assert "·" not in dialog.list.item(0).text(), (
-        "l'insert n'est plus contourné dans la boîte ouverte"
-    )
+    assert "·" not in dialog.list.item(0).text(), "l'insert n'est plus contourné dans la boîte ouverte"
     window.undo_last()
     assert next(t for t in window.project.tracks if t.id == "A1").inserts == []
-    assert (
-        dialog.list.count() == 0
-        and window.mixer_panel.strip_for("A1").inserts_button.text() == "FX"
-    )
+    assert dialog.list.count() == 0 and window.mixer_panel.strip_for("A1").inserts_button.text() == "FX"
 
 
 def test_turning_a_parameter_is_one_undo_step_and_keeps_the_spin_box(window):
@@ -74,9 +64,7 @@ def test_turning_a_parameter_is_one_undo_step_and_keeps_the_spin_box(window):
     spin = dialog.spin_boxes["limit_db"]
     for value in (-2.0, -3.0, -4.0):
         spin.setValue(value)
-    assert dialog.spin_boxes["limit_db"] is spin, (
-        "la boîte ne reconstruit pas les réglages sous la main"
-    )
+    assert dialog.spin_boxes["limit_db"] is spin, "la boîte ne reconstruit pas les réglages sous la main"
     track = next(t for t in window.project.tracks if t.id == "A1")
     assert track.inserts[0].params["limit_db"] == -4.0
     assert _steps(window) == before + 1

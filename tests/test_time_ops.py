@@ -34,34 +34,12 @@ from core.timeline_operations import set_clip_freeze_frame, set_clip_speed
 
 
 def _project(*, source=(10.0, 40.0), media=300.0, remapping=None):
-    asset = MediaAsset(
-        id="a",
-        path="/tmp/x.mp4",
-        name="x",
-        duration=media,
-        width=1920,
-        height=1080,
-        fps=25.0,
-        media_type="video",
-        has_audio=True,
-    )
-    clip = Clip(
-        id="c1",
-        asset_id="a",
-        track_id="V1",
-        timeline_start=3.0,
-        source_in=source[0],
-        source_out=source[1],
-        time_remapping=remapping or TimeRemapping(),
-    )
-    project = Project(
-        name="p",
-        width=1280,
-        height=720,
-        fps=25.0,
-        media_assets=[asset],
-        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
-    )
+    asset = MediaAsset(id="a", path="/tmp/x.mp4", name="x", duration=media, width=1920, height=1080,
+                       fps=25.0, media_type="video", has_audio=True)
+    clip = Clip(id="c1", asset_id="a", track_id="V1", timeline_start=3.0, source_in=source[0], source_out=source[1],
+                time_remapping=remapping or TimeRemapping())
+    project = Project(name="p", width=1280, height=720, fps=25.0, media_assets=[asset],
+                      tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
     return project, clip
 
 
@@ -71,13 +49,7 @@ def _brief_ramp(project, **kwargs):
 
 
 def _state(clip: Clip):
-    return (
-        list(clip.animation),
-        clip.time_remapping,
-        clip.source_in,
-        clip.source_out,
-        clip.timeline_start,
-    )
+    return (list(clip.animation), clip.time_remapping, clip.source_in, clip.source_out, clip.timeline_start)
 
 
 # ---------------------------------------------------------------------------
@@ -90,37 +62,22 @@ def test_the_speed_ramp_of_the_brief_is_built_from_five_points():
     project, clip = _project(source=(10.0, 60.0))
     _brief_ramp(project)
     assert [(k.time_seconds, k.value) for k in speed_points(clip)] == [
-        (0.0, 1.0),
-        (2.0, 1.0),
-        (3.0, 0.25),
-        (6.0, 0.25),
-        (7.0, 2.0),
+        (0.0, 1.0), (2.0, 1.0), (3.0, 0.25), (6.0, 0.25), (7.0, 2.0)
     ]
     tm = clip.time_map
     assert isinstance(tm, PiecewiseTimeMap)
     assert tm.source_time(2.0) == pytest.approx(10.0 + 2.0, abs=1e-9)
-    assert tm.source_time(7.0) == pytest.approx(
-        10.0 + 4.5, abs=1e-9
-    )  # 2 + 0,625 + 0,75 + 1,125
-    assert clip.duration == tm.duration > 7.0  # puis 200 % jusqu'à épuiser la source
+    assert tm.source_time(7.0) == pytest.approx(10.0 + 4.5, abs=1e-9)               # 2 + 0,625 + 0,75 + 1,125
+    assert clip.duration == tm.duration > 7.0                                      # puis 200 % jusqu'à épuiser la source
     assert tm.source_time(clip.duration) == pytest.approx(60.0, abs=1e-9)
 
 
 def test_the_first_point_given_a_value_leaves_the_part_before_it_at_the_current_speed():
     project, clip = _project(source=(10.0, 60.0))
-    add_speed_point(
-        project, "c1", 3.0, 0.25
-    )  # poser « 25 % à 3 s » sur un clip constant
-    assert [(k.time_seconds, k.value) for k in speed_points(clip)] == [
-        (0.0, 1.0),
-        (3.0, 0.25),
-    ]
-    assert clip.time_map.source_time(1.5) == pytest.approx(
-        11.5, abs=1e-9
-    )  # avant le point : toujours 100 %
-    assert clip.time_map.speed_at(2.999) == pytest.approx(
-        1.0
-    ) and clip.time_map.speed_at(3.001) == pytest.approx(0.25)
+    add_speed_point(project, "c1", 3.0, 0.25)                                       # poser « 25 % à 3 s » sur un clip constant
+    assert [(k.time_seconds, k.value) for k in speed_points(clip)] == [(0.0, 1.0), (3.0, 0.25)]
+    assert clip.time_map.source_time(1.5) == pytest.approx(11.5, abs=1e-9)         # avant le point : toujours 100 %
+    assert clip.time_map.speed_at(2.999) == pytest.approx(1.0) and clip.time_map.speed_at(3.001) == pytest.approx(0.25)
 
 
 def test_adding_a_point_without_a_value_never_changes_the_mapping():
@@ -130,17 +87,15 @@ def test_adding_a_point_without_a_value_never_changes_the_mapping():
     before = clip.time_map
     probes = [0.4, 1.9, 2.6, 3.7, 5.5]
     reference = [before.source_time(t) for t in probes]
-    add_speed_point(project, "c1", 2.2)  # insertion qui conserve la courbe
+    add_speed_point(project, "c1", 2.2)                                             # insertion qui conserve la courbe
     assert len(speed_points(clip)) == 3
-    assert [clip.time_map.source_time(t) for t in probes] == pytest.approx(
-        reference, abs=1e-9
-    )
+    assert [clip.time_map.source_time(t) for t in probes] == pytest.approx(reference, abs=1e-9)
 
 
 def test_a_constant_clip_given_a_single_point_keeps_its_duration():
     project, clip = _project(source=(10.0, 40.0), remapping=TimeRemapping(speed=2.0))
     duration = clip.duration
-    add_speed_point(project, "c1", 4.0)  # amorce une courbe à la vitesse actuelle
+    add_speed_point(project, "c1", 4.0)                                             # amorce une courbe à la vitesse actuelle
     assert clip.has_speed_curve and clip.duration == pytest.approx(duration, abs=1e-9)
 
 
@@ -155,11 +110,8 @@ def test_slowing_down_lengthens_the_clip_when_the_source_range_is_kept():
     before_duration, window = clip.duration, (clip.source_in, clip.source_out)
     slowest = next(k for k in speed_points(clip) if k.time_seconds == 3.0)
     set_speed_point_value(project, "c1", slowest.id, 0.1)
-    assert clip.duration > before_duration  # ralentir allonge le clip
-    assert (
-        clip.source_in,
-        clip.source_out,
-    ) == window  # la portion de source ne bouge pas
+    assert clip.duration > before_duration                                          # ralentir allonge le clip
+    assert (clip.source_in, clip.source_out) == window                              # la portion de source ne bouge pas
 
 
 def test_the_timeline_duration_can_be_kept_instead_and_the_source_used_changes():
@@ -169,21 +121,17 @@ def test_the_timeline_duration_can_be_kept_instead_and_the_source_used_changes()
     out_before = clip.source_out
     slowest = next(k for k in speed_points(clip) if k.time_seconds == 3.0)
     set_speed_point_value(project, "c1", slowest.id, 0.1, mode=RippleMode.TIMELINE)
-    assert clip.duration == pytest.approx(
-        duration, abs=1e-9
-    )  # même durée sur la timeline
-    assert clip.source_out < out_before  # le clip consomme moins de média
+    assert clip.duration == pytest.approx(duration, abs=1e-9)                       # même durée sur la timeline
+    assert clip.source_out < out_before                                             # le clip consomme moins de média
 
 
 def test_keeping_the_timeline_duration_cannot_use_more_media_than_exists():
-    project, clip = _project(
-        source=(10.0, 60.0), media=62.0
-    )  # presque pas de média après la fin
+    project, clip = _project(source=(10.0, 60.0), media=62.0)                        # presque pas de média après la fin
     _brief_ramp(project)
     duration = clip.duration
     fastest = next(k for k in speed_points(clip) if k.time_seconds == 7.0)
     set_speed_point_value(project, "c1", fastest.id, 10.0, mode=RippleMode.TIMELINE)
-    assert clip.source_out <= 62.0 + 1e-9  # jamais au-delà du média
+    assert clip.source_out <= 62.0 + 1e-9                                           # jamais au-delà du média
     assert clip.duration <= duration + 1e-9
 
 
@@ -199,7 +147,7 @@ def test_moving_a_point_in_time_moves_the_ramp_and_changes_the_duration():
     point = next(k for k in speed_points(clip) if k.time_seconds == 3.0)
     new_time = move_speed_point(project, "c1", point.id, 4.0)
     assert new_time == pytest.approx(4.0)
-    assert clip.time_map.speed_at(3.5) != pytest.approx(0.25)  # la rampe n'est plus là
+    assert clip.time_map.speed_at(3.5) != pytest.approx(0.25)                       # la rampe n'est plus là
     assert clip.duration != pytest.approx(duration)
 
 
@@ -218,15 +166,8 @@ def test_the_interpolation_of_a_ramp_segment_can_be_changed():
     _brief_ramp(project)
     ramp_start = next(k for k in speed_points(clip) if k.time_seconds == 2.0)
     mid_linear = clip.time_map.speed_at(2.5)
-    assert (
-        set_speed_point_interpolation(
-            project, "c1", [ramp_start.id], InterpolationType.HOLD
-        )
-        == 1
-    )
-    assert clip.time_map.speed_at(2.5) == pytest.approx(
-        1.0
-    )  # brutal : reste à 100 % jusqu'au point suivant
+    assert set_speed_point_interpolation(project, "c1", [ramp_start.id], InterpolationType.HOLD) == 1
+    assert clip.time_map.speed_at(2.5) == pytest.approx(1.0)                        # brutal : reste à 100 % jusqu'au point suivant
     assert mid_linear == pytest.approx(0.625)
 
 
@@ -250,9 +191,7 @@ def test_a_speed_that_would_empty_the_clip_is_refused_and_everything_is_restored
     before = _state(clip)
     first = speed_points(clip)[0]
     with pytest.raises(ValueError, match="source"):
-        set_speed_point_value(
-            project, "c1", first.id, -1.0
-        )  # recule dès 0 s depuis la borne basse
+        set_speed_point_value(project, "c1", first.id, -1.0)                       # recule dès 0 s depuis la borne basse
     assert _state(clip) == before
 
 
@@ -307,22 +246,16 @@ def test_moving_and_changing_the_value_of_a_point_is_one_transaction():
     assert moved.time_seconds == pytest.approx(4.0) and moved.value == 2.0
     restore_after = _state(clip)
     with pytest.raises(ValueError, match="entre"):
-        edit_speed_points(
-            project, [ref], delta_seconds=-1.0, values={ref: 99.0}, fps=25.0
-        )  # la valeur est refusée avant tout
-    assert (
-        _state(clip) == restore_after and _state(clip) != before
-    )  # ni déplacé, ni à moitié modifié
+        edit_speed_points(project, [ref], delta_seconds=-1.0, values={ref: 99.0}, fps=25.0)   # la valeur est refusée avant tout
+    assert _state(clip) == restore_after and _state(clip) != before                           # ni déplacé, ni à moitié modifié
 
 
 def test_a_refused_edit_of_a_whole_gesture_restores_the_clip_exactly():
-    project, clip = _project(source=(10.0, 10.2))  # 0,2 s de source
+    project, clip = _project(source=(10.0, 10.2))                                             # 0,2 s de source
     ref = _two_points_short(project, clip)
     before = _state(clip)
     with pytest.raises(ValueError, match="source"):
-        edit_speed_points(
-            project, [ref], values={ref: 10.0}
-        )  # 0,02 s : sous le plancher
+        edit_speed_points(project, [ref], values={ref: 10.0})                                 # 0,02 s : sous le plancher
     assert _state(clip) == before
 
 
@@ -332,26 +265,18 @@ def _two_points_short(project, clip):
 
 
 def test_a_drag_that_shortens_then_lengthens_the_clip_loses_no_keyframe_when_it_starts_from_the_gesture_origin():
-    project, clip = _project(source=(10.0, 40.0))  # 30 s à 100 %
+    project, clip = _project(source=(10.0, 40.0))                                             # 30 s à 100 %
     ref = _two_points(project, clip)
     add_keyframe(project, "c1", "opacity", 25.0, 0.2)
     add_keyframe(project, "c1", "opacity", 29.0, 0.9)
     origin = {clip.id: capture_time_state(clip)}
     start = _state(clip)
     keyframes_at_start = list(clip.transform_keyframes)
-    edit_speed_points(
-        project, [ref], values={ref: 4.0}, origin=origin
-    )  # le clip devient bien plus court…
+    edit_speed_points(project, [ref], values={ref: 4.0}, origin=origin)                       # le clip devient bien plus court…
     assert clip.duration < 12.0
-    assert all(
-        k.time_seconds <= clip.duration + 1e-6 for k in clip.transform_keyframes
-    )  # …les keyframes d'après la fin sont coupés
-    edit_speed_points(
-        project, [ref], values={ref: 1.0}, origin=origin
-    )  # …puis il se rallonge dans le même geste
-    assert (
-        _state(clip) == start and list(clip.transform_keyframes) == keyframes_at_start
-    )  # tout est revenu, rien n'a été perdu
+    assert all(k.time_seconds <= clip.duration + 1e-6 for k in clip.transform_keyframes)       # …les keyframes d'après la fin sont coupés
+    edit_speed_points(project, [ref], values={ref: 1.0}, origin=origin)                       # …puis il se rallonge dans le même geste
+    assert _state(clip) == start and list(clip.transform_keyframes) == keyframes_at_start     # tout est revenu, rien n'a été perdu
 
 
 def test_without_the_gesture_origin_the_same_drag_would_lose_the_cut_keyframes():
@@ -369,12 +294,8 @@ def test_without_the_gesture_origin_the_same_drag_would_lose_the_cut_keyframes()
 def test_speed_tangents_go_through_the_transaction_and_keep_the_tangent_mode_argument():
     project, clip = _project(source=(10.0, 40.0))
     ref = _two_points(project, clip)
-    set_speed_point_interpolation(
-        project, "c1", [ref.keyframe_id], InterpolationType.BEZIER
-    )
-    set_speed_tangents(
-        project, [ref], out_slope=0.5, mode=TangentMode.BROKEN
-    )  # ``mode`` : celui de la tangente
+    set_speed_point_interpolation(project, "c1", [ref.keyframe_id], InterpolationType.BEZIER)
+    set_speed_tangents(project, [ref], out_slope=0.5, mode=TangentMode.BROKEN)                # ``mode`` : celui de la tangente
     point = speed_points(clip)[1]
     assert point.tangent_mode is TangentMode.BROKEN and point.out_slope == 0.5
     before = _state(clip)
@@ -392,22 +313,13 @@ def test_speed_tangents_go_through_the_transaction_and_keep_the_tangent_mode_arg
 def test_the_interpolation_mode_and_flow_quality_are_clip_choices_that_survive_other_edits():
     project, clip = _project()
     set_clip_interpolation(project, "c1", "optical_flow", "best")
-    assert (
-        clip.time_remapping.preserve_pitch
-    )  # défaut : la voix garde sa hauteur (atempo)
+    assert clip.time_remapping.preserve_pitch                                       # défaut : la voix garde sa hauteur (atempo)
     set_clip_preserve_pitch(project, "c1", False)
     set_clip_remap_audio(project, "c1", False)
-    set_clip_speed(project, "c1", 0.25)  # une autre édition ne les efface pas
+    set_clip_speed(project, "c1", 0.25)                                             # une autre édition ne les efface pas
     remapping = clip.time_remapping
-    assert (remapping.interpolation, remapping.flow_quality) == (
-        TimeInterpolation.OPTICAL_FLOW,
-        FlowQuality.BEST,
-    )
-    assert (
-        not remapping.preserve_pitch
-        and not remapping.remap_audio
-        and remapping.speed == 0.25
-    )
+    assert (remapping.interpolation, remapping.flow_quality) == (TimeInterpolation.OPTICAL_FLOW, FlowQuality.BEST)
+    assert not remapping.preserve_pitch and not remapping.remap_audio and remapping.speed == 0.25
 
 
 def test_a_frozen_clip_has_no_intermediate_images_to_compute():

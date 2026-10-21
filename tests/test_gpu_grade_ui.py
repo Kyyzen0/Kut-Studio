@@ -10,14 +10,7 @@ from test_gpu_preview_ui import FakeGpuView, _panel, fake_gpu  # noqa: F401 - fi
 from core.color_grading import ColorGrade
 from core.gpu_composite import AdjustmentLayer, CompositeLayer, VideoSource
 from core.gpu_effects import program_for
-from core.gpu_grade import (
-    DOMAIN_RGB,
-    DOMAIN_YUV,
-    LUT_SIZE,
-    GradeBakeError,
-    GradeLutCache,
-    lut_key,
-)
+from core.gpu_grade import DOMAIN_RGB, DOMAIN_YUV, LUT_SIZE, GradeBakeError, GradeLutCache, lut_key
 
 GRADE = ColorGrade(exposure=0.4, saturation=1.2)
 
@@ -30,13 +23,7 @@ def test_the_panel_hands_the_displayed_clip_grade_to_the_gpu_monitor(qtbot, fake
     panel.enable_gpu("metal")
     view = fake_gpu.instances[0]
     panel._timeline_preview_path = "clip.mp4"
-    panel._on_gpu_frame(
-        QVideoFrame(
-            QVideoFrameFormat(
-                QSize(1920, 1080), QVideoFrameFormat.PixelFormat.Format_NV12
-            )
-        )
-    )
+    panel._on_gpu_frame(QVideoFrame(QVideoFrameFormat(QSize(1920, 1080), QVideoFrameFormat.PixelFormat.Format_NV12)))
     panel.set_color_grade(GRADE)
     assert view.last.layers[0].grade is GRADE
     panel.set_color_grade(ColorGrade())
@@ -46,9 +33,7 @@ def test_the_panel_hands_the_displayed_clip_grade_to_the_gpu_monitor(qtbot, fake
     panel.set_adjustments([("adj", (), None, 1.0, GRADE)])
     assert view.last.adjustments[0].grade is GRADE
     panel.set_adjustments([("adj", (), None, 1.0)])
-    assert view.last.adjustments[0].grade is None, (
-        "l'ancien format (sans étalonnage) reste lu"
-    )
+    assert view.last.adjustments[0].grade is None, "l'ancien format (sans étalonnage) reste lu"
 
 
 class _Baker:
@@ -86,54 +71,27 @@ def widget(qtbot):
 
 
 def _layer(grade, source="main") -> CompositeLayer:
-    return CompositeLayer(
-        source,
-        (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
-        (0, 0, 64, 36),
-        program=program_for(()),
-        grade=grade,
-    )
+    return CompositeLayer(source, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (0, 0, 64, 36), program=program_for(()), grade=grade)
 
 
-def test_the_view_bakes_the_lut_in_the_colour_space_of_the_media_and_then_inserts_the_pass(
-    widget,
-):
+def test_the_view_bakes_the_lut_in_the_colour_space_of_the_media_and_then_inserts_the_pass(widget):
     baker = _Baker()
     widget.grades = GradeLutCache(bake=baker)
     images: dict = {}
     pending = widget._resolve_grade(_layer(GRADE), images)
-    assert pending.grade is None and pending.grade_lut == "" and not images, (
-        "pas encore cuite : pas de passe"
-    )
-    assert _wait(
-        lambda: (
-            widget.grades.lookup(
-                GRADE, domain=DOMAIN_YUV, colorspace="bt709", color_range="video"
-            )
-            is not None
-        )
-    )
-    assert baker.calls == [
-        {"domain": DOMAIN_YUV, "colorspace": "bt709", "color_range": "video"}
-    ]
+    assert pending.grade is None and pending.grade_lut == "" and not images, "pas encore cuite : pas de passe"
+    assert _wait(lambda: widget.grades.lookup(GRADE, domain=DOMAIN_YUV, colorspace="bt709",
+                                              color_range="video") is not None)
+    assert baker.calls == [{"domain": DOMAIN_YUV, "colorspace": "bt709", "color_range": "video"}]
     ready = widget._resolve_grade(_layer(GRADE), images)
     key = f"lut:{lut_key(GRADE, colorspace='bt709', color_range='video')}"
     assert ready.grade_lut == key and ready.grade is None
-    assert (images[key].width(), images[key].height()) == (
-        LUT_SIZE * LUT_SIZE,
-        LUT_SIZE,
-    )
+    assert (images[key].width(), images[key].height()) == (LUT_SIZE * LUT_SIZE, LUT_SIZE)
 
     rgb = widget._resolve_grade(_layer(GRADE, "still"), {})
     assert rgb.grade_lut == "" and _wait(lambda: len(baker.calls) == 2)
-    assert baker.calls[1] == {
-        "domain": DOMAIN_RGB,
-        "colorspace": "",
-        "color_range": "",
-    }, "média RVB : LUT en RVB"
-    adjustment = widget._resolve_grade(
-        AdjustmentLayer(program_for(()), grade=GRADE), {}
-    )
+    assert baker.calls[1] == {"domain": DOMAIN_RGB, "colorspace": "", "color_range": ""}, "média RVB : LUT en RVB"
+    adjustment = widget._resolve_grade(AdjustmentLayer(program_for(()), grade=GRADE), {})
     assert adjustment.grade is None
 
 
@@ -150,15 +108,10 @@ def test_while_a_new_grade_bakes_the_previous_lut_stays_on_screen(widget):
         threading.Event().wait(0.01)
     assert first is not None and first.grade_lut
     slower = threading.Event()
-    widget.grades._bake = lambda grade, **options: (
-        slower.wait(5),
-        bytes(LUT_SIZE**3 * 3),
-    )[1]
+    widget.grades._bake = lambda grade, **options: (slower.wait(5), bytes(LUT_SIZE ** 3 * 3))[1]
     images: dict = {}
     moving = widget._resolve_grade(_layer(GRADE.with_field("exposure", 0.9)), images)
-    assert moving.grade_lut == first.grade_lut and first.grade_lut in images, (
-        "pas de clignotement sans étalonnage"
-    )
+    assert moving.grade_lut == first.grade_lut and first.grade_lut in images, "pas de clignotement sans étalonnage"
     slower.set()
 
 
@@ -179,43 +132,26 @@ def test_a_bake_that_ends_after_the_widget_is_gone_touches_no_qt_object(qtbot):
     widget._sources["main"] = VideoSource("main", "nv12", 64, 36, "bt709", "video")
     widget.grades = cache = GradeLutCache(bake=bake)
     widget._resolve_grade(_layer(GRADE), {})
-    assert widget._grade_poll_pending, (
-        "une cuisson en cours : une nouvelle image est demandée"
-    )
-    assert cache._on_ready is None, (
-        "le cache (donc le fil de cuisson) ne connaît pas le widget"
-    )
+    assert widget._grade_poll_pending, "une cuisson en cours : une nouvelle image est demandée"
+    assert cache._on_ready is None, "le cache (donc le fil de cuisson) ne connaît pas le widget"
     widget.deleteLater()
     del widget
-    qtbot.wait(100)  # le widget est détruit, sa minuterie avec lui
+    qtbot.wait(100)                                      # le widget est détruit, sa minuterie avec lui
     release.set()
     assert done.wait(5)
-    assert _wait(
-        lambda: (
-            cache.lookup(
-                GRADE, domain=DOMAIN_YUV, colorspace="bt709", color_range="video"
-            )
-            is not None
-        )
-    )
-    qtbot.wait(50)  # aucune trace Qt du fil après coup
+    assert _wait(lambda: cache.lookup(GRADE, domain=DOMAIN_YUV, colorspace="bt709", color_range="video") is not None)
+    qtbot.wait(50)                                       # aucune trace Qt du fil après coup
 
 
 def test_a_grade_that_cannot_be_baked_is_simply_not_shown(widget):
     widget.grades = GradeLutCache(bake=_Baker(fail=True))
     widget._resolve_grade(_layer(GRADE), {})
-    assert _wait(
-        lambda: widget.grades.failed(
-            GRADE, domain=DOMAIN_YUV, colorspace="bt709", color_range="video"
-        )
-    )
+    assert _wait(lambda: widget.grades.failed(GRADE, domain=DOMAIN_YUV, colorspace="bt709", color_range="video"))
     shown = widget._resolve_grade(_layer(GRADE), {})
     assert shown.grade is None and shown.grade_lut == ""
 
 
-def test_the_main_window_gives_the_monitor_the_grade_of_the_clip_under_the_playhead(
-    qtbot, monkeypatch, tmp_path
-):
+def test_the_main_window_gives_the_monitor_the_grade_of_the_clip_under_the_playhead(qtbot, monkeypatch, tmp_path):
     from main_window_harness import build_window, install_dialogs
 
     install_dialogs(monkeypatch)
@@ -223,12 +159,8 @@ def test_the_main_window_gives_the_monitor_the_grade_of_the_clip_under_the_playh
     monkeypatch.setattr(window.preview_panel, "preview_at", lambda *_a, **_k: None)
     monkeypatch.setattr(window, "_present_cached_preview_at", lambda *_a, **_k: False)
     clip = window.project.tracks[0].clips[0]
-    asset = next(
-        item for item in window.project.media_assets if item.id == clip.asset_id
-    )
-    asset.path = str(
-        tmp_path / "intro.mp4"
-    )  # le projet d'exemple n'a pas de fichiers : un chemin suffit
+    asset = next(item for item in window.project.media_assets if item.id == clip.asset_id)
+    asset.path = str(tmp_path / "intro.mp4")             # le projet d'exemple n'a pas de fichiers : un chemin suffit
     window._reload_timeline_preserving_selection()
     clip.color_grade = GRADE
     window.playhead_seconds = clip.timeline_start + 0.1
@@ -239,9 +171,7 @@ def test_the_main_window_gives_the_monitor_the_grade_of_the_clip_under_the_playh
     assert window.preview_panel._gpu_grade is None
 
 
-def test_a_spatial_graph_becomes_passes_once_every_step_is_baked_and_its_window_is_there(
-    widget, qapp
-):
+def test_a_spatial_graph_becomes_passes_once_every_step_is_baked_and_its_window_is_there(widget, qapp):
     """Fenêtre et flou : une LUT par étape (domaine du média depuis l'image du calque, RVB ensuite), la matte des
     fenêtres venue du calque ; tant qu'il manque une pièce, le calque passe sans étalonnage (ou garde le programme
     précédent)."""
@@ -261,9 +191,7 @@ def test_a_spatial_graph_becomes_passes_once_every_step_is_baked_and_its_window_
     matte = QImage(64, 36, QImage.Format.Format_ARGB32_Premultiplied)
     layer = replace(_layer(graph), grade_windows=(("n1", "window:n1"),))
     images = {"window:n1": matte}
-    assert widget._resolve_grade(layer, dict(images)).grade_passes == (), (
-        "rien de cuit : pas encore de passes"
-    )
+    assert widget._resolve_grade(layer, dict(images)).grade_passes == (), "rien de cuit : pas encore de passes"
     ready = None
     for _ in range(500):
         ready = widget._resolve_grade(layer, dict(images))
@@ -271,35 +199,17 @@ def test_a_spatial_graph_becomes_passes_once_every_step_is_baked_and_its_window_
             break
         threading.Event().wait(0.01)
     assert ready is not None and ready.grade_passes and ready.grade is None
-    assert {call["domain"] for call in baker.calls} == {DOMAIN_YUV, DOMAIN_RGB}, (
-        "le 2ᵉ nœud lit une image RVB"
-    )
+    assert {call["domain"] for call in baker.calls} == {DOMAIN_YUV, DOMAIN_RGB}, "le 2ᵉ nœud lit une image RVB"
     ops = [step.op for step in ready.grade_passes]
-    assert (
-        ops == ["lut", "key", "mix", "lut", "blur"]
-        and ready.grade_passes[1].window == "window:n1"
-    )
+    assert ops == ["lut", "key", "mix", "lut", "blur"] and ready.grade_passes[1].window == "window:n1"
     slower = threading.Event()
-    widget.grades._bake = lambda grade, **options: (
-        slower.wait(5),
-        bytes(LUT_SIZE**3 * 3),
-    )[1]
-    moved = {
-        "window:n1@2": matte
-    }  # la fenêtre a bougé, et un réglage change (cuisson en cours)
-    changed = replace(
-        layer,
-        grade=graph.with_grade("n1", GRADE.with_field("exposure", 0.9)),
-        grade_windows=(("n1", "window:n1@2"),),
-    )
+    widget.grades._bake = lambda grade, **options: (slower.wait(5), bytes(LUT_SIZE ** 3 * 3))[1]
+    moved = {"window:n1@2": matte}                     # la fenêtre a bougé, et un réglage change (cuisson en cours)
+    changed = replace(layer, grade=graph.with_grade("n1", GRADE.with_field("exposure", 0.9)),
+                      grade_windows=(("n1", "window:n1@2"),))
     during = widget._resolve_grade(changed, moved)
-    assert [step.op for step in during.grade_passes] == ops, (
-        "pendant la cuisson : le programme précédent"
-    )
-    assert during.grade_passes[1].window == "window:n1@2", (
-        "… avec la matte de cette image"
-    )
+    assert [step.op for step in during.grade_passes] == ops, "pendant la cuisson : le programme précédent"
+    assert during.grade_passes[1].window == "window:n1@2", "… avec la matte de cette image"
     slower.set()
-    assert (
-        widget._resolve_grade(replace(layer, grade_windows=()), {}).grade_passes == ()
-    ), "sans sa matte, rien ne peut être dessiné : le calque passe sans étalonnage"
+    assert widget._resolve_grade(replace(layer, grade_windows=()), {}).grade_passes == (), \
+        "sans sa matte, rien ne peut être dessiné : le calque passe sans étalonnage"

@@ -52,14 +52,14 @@ def test_asset_names_follow_the_convention_and_read_back(version, target, expect
 @pytest.mark.parametrize(
     "name",
     [
-        "Kut-Studio-0.2.0-macos-arm64.tar.gz",  # mauvaise extension pour macOS
-        "Kut-Studio-0.2.0-linux-x64.zip",  # zip perdrait les droits d'exécution : refusé
+        "Kut-Studio-0.2.0-macos-arm64.tar.gz",       # mauvaise extension pour macOS
+        "Kut-Studio-0.2.0-linux-x64.zip",            # zip perdrait les droits d'exécution : refusé
         "Kut-Studio-0.2.0-macos-universal.zip",
         "Kut-Studio-0.2.0-freebsd-x64.tar.gz",
         "Kut-Studio-0.2-macos-arm64.zip",
         "Kut-Studio-0.2.0+build-macos-arm64.zip",
         "Kut-Studio-macos-arm64.zip",
-        "Kut-Studio-Linux.zip",  # les artefacts actuels de nightly.link ne sont pas des paquets
+        "Kut-Studio-Linux.zip",                      # les artefacts actuels de nightly.link ne sont pas des paquets
         "../Kut-Studio-0.2.0-macos-arm64.zip",
         "kut-studio-0.2.0-macos-arm64.zip",
         CHECKSUMS_FILE,
@@ -86,18 +86,8 @@ def test_release_targets_have_an_archive_format_and_are_unique():
     "platform_name,machine,translated,expected",
     [
         ("darwin", "arm64", False, MAC_ARM),
-        (
-            "darwin",
-            "x86_64",
-            False,
-            MAC_X64,
-        ),  # Mac Intel : jamais le paquet Apple Silicon
-        (
-            "darwin",
-            "x86_64",
-            True,
-            MAC_ARM,
-        ),  # copie x64 sous Rosetta sur Apple Silicon : paquet natif
+        ("darwin", "x86_64", False, MAC_X64),           # Mac Intel : jamais le paquet Apple Silicon
+        ("darwin", "x86_64", True, MAC_ARM),            # copie x64 sous Rosetta sur Apple Silicon : paquet natif
         ("win32", "AMD64", None, WIN_X64),
         ("win32", "ARM64", None, WIN_ARM),
         ("linux", "x86_64", None, LINUX_X64),
@@ -107,15 +97,8 @@ def test_release_targets_have_an_archive_format_and_are_unique():
         ("cygwin", "x86_64", None, None),
     ],
 )
-def test_the_target_of_each_system_and_architecture(
-    platform_name, machine, translated, expected
-):
-    assert (
-        detect_target(
-            platform_name=platform_name, machine=machine, translated=translated
-        )
-        == expected
-    )
+def test_the_target_of_each_system_and_architecture(platform_name, machine, translated, expected):
+    assert detect_target(platform_name=platform_name, machine=machine, translated=translated) == expected
 
 
 def test_architecture_aliases():
@@ -157,7 +140,7 @@ def test_checksums_accept_text_and_binary_markers_comments_and_uppercase():
         f"{DIGEST_A}fichier.zip\n",
         f"{DIGEST_A}  ../fichier.zip\n",
         f"{DIGEST_A}  dossier\\fichier.zip\n",
-        f"{DIGEST_A}  fichier.zip\n{'c' * 64}  fichier.zip\n",  # deux empreintes pour un fichier
+        f"{DIGEST_A}  fichier.zip\n{'c' * 64}  fichier.zip\n",     # deux empreintes pour un fichier
     ],
 )
 def test_a_malformed_or_contradictory_checksum_file_is_refused_entirely(text):
@@ -168,9 +151,7 @@ def test_a_malformed_or_contradictory_checksum_file_is_refused_entirely(text):
 def test_formatted_checksums_round_trip_and_are_verifiable_by_hand(tmp_path):
     entries = {"b.zip": DIGEST_A, "a.tar.gz": "0" * 64}
     text = format_checksums(entries)
-    assert (
-        text == f"{'0' * 64}  a.tar.gz\n{DIGEST_A}  b.zip\n"
-    )  # format de « shasum -a 256 -c »
+    assert text == f"{'0' * 64}  a.tar.gz\n{DIGEST_A}  b.zip\n"     # format de « shasum -a 256 -c »
     assert parse_checksums(text) == entries
     with pytest.raises(ChecksumFileError):
         format_checksums({"x/y.zip": DIGEST_A})

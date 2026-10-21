@@ -39,9 +39,7 @@ def _answer(monkeypatch, button):
 
 def _forbid_question(monkeypatch):
     def question(*_args, **_kwargs):
-        raise AssertionError(
-            "aucune question ne doit être posée pour un projet enregistré"
-        )
+        raise AssertionError("aucune question ne doit être posée pour un projet enregistré")
 
     monkeypatch.setattr(QMessageBox, "question", question)
 
@@ -53,16 +51,14 @@ def test_a_saved_project_is_replaced_without_asking(window, monkeypatch):
     assert window.project is not before
 
 
-def test_cancel_keeps_the_modified_project_for_new_open_and_close(
-    window, monkeypatch, tmp_path
-):
+def test_cancel_keeps_the_modified_project_for_new_open_and_close(window, monkeypatch, tmp_path):
     window.project_dirty = True
     asked = _answer(monkeypatch, QMessageBox.Cancel)
     before = window.project
     window.new_project()
     window._load_project_from_path(str(tmp_path / "other.kut"))
     assert window.project is before
-    assert window.close() is False  # fermeture refusée : la fenêtre reste ouverte
+    assert window.close() is False                      # fermeture refusée : la fenêtre reste ouverte
     assert len(asked) == 3 and window.project_dirty
 
 
@@ -114,8 +110,6 @@ def test_a_failing_shutdown_step_does_not_stop_the_following_ones(window, monkey
     monkeypatch.setattr(window.render_queue, "shutdown", boom)
     monkeypatch.setattr(window.runtime, "shutdown", lambda: reached.append("runtime"))
     monkeypatch.setattr(window, "_shutdown_proxies", lambda: reached.append("proxies"))
-    monkeypatch.setattr(
-        window, "_cancel_tracking_jobs", lambda: reached.append("tracking")
-    )
+    monkeypatch.setattr(window, "_cancel_tracking_jobs", lambda: reached.append("tracking"))
     assert window.close() is True
     assert {"runtime", "proxies", "tracking"} <= set(reached)

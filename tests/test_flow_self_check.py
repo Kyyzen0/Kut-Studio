@@ -12,7 +12,7 @@ def test_the_self_check_passes_and_is_fast():
 
     started = time.perf_counter()
     assert optical_flow.self_check() is None
-    assert time.perf_counter() - started < 5.0  # un contrôle de démarrage, pas un banc
+    assert time.perf_counter() - started < 5.0                            # un contrôle de démarrage, pas un banc
 
 
 def test_a_missing_numpy_is_reported_not_raised(monkeypatch):
@@ -43,10 +43,5 @@ def test_a_broken_estimator_is_caught(monkeypatch):
 def test_the_smoke_test_runs_the_check():
     import pathlib
 
-    source = (pathlib.Path(__file__).resolve().parent.parent / "main.py").read_text(
-        encoding="utf-8"
-    )
-    assert (
-        "optical_flow import self_check" in source
-        and "flux optique indisponible" in source
-    )
+    source = (pathlib.Path(__file__).resolve().parent.parent / "main.py").read_text(encoding="utf-8")
+    assert "optical_flow import self_check" in source and "flux optique indisponible" in source

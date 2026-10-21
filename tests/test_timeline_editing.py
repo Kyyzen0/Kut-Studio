@@ -71,18 +71,14 @@ def test_move_between_compatible_tracks_and_snap_to_marker():
     )
     assert snapped == 6.5
     relocate_clip(project, "b_roll", "V1", 20.0)
-    clip = next(
-        c for t in project.tracks if t.id == "V1" for c in t.clips if c.id == "b_roll"
-    )
+    clip = next(c for t in project.tracks if t.id == "V1" for c in t.clips if c.id == "b_roll")
     assert clip.timeline_start == 20.0
     assert clip.track_id == "V1"
 
 
 def test_group_move_rejects_a_negative_position_before_writing():
     project = create_default_project()
-    before = next(
-        c for t in project.tracks for c in t.clips if c.id == "intro"
-    ).timeline_start
+    before = next(c for t in project.tracks for c in t.clips if c.id == "intro").timeline_start
     try:
         move_clips(
             project,
@@ -95,9 +91,7 @@ def test_group_move_rejects_a_negative_position_before_writing():
         pass
     else:
         raise AssertionError("une position négative doit être refusée")
-    after = next(
-        c for t in project.tracks for c in t.clips if c.id == "intro"
-    ).timeline_start
+    after = next(c for t in project.tracks for c in t.clips if c.id == "intro").timeline_start
     assert after == before
 
 
@@ -127,11 +121,7 @@ def test_markers_roundtrip_and_navigation(tmp_path):
 def test_delete_several_clips_and_preview_budgets():
     project = create_default_project()
     delete_clips(project, ["intro", "plan_a"])
-    assert all(
-        clip.id not in {"intro", "plan_a"}
-        for track in project.tracks
-        for clip in track.clips
-    )
+    assert all(clip.id not in {"intro", "plan_a"} for track in project.tracks for clip in track.clips)
     assert thumbnail_slots(100, enabled=False) == 0
     assert thumbnail_slots(400, enabled=True) >= 1
 
@@ -216,41 +206,22 @@ def test_audio_solo_reaches_the_export_plan():
 
     def audio(asset_id: str, name: str) -> MediaAsset:
         return MediaAsset(
-            id=asset_id,
-            path=f"/tmp/{name}.wav",
-            name=name,
-            duration=4.0,
-            width=0,
-            height=0,
-            fps=0.0,
-            media_type="audio",
-            has_audio=True,
+            id=asset_id, path=f"/tmp/{name}.wav", name=name, duration=4.0,
+            width=0, height=0, fps=0.0, media_type="audio", has_audio=True,
         )
 
     def clip(clip_id: str, asset_id: str, track_id: str) -> Clip:
         return Clip(
-            id=clip_id,
-            asset_id=asset_id,
-            track_id=track_id,
-            timeline_start=0.0,
-            source_in=0.0,
-            source_out=2.0,
+            id=clip_id, asset_id=asset_id, track_id=track_id,
+            timeline_start=0.0, source_in=0.0, source_out=2.0,
         )
 
     project = Project(
         name="Solo",
         media_assets=[audio("a1", "voix"), audio("a2", "musique")],
         tracks=[
-            Track(
-                id="A1",
-                name="A1",
-                type="audio",
-                solo=True,
-                clips=[clip("voix", "a1", "A1")],
-            ),
-            Track(
-                id="A2", name="A2", type="audio", clips=[clip("musique", "a2", "A2")]
-            ),
+            Track(id="A1", name="A1", type="audio", solo=True, clips=[clip("voix", "a1", "A1")]),
+            Track(id="A2", name="A2", type="audio", clips=[clip("musique", "a2", "A2")]),
         ],
     )
     plan = build_render_plan(project)

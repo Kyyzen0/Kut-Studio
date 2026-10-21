@@ -46,18 +46,9 @@ def under_coverage() -> bool:
     return coverage is not None and coverage.Coverage.current() is not None
 
 
-def budget(
-    nominal: float,
-    *,
-    ci_factor: float = CPU_CI_FACTOR,
-    coverage_factor: float = COVERAGE_FACTOR,
-) -> float:
+def budget(nominal: float, *, ci_factor: float = CPU_CI_FACTOR, coverage_factor: float = COVERAGE_FACTOR) -> float:
     """Budget en secondes : ``nominal``, majoré sur un runner de CI et sous instrumentation."""
-    return (
-        nominal
-        * (ci_factor if on_ci() else 1.0)
-        * (coverage_factor if under_coverage() else 1.0)
-    )
+    return nominal * (ci_factor if on_ci() else 1.0) * (coverage_factor if under_coverage() else 1.0)
 
 
 def best_cpu_seconds(action: Callable[[], object], repeats: int = 3) -> float:

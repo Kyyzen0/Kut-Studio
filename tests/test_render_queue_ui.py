@@ -39,9 +39,7 @@ TIMEOUT = 20000
 
 @pytest.fixture
 def fake_ffmpeg(monkeypatch):
-    monkeypatch.setattr(
-        "core.export_engine._ffmpeg_path", (sys.executable, str(FAKE_FFMPEG))
-    )
+    monkeypatch.setattr("core.export_engine._ffmpeg_path", (sys.executable, str(FAKE_FFMPEG)))
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.3")
 
 
@@ -49,30 +47,15 @@ def _project(tmp_path: Path, name: str = "Projet UI") -> Project:
     media = tmp_path / "source.mp4"
     media.write_bytes(b"\x00" * 64)
     asset = MediaAsset(
-        id="a1",
-        path=str(media),
-        name="source",
-        duration=10.0,
-        width=1920,
-        height=1080,
-        fps=30.0,
-        media_type="video",
+        id="a1", path=str(media), name="source", duration=10.0,
+        width=1920, height=1080, fps=30.0, media_type="video",
     )
     clip = Clip(
-        id="c1",
-        asset_id="a1",
-        track_id="V1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=4.0,
-        label="Clip",
+        id="c1", asset_id="a1", track_id="V1", timeline_start=0.0,
+        source_in=0.0, source_out=4.0, label="Clip",
     )
     return Project(
-        name=name,
-        width=1920,
-        height=1080,
-        fps=30.0,
-        media_assets=[asset],
+        name=name, width=1920, height=1080, fps=30.0, media_assets=[asset],
         tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
     )
 
@@ -121,26 +104,14 @@ def test_format_helpers():
 
 def test_empty_queue_shows_the_hint_and_disables_every_action(panel):
     assert not panel.empty_label.isHidden() and panel.tree.isHidden()
-    for button in (
-        panel.start_all_button,
-        panel.start_button,
-        panel.stop_button,
-        panel.cancel_button,
-        panel.retry_button,
-        panel.remove_button,
-        panel.clear_button,
-        panel.up_button,
-        panel.down_button,
-        panel.open_file_button,
-        panel.open_folder_button,
-    ):
+    for button in (panel.start_all_button, panel.start_button, panel.stop_button, panel.cancel_button,
+                   panel.retry_button, panel.remove_button, panel.clear_button, panel.up_button,
+                   panel.down_button, panel.open_file_button, panel.open_folder_button):
         assert not button.isEnabled()
     assert panel.copy_error_button.isHidden()
 
 
-def test_panel_lists_waiting_jobs_in_queue_order_with_their_preset(
-    panel, queue, tmp_path
-):
+def test_panel_lists_waiting_jobs_in_queue_order_with_their_preset(panel, queue, tmp_path):
     a = _add(queue, tmp_path, "a.mp4", "youtube")
     b = _add(queue, tmp_path, "b.mp4", "tiktok")
     assert _rows(panel) == [a.id, b.id]
@@ -172,9 +143,7 @@ def test_move_buttons_reorder_the_queue_and_keep_the_selection(panel, queue, tmp
     assert _rows(panel) == [c.id, b.id, a.id]
 
 
-def test_start_all_runs_every_job_and_the_overall_bar_reaches_100(
-    qtbot, panel, queue, tmp_path
-):
+def test_start_all_runs_every_job_and_the_overall_bar_reaches_100(qtbot, panel, queue, tmp_path):
     jobs = [_add(queue, tmp_path, f"{n}.mp4") for n in "ab"]
     panel.start_all_button.click()
     qtbot.waitUntil(lambda: queue.is_running, timeout=TIMEOUT)
@@ -184,9 +153,7 @@ def test_start_all_runs_every_job_and_the_overall_bar_reaches_100(
     assert panel.overall_bar.value() == 100
     for job in jobs:
         assert panel.row_progress(job.id) == 100
-        assert panel.tree.topLevelItem(_rows(panel).index(job.id)).text(
-            2
-        ) == i18n.translate("render.status.completed")
+        assert panel.tree.topLevelItem(_rows(panel).index(job.id)).text(2) == i18n.translate("render.status.completed")
 
 
 def test_start_selected_runs_only_that_job(qtbot, panel, queue, tmp_path):
@@ -197,9 +164,7 @@ def test_start_selected_runs_only_that_job(qtbot, panel, queue, tmp_path):
     assert b.status is JobStatus.COMPLETED and a.status is JobStatus.WAITING
 
 
-def test_progress_updates_one_row_without_rebuilding_the_table(
-    qtbot, panel, queue, tmp_path, monkeypatch
-):
+def test_progress_updates_one_row_without_rebuilding_the_table(qtbot, panel, queue, tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.8")
     job = _add(queue, tmp_path)
     rebuilds = []
@@ -212,9 +177,7 @@ def test_progress_updates_one_row_without_rebuilding_the_table(
     _wait_idle(qtbot, queue)
     during = sum(1 for value in seen if 0 < value < 100)
     assert during >= 3 and seen == sorted(seen)
-    assert (
-        len(rebuilds) <= 4
-    )  # ajout, passage en rendu, fin : jamais un par tick de progression
+    assert len(rebuilds) <= 4  # ajout, passage en rendu, fin : jamais un par tick de progression
 
 
 def test_cancel_and_remove_buttons(qtbot, panel, queue, tmp_path, monkeypatch):
@@ -237,9 +200,7 @@ def test_cancel_and_remove_buttons(qtbot, panel, queue, tmp_path, monkeypatch):
     assert _rows(panel) == []
 
 
-def test_failure_is_shown_readably_and_can_be_copied_and_retried(
-    qtbot, panel, queue, tmp_path, monkeypatch
-):
+def test_failure_is_shown_readably_and_can_be_copied_and_retried(qtbot, panel, queue, tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_FFMPEG_FAIL", "Invalid data found when processing input")
     job = _add(queue, tmp_path)
     queue.start_all()
@@ -258,9 +219,7 @@ def test_failure_is_shown_readably_and_can_be_copied_and_retried(
     assert job.status is JobStatus.COMPLETED
 
 
-def test_retrying_a_completed_job_asks_before_replacing_the_file(
-    qtbot, panel, queue, tmp_path, monkeypatch
-):
+def test_retrying_a_completed_job_asks_before_replacing_the_file(qtbot, panel, queue, tmp_path, monkeypatch):
     job = _add(queue, tmp_path)
     queue.start_all()
     _wait_idle(qtbot, queue)
@@ -275,14 +234,10 @@ def test_retrying_a_completed_job_asks_before_replacing_the_file(
 
 def test_open_file_and_open_folder_buttons(qtbot, panel, queue, tmp_path, monkeypatch):
     opened: list[str] = []
-    monkeypatch.setattr(
-        "ui.render_queue_panel.open_path", lambda path: opened.append(path) or True
-    )
+    monkeypatch.setattr("ui.render_queue_panel.open_path", lambda path: opened.append(path) or True)
     job = _add(queue, tmp_path)
     panel.select_job(job.id)
-    assert (
-        not panel.open_file_button.isEnabled() and panel.open_folder_button.isEnabled()
-    )
+    assert not panel.open_file_button.isEnabled() and panel.open_folder_button.isEnabled()
     queue.start_all()
     _wait_idle(qtbot, queue)
     panel.select_job(job.id)
@@ -335,21 +290,8 @@ def test_every_render_key_exists_in_all_languages():
         [f"render.status.{s.value}" for s in JobStatus]
         + [f"render.preset.{spec.id}" for spec in builtin_presets()]
         + [f"render.preset.desc.{spec.id}" for spec in builtin_presets()]
-        + [
-            f"render.preset.{CUSTOM_PRESET_ID}",
-            f"render.preset.desc.{CUSTOM_PRESET_ID}",
-        ]
-        + [
-            f"render.kind.{k}"
-            for k in (
-                "ffmpeg",
-                "ffmpeg_missing",
-                "invalid",
-                "interrupted",
-                "snapshot_missing",
-                "io",
-            )
-        ]
+        + [f"render.preset.{CUSTOM_PRESET_ID}", f"render.preset.desc.{CUSTOM_PRESET_ID}"]
+        + [f"render.kind.{k}" for k in ("ffmpeg", "ffmpeg_missing", "invalid", "interrupted", "snapshot_missing", "io")]
     ):
         entry = i18n._TRANSLATIONS[key]
         assert set(entry) == {"fr", "en", "es"} and all(entry.values()), key
@@ -367,43 +309,29 @@ def export_panel(qtbot):
 
 
 def test_export_panel_offers_every_required_preset_and_custom(export_panel):
-    ids = [
-        export_panel.preset_combo.itemData(i)
-        for i in range(export_panel.preset_combo.count())
-    ]
+    ids = [export_panel.preset_combo.itemData(i) for i in range(export_panel.preset_combo.count())]
     assert ids == [s.id for s in builtin_presets()] + [CUSTOM_PRESET_ID]
     # Le sélecteur d'encodeur est « Automatique » par défaut ; le reste du preset est inchangé.
     assert export_panel.current_spec() == with_hardware(default_preset(), "auto")
 
 
-def test_choosing_a_preset_changes_the_request_the_engine_receives(
-    export_panel, tmp_path
-):
+def test_choosing_a_preset_changes_the_request_the_engine_receives(export_panel, tmp_path):
     from core.render_plan import build_render_plan
 
     plan = build_render_plan(_project(tmp_path))
     for preset_id in ("youtube", "tiktok", "prores_master", "h264_4k"):
-        export_panel.preset_combo.setCurrentIndex(
-            export_panel.preset_combo.findData(preset_id)
-        )
+        export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(preset_id))
         spec = get_preset(preset_id)
         request = export_panel.build_request(plan, str(tmp_path / "x.mp4"))
-        assert (
-            request.preset.resolution == spec.resolution
-            and request.fps == spec.output_fps(plan.fps)
-        )
+        assert request.preset.resolution == spec.resolution and request.fps == spec.output_fps(plan.fps)
         assert request.format.container == spec.container
         # ProRes n'a que l'encodeur CPU : « Automatique » n'y est pas proposé.
-        assert request.hardware == (
-            "cpu" if spec.video_codec == "prores_ks" else "auto"
-        )
+        assert request.hardware == ("cpu" if spec.video_codec == "prores_ks" else "auto")
 
 
 def test_custom_controls_only_show_for_the_custom_preset(export_panel):
     assert export_panel.custom_frame.isHidden()
-    export_panel.preset_combo.setCurrentIndex(
-        export_panel.preset_combo.findData(CUSTOM_PRESET_ID)
-    )
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(CUSTOM_PRESET_ID))
     assert not export_panel.custom_frame.isHidden()
     export_panel.resolution_combo.setCurrentText("1280 × 720 (HD)")
     export_panel.fps_combo.setCurrentIndex(export_panel.fps_combo.findData(24.0))
@@ -414,44 +342,22 @@ def test_custom_controls_only_show_for_the_custom_preset(export_panel):
 
 
 def test_export_panel_keeps_its_historical_api(export_panel):
-    for name in (
-        "format_combo",
-        "resolution_combo",
-        "quality_combo",
-        "fps_combo",
-        "launch_button",
-        "cancel_button",
-        "progress_bar",
-        "status_label",
-    ):
+    for name in ("format_combo", "resolution_combo", "quality_combo", "fps_combo", "launch_button",
+                 "cancel_button", "progress_bar", "status_label"):
         assert hasattr(export_panel, name)
-    for name in (
-        "set_status",
-        "mark_export_started",
-        "mark_export_finished",
-        "mark_export_error",
-        "mark_export_cancelled",
-        "build_request",
-    ):
+    for name in ("set_status", "mark_export_started", "mark_export_finished",
+                 "mark_export_error", "mark_export_cancelled", "build_request"):
         assert callable(getattr(export_panel, name))
-    assert (
-        export_panel.launch_button.isEnabled()
-        and not export_panel.cancel_button.isEnabled()
-    )
+    assert export_panel.launch_button.isEnabled() and not export_panel.cancel_button.isEnabled()
 
 
-def test_export_panel_mirrors_the_running_job(
-    qtbot, export_panel, queue, tmp_path, monkeypatch
-):
+def test_export_panel_mirrors_the_running_job(qtbot, export_panel, queue, tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "30")
     export_panel.set_queue(queue)
     job = _add(queue, tmp_path)
     queue.start_all()
     qtbot.waitUntil(lambda: queue._engine.is_running, timeout=TIMEOUT)
-    assert (
-        export_panel.cancel_button.isEnabled()
-        and not export_panel.progress_bar.isHidden()
-    )
+    assert export_panel.cancel_button.isEnabled() and not export_panel.progress_bar.isHidden()
     assert job.name in export_panel.status_label.text()
     export_panel.cancel_button.click()
     queue.cancel(job.id)
@@ -467,15 +373,12 @@ def _window(qtbot, monkeypatch, tmp_path, *, project=True):
 
     calls = {"information": [], "question": []}
     monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information",
-        lambda *a, **_k: calls["information"].append(a[2]),
+        "ui.main_window.QMessageBox.information", lambda *a, **_k: calls["information"].append(a[2])
     )
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_a, **_k: None)
     monkeypatch.setattr(
         "ui.main_window.QMessageBox.question",
-        lambda *a, **_k: (
-            calls["question"].append(a[2]) or calls.get("answer", QMessageBox.Yes)
-        ),
+        lambda *a, **_k: calls["question"].append(a[2]) or calls.get("answer", QMessageBox.Yes),
     )
     window = MainWindow()
     qtbot.addWidget(window)
@@ -493,52 +396,29 @@ def _choose_file(monkeypatch, path: Path):
     )
 
 
-def test_launch_export_goes_through_the_queue_in_one_step(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_launch_export_goes_through_the_queue_in_one_step(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     window = _window(qtbot, monkeypatch, tmp_path)
     _choose_file(monkeypatch, tmp_path / "film.mp4")
-    window.export_panel.preset_combo.setCurrentIndex(
-        window.export_panel.preset_combo.findData("youtube")
-    )
+    window.export_panel.preset_combo.setCurrentIndex(window.export_panel.preset_combo.findData("youtube"))
     window.launch_export()
     queue = window.render_queue
     assert len(queue.jobs) == 1 and queue.jobs[0].preset_id == "youtube"
     qtbot.waitUntil(lambda: not queue.is_running, timeout=TIMEOUT)
     job = queue.jobs[0]
     assert job.status is JobStatus.COMPLETED and Path(job.output_path).exists()
-    assert (
-        len(window._calls["information"]) == 1
-        and job.output_path in window._calls["information"][0]
-    )
-    assert window.export_panel.status_label.text() == i18n.translate(
-        "render.export.done"
-    )
+    assert len(window._calls["information"]) == 1 and job.output_path in window._calls["information"][0]
+    assert window.export_panel.status_label.text() == i18n.translate("render.export.done")
 
 
-def test_add_to_queue_does_not_start_and_several_exports_can_be_queued(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_add_to_queue_does_not_start_and_several_exports_can_be_queued(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     window = _window(qtbot, monkeypatch, tmp_path)
-    for name, preset in (
-        ("a.mp4", "h264_1080p"),
-        ("b.mp4", "tiktok"),
-        ("c.mov", "prores_master"),
-    ):
+    for name, preset in (("a.mp4", "h264_1080p"), ("b.mp4", "tiktok"), ("c.mov", "prores_master")):
         _choose_file(monkeypatch, tmp_path / name)
-        window.export_panel.preset_combo.setCurrentIndex(
-            window.export_panel.preset_combo.findData(preset)
-        )
+        window.export_panel.preset_combo.setCurrentIndex(window.export_panel.preset_combo.findData(preset))
         window.enqueue_export()
     queue = window.render_queue
-    assert [j.status for j in queue.jobs] == [
-        JobStatus.WAITING
-    ] * 3 and not queue.is_running
-    assert [j.preset_id for j in queue.jobs] == [
-        "h264_1080p",
-        "tiktok",
-        "prores_master",
-    ]
+    assert [j.status for j in queue.jobs] == [JobStatus.WAITING] * 3 and not queue.is_running
+    assert [j.preset_id for j in queue.jobs] == ["h264_1080p", "tiktok", "prores_master"]
     assert queue.jobs[2].output_path.endswith("c.mov")
     queue.start_all()
     qtbot.waitUntil(lambda: not queue.is_running, timeout=TIMEOUT)
@@ -546,49 +426,33 @@ def test_add_to_queue_does_not_start_and_several_exports_can_be_queued(
     assert "3" in window._calls["information"][0]  # résumé de file
 
 
-def test_the_queue_renders_the_version_added_even_if_the_project_changes_after(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_the_queue_renders_the_version_added_even_if_the_project_changes_after(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     window = _window(qtbot, monkeypatch, tmp_path)
     _choose_file(monkeypatch, tmp_path / "frozen.mp4")
     window.enqueue_export()
     window.project.tracks[0].clips[0].source_out = 9.0
     from core.project_io import load_project
 
-    assert (
-        load_project(window.render_queue.jobs[0].snapshot_path)
-        .tracks[0]
-        .clips[0]
-        .source_out
-        == 4.0
-    )
+    assert load_project(window.render_queue.jobs[0].snapshot_path).tracks[0].clips[0].source_out == 4.0
 
 
-def test_export_with_nothing_to_render_reports_the_error_and_adds_nothing(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_export_with_nothing_to_render_reports_the_error_and_adds_nothing(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     window = _window(qtbot, monkeypatch, tmp_path, project=False)
-    window.project = Project(
-        name="vide", width=1920, height=1080, fps=30.0, media_assets=[], tracks=[]
-    )
+    window.project = Project(name="vide", width=1920, height=1080, fps=30.0, media_assets=[], tracks=[])
     _choose_file(monkeypatch, tmp_path / "x.mp4")
     window.launch_export()
     assert window.render_queue.jobs == ()
     assert "Aucun média" in window.export_panel.status_label.text()
 
 
-def test_cancelling_the_file_dialog_does_nothing(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_cancelling_the_file_dialog_does_nothing(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     window = _window(qtbot, monkeypatch, tmp_path)
     _choose_file(monkeypatch, Path(""))
     window.launch_export()
     assert window.render_queue.jobs == ()
 
 
-def test_cancel_export_button_cancels_the_running_queue_job(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_cancel_export_button_cancels_the_running_queue_job(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "30")
     window = _window(qtbot, monkeypatch, tmp_path)
     _choose_file(monkeypatch, tmp_path / "long.mp4")
@@ -599,14 +463,10 @@ def test_cancel_export_button_cancels_the_running_queue_job(
     qtbot.waitUntil(lambda: not queue.is_running, timeout=TIMEOUT)
     assert queue.jobs[0].status is JobStatus.CANCELLED
     assert window._calls["information"] == []  # annulation d'un seul job : pas de popup
-    assert window.export_panel.status_label.text() == i18n.translate(
-        "render.export.cancelled"
-    )
+    assert window.export_panel.status_label.text() == i18n.translate("render.export.cancelled")
 
 
-def test_single_failed_export_shows_the_error_without_a_popup(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_single_failed_export_shows_the_error_without_a_popup(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_FFMPEG_FAIL", "boom")
     window = _window(qtbot, monkeypatch, tmp_path)
     _choose_file(monkeypatch, tmp_path / "bad.mp4")
@@ -627,19 +487,12 @@ def test_direct_engine_export_still_works(qtbot, fake_ffmpeg, monkeypatch, tmp_p
     output = tmp_path / "direct.mp4"
     done: list[str] = []
     window.export_engine.finished_ok.connect(done.append)
-    window.export_engine.start(
-        ExportRequest(
-            render_plan=build_render_plan(window.project),
-            output_path=str(output),
-            format=fmt,
-            preset=preset,
-            fps=fps,
-        )
-    )
+    window.export_engine.start(ExportRequest(
+        render_plan=build_render_plan(window.project), output_path=str(output),
+        format=fmt, preset=preset, fps=fps,
+    ))
     qtbot.waitUntil(lambda: bool(done), timeout=TIMEOUT)
-    assert (
-        output.exists() and window.render_queue.jobs == ()
-    )  # la file n'a pas été touchée
+    assert output.exists() and window.render_queue.jobs == ()  # la file n'a pas été touchée
 
 
 def test_queue_survives_a_window_restart(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
@@ -665,9 +518,7 @@ def test_closing_without_a_render_never_asks(qtbot, fake_ffmpeg, monkeypatch, tm
     assert window.render_queue.jobs[0].status is JobStatus.WAITING
 
 
-def test_closing_during_a_render_can_be_cancelled(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_closing_during_a_render_can_be_cancelled(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "30")
     window = _window(qtbot, monkeypatch, tmp_path)
     window._calls["answer"] = QMessageBox.No
@@ -682,9 +533,7 @@ def test_closing_during_a_render_can_be_cancelled(
     qtbot.waitUntil(lambda: not queue.is_running, timeout=TIMEOUT)
 
 
-def test_closing_during_a_render_confirmed_stops_ffmpeg_cleanly(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_closing_during_a_render_confirmed_stops_ffmpeg_cleanly(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "60")
     pid_file = tmp_path / "pid.txt"
     monkeypatch.setenv("FAKE_FFMPEG_PID_FILE", str(pid_file))
@@ -694,14 +543,8 @@ def test_closing_during_a_render_confirmed_stops_ffmpeg_cleanly(
         window.enqueue_export()
     queue = window.render_queue
     queue.start_all()
-    qtbot.waitUntil(
-        lambda: (
-            queue._engine.is_running
-            and pid_file.exists()
-            and bool(pid_file.read_text().strip())
-        ),
-        timeout=TIMEOUT,
-    )  # créé puis écrit : attendre le contenu
+    qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists()
+                    and bool(pid_file.read_text().strip()), timeout=TIMEOUT)  # créé puis écrit : attendre le contenu
     pid = int(pid_file.read_text())
     assert window.close()
     text = window._calls["question"][0]
@@ -714,18 +557,13 @@ def test_closing_during_a_render_confirmed_stops_ffmpeg_cleanly(
     assert running.status is JobStatus.CANCELLED and waiting.status is JobStatus.WAITING
     assert not Path(partial_path_for(running)).exists()
     on_disk = [(j.id, j.status) for j in queue.store.load()]
-    assert on_disk == [
-        (running.id, JobStatus.CANCELLED),
-        (waiting.id, JobStatus.WAITING),
-    ]
+    assert on_disk == [(running.id, JobStatus.CANCELLED), (waiting.id, JobStatus.WAITING)]
 
 
 # --- fluidité -------------------------------------------------------------------------------------------------------------
 
 
-def test_the_event_loop_stays_responsive_during_a_render(
-    qtbot, fake_ffmpeg, monkeypatch, tmp_path
-):
+def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
     # Rendu de 4 s : la propriété est « le clic rend la main bien avant la fin du rendu », mesurée contre la durée réelle
     # du rendu et non contre un budget absolu (un clic de 1,66 s a été observé sur un runner Windows lent, pour 2 ms en
     # local : un budget fixe de 1,5 s échouait alors que le clic ne bloquait pas).
@@ -764,13 +602,8 @@ def test_the_event_loop_stays_responsive_during_a_render(
     # Le clic ne bloque pas jusqu'à la fin du rendu : au plus la moitié de sa durée réelle (un clic synchrone dure
     # ~render_total). Sous cette borne, le budget nominal (0,5 s, 1,5 s en CI) est relevé jusqu'à 3 × la durée du
     # même travail sans rendu mesurée plus haut : un runner lent ne fait pas échouer le test, un blocage oui.
-    limit = min(
-        0.5 * render_total,
-        max(budget(0.5, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0), 3 * reference),
-    )
-    assert launch_call < limit, (
-        f"le clic a tenu la main {launch_call:.3f}s (budget {limit:.2f}s, rendu {render_total:.2f}s)"
-    )
+    limit = min(0.5 * render_total, max(budget(0.5, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0), 3 * reference))
+    assert launch_call < limit, f"le clic a tenu la main {launch_call:.3f}s (budget {limit:.2f}s, rendu {render_total:.2f}s)"
     gaps = [b - a for a, b in zip(stamps, stamps[1:])]
     assert len(stamps) > 30  # ~4 s de rendu à 20 ms de période
     # Jamais de gel perceptible de la boucle Qt. Écart maximal observé : ~0,03 s en local, 0,44 s puis 0,453 s sur macOS
@@ -778,88 +611,51 @@ def test_the_event_loop_stays_responsive_during_a_render(
     # Seuil : 0,35 s en local, 0,70 s en CI (×2), relevé si la boucle à vide était déjà lente (4 × l'écart à vide),
     # mais jamais au-delà de 0,9 s : un vrai gel de ~1 s (ex. un ``time.sleep(1)`` dans le chemin du rendu) reste
     # détecté.
-    freeze_limit = min(
-        max(budget(0.35, ci_factor=2.0, coverage_factor=1.0), 4 * idle_gap), 0.9
-    )
-    assert max(gaps) < freeze_limit, (
-        f"gel de la boucle Qt {max(gaps):.3f}s (seuil {freeze_limit:.2f}s, à vide {idle_gap:.3f}s)"
-    )
+    freeze_limit = min(max(budget(0.35, ci_factor=2.0, coverage_factor=1.0), 4 * idle_gap), 0.9)
+    assert max(gaps) < freeze_limit, f"gel de la boucle Qt {max(gaps):.3f}s (seuil {freeze_limit:.2f}s, à vide {idle_gap:.3f}s)"
     assert queue.jobs[0].status is JobStatus.COMPLETED
 
 
 def test_social_options_follow_the_preset_and_can_be_unticked(export_panel):
     combo = export_panel.preset_combo
     combo.setCurrentIndex(combo.findData("reels"))
-    checks = (
-        export_panel.loudness_check,
-        export_panel.preview_copy_check,
-        export_panel.cover_check,
-    )
+    checks = (export_panel.loudness_check, export_panel.preview_copy_check, export_panel.cover_check)
     assert all(check.isChecked() for check in checks)
     spec = export_panel.current_spec()
     assert (spec.loudness_lufs, spec.preview_copy, spec.cover) == (-14.0, True, True)
     export_panel.preview_copy_check.setChecked(False)
-    assert (
-        export_panel.current_spec().preview_copy is False
-        and export_panel.current_spec().cover is True
-    )
+    assert export_panel.current_spec().preview_copy is False and export_panel.current_spec().cover is True
     combo.setCurrentIndex(combo.findData("youtube"))
     assert not any(check.isChecked() for check in checks)
-    assert all(
-        check.text() and not check.text().startswith("render.") for check in checks
-    )
+    assert all(check.text() and not check.text().startswith("render.") for check in checks)
 
 
 def test_export_panel_follows_the_sequence_rate_by_default(export_panel):
     """Par défaut le preset suit la séquence : son résumé affiche la cadence de la séquence active."""
     export_panel.set_project_fps(25.0)
     assert "1920×1080 · 25 fps" in export_panel.preset_summary.text()
-    assert (
-        i18n.translate("render.export.fps_follows_project")
-        in export_panel.preset_summary.text()
-    )
-    export_panel.preset_combo.setCurrentIndex(
-        export_panel.preset_combo.findData(CUSTOM_PRESET_ID)
-    )
-    assert (
-        export_panel.fps_combo.currentData() is None
-        and export_panel.current_spec().follows_project_fps
-    )
-    assert [
-        export_panel.fps_combo.itemData(i)
-        for i in range(1, export_panel.fps_combo.count())
-    ] == [23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0]
+    assert i18n.translate("render.export.fps_follows_project") in export_panel.preset_summary.text()
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(CUSTOM_PRESET_ID))
+    assert export_panel.fps_combo.currentData() is None and export_panel.current_spec().follows_project_fps
+    assert [export_panel.fps_combo.itemData(i) for i in range(1, export_panel.fps_combo.count())] == [
+        23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0]
 
 
-def test_export_panel_warns_when_an_imposed_rate_differs_from_the_sequence(
-    export_panel, tmp_path
-):
+def test_export_panel_warns_when_an_imposed_rate_differs_from_the_sequence(export_panel, tmp_path):
     from core.render_plan import build_render_plan
     from ui.social_dialogs import fps_text
 
     def warning(project: float, output: float) -> str:
-        return i18n.translate(
-            "render.export.fps_mismatch",
-            project=fps_text(project),
-            output=fps_text(output),
-        )
+        return i18n.translate("render.export.fps_mismatch", project=fps_text(project), output=fps_text(output))
 
     export_panel.set_project_fps(25.0)
-    export_panel.preset_combo.setCurrentIndex(
-        export_panel.preset_combo.findData("tiktok_60")
-    )
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData("tiktok_60"))
     assert warning(25.0, 60.0) in export_panel.preset_summary.text()
     export_panel.set_project_fps(60.0)
-    assert (
-        export_panel.preset_summary.text().count("\n") == 1
-    )  # résumé + description, sans avertissement
-    export_panel.preset_combo.setCurrentIndex(
-        export_panel.preset_combo.findData(CUSTOM_PRESET_ID)
-    )
+    assert export_panel.preset_summary.text().count("\n") == 1          # résumé + description, sans avertissement
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(CUSTOM_PRESET_ID))
     export_panel.fps_combo.setCurrentIndex(export_panel.fps_combo.findData(29.97))
-    assert (
-        warning(60.0, 29.97) in export_panel.preset_summary.text()
-    )  # suit les réglages Custom sans changer de preset
+    assert warning(60.0, 29.97) in export_panel.preset_summary.text()  # suit les réglages Custom sans changer de preset
     assert "29.97 fps" in export_panel.preset_summary.text()
     plan = build_render_plan(_project(tmp_path))
     assert export_panel.build_request(plan, str(tmp_path / "x.mp4")).fps == 29.97

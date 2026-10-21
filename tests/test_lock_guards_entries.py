@@ -15,12 +15,7 @@ from dataclasses import replace
 import pytest
 
 import core.keyframe_editing as keyframe_editing
-from core.compositing_guard import (
-    ClipEditRefused,
-    REFUSAL_LAYER_LOCKED,
-    REFUSAL_TRACK_LOCKED,
-    REFUSAL_WRONG_TRACK,
-)
+from core.compositing_guard import ClipEditRefused, REFUSAL_LAYER_LOCKED, REFUSAL_TRACK_LOCKED, REFUSAL_WRONG_TRACK
 from core.graphics import GraphicOverlay
 from core.impact_fx import apply_impact_on_cuts
 from core.keyframe_editing import AnimationClipboard, KeyframeRef, add_keyframe
@@ -33,12 +28,7 @@ from core.timeline_operations import (
     set_clip_transform,
     set_transform_keyframe,
 )
-from core.transitions import (
-    TransitionType,
-    add_transition,
-    remove_transition,
-    update_transition,
-)
+from core.transitions import TransitionType, add_transition, remove_transition, update_transition
 from tests.test_inspector_lock_guards import (  # noqa: F401 - fixtures et aides communes
     _add_track_clip,
     _refused,
@@ -53,16 +43,8 @@ def _video_project(kind: str | None = None, *, clips: int = 1) -> Project:
     project = Project(name="G", width=1280, height=720, fps=25.0)
     track = Track(id="t1", name="T1", type="video", locked=kind == "track")
     for index in range(clips):
-        track.clips.append(
-            Clip(
-                id=f"c{index + 1}",
-                asset_id="a1",
-                track_id="t1",
-                timeline_start=2.0 * index,
-                source_in=0.0,
-                source_out=2.0,
-            )
-        )
+        track.clips.append(Clip(id=f"c{index + 1}", asset_id="a1", track_id="t1", timeline_start=2.0 * index,
+                                source_in=0.0, source_out=2.0))
     if kind in ("layer", "photo"):
         track.clips[0].graphic = GraphicOverlay(locked=True)
     project.tracks.append(track)
@@ -86,9 +68,7 @@ def _locked_with_keyframe(kind: str) -> Project:
 
 
 def _ref(project: Project) -> KeyframeRef:
-    frame = keyframe_editing.curve_of(
-        project.tracks[0].clips[0], "position_x"
-    ).keyframes[0]
+    frame = keyframe_editing.curve_of(project.tracks[0].clips[0], "position_x").keyframes[0]
     return KeyframeRef("c1", "position_x", frame.id)
 
 
@@ -97,55 +77,24 @@ def _ref(project: Project) -> KeyframeRef:
 
 def _keyframe_calls(project: Project):
     ref = _ref(project)
-    clipboard = AnimationClipboard(
-        (
-            (
-                "position_x",
-                tuple(
-                    keyframe_editing.curve_of(
-                        project.tracks[0].clips[0], "position_x"
-                    ).keyframes
-                ),
-            ),
-        )
-    )
+    clipboard = AnimationClipboard((("position_x", tuple(keyframe_editing.curve_of(
+        project.tracks[0].clips[0], "position_x").keyframes)),))
     return {
         "add_keyframe": lambda: add_keyframe(project, "c1", "position_y", 0.5, 0.3),
-        "set_value_at": lambda: keyframe_editing.set_value_at(
-            project, "c1", "position_x", 0.5, 0.4
-        ),
+        "set_value_at": lambda: keyframe_editing.set_value_at(project, "c1", "position_x", 0.5, 0.4),
         "remove_keyframes": lambda: keyframe_editing.remove_keyframes(project, [ref]),
-        "remove_keyframe_at": lambda: keyframe_editing.remove_keyframe_at(
-            project, "c1", "position_x", 0.5
-        ),
-        "set_animation_enabled": lambda: keyframe_editing.set_animation_enabled(
-            project, "c1", "position_x", False, 0.5
-        ),
+        "remove_keyframe_at": lambda: keyframe_editing.remove_keyframe_at(project, "c1", "position_x", 0.5),
+        "set_animation_enabled": lambda: keyframe_editing.set_animation_enabled(project, "c1", "position_x", False, 0.5),
         "move_keyframes": lambda: keyframe_editing.move_keyframes(project, [ref], 0.2),
-        "set_keyframe_time": lambda: keyframe_editing.set_keyframe_time(
-            project, ref, 0.7
-        ),
-        "set_keyframe_values": lambda: keyframe_editing.set_keyframe_values(
-            project, {ref: 0.9}
-        ),
-        "set_interpolation": lambda: keyframe_editing.set_interpolation(
-            project, [ref], "hold"
-        ),
-        "set_tangents": lambda: keyframe_editing.set_tangents(
-            project, ref, out_slope=0.3
-        ),
-        "paste_keyframes": lambda: keyframe_editing.paste_keyframes(
-            project, "c1", clipboard, 1.0
-        ),
-        "set_clip_transform": lambda: set_clip_transform(
-            project, "c1", replace(project.tracks[0].clips[0].transform, opacity=0.5)
-        ),
-        "set_transform_keyframe": lambda: set_transform_keyframe(
-            project, "c1", "opacity", 1.0, 0.5
-        ),
-        "remove_transform_keyframe": lambda: remove_transform_keyframe(
-            project, "c1", "position_x", 0.5
-        ),
+        "set_keyframe_time": lambda: keyframe_editing.set_keyframe_time(project, ref, 0.7),
+        "set_keyframe_values": lambda: keyframe_editing.set_keyframe_values(project, {ref: 0.9}),
+        "set_interpolation": lambda: keyframe_editing.set_interpolation(project, [ref], "hold"),
+        "set_tangents": lambda: keyframe_editing.set_tangents(project, ref, out_slope=0.3),
+        "paste_keyframes": lambda: keyframe_editing.paste_keyframes(project, "c1", clipboard, 1.0),
+        "set_clip_transform": lambda: set_clip_transform(project, "c1", replace(
+            project.tracks[0].clips[0].transform, opacity=0.5)),
+        "set_transform_keyframe": lambda: set_transform_keyframe(project, "c1", "opacity", 1.0, 0.5),
+        "remove_transform_keyframe": lambda: remove_transform_keyframe(project, "c1", "position_x", 0.5),
         "reset_clip_transform": lambda: reset_clip_transform(project, "c1"),
     }
 
@@ -155,16 +104,12 @@ KEYFRAME_CALLS = sorted(_keyframe_calls(_free_with_keyframe()))
 
 @pytest.mark.parametrize("name", KEYFRAME_CALLS)
 @pytest.mark.parametrize("kind", ["track", "layer"])
-def test_keyframe_and_transform_mutators_refuse_a_locked_clip_and_write_nothing(
-    name, kind
-):
+def test_keyframe_and_transform_mutators_refuse_a_locked_clip_and_write_nothing(name, kind):
     project = _locked_with_keyframe(kind)
     before = copy.deepcopy(project)
     with pytest.raises(ClipEditRefused) as error:
         _keyframe_calls(project)[name]()
-    assert error.value.code == (
-        REFUSAL_TRACK_LOCKED if kind == "track" else REFUSAL_LAYER_LOCKED
-    )
+    assert error.value.code == (REFUSAL_TRACK_LOCKED if kind == "track" else REFUSAL_LAYER_LOCKED)
     assert project == before
 
 
@@ -173,9 +118,7 @@ def test_keyframe_and_transform_mutators_still_work_on_a_free_clip(name):
     project = _free_with_keyframe()
     before = copy.deepcopy(project)
     _keyframe_calls(project)[name]()
-    if name not in {
-        "set_animation_enabled"
-    }:  # ce chemin réécrit une propriété déjà animée
+    if name not in {"set_animation_enabled"}:                       # ce chemin réécrit une propriété déjà animée
         assert project != before or name in {"paste_keyframes"}
 
 
@@ -183,16 +126,7 @@ def test_a_visual_property_on_an_audio_or_subtitle_clip_is_refused_with_the_wron
     for track_type in ("audio", "subtitle"):
         project = Project(name="G", width=1280, height=720, fps=25.0)
         track = Track(id="t1", name="T1", type=track_type)
-        track.clips.append(
-            Clip(
-                id="c1",
-                asset_id="a1",
-                track_id="t1",
-                timeline_start=0.0,
-                source_in=0.0,
-                source_out=2.0,
-            )
-        )
+        track.clips.append(Clip(id="c1", asset_id="a1", track_id="t1", timeline_start=0.0, source_in=0.0, source_out=2.0))
         project.tracks.append(track)
         before = copy.deepcopy(project)
         with pytest.raises(ClipEditRefused) as error:
@@ -222,9 +156,7 @@ def _with_transition(kind: str | None) -> tuple[Project, str]:
 @pytest.mark.parametrize("kind", ["track", "layer"])
 def test_transition_add_update_and_remove_refuse_locked_clips(kind):
     project = _video_project(clips=2)
-    project.tracks[0].clips[1].graphic = (
-        GraphicOverlay(locked=True) if kind == "layer" else None
-    )
+    project.tracks[0].clips[1].graphic = GraphicOverlay(locked=True) if kind == "layer" else None
     project.tracks[0].locked = kind == "track"
     before = copy.deepcopy(project)
     with pytest.raises(ClipEditRefused):
@@ -259,13 +191,11 @@ def test_a_subtitle_cannot_be_added_to_a_locked_track_and_nothing_is_created():
 
 def test_impact_on_cuts_refuses_a_locked_layer_among_the_incoming_clips_before_any_write():
     project = _video_project(clips=3)
-    project.tracks[0].clips[2].graphic = GraphicOverlay(
-        locked=True
-    )  # le dernier plan qui arrive
+    project.tracks[0].clips[2].graphic = GraphicOverlay(locked=True)       # le dernier plan qui arrive
     before = copy.deepcopy(project)
     with pytest.raises(ClipEditRefused):
         apply_impact_on_cuts(project, "t1")
-    assert project == before  # le plan 2 n'a pas été animé à moitié
+    assert project == before                                               # le plan 2 n'a pas été animé à moitié
     project.tracks[0].clips[2].graphic = None
     assert apply_impact_on_cuts(project, "t1") == 2
 
@@ -281,11 +211,7 @@ def _lock_kind(win, kind, track, clip):
     if kind == "track":
         track.locked = True
     else:
-        clip.graphic = (
-            GraphicOverlay(locked=True)
-            if clip.graphic is None
-            else replace(clip.graphic, locked=True)
-        )
+        clip.graphic = GraphicOverlay(locked=True) if clip.graphic is None else replace(clip.graphic, locked=True)
     win._reload_timeline_preserving_selection(clip.id)
     win.history.reset(win.project)
 
@@ -297,12 +223,8 @@ def locked_video(request, window):  # noqa: F811
     return window, track, clip
 
 
-SOCIAL = [
-    "toggle_fill_frame_for_selection",
-    "apply_impact_zoom_to_selection",
-    "apply_shake_to_selection",
-    "follow_subject_in_selection",
-]
+SOCIAL = ["toggle_fill_frame_for_selection", "apply_impact_zoom_to_selection", "apply_shake_to_selection",
+          "follow_subject_in_selection"]
 
 
 @pytest.mark.parametrize("command", SOCIAL)
@@ -321,13 +243,7 @@ def test_social_ken_burns_is_refused_on_a_locked_photo_layer(window, tmp_path): 
     image = QImage(64, 36, QImage.Format_RGB32)
     image.fill(0xFF336699)
     assert image.save(str(picture))
-    clip = add_graphic_clip(
-        window.project,
-        "image",
-        timeline_start=0.0,
-        duration=3.0,
-        source_path=str(picture),
-    )
+    clip = add_graphic_clip(window.project, "image", timeline_start=0.0, duration=3.0, source_path=str(picture))
     track = next(t for t in window.project.tracks if clip in t.clips)
     window.history.reset(window.project)
     window._reload_timeline_preserving_selection(clip.id)
@@ -347,31 +263,20 @@ def test_social_fill_frame_still_works_on_a_free_clip_and_ignores_audio(window):
     window.apply_impact_zoom_to_selection()
     window.apply_shake_to_selection()
     window.apply_ken_burns_to_selection()
-    assert audio == before  # un clip audio n'a ni cadrage ni mouvement
+    assert audio == before                                                  # un clip audio n'a ni cadrage ni mouvement
 
 
 def _subtitle(win, *, locked=False, track_type="subtitle"):
     track = Track(id="S9", name="S9", type=track_type, locked=locked)
     win.project.tracks.append(track)
     if track_type == "subtitle":
-        clip = (
-            add_subtitle_clip(win.project, "Salut", 0.0, 2.0, track_id="S9")
-            if not locked
-            else None
-        )
+        clip = add_subtitle_clip(win.project, "Salut", 0.0, 2.0, track_id="S9") if not locked else None
         if clip is None:
             track.locked = False
             clip = add_subtitle_clip(win.project, "Salut", 0.0, 2.0, track_id="S9")
             track.locked = True
     else:
-        clip = Clip(
-            id="aud",
-            asset_id="x",
-            track_id="S9",
-            timeline_start=0.0,
-            source_in=0.0,
-            source_out=2.0,
-        )
+        clip = Clip(id="aud", asset_id="x", track_id="S9", timeline_start=0.0, source_in=0.0, source_out=2.0)
         track.clips.append(clip)
     win.history.reset(win.project)
     win._reload_timeline_preserving_selection(clip.id)
@@ -381,27 +286,14 @@ def _subtitle(win, *, locked=False, track_type="subtitle"):
 def _text_preset():
     from core.text_presets import builtin_text_presets
 
-    return next(
-        p
-        for p in builtin_text_presets()
-        if p.style
-        != Clip(
-            id="x",
-            asset_id="x",
-            track_id="x",
-            timeline_start=0,
-            source_in=0,
-            source_out=1,
-        ).text_style
-    )
+    return next(p for p in builtin_text_presets() if p.style != Clip(
+        id="x", asset_id="x", track_id="x", timeline_start=0, source_in=0, source_out=1).text_style)
 
 
 def test_text_preset_and_subtitle_edits_are_refused_on_a_locked_subtitle_track(window):  # noqa: F811
     _track, clip = _subtitle(window, locked=True)
     preset = _text_preset()
-    clip.text_style = replace(
-        preset.style, font_size=preset.style.font_size + 3
-    )  # ni par défaut ni celui du modèle
+    clip.text_style = replace(preset.style, font_size=preset.style.font_size + 3)     # ni par défaut ni celui du modèle
     window.history.reset(window.project)
     style = replace(preset.style, font_size=preset.style.font_size + 7)
     _refused(window, clip, lambda: window._apply_text_preset_to_clip(clip.id, preset))
@@ -412,9 +304,7 @@ def test_text_preset_and_subtitle_edits_are_refused_on_a_locked_subtitle_track(w
 
 def test_text_preset_is_refused_on_a_clip_that_is_not_a_subtitle(window):  # noqa: F811
     _track, clip = _subtitle(window, track_type="audio")
-    _refused(
-        window, clip, lambda: window._apply_text_preset_to_clip(clip.id, _text_preset())
-    )
+    _refused(window, clip, lambda: window._apply_text_preset_to_clip(clip.id, _text_preset()))
 
 
 def test_text_preset_and_subtitle_edits_work_on_a_free_subtitle(window):  # noqa: F811
@@ -429,14 +319,7 @@ def test_text_preset_and_subtitle_edits_work_on_a_free_subtitle(window):  # noqa
 
 def _two_clips(win, *, locked_kind=None):
     track, first = _add_track_clip(win, "video", "v1")
-    second = Clip(
-        id="v2",
-        asset_id=first.asset_id,
-        track_id=track.id,
-        timeline_start=5.0,
-        source_in=0.0,
-        source_out=5.0,
-    )
+    second = Clip(id="v2", asset_id=first.asset_id, track_id=track.id, timeline_start=5.0, source_in=0.0, source_out=5.0)
     track.clips.append(second)
     win.history.reset(win.project)
     win._reload_timeline_preserving_selection(first.id)
@@ -448,9 +331,7 @@ def test_transition_apply_edit_and_remove_are_refused_on_locked_clips(window, ki
     from core.transition_presets import builtin_transition_presets
 
     track, first, second = _two_clips(window)
-    transition = add_transition(
-        window.project, "v1", "v2", TransitionType.CROSSFADE, 0.5
-    )
+    transition = add_transition(window.project, "v1", "v2", TransitionType.CROSSFADE, 0.5)
     window.history.reset(window.project)
     window._reload_timeline_preserving_selection(first.id)
     _lock_kind(window, kind, track, second)
@@ -491,7 +372,7 @@ def test_undo_and_redo_still_restore_a_clip_whose_track_got_locked(window):  # n
     track, clip = _add_track_clip(window, "video", "v")
     set_clip_transform(window.project, clip.id, replace(clip.transform, opacity=0.4))
     window._record_history("opacité")
-    track.locked = True  # verrouillée après coup : l'historique reste libre
+    track.locked = True                                                     # verrouillée après coup : l'historique reste libre
     window.undo_last()
     assert find_clip(window.project, "v").transform.opacity == pytest.approx(1.0)
     window.redo_last()
@@ -501,81 +382,27 @@ def test_undo_and_redo_still_restore_a_clip_whose_track_got_locked(window):  # n
 # ---------------------------------------------------------------- inventaire
 
 
-KEYFRAME_READ_ONLY = {
-    "find_clip",
-    "clip_duration",
-    "curve_of",
-    "is_animated",
-    "value_at",
-    "keyframe_by_id",
-    "keyframe_times",
-    "previous_keyframe_time",
-    "next_keyframe_time",
-    "snap_to_frame",
-    "copy_keyframes",
-    "can_paste",
-}
+KEYFRAME_READ_ONLY = {"find_clip", "clip_duration", "curve_of", "is_animated", "value_at", "keyframe_by_id", "keyframe_times",
+                      "previous_keyframe_time", "next_keyframe_time", "snap_to_frame", "copy_keyframes", "can_paste"}
 
 # Entrées qui écrivent dans un clip et leur garde (texte attendu dans leur source). Une nouvelle entrée non listée
 # ne casse rien ici : elle doit être ajoutée à cette liste ET à docs/lock-guards.md (la doc dit ce qui reste non gardé).
 GUARDED_UI = {
-    (
-        "ui.main_window_mixins.social",
-        "SocialMixin.toggle_fill_frame_for_selection",
-    ): "_social_clips_refused",
-    (
-        "ui.main_window_mixins.social",
-        "SocialMixin.follow_subject_in_selection",
-    ): "_social_clips_refused",
-    (
-        "ui.main_window_mixins.social",
-        "SocialMixin.apply_ken_burns_to_selection",
-    ): "_social_clips_refused",
+    ("ui.main_window_mixins.social", "SocialMixin.toggle_fill_frame_for_selection"): "_social_clips_refused",
+    ("ui.main_window_mixins.social", "SocialMixin.follow_subject_in_selection"): "_social_clips_refused",
+    ("ui.main_window_mixins.social", "SocialMixin.apply_ken_burns_to_selection"): "_social_clips_refused",
     ("ui.main_window_mixins.social", "SocialMixin._each_clip"): "_social_clips_refused",
-    (
-        "ui.main_window_mixins.social",
-        "SocialMixin.apply_text_animation_to_clip",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.social",
-        "SocialMixin.sync_text_on_voice",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.presets",
-        "PresetsMixin._apply_text_preset_to_clip",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.presets",
-        "PresetsMixin.on_transition_preset_apply_requested",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.presets",
-        "PresetsMixin.on_effect_preset_apply_requested",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.subtitles_graphics",
-        "SubtitlesGraphicsMixin.on_subtitle_content_changed",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.subtitles_graphics",
-        "SubtitlesGraphicsMixin.on_subtitle_style_changed",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.subtitles_graphics",
-        "SubtitlesGraphicsMixin.on_subtitle_style_reset",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.subtitles_graphics",
-        "SubtitlesGraphicsMixin.on_graphic_property_changed",
-    ): "_clip_edit_refused",
-    (
-        "ui.main_window_mixins.timeline_editing",
-        "TimelineEditingMixin._update_transition",
-    ): "_transition_edit_refused",
-    (
-        "ui.main_window_mixins.timeline_editing",
-        "TimelineEditingMixin.remove_selected_transition",
-    ): "_transition_edit_refused",
+    ("ui.main_window_mixins.social", "SocialMixin.apply_text_animation_to_clip"): "_clip_edit_refused",
+    ("ui.main_window_mixins.social", "SocialMixin.sync_text_on_voice"): "_clip_edit_refused",
+    ("ui.main_window_mixins.presets", "PresetsMixin._apply_text_preset_to_clip"): "_clip_edit_refused",
+    ("ui.main_window_mixins.presets", "PresetsMixin.on_transition_preset_apply_requested"): "_clip_edit_refused",
+    ("ui.main_window_mixins.presets", "PresetsMixin.on_effect_preset_apply_requested"): "_clip_edit_refused",
+    ("ui.main_window_mixins.subtitles_graphics", "SubtitlesGraphicsMixin.on_subtitle_content_changed"): "_clip_edit_refused",
+    ("ui.main_window_mixins.subtitles_graphics", "SubtitlesGraphicsMixin.on_subtitle_style_changed"): "_clip_edit_refused",
+    ("ui.main_window_mixins.subtitles_graphics", "SubtitlesGraphicsMixin.on_subtitle_style_reset"): "_clip_edit_refused",
+    ("ui.main_window_mixins.subtitles_graphics", "SubtitlesGraphicsMixin.on_graphic_property_changed"): "_clip_edit_refused",
+    ("ui.main_window_mixins.timeline_editing", "TimelineEditingMixin._update_transition"): "_transition_edit_refused",
+    ("ui.main_window_mixins.timeline_editing", "TimelineEditingMixin.remove_selected_transition"): "_transition_edit_refused",
 }
 
 
@@ -591,28 +418,20 @@ def _resolve(module_name: str, dotted: str):
 @pytest.mark.parametrize(("entry", "marker"), sorted(GUARDED_UI.items()))
 def test_every_listed_ui_entry_still_carries_its_guard(entry, marker):
     module_name, dotted = entry
-    assert marker in inspect.getsource(_resolve(module_name, dotted)), (
-        f"{dotted} n'appelle plus {marker}"
-    )
+    assert marker in inspect.getsource(_resolve(module_name, dotted)), f"{dotted} n'appelle plus {marker}"
 
 
 def test_every_keyframe_mutator_of_the_core_is_guarded():
     unguarded = []
     for name, function in inspect.getmembers(keyframe_editing, inspect.isfunction):
-        if (
-            function.__module__ != keyframe_editing.__name__
-            or name.startswith("_")
-            or name in KEYFRAME_READ_ONLY
-        ):
+        if function.__module__ != keyframe_editing.__name__ or name.startswith("_") or name in KEYFRAME_READ_ONLY:
             continue
         parameters = list(inspect.signature(function).parameters)
         if not parameters or parameters[0] != "project":
             continue
         source = inspect.getsource(function)
         if "_guard(" not in source and not any(
-            f"{other}(" in source
-            for other in ("add_keyframe", "move_keyframes", "remove_keyframes")
-        ):
+                f"{other}(" in source for other in ("add_keyframe", "move_keyframes", "remove_keyframes")):
             unguarded.append(name)
     assert unguarded == [], f"mutateurs d'images-clés sans garde : {unguarded}"
 
@@ -620,11 +439,9 @@ def test_every_keyframe_mutator_of_the_core_is_guarded():
 def test_every_transform_and_transition_mutator_of_the_core_is_guarded():
     from core import timeline_operations, transitions
 
-    for function, marker in (
-        (timeline_operations._require_video_clip, "require_clip_editable"),
-        (transitions.add_transition, "_require_clips_editable"),
-        (transitions.update_transition, "_require_clips_editable"),
-        (transitions.remove_transition, "_require_clips_editable"),
-        (timeline_operations.add_subtitle_clip, "_ensure_track_editable"),
-    ):
+    for function, marker in ((timeline_operations._require_video_clip, "require_clip_editable"),
+                             (transitions.add_transition, "_require_clips_editable"),
+                             (transitions.update_transition, "_require_clips_editable"),
+                             (transitions.remove_transition, "_require_clips_editable"),
+                             (timeline_operations.add_subtitle_clip, "_ensure_track_editable")):
         assert marker in inspect.getsource(function), function.__name__

@@ -24,9 +24,7 @@ def _blur(sigma: float):
 
 
 def test_the_blur_sigma_follows_the_output_scale():
-    assert (
-        _build_clip_effect_filters((_blur(8.0),)) == "gblur=sigma=8.0"
-    )  # inchangé à pleine taille
+    assert _build_clip_effect_filters((_blur(8.0),)) == "gblur=sigma=8.0"     # inchangé à pleine taille
     assert _build_clip_effect_filters((_blur(8.0),), 0.5) == "gblur=sigma=4.0"
 
 
@@ -34,7 +32,7 @@ def _edge_width(row: np.ndarray) -> int:
     """Nombre de pixels de transition (entre 10 % et 90 %) du bord central d'un profil noir → blanc.
 
     Seule la moitié centrale compte : ``gblur`` assombrit aussi les bords de l'image."""
-    row = row[len(row) // 4 : 3 * len(row) // 4]
+    row = row[len(row) // 4: 3 * len(row) // 4]
     low, high = row.min(), row.max()
     normalized = (row - low) / max(1e-6, high - low)
     return int(np.count_nonzero((normalized > 0.1) & (normalized < 0.9)))
@@ -46,75 +44,28 @@ def _video_project(tmp_path) -> Project:
     edge = tmp_path / "edge2.mp4"
     import subprocess
 
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(media),
-            "-vf",
-            f"drawbox=x={W // 2}:y=0:w={W // 2}:h={H}:color=white:t=fill",
-            "-c:v",
-            "libx264",
-            "-qp",
-            "0",
-            "-pix_fmt",
-            "yuv444p",
-            str(edge),
-        ],
-        check=True,
-        timeout=60,
-    )
-    asset = MediaAsset(
-        id="a",
-        path=str(edge),
-        name="edge",
-        duration=2.0,
-        width=W,
-        height=H,
-        fps=25.0,
-        media_type="video",
-    )
-    clip = Clip(
-        id="c",
-        asset_id="a",
-        track_id="V1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=2.0,
-    )
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(media), "-vf",
+                    f"drawbox=x={W // 2}:y=0:w={W // 2}:h={H}:color=white:t=fill", "-c:v", "libx264", "-qp", "0",
+                    "-pix_fmt", "yuv444p", str(edge)], check=True, timeout=60)
+    asset = MediaAsset(id="a", path=str(edge), name="edge", duration=2.0, width=W, height=H, fps=25.0,
+                       media_type="video")
+    clip = Clip(id="c", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)
     clip.effects = [_blur(6.0)]
-    return Project(
-        name="flou",
-        width=W,
-        height=H,
-        fps=25.0,
-        media_assets=[asset],
-        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
-    )
+    return Project(name="flou", width=W, height=H, fps=25.0, media_assets=[asset],
+                   tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
 
 
 @needs_ffmpeg
 def test_a_half_size_preview_blurs_like_the_reduced_export(tmp_path):
     plan = build_render_plan(_video_project(tmp_path))
     full = downscale(render_frame(plan, W, H, 0.5), 2)[H // 4, :, 1]
-    half = render_frame(plan, W // 2, H // 2, 0.5, quality="standard")[
-        H // 4, :, 1
-    ].astype(np.float64)
-    assert abs(_edge_width(full) - _edge_width(half)) <= 1, (
-        _edge_width(full),
-        _edge_width(half),
-    )
+    half = render_frame(plan, W // 2, H // 2, 0.5, quality="standard")[H // 4, :, 1].astype(np.float64)
+    assert abs(_edge_width(full) - _edge_width(half)) <= 1, (_edge_width(full), _edge_width(half))
     # Loin des bords de l'image (que gblur assombrit). L'export réduit et l'aperçu ne tombent pas sur la même phase
     # d'échantillonnage (½ pixel) : l'écart moyen compte, pas le pire pixel de la pente. Sans la correction, le bord de
     # l'aperçu était deux fois plus large (14 pixels de transition contre 7).
     middle = slice(W // 8, 3 * W // 8)
-    assert float(np.abs(full[middle] - half[middle]).mean()) <= 2.0, float(
-        np.abs(full[middle] - half[middle]).mean()
-    )
+    assert float(np.abs(full[middle] - half[middle]).mean()) <= 2.0, float(np.abs(full[middle] - half[middle]).mean())
 
 
 @needs_ffmpeg
@@ -129,10 +80,5 @@ def test_a_blurred_graphic_layer_keeps_its_blur_size_at_half_resolution(tmp_path
     solid.effects = [_blur(6.0)]
     plan = build_render_plan(project)
     full = downscale(render_frame(plan, W, H, 0.5), 2)[H // 4, :, 1]
-    half = render_frame(plan, W // 2, H // 2, 0.5, quality="standard")[
-        H // 4, :, 1
-    ].astype(np.float64)
-    assert abs(_edge_width(full) - _edge_width(half)) <= 1, (
-        _edge_width(full),
-        _edge_width(half),
-    )
+    half = render_frame(plan, W // 2, H // 2, 0.5, quality="standard")[H // 4, :, 1].astype(np.float64)
+    assert abs(_edge_width(full) - _edge_width(half)) <= 1, (_edge_width(full), _edge_width(half))

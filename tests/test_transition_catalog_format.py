@@ -25,14 +25,7 @@ LEGACY_TYPES = [t for t in TransitionType if t not in CATALOG_EXTENSION_TYPES]
 def _project() -> Project:
     asset = MediaAsset("m1", "/tmp/a.mp4", "a", 20.0, 64, 36, 25.0, "video")
     clips = [Clip("a", "m1", "V1", 0.0, 0.0, 3.0), Clip("b", "m1", "V1", 3.0, 0.0, 3.0)]
-    return Project(
-        "p",
-        width=64,
-        height=36,
-        fps=25.0,
-        media_assets=[asset],
-        tracks=[Track("V1", "V1", "video", clips=clips)],
-    )
+    return Project("p", width=64, height=36, fps=25.0, media_assets=[asset], tracks=[Track("V1", "V1", "video", clips=clips)])
 
 
 def test_constants():
@@ -51,25 +44,15 @@ def test_a_project_without_transition_keeps_the_minimal_version():
     assert project_payload(_project())["version"] == 17
 
 
-@pytest.mark.parametrize(
-    "transition_type",
-    sorted(CATALOG_EXTENSION_TYPES, key=lambda t: t.value),
-    ids=lambda t: t.value,
-)
+@pytest.mark.parametrize("transition_type", sorted(CATALOG_EXTENSION_TYPES, key=lambda t: t.value), ids=lambda t: t.value)
 def test_every_new_type_writes_version_21_and_round_trips(tmp_path, transition_type):
     project = _project()
     add_transition(project, "a", "b", transition_type, 0.8)
     path = tmp_path / "t.kut"
     save_project(project, path)
-    assert (
-        json.loads(path.read_text(encoding="utf-8"))["version"]
-        == TRANSITION_CATALOG_VERSION
-        == 21
-    )
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == TRANSITION_CATALOG_VERSION == 21
     loaded = load_project(path)
-    assert [(t.type, t.duration) for t in loaded.transitions] == [
-        (transition_type, 0.8)
-    ]
+    assert [(t.type, t.duration) for t in loaded.transitions] == [(transition_type, 0.8)]
     again = tmp_path / "again.kut"
     save_project(loaded, again)
     assert again.read_bytes() == path.read_bytes()
@@ -87,27 +70,19 @@ def test_the_version_follows_the_content_when_the_last_new_transition_is_replace
 def test_a_new_type_in_a_secondary_sequence_writes_version_21():
     project = _project()
     clips = [Clip("c", "m1", "V1", 0.0, 0.0, 3.0), Clip("d", "m1", "V1", 3.0, 0.0, 3.0)]
-    create_sequence(
-        project, "Deux", tracks=[Track("V1", "V1", "video", clips=clips)], activate=True
-    )
+    create_sequence(project, "Deux", tracks=[Track("V1", "V1", "video", clips=clips)], activate=True)
     add_transition(project, "c", "d", TransitionType.WIPE_TL, 0.5)
     first = project.sequences[0]
     assert first.transitions == [] and len(project.sequences) == 2
     assert project_payload(project)["version"] == 21
 
 
-def test_a_file_with_a_new_type_is_refused_by_a_build_that_does_not_know_version_21(
-    tmp_path, monkeypatch
-):
+def test_a_file_with_a_new_type_is_refused_by_a_build_that_does_not_know_version_21(tmp_path, monkeypatch):
     project = _project()
     add_transition(project, "a", "b", TransitionType.DIAG_BR, 0.5)
     path = tmp_path / "t.kut"
     save_project(project, path)
-    monkeypatch.setattr(
-        project_io,
-        "SUPPORTED_VERSIONS",
-        SUPPORTED_VERSIONS - {TRANSITION_CATALOG_VERSION},
-    )
+    monkeypatch.setattr(project_io, "SUPPORTED_VERSIONS", SUPPORTED_VERSIONS - {TRANSITION_CATALOG_VERSION})
     with pytest.raises(ValueError, match="Version de fichier Kut-Studio non supportée"):
         load_project(path)
 

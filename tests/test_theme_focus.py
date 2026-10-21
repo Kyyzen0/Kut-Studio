@@ -44,11 +44,7 @@ def _list() -> QListWidget:
 def _tree() -> QTreeWidget:
     widget = QTreeWidget()
     widget.setHeaderHidden(True)
-    widget.addTopLevelItem(
-        __import__("PySide6.QtWidgets", fromlist=["QTreeWidgetItem"]).QTreeWidgetItem(
-            ["Racine"]
-        )
-    )
+    widget.addTopLevelItem(__import__("PySide6.QtWidgets", fromlist=["QTreeWidgetItem"]).QTreeWidgetItem(["Racine"]))
     return widget
 
 
@@ -111,9 +107,7 @@ def themed_application():
 
 
 @pytest.mark.parametrize("kind", sorted(CONTROLS))
-def test_a_control_looks_different_when_it_has_the_keyboard_focus(
-    qtbot, themed_application, kind
-):
+def test_a_control_looks_different_when_it_has_the_keyboard_focus(qtbot, themed_application, kind):
     host = QWidget()
     qtbot.addWidget(host)
     layout = QVBoxLayout(host)
@@ -137,13 +131,6 @@ def test_a_control_looks_different_when_it_has_the_keyboard_focus(
 @pytest.mark.parametrize("name", sorted(THEMES))
 def test_every_theme_declares_a_focus_rule_for_each_control_family(name):
     sheet = global_stylesheet(THEMES[name])
-    for selector in (
-        "QPushButton:focus",
-        "QToolButton:focus",
-        "QCheckBox::indicator:focus",
-        "QListWidget:focus",
-        "QTextEdit:focus",
-        "QSlider::handle:horizontal:focus",
-        "QLineEdit:focus",
-    ):
+    for selector in ("QPushButton:focus", "QToolButton:focus", "QCheckBox::indicator:focus", "QListWidget:focus",
+                     "QTextEdit:focus", "QSlider::handle:horizontal:focus", "QLineEdit:focus"):
         assert selector in sheet, f"{name} : pas de règle {selector}"

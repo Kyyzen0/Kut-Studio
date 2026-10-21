@@ -81,9 +81,7 @@ def test_index_matches_evaluator_on_overlaps_gaps_and_flags():
 
 
 def test_index_sees_a_path_changed_without_rebuild():
-    project = _project(
-        [Track(id="V1", name="V1", type="video", clips=[_clip("a", 0.0, 2.0)])]
-    )
+    project = _project([Track(id="V1", name="V1", type="video", clips=[_clip("a", 0.0, 2.0)])])
     index = build_timeline_index(project)
     project.media_assets[0].path = "/tmp/replaced.mp4"
     active = index.active_at(project, 0.5)

@@ -9,40 +9,16 @@ from core.clip_crop import Crop, with_crop
 from core.compositing import ChromaKey, Compositing, Mask, MaskShape
 from ui.compositing_editor import CompositingEditor
 from ui.compositing_sections import (
-    SECTION_BLEND,
-    SECTION_CHROMA,
-    SECTION_CROP,
-    SECTION_IDS,
-    SECTION_MASKS,
+    SECTION_BLEND, SECTION_CHROMA, SECTION_CROP, SECTION_IDS, SECTION_MASKS,
 )
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
 #: Interface publique lue par l'inspecteur, la page Composition et les tests : liste explicite, à ne pas réduire.
 PUBLIC_ATTRIBUTES = (
-    "crop_editor",
-    "blend_mode",
-    "mask_shape",
-    "add_mask",
-    "remove_mask",
-    "mask_list",
-    "mask_form_host",
-    "edit_in_monitor",
-    "path_hint",
-    "mask_mode",
-    "inverted",
-    "mask_spins",
-    "key_host",
-    "key_enabled",
-    "key_color",
-    "spins",
-    "value_changed",
-    "mask_edit_changed",
-    "set_chroma_visible",
-    "set_editable",
-    "set_value",
-    "edited_mask_id",
-    "reset_edit",
+    "crop_editor", "blend_mode", "mask_shape", "add_mask", "remove_mask", "mask_list", "mask_form_host", "edit_in_monitor",
+    "path_hint", "mask_mode", "inverted", "mask_spins", "key_host", "key_enabled", "key_color", "spins",
+    "value_changed", "mask_edit_changed", "set_chroma_visible", "set_editable", "set_value", "edited_mask_id", "reset_edit",
 )
 
 
@@ -70,30 +46,14 @@ def test_group_holds_the_four_sections_in_order() -> None:
     editor = CompositingEditor("")
     layout = editor.layout()
     children = [layout.itemAt(i).widget() for i in range(layout.count())]
-    children = [
-        getattr(child, "child", None) or child for child in children
-    ]  # fusion, masques et chroma sont dans un conteneur de niveau d'usage
-    children = [
-        child for child in children if child.objectName() != "advanced_fold"
-    ]  # et un pliant « Avancé » précède les réglages Studio
-    assert [child.objectName() for child in children] == [
-        SECTION_CROP,
-        SECTION_BLEND,
-        SECTION_MASKS,
-        SECTION_CHROMA,
-    ]
+    children = [getattr(child, "child", None) or child for child in children]      # fusion, masques et chroma sont dans un conteneur de niveau d'usage
+    children = [child for child in children if child.objectName() != "advanced_fold"]     # et un pliant « Avancé » précède les réglages Studio
+    assert [child.objectName() for child in children] == [SECTION_CROP, SECTION_BLEND, SECTION_MASKS, SECTION_CHROMA]
     assert tuple(child.objectName() for child in children) == SECTION_IDS
     # chaque contrôle est bien dans le sous-bloc attendu (pas rattaché au groupe directement)
     owners = {
-        SECTION_BLEND: [editor.blend_mode],
-        SECTION_CROP: [editor.crop_editor],
-        SECTION_MASKS: [
-            editor.mask_shape,
-            editor.add_mask,
-            editor.remove_mask,
-            editor.mask_list,
-            editor.mask_form_host,
-        ],
+        SECTION_BLEND: [editor.blend_mode], SECTION_CROP: [editor.crop_editor],
+        SECTION_MASKS: [editor.mask_shape, editor.add_mask, editor.remove_mask, editor.mask_list, editor.mask_form_host],
         SECTION_CHROMA: [editor.key_host, editor.key_enabled, editor.key_color],
     }
     for section, widgets in owners.items():
@@ -116,7 +76,7 @@ def test_hiding_one_section_leaves_the_others_and_the_values_alone() -> None:
             assert editor.findChild(QWidget, other).isVisible() == (other != hidden)
         section.setVisible(True)
     assert log == []
-    assert editor.mask_list.count() == 2  # le masque et le recadrage
+    assert editor.mask_list.count() == 2        # le masque et le recadrage
     assert editor.key_enabled.isChecked()
     assert editor.spins["tolerance"].value() == pytest.approx(0.3)
     assert editor.blend_mode.currentData() == "multiply"
@@ -128,20 +88,11 @@ def test_editable_lock_still_disables_every_section() -> None:
     editor = _editor()
     editor.set_editable(False)
     assert not editor.isEnabled()
-    for widget in (
-        *(editor.findChild(QWidget, s) for s in SECTION_IDS),
-        editor.blend_mode,
-        editor.crop_editor,
-        editor.add_mask,
-        editor.mask_list,
-        editor.key_enabled,
-        editor.key_host,
-    ):
+    for widget in (*(editor.findChild(QWidget, s) for s in SECTION_IDS), editor.blend_mode, editor.crop_editor,
+                   editor.add_mask, editor.mask_list, editor.key_enabled, editor.key_host):
         assert not widget.isEnabled()
     editor.set_editable(True)
-    assert editor.isEnabled() and all(
-        editor.findChild(QWidget, s).isEnabled() for s in SECTION_IDS
-    )
+    assert editor.isEnabled() and all(editor.findChild(QWidget, s).isEnabled() for s in SECTION_IDS)
 
 
 def test_chroma_visibility_is_independent_of_the_section() -> None:
@@ -166,10 +117,7 @@ def test_add_and_remove_mask_emissions() -> None:
     log = _record(editor)
     editor.add_mask.click()
     kinds = [kind for kind, _ in log]
-    assert kinds == [
-        "value",
-        "edit",
-    ]  # valeur d'abord, puis les poignées du masque ajouté dans le moniteur
+    assert kinds == ["value", "edit"]          # valeur d'abord, puis les poignées du masque ajouté dans le moniteur
     assert len(log[0][1].masks) == 1 and log[1][1] == log[0][1].masks[0].id
     log.clear()
     editor.mask_spins["feather"].setValue(5.0)

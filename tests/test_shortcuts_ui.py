@@ -82,10 +82,7 @@ def test_one_qaction_per_action_command_with_default_shortcuts(qtbot):
             manager.create_action(command.id, command.id)
     redo = manager.action("redo")
     assert [s.toString() for s in redo.shortcuts()] == ["Ctrl+Shift+Z", "Ctrl+Y"]
-    assert [s.toString() for s in manager.action("delete_clip").shortcuts()] == [
-        "Del",
-        "Backspace",
-    ]
+    assert [s.toString() for s in manager.action("delete_clip").shortcuts()] == ["Del", "Backspace"]
     with pytest.raises(ValueError):  # une seconde QAction rendrait le raccourci ambigu
         manager.create_action("redo", "dup")
     with pytest.raises(ValueError):  # une commande clavier n'a pas de QAction
@@ -163,9 +160,7 @@ def test_text_fields_never_trigger_key_commands(qtbot):
     field = QLineEdit()
     qtbot.addWidget(field)
     assert not manager.handle_key_event(_key_event(Qt.Key_Space), focus_widget=field)
-    assert not manager.handle_key_event(
-        _key_event(Qt.Key_K, Qt.ControlModifier), focus_widget=field
-    )
+    assert not manager.handle_key_event(_key_event(Qt.Key_K, Qt.ControlModifier), focus_widget=field)
     assert record.calls == []
 
 
@@ -223,11 +218,7 @@ def test_editor_category_filter(editor):
     index = editor.category_combo.findData("tools")
     editor.category_combo.setCurrentIndex(index)
     assert _visible_ids(editor) == {
-        "tool_select",
-        "tool_blade",
-        "tool_roll",
-        "tool_slip",
-        "tool_slide",
+        "tool_select", "tool_blade", "tool_roll", "tool_slip", "tool_slide",
     }
     editor.search_edit.setText("slip")
     assert _visible_ids(editor) == {"tool_slip"}
@@ -252,9 +243,7 @@ def test_editor_conflict_explains_and_keeps_the_old_shortcut(editor):
     assert editor._manager.shortcut_map.sequences("tool_blade") == ("B",)
     assert "Outil Roll" in editor.status_label.text()
     assert not editor.reassign_button.isHidden()
-    assert (
-        editor.primary_edit.keySequence().toString() == "B"
-    )  # éditeur remis sur la valeur active
+    assert editor.primary_edit.keySequence().toString() == "B"  # éditeur remis sur la valeur active
 
 
 def test_editor_reassign_takes_the_shortcut_from_the_other_command(editor):
@@ -278,10 +267,7 @@ def test_editor_refuses_reserved_and_invalid_shortcuts(editor):
 def test_editor_accepts_a_multi_step_chord(editor):
     editor.select_command("tool_blade")
     _type_sequence(editor.secondary_edit, "Ctrl+Alt+K, B")
-    assert editor._manager.shortcut_map.sequences("tool_blade") == (
-        "B",
-        "Ctrl+Alt+K, B",
-    )
+    assert editor._manager.shortcut_map.sequences("tool_blade") == ("B", "Ctrl+Alt+K, B")
     assert editor.secondary_edit.maximumSequenceLength() == 4
 
 
@@ -374,9 +360,7 @@ def test_main_window_defaults_match_the_previous_menu_shortcuts(qtbot, monkeypat
     }
     for command_id, shortcuts in expected.items():
         action = window.shortcuts.action(command_id)
-        assert [
-            s.toString(QKeySequence.PortableText) for s in action.shortcuts()
-        ] == shortcuts
+        assert [s.toString(QKeySequence.PortableText) for s in action.shortcuts()] == shortcuts
 
 
 def test_key_shortcuts_drive_the_real_editor_actions(qtbot, monkeypatch):
@@ -511,14 +495,10 @@ def test_other_settings_changes_do_not_erase_shortcuts(qtbot, monkeypatch):
     assert load_user_settings().shortcuts == {"tool_blade": ["F6"]}
 
 
-def test_old_preferences_file_without_shortcuts_starts_with_defaults(
-    qtbot, monkeypatch
-):
+def test_old_preferences_file_without_shortcuts_starts_with_defaults(qtbot, monkeypatch):
     path = settings_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"theme_mode": "dark", "language": "fr"}), encoding="utf-8"
-    )
+    path.write_text(json.dumps({"theme_mode": "dark", "language": "fr"}), encoding="utf-8")
     window = _window(qtbot, monkeypatch)
     assert window.shortcuts.shortcut_map.overrides() == {}
     QTest.keyClick(window, Qt.Key_B)
@@ -526,9 +506,7 @@ def test_old_preferences_file_without_shortcuts_starts_with_defaults(
 
 
 def test_corrupted_shortcut_entries_in_preferences_fall_back_safely(qtbot, monkeypatch):
-    window = _window(
-        qtbot, monkeypatch, overrides={"tool_blade": ["Ctrl+Banane"], "inconnu": ["F1"]}
-    )
+    window = _window(qtbot, monkeypatch, overrides={"tool_blade": ["Ctrl+Banane"], "inconnu": ["F1"]})
     assert window.shortcuts.shortcut_map.sequences("tool_blade") == ("B",)
 
 
@@ -584,9 +562,7 @@ def test_chord_expires_and_modifier_keys_do_not_break_it(qtbot):
     manager.assign("tool_blade", 1, "Ctrl+Alt+K, B")
     ctrl_alt = Qt.ControlModifier | Qt.AltModifier
     manager.handle_key_event(_key_event(Qt.Key_K, ctrl_alt), None)
-    assert not manager.handle_key_event(
-        _key_event(Qt.Key_Shift, Qt.ShiftModifier), None
-    )
+    assert not manager.handle_key_event(_key_event(Qt.Key_Shift, Qt.ShiftModifier), None)
     assert manager.pending_chord == "Ctrl+Alt+K"
     manager._pending_timer.timeout.emit()  # le délai est écoulé
     assert manager.pending_chord == ""
@@ -596,9 +572,7 @@ def test_text_field_focus_cancels_a_pending_chord(qtbot):
     manager = _manager()
     manager.register_handlers({c.id: (lambda: None) for c in COMMANDS})
     manager.assign("tool_blade", 1, "Ctrl+Alt+K, B")
-    manager.handle_key_event(
-        _key_event(Qt.Key_K, Qt.ControlModifier | Qt.AltModifier), None
-    )
+    manager.handle_key_event(_key_event(Qt.Key_K, Qt.ControlModifier | Qt.AltModifier), None)
     field = QLineEdit()
     qtbot.addWidget(field)
     assert not manager.handle_key_event(_key_event(Qt.Key_B), field)
@@ -641,9 +615,7 @@ def test_loose_modifiers_do_not_leak_to_other_commands(qtbot):
     manager = _manager()
     record = _Recorder()
     manager.register_handlers({c.id: record(c.id) for c in COMMANDS})
-    assert not manager.handle_key_event(
-        _key_event(Qt.Key_B, Qt.ControlModifier | Qt.AltModifier), None
-    )
+    assert not manager.handle_key_event(_key_event(Qt.Key_B, Qt.ControlModifier | Qt.AltModifier), None)
     assert record.calls == []
 
 
@@ -657,9 +629,7 @@ def test_menu_labels_follow_the_language_live(qtbot, monkeypatch):
     window = _window(qtbot, monkeypatch)
     try:
         assert window.shortcuts.action("project_new").text() == "Nouveau"
-        assert (
-            window.window_menu.title().replace("&", "") == "Fenêtre"
-        )  # « & » : lettre mnémonique
+        assert window.window_menu.title().replace("&", "") == "Fenêtre"  # « & » : lettre mnémonique
         monkeypatch.setattr("ui.main_window.save_user_settings", lambda *_: None)
         window._apply_settings(replace(window._settings_snapshot(), language="en"))
         assert window.shortcuts.action("project_new").text() == "New"
@@ -709,22 +679,16 @@ def test_workspace_menu_sync_does_not_depend_on_the_language(qtbot, monkeypatch)
     try:
         for code in ("en", "es"):
             _set_language(window, monkeypatch, code)
-            panels = window.window_menu.findChild(
-                type(window.window_menu), "panels_menu"
-            )
+            panels = window.window_menu.findChild(type(window.window_menu), "panels_menu")
             assert panels is not None
             panel = next(iter(PanelId))
             window.workspace.set_panel_visible(panel, False)
             window._sync_workspace_menu()
-            checked = {
-                a.isChecked() for a, p in zip(panels.actions(), PanelId) if p is panel
-            }
+            checked = {a.isChecked() for a, p in zip(panels.actions(), PanelId) if p is panel}
             assert checked == {False}
             window.workspace.set_panel_visible(panel, True)
             window._sync_workspace_menu()
-            assert {
-                a.isChecked() for a, p in zip(panels.actions(), PanelId) if p is panel
-            } == {True}
+            assert {a.isChecked() for a, p in zip(panels.actions(), PanelId) if p is panel} == {True}
     finally:
         i18n.set_language(original)
 
@@ -742,20 +706,14 @@ def test_workspace_submenus_and_actions_are_retranslated_live(qtbot, monkeypatch
     original = i18n.current_language()
     window = _window(qtbot, monkeypatch)
     try:
-        titles_fr = {
-            m.title() for m in window.window_menu.findChildren(type(window.window_menu))
-        }
+        titles_fr = {m.title() for m in window.window_menu.findChildren(type(window.window_menu))}
         assert {"Panneaux", "Espaces de travail"} <= titles_fr
         _set_language(window, monkeypatch, "en")
-        titles_en = {
-            m.title() for m in window.window_menu.findChildren(type(window.window_menu))
-        }
+        titles_en = {m.title() for m in window.window_menu.findChildren(type(window.window_menu))}
         assert {"Panels", "Workspaces"} <= titles_en
         assert not ({"Panneaux", "Espaces de travail"} & titles_en)
         texts = {a.text() for a in _all_actions(window.window_menu)}
         assert {"Restore layout", "Save layout as…"} <= texts
-        assert not (
-            {"Restaurer la disposition", "Enregistrer la disposition sous…"} & texts
-        )
+        assert not ({"Restaurer la disposition", "Enregistrer la disposition sous…"} & texts)
     finally:
         i18n.set_language(original)

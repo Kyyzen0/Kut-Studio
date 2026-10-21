@@ -542,6 +542,12 @@ désormais : une animation d'exposition de plus de quatre minutes sera refusée 
 
 **Non fait / non vérifié.** Aucun verbe `clear_color_animation` (équivalent de `clear_effect_animation`) : `set_animation_enabled(false)` propriété par propriété suffit pour l'instant.  Retirer la dernière clé écrit la valeur montrée dans un `ColorGrade` neutre même si le clip n'en avait pas (comme l'interface, via le modèle). Rien n'a été vu dans l'application réelle.
 
+### Suites de l'étape 9 : réinitialisation et collage d'attributs
+
+- **Deux gestes de réinitialisation dans l'interface** : le bouton de l'inspecteur remet le réglage du nœud (flou et netteté restent) ; « Tout réinitialiser » de la page Couleur remet aussi flou et netteté. Les deux retirent les images clés `color.*`, dans la même étape d'historique. `reset_color_grade` garde la portée de l'inspecteur par défaut et prend `detail: true` pour celle de la page Couleur.
+- **Pas de verbe de copier / coller** : l'interface n'a pas de « copier l'étalonnage » seul, seulement « Coller les attributs » (l'étalonnage voyage avec « effets »), et la doc de script garde le presse-papiers hors du catalogue (état d'interface).
+- **Coller les attributs** : coller « effets » remplace l'étalonnage, donc retire les images clés `color.*` de la destination (`clear_grade_animation`, même étape d'annulation). « Images clés » remplace l'animation de la destination ; les `color.*` de la source ne sont collées que si la source ET l'étalonnage final de la destination sont des réglages simples (sinon le rendu les ignorerait, ou elles animeraient un clip que la source n'animait pas). Piste ou calque verrouillé : le clip est sauté sans rien écrire, comme avant.
+
 ## Décisions prises (2026-10-18, avec l'utilisateur)
 
 1. **Effets d'abord, puis étalonnage.** *Recommandation suivie.*

@@ -16,12 +16,7 @@ from __future__ import annotations
 import pytest
 
 from core.export_engine import ExportFormat
-from core.hardware_cache import (
-    CACHE_FILE_NAME,
-    DECODE_DISABLE_VARIABLE,
-    CapabilityService,
-    set_default_service,
-)
+from core.hardware_cache import CACHE_FILE_NAME, DECODE_DISABLE_VARIABLE, CapabilityService, set_default_service
 from core.hardware_encoding import FFMPEG_ENCODER_NAMES, HardwareEncoder
 from core.hardware_validation import (
     PATCHES,
@@ -55,9 +50,7 @@ def service(tmp_path_factory, tools):
     """
     cache = tmp_path_factory.mktemp("hardware-cache") / CACHE_FILE_NAME
     detected = CapabilityService(
-        command_provider=lambda: [tools.ffmpeg],
-        cache_path=cache,
-        environment={DECODE_DISABLE_VARIABLE: "off"},
+        command_provider=lambda: [tools.ffmpeg], cache_path=cache, environment={DECODE_DISABLE_VARIABLE: "off"},
     )
     detected.capabilities()
     return detected
@@ -70,38 +63,26 @@ def source(tmp_path_factory, tools):
 
 @pytest.fixture
 def capabilities(service):
-    set_default_service(
-        service
-    )  # la commande d'export de l'application lit le service global
+    set_default_service(service)  # la commande d'export de l'application lit le service global
     return service.capabilities()
 
 
-BT709_LIMITED = {
-    "color_space": "bt709",
-    "color_primaries": "bt709",
-    "color_transfer": "bt709",
-    "color_range": "tv",
-}
+BT709_LIMITED = {"color_space": "bt709", "color_primaries": "bt709", "color_transfer": "bt709", "color_range": "tv"}
 """Ce que tout export doit porter, écrit en clair : les attendus du module en dérivent (``OUTPUT_COLOR_TAGS``)."""
 
 
 def _required() -> frozenset[HardwareEncoder]:
     try:
         return required_backends()
-    except (
-        ValueError
-    ) as error:  # une faute de frappe ne doit pas rendre l'exigence muette
+    except ValueError as error:  # une faute de frappe ne doit pas rendre l'exigence muette
         pytest.fail(str(error))
 
 
 @pytest.mark.parametrize(
-    "export_format",
-    [ExportFormat.MP4_H264, ExportFormat.MOV_H264, ExportFormat.MP4_HEVC],
+    "export_format", [ExportFormat.MP4_H264, ExportFormat.MOV_H264, ExportFormat.MP4_HEVC],
     ids=["mp4", "mov", "mp4-hevc"],
 )
-@pytest.mark.parametrize(
-    "backend", VALIDATED_BACKENDS, ids=lambda backend: backend.value
-)
+@pytest.mark.parametrize("backend", VALIDATED_BACKENDS, ids=lambda backend: backend.value)
 def test_an_export_with_each_available_encoder_is_tagged_bt709_and_keeps_its_colours(
     backend, export_format, capabilities, tools, source, tmp_path
 ):
@@ -112,25 +93,14 @@ def test_an_export_with_each_available_encoder_is_tagged_bt709_and_keeps_its_col
             pytest.fail(f"{reason} — exigé par {REQUIRE_VARIABLE}")
         pytest.skip(reason)
 
-    result = validate_encoder(
-        backend,
-        capabilities,
-        tools=tools,
-        source=source,
-        workdir=tmp_path,
-        export_format=export_format,
-        required=required,
-    )
+    result = validate_encoder(backend, capabilities, tools=tools, source=source, workdir=tmp_path,
+                              export_format=export_format, required=required)
 
     assert result.outcome is Outcome.PASSED, format_validation(result)
     # Rien de vide : l'encodeur attendu a réellement produit un fichier, relu champ par champ et pixel par pixel.
     assert result.encoder_used == FFMPEG_ENCODER_NAMES[(export_format.codec, backend)]
     assert result.returncode == 0 and result.size_bytes > 0
     assert result.expected_tags == expected_color_tags() == BT709_LIMITED
-    assert {
-        name: result.obtained_tags.get(name) for name in BT709_LIMITED
-    } == BT709_LIMITED
+    assert {name: result.obtained_tags.get(name) for name in BT709_LIMITED} == BT709_LIMITED
     assert [pixel.name for pixel in result.pixels] == [patch.name for patch in PATCHES]
-    assert all(pixel.deviation <= PIXEL_TOLERANCE for pixel in result.pixels), (
-        format_validation(result)
-    )
+    assert all(pixel.deviation <= PIXEL_TOLERANCE for pixel in result.pixels), format_validation(result)

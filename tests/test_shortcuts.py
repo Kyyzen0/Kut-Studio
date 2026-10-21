@@ -92,13 +92,7 @@ def test_defaults_have_no_extra_shortcut_beyond_legacy_ones():
     # Raccourcis ajoutés avec le moteur d'animation (aucun ne remplace un ancien).
     animation = {"Alt+K", "Alt+Shift+K", "Alt+J", "Alt+L", "Ctrl+Alt+A", "Ctrl+Alt+G"}
     # Raccourcis ajoutés avec les séquences imbriquées (aucun ne remplace un ancien).
-    sequences = {
-        "Ctrl+Shift+N",
-        "Ctrl+Alt+Down",
-        "Ctrl+Alt+Up",
-        "Alt+Left",
-        "Alt+Right",
-    }
+    sequences = {"Ctrl+Shift+N", "Ctrl+Alt+Down", "Ctrl+Alt+Up", "Alt+Left", "Alt+Right"}
     # Raccourcis ajoutés avec le moteur motion graphics (aucun ne remplace un ancien).
     motion = {"Ctrl+G", "Ctrl+Shift+G", "Ctrl+'", "Ctrl+;"}
     # Raccourcis ajoutés avec le Multicam : un angle par chiffre et le moniteur Multicam.
@@ -152,20 +146,7 @@ def test_normalize_sequence_accepts_equivalent_forms(raw, expected):
 
 @pytest.mark.parametrize(
     "raw",
-    [
-        "",
-        "   ",
-        "Ctrl",
-        "Shift+",
-        "Ctrl+Ctrl+A",
-        "Ctrl+K, Ctrl+Banane",
-        "A, B, C, D, E",
-        "Ctrl+Banane",
-        "F99",
-        "é",
-        None,
-        42,
-    ],
+    ["", "   ", "Ctrl", "Shift+", "Ctrl+Ctrl+A", "Ctrl+K, Ctrl+Banane", "A, B, C, D, E", "Ctrl+Banane", "F99", "é", None, 42],
 )
 def test_invalid_sequences_are_rejected(raw):
     assert normalize_sequence(raw) is None
@@ -182,9 +163,7 @@ def test_invalid_shortcut_is_refused_and_changes_nothing():
 def test_unknown_command_or_slot_is_refused():
     shortcuts = ShortcutMap()
     assert shortcuts.assign("nope", 0, "F5").status is AssignStatus.UNKNOWN_COMMAND
-    assert (
-        shortcuts.assign("tool_blade", 2, "F5").status is AssignStatus.UNKNOWN_COMMAND
-    )
+    assert shortcuts.assign("tool_blade", 2, "F5").status is AssignStatus.UNKNOWN_COMMAND
 
 
 # --- modification, secondaire ---------------------------------------------------------
@@ -333,10 +312,7 @@ def test_serialization_only_stores_differences_and_round_trips():
         assert restored.sequences(command.id) == shortcuts.sequences(command.id)
 
 
-@pytest.mark.parametrize(
-    "garbage",
-    [None, 3, "x", [], {"tool_blade": 5}, {"tool_blade": [None, 3]}, {"nope": ["F1"]}],
-)
+@pytest.mark.parametrize("garbage", [None, 3, "x", [], {"tool_blade": 5}, {"tool_blade": [None, 3]}, {"nope": ["F1"]}])
 def test_deserialization_never_raises_and_falls_back_to_defaults(garbage):
     restored = ShortcutMap.from_overrides(garbage)
     assert validate_conflict_free(restored)
@@ -351,9 +327,7 @@ def test_deserialization_drops_invalid_and_reserved_entries():
 
 
 def test_deserialization_resolves_conflicts_in_favour_of_the_explicit_choice():
-    restored = ShortcutMap.from_overrides(
-        {"tool_blade": ["R"]}
-    )  # « R » = Roll par défaut
+    restored = ShortcutMap.from_overrides({"tool_blade": ["R"]})  # « R » = Roll par défaut
     assert restored.sequences("tool_blade") == ("R",)
     assert restored.sequences("tool_roll") == ()
     assert validate_conflict_free(restored)
@@ -393,9 +367,7 @@ def test_shortcuts_survive_save_and_load(tmp_path):
     on_disk = json.loads(settings_file_path(tmp_path).read_text(encoding="utf-8"))
     assert on_disk["shortcuts"] == {"tool_blade": ["F6"]}
     loaded = load_user_settings(tmp_path)
-    assert ShortcutMap.from_overrides(loaded.shortcuts).sequences("tool_blade") == (
-        "F6",
-    )
+    assert ShortcutMap.from_overrides(loaded.shortcuts).sequences("tool_blade") == ("F6",)
 
 
 def test_corrupt_shortcuts_in_the_settings_file_do_not_break_other_settings(tmp_path):
@@ -454,23 +426,16 @@ def test_every_command_has_a_name_in_every_language():
         for language in i18n.available_languages():
             i18n.set_language(language)
             for command in COMMANDS:
-                assert not i18n.translate(command.name_key).startswith("["), (
-                    language,
-                    command.id,
-                )
+                assert not i18n.translate(command.name_key).startswith("["), (language, command.id)
             for category in Category:
-                assert not i18n.translate(
-                    f"shortcuts.category.{category.value}"
-                ).startswith("[")
+                assert not i18n.translate(f"shortcuts.category.{category.value}").startswith("[")
     finally:
         i18n.set_language(original)
     assert COMMANDS_BY_ID["play_pause"].name_key == "shortcuts.command.play_pause"
 
 
 def test_non_list_override_keeps_the_default_instead_of_unbinding():
-    restored = ShortcutMap.from_overrides(
-        {"tool_blade": 5, "tool_roll": ["Ctrl+Banane"]}
-    )
+    restored = ShortcutMap.from_overrides({"tool_blade": 5, "tool_roll": ["Ctrl+Banane"]})
     assert restored.sequences("tool_blade") == ("B",)
     assert restored.sequences("tool_roll") == ("R",)
 

@@ -482,7 +482,9 @@ def test_missing_media_for_active_clip_is_skipped():
 def test_timeline_evaluator_does_not_import_pyside6():
     """Le module ``core.timeline_evaluator`` ne doit pas dépendre de PySide6."""
     module_path = (
-        Path(__file__).resolve().parent.parent / "core" / "timeline_evaluator.py"
+        Path(__file__).resolve().parent.parent
+        / "core"
+        / "timeline_evaluator.py"
     )
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
 

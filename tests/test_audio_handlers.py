@@ -43,19 +43,9 @@ def voice(window, tmp_path):
     """Un clip audio de 4 s sur A1 (à 1 s), sélectionné comme à la souris ; historique remis à zéro."""
     media = tmp_path / "voix.wav"
     media.write_bytes(b"\x00" * 64)
-    window.project.media_assets.append(
-        MediaAsset(
-            id="voice-asset",
-            path=str(media),
-            name="voix",
-            duration=4.0,
-            width=0,
-            height=0,
-            fps=0.0,
-            media_type="audio",
-            has_audio=True,
-        )
-    )
+    window.project.media_assets.append(MediaAsset(
+        id="voice-asset", path=str(media), name="voix", duration=4.0, width=0, height=0, fps=0.0,
+        media_type="audio", has_audio=True))
     clip = add_clip_to_track(window.project, "voice-asset", "A1", 1.0)
     window._reload_timeline_preserving_selection()
     window.history.reset(window.project)
@@ -106,13 +96,7 @@ def test_a_locked_track_ignores_the_mixer_and_the_strip_shows_the_real_values(wi
     window.mixer_panel.reset_requested.emit("A1")
 
     a1 = track(window, "A1")
-    assert (a1.volume_db, a1.pan, a1.muted, a1.solo, a1.armed) == (
-        0.0,
-        0.0,
-        False,
-        False,
-        False,
-    )
+    assert (a1.volume_db, a1.pan, a1.muted, a1.solo, a1.armed) == (0.0, 0.0, False, False, False)
     assert _steps(window) == steps
     strip = window.mixer_panel.strip_for("A1")
     assert not strip.mute_button.isChecked() and not strip.solo_button.isChecked()
@@ -126,17 +110,12 @@ def test_the_mixer_only_drives_audio_tracks(window):
     assert not window.history.can_undo
 
 
-@pytest.mark.parametrize(
-    ("signal", "attribute", "label_key"),
-    [
-        ("mute_toggled", "muted", "mixer.mute"),
-        ("solo_toggled", "solo", "mixer.solo"),
-        ("arm_toggled", "armed", "mixer.arm"),
-    ],
-)
-def test_mixer_buttons_change_the_track_and_are_undoable(
-    window, signal, attribute, label_key
-):
+@pytest.mark.parametrize(("signal", "attribute", "label_key"), [
+    ("mute_toggled", "muted", "mixer.mute"),
+    ("solo_toggled", "solo", "mixer.solo"),
+    ("arm_toggled", "armed", "mixer.arm"),
+])
+def test_mixer_buttons_change_the_track_and_are_undoable(window, signal, attribute, label_key):
     getattr(window.mixer_panel, signal).emit("A1", True)
 
     assert getattr(track(window, "A1"), attribute) is True
@@ -154,25 +133,19 @@ def test_resetting_a_strip_restores_unity_gain_and_centre_in_one_undoable_step(w
     assert (track(window, "A1").volume_db, track(window, "A1").pan) == (0.0, 0.0)
     assert window.history.undo_label == i18n.translate("mixer.reset")
     window.undo_last()
-    assert track(window, "A1").volume_db == pytest.approx(-9.0) and track(
-        window, "A1"
-    ).pan == pytest.approx(0.4)
+    assert track(window, "A1").volume_db == pytest.approx(-9.0) and track(window, "A1").pan == pytest.approx(0.4)
 
 
 # --- mixeur : Master (préférence, pas projet) ---------------------------------------------------------------------
 
 
-def test_the_master_is_a_user_preference_never_an_edit_of_the_project(
-    window, config_dir
-):
+def test_the_master_is_a_user_preference_never_an_edit_of_the_project(window, config_dir):
     window.mixer_panel.master_volume_changed.emit(-4.5)
     window.mixer_panel.master_mute_toggled.emit(True)
 
     saved = _settings(config_dir)
     assert (saved["master_gain_db"], saved["master_muted"]) == (-4.5, True)
-    assert not window.history.can_undo, (
-        "le Master n'entre pas dans l'historique du projet"
-    )
+    assert not window.history.can_undo, "le Master n'entre pas dans l'historique du projet"
     assert not window.project_dirty
 
     window.mixer_panel.master_reset_requested.emit()
@@ -211,9 +184,7 @@ def test_fades_never_overlap_and_are_reset_from_the_timeline(window, voice):
 
     clip = find_clip(window.project, voice)
     assert clip.fade_in == pytest.approx(3.0)
-    assert clip.fade_out == pytest.approx(1.0), (
-        "le fondu de sortie s'arrête où commence celui d'entrée (clip de 4 s)"
-    )
+    assert clip.fade_out == pytest.approx(1.0), "le fondu de sortie s'arrête où commence celui d'entrée (clip de 4 s)"
     assert window.history.undo_label == i18n.translate("audio.fade_out")
 
     window.timeline_panel.reset_clip_fades_requested.emit(voice)
@@ -253,37 +224,23 @@ def test_audio_effects_are_added_reordered_toggled_tuned_and_removed(window, voi
     panel = window.properties_panel
     panel.audio_effect_add_requested.emit(voice, "compressor")
     panel.audio_effect_add_requested.emit(voice, "limiter")
-    first, second = (
-        effect.id for effect in find_clip(window.project, voice).audio_effects
-    )
+    first, second = (effect.id for effect in find_clip(window.project, voice).audio_effects)
     assert window.history.undo_label == i18n.translate("history.audio.effect_add")
 
     panel.audio_effect_moved.emit(voice, second, -1)
-    assert [effect.id for effect in find_clip(window.project, voice).audio_effects] == [
-        second,
-        first,
-    ]
+    assert [effect.id for effect in find_clip(window.project, voice).audio_effects] == [second, first]
     assert window.history.undo_label == i18n.translate("history.audio.effect_move")
 
     panel.audio_effect_enabled_changed.emit(voice, first, False)
-    assert (
-        next(
-            e for e in find_clip(window.project, voice).audio_effects if e.id == first
-        ).enabled
-        is False
-    )
+    assert next(e for e in find_clip(window.project, voice).audio_effects if e.id == first).enabled is False
 
     panel.audio_effect_parameter_changed.emit(voice, first, "threshold_db", -6.0)
-    tuned = next(
-        e for e in find_clip(window.project, voice).audio_effects if e.id == first
-    )
+    tuned = next(e for e in find_clip(window.project, voice).audio_effects if e.id == first)
     assert tuned.params["threshold_db"] == pytest.approx(-6.0)
     assert window.history.undo_label == i18n.translate("history.audio.effect_edit")
 
     panel.audio_effect_removed.emit(voice, second)
-    assert [effect.id for effect in find_clip(window.project, voice).audio_effects] == [
-        first
-    ]
+    assert [effect.id for effect in find_clip(window.project, voice).audio_effects] == [first]
     assert window.history.undo_label == i18n.translate("history.audio.effect_remove")
     window.undo_last()
     assert len(find_clip(window.project, voice).audio_effects) == 2
@@ -300,20 +257,14 @@ def test_an_unknown_audio_effect_type_is_refused_with_a_message(window, voice, d
 def test_an_out_of_range_effect_parameter_is_refused_and_the_value_kept(window, voice):
     window.properties_panel.audio_effect_add_requested.emit(voice, "compressor")
     [effect] = find_clip(window.project, voice).audio_effects
-    before = float(
-        effect.params["threshold_db"]
-    )  # copie du scalaire : un dict muté sur place passerait sinon
+    before = float(effect.params["threshold_db"])     # copie du scalaire : un dict muté sur place passerait sinon
     steps = _steps(window)
 
-    window.properties_panel.audio_effect_parameter_changed.emit(
-        voice, effect.id, "threshold_db", 2.0
-    )
+    window.properties_panel.audio_effect_parameter_changed.emit(voice, effect.id, "threshold_db", 2.0)
 
     [kept] = find_clip(window.project, voice).audio_effects
     assert kept.params["threshold_db"] == pytest.approx(before)
-    assert effect.params["threshold_db"] == pytest.approx(before), (
-        "l'effet d'origine n'est pas muté non plus"
-    )
+    assert effect.params["threshold_db"] == pytest.approx(before), "l'effet d'origine n'est pas muté non plus"
     assert "threshold_db" in window.statusBar().currentMessage()
     assert _steps(window) == steps
 
@@ -322,18 +273,12 @@ def test_editing_a_missing_audio_effect_is_reported_in_the_status_bar(window, vo
     for emit in (
         lambda: window.properties_panel.audio_effect_removed.emit(voice, "ghost"),
         lambda: window.properties_panel.audio_effect_moved.emit(voice, "ghost", 1),
-        lambda: window.properties_panel.audio_effect_enabled_changed.emit(
-            voice, "ghost", False
-        ),
-        lambda: window.properties_panel.audio_effect_parameter_changed.emit(
-            voice, "ghost", "gain", 1.0
-        ),
+        lambda: window.properties_panel.audio_effect_enabled_changed.emit(voice, "ghost", False),
+        lambda: window.properties_panel.audio_effect_parameter_changed.emit(voice, "ghost", "gain", 1.0),
     ):
         window.statusBar().clearMessage()
         emit()
-        assert window.statusBar().currentMessage(), (
-            "chaque refus est dit dans la barre d'état"
-        )
+        assert window.statusBar().currentMessage(), "chaque refus est dit dans la barre d'état"
     assert not window.history.can_undo
 
 
@@ -343,22 +288,18 @@ def test_editing_a_missing_audio_effect_is_reported_in_the_status_bar(window, vo
 def test_sfx_on_cuts_without_a_video_track_says_so(window):
     for item in window.project.tracks:
         item.clips.clear()
-    window.project.tracks[:] = [
-        item for item in window.project.tracks if item.type != "video"
-    ]
+    window.project.tracks[:] = [item for item in window.project.tracks if item.type != "video"]
     window._reload_timeline_preserving_selection()
     window.history.reset(window.project)
 
     window.project_panel.sfx_on_cuts_requested.emit(["whoosh"])
 
-    assert window.statusBar().currentMessage() == i18n.translate(
-        "social.message.no_video"
-    )
+    assert window.statusBar().currentMessage() == i18n.translate("social.message.no_video")
     assert not window.history.can_undo
 
 
 def test_an_unknown_sfx_is_refused_and_nothing_is_placed(window):
-    find_clip(window.project, "plan_a").timeline_start = 4.0  # un cut à 4 s sur V1
+    find_clip(window.project, "plan_a").timeline_start = 4.0          # un cut à 4 s sur V1
     window._reload_timeline_preserving_selection()
     window.history.reset(window.project)
     clips_before = sum(len(item.clips) for item in window.project.tracks)
@@ -381,21 +322,15 @@ def microphone(window, tmp_path):
     return window._audio_recorder
 
 
-def test_recording_without_an_armed_track_explains_and_releases_the_button(
-    window, microphone, dialogs
-):
+def test_recording_without_an_armed_track_explains_and_releases_the_button(window, microphone, dialogs):
     window.timeline_panel.record_button.setChecked(True)
 
-    assert [text for _t, text in dialogs.of_kind("information")] == [
-        i18n.translate("dialog.recording.arm_first")
-    ]
+    assert [text for _t, text in dialogs.of_kind("information")] == [i18n.translate("dialog.recording.arm_first")]
     assert not microphone.is_recording
     assert not window.timeline_panel.record_button.isChecked()
 
 
-def test_a_voice_take_lands_on_the_armed_track_at_the_playhead_and_is_undoable(
-    window, microphone, qtbot, tmp_path
-):
+def test_a_voice_take_lands_on_the_armed_track_at_the_playhead_and_is_undoable(window, microphone, qtbot, tmp_path):
     window.mixer_panel.arm_toggled.emit("A1", True)
     window.playhead_seconds = 2.0
 
@@ -405,9 +340,7 @@ def test_a_voice_take_lands_on_the_armed_track_at_the_playhead_and_is_undoable(
     window.timeline_panel.record_requested.emit(False)
 
     [clip] = track(window, "A1").clips
-    asset = next(
-        item for item in window.project.media_assets if item.id == clip.asset_id
-    )
+    asset = next(item for item in window.project.media_assets if item.id == clip.asset_id)
     assert clip.timeline_start == pytest.approx(2.0)
     assert asset.media_type == "audio" and asset.duration > 0.05
     takes = list((tmp_path / "enregistrements").glob("prise-*.wav"))
@@ -426,9 +359,7 @@ def test_a_take_shorter_than_50_ms_is_refused(window, microphone, dialogs, tmp_p
     window.timeline_panel.record_requested.emit(False)
 
     assert track(window, "A1").clips == []
-    assert [text for _t, text in dialogs.of_kind("information")] == [
-        i18n.translate("dialog.recording.too_short")
-    ]
+    assert [text for _t, text in dialogs.of_kind("information")] == [i18n.translate("dialog.recording.too_short")]
     assert not (tmp_path / "enregistrements").exists()
     assert _steps(window) == steps
 

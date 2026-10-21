@@ -17,13 +17,7 @@ from core import project_io
 from core.composition import GraphicNode
 from core.composition_ops import convert_to_composition
 from core.graphics import GraphicOverlay, GraphicType, ShapeKind, add_graphic_clip
-from core.mograph_layers import (
-    copy_layers,
-    delete_layers,
-    duplicate_layers,
-    group_layers,
-    paste_layers,
-)
+from core.mograph_layers import copy_layers, delete_layers, duplicate_layers, group_layers, paste_layers
 from core.project_io import (
     CURRENT_VERSION,
     SCENE3D_VERSION,
@@ -45,67 +39,28 @@ def reference_projects() -> dict[str, Project]:
     asset = MediaAsset("m1", "/tmp/a.mp4", "a", 20.0, 64, 36, 25.0, "video")
 
     def base() -> Project:
-        clips = [
-            Clip("a", "m1", "V1", 0.0, 0.0, 3.0),
-            Clip("b", "m1", "V1", 3.0, 0.0, 3.0),
-        ]
-        return Project(
-            "p",
-            width=64,
-            height=36,
-            fps=25.0,
-            media_assets=[asset],
-            tracks=[Track("V1", "V1", "video", clips=clips)],
-        )
+        clips = [Clip("a", "m1", "V1", 0.0, 0.0, 3.0), Clip("b", "m1", "V1", 3.0, 0.0, 3.0)]
+        return Project("p", width=64, height=36, fps=25.0, media_assets=[asset],
+                       tracks=[Track("V1", "V1", "video", clips=clips)])
 
     video = base()
     graphics = base()
-    for index, kind in enumerate(
-        (
-            GraphicType.TEXT,
-            GraphicType.RECTANGLE,
-            GraphicType.SOLID,
-            GraphicType.ADJUSTMENT,
-            GraphicType.NULL,
-        )
-    ):
-        add_graphic_clip(
-            graphics,
-            kind,
-            timeline_start=float(index),
-            duration=2.0,
-            clip_id=f"g{index}",
-        )
-    add_graphic_clip(
-        graphics,
-        GraphicType.SHAPE,
-        timeline_start=1.0,
-        shape=ShapeKind.ELLIPSE,
-        clip_id="shape",
-    )
+    for index, kind in enumerate((GraphicType.TEXT, GraphicType.RECTANGLE, GraphicType.SOLID, GraphicType.ADJUSTMENT,
+                                  GraphicType.NULL)):
+        add_graphic_clip(graphics, kind, timeline_start=float(index), duration=2.0, clip_id=f"g{index}")
+    add_graphic_clip(graphics, GraphicType.SHAPE, timeline_start=1.0, shape=ShapeKind.ELLIPSE, clip_id="shape")
     add_graphic_clip(graphics, GraphicType.LIGHT, timeline_start=0.0, clip_id="light")
     rich = base()
     add_transition(rich, "a", "b", TransitionType.SLIDE_LEFT, 0.5)
     add_graphic_clip(rich, GraphicType.TEXT, timeline_start=0.0, clip_id="title")
-    create_sequence(
-        rich,
-        "Deux",
-        sequence_id="seqtwo",
-        tracks=[
-            Track("V1", "V1", "video", clips=[Clip("c", "m1", "V1", 0.0, 0.0, 2.0)])
-        ],
-    )
+    create_sequence(rich, "Deux", sequence_id="seqtwo", tracks=[Track("V1", "V1", "video", clips=[Clip("c", "m1", "V1", 0.0, 0.0, 2.0)])])
     return {"video": video, "graphics": graphics, "rich": rich}
 
 
 def _digest(project: Project) -> str:
     payload = project_payload(project)
-    text = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
-    text = re.sub(
-        r"transition-[0-9a-f]{12}", "transition-ID", text
-    )  # identifiant tiré au hasard à la création
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    text = re.sub(r"transition-[0-9a-f]{12}", "transition-ID", text)    # identifiant tiré au hasard à la création
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -133,11 +88,7 @@ def test_the_saved_file_of_a_project_without_3d_has_no_trace_of_it(tmp_path):
 
 
 def test_constants():
-    assert (CURRENT_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION) == (
-        17,
-        21,
-        22,
-    )
+    assert (CURRENT_VERSION, TRANSITION_CATALOG_VERSION, SCENE3D_VERSION) == (17, 21, 22)
     assert SCENE3D_VERSION in SUPPORTED_VERSIONS
 
 
@@ -145,9 +96,7 @@ def test_a_3d_layer_writes_version_22_and_round_trips_byte_for_byte(tmp_path):
     project, clip, scene = project_with_scene(tmp_path)
     path = tmp_path / "t.kut"
     save_project(project, path)
-    assert (
-        json.loads(path.read_text(encoding="utf-8"))["version"] == SCENE3D_VERSION == 22
-    )
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == SCENE3D_VERSION == 22
     loaded = load_project(path)
     layer = next(c for t in loaded.tracks for c in t.clips if c.id == clip.id)
     assert layer.graphic == clip.graphic and layer.graphic.type is GraphicType.SCENE3D
@@ -167,10 +116,10 @@ def test_the_version_follows_the_content_when_the_last_3d_layer_is_deleted(tmp_p
 
 def test_the_version_never_goes_below_what_another_content_requires(tmp_path):
     project, _clip, _scene = project_with_scene(tmp_path)
-    add_transition(project, "a", "b", TransitionType.COVER_LEFT, 0.5)  # exige 21
+    add_transition(project, "a", "b", TransitionType.COVER_LEFT, 0.5)       # exige 21
     assert project_payload(project)["version"] == 22
     project.transitions.clear()
-    assert project_payload(project)["version"] == 22  # la scène exige toujours 22
+    assert project_payload(project)["version"] == 22                         # la scène exige toujours 22
 
 
 def test_a_catalog_transition_alone_still_writes_21(tmp_path):
@@ -183,9 +132,7 @@ def test_a_build_that_does_not_know_version_22_refuses_the_file(tmp_path, monkey
     project, _clip, _scene = project_with_scene(tmp_path)
     path = tmp_path / "t.kut"
     save_project(project, path)
-    monkeypatch.setattr(
-        project_io, "SUPPORTED_VERSIONS", SUPPORTED_VERSIONS - {SCENE3D_VERSION}
-    )
+    monkeypatch.setattr(project_io, "SUPPORTED_VERSIONS", SUPPORTED_VERSIONS - {SCENE3D_VERSION})
     with pytest.raises(ValueError, match="Version de fichier Kut-Studio non supportée"):
         load_project(path)
 
@@ -194,13 +141,7 @@ def test_a_3d_layer_in_a_secondary_sequence_writes_version_22(tmp_path):
     project = base_project()
     scene = write_scene(tmp_path)
     create_sequence(project, "Deux", sequence_id="seqtwo", activate=True)
-    add_graphic_clip(
-        project,
-        GraphicType.SCENE3D,
-        timeline_start=0.0,
-        source_path=str(scene),
-        clip_id="s3d",
-    )
+    add_graphic_clip(project, GraphicType.SCENE3D, timeline_start=0.0, source_path=str(scene), clip_id="s3d")
     assert not any(c.graphic for t in project.sequences[0].tracks for c in t.clips)
     assert len(project.sequences) == 2
     assert project_payload(project)["version"] == 22
@@ -210,9 +151,7 @@ def test_a_3d_layer_inside_a_nested_sequence_writes_version_22(tmp_path):
     project, clip, _scene = project_with_scene(tmp_path, start=0.0, duration=3.0)
     result = create_sequence_from_selection(project, [clip.id], "Imbriquée")
     assert result.clip.sequence_id
-    assert all(
-        c.graphic is None for t in project.tracks for c in t.clips
-    )  # plus aucun calque sur la séquence active
+    assert all(c.graphic is None for t in project.tracks for c in t.clips)         # plus aucun calque sur la séquence active
     assert project_payload(project)["version"] == 22
 
 
@@ -225,50 +164,21 @@ def test_a_3d_layer_in_a_group_writes_version_22(tmp_path):
 
 def test_a_3d_layer_in_a_serialized_composition_is_seen():
     scene = {"graphic": {"type": "scene3d", "source_path": "/x/s.kut3d"}}
-    composition_payload = {
-        "clips": [{"composition": {"graph": {"nodes": [{"kind": "graphic", **scene}]}}}]
-    }
+    composition_payload = {"clips": [{"composition": {"graph": {"nodes": [{"kind": "graphic", **scene}]}}}]}
     assert payload_uses_scene3d(composition_payload)
-    assert not payload_uses_scene3d(
-        {
-            "clips": [
-                {
-                    "composition": {
-                        "graph": {
-                            "nodes": [
-                                {
-                                    "kind": "graphic",
-                                    "graphic": {"type": "text", "source_path": ""},
-                                }
-                            ]
-                        }
-                    }
-                }
-            ]
-        }
-    )
-    assert not payload_uses_scene3d(
-        {"type": "scene3d"}
-    )  # une autre chose qui porte ce mot : pas un calque
+    assert not payload_uses_scene3d({"clips": [{"composition": {"graph": {"nodes": [{"kind": "graphic", "graphic": {
+        "type": "text", "source_path": ""}}]}}}]})
+    assert not payload_uses_scene3d({"type": "scene3d"})            # une autre chose qui porte ce mot : pas un calque
 
 
 def test_a_real_composition_node_holding_a_3d_layer_writes_version_22(tmp_path):
     project = base_project()
-    add_graphic_clip(
-        project, GraphicType.TEXT, timeline_start=0.0, duration=3.0, clip_id="title"
-    )
+    add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=3.0, clip_id="title")
     converted = convert_to_composition(project, ["a", "title"])
     composition = converted.clip.composition
-    scene = GraphicOverlay(
-        type=GraphicType.SCENE3D, text="", source_path=str(write_scene(tmp_path))
-    )
-    nodes = tuple(
-        replace(n, graphic=scene) if isinstance(n, GraphicNode) else n
-        for n in composition.graph.nodes
-    )
-    converted.clip.composition = replace(
-        composition, graph=replace(composition.graph, nodes=nodes)
-    )
+    scene = GraphicOverlay(type=GraphicType.SCENE3D, text="", source_path=str(write_scene(tmp_path)))
+    nodes = tuple(replace(n, graphic=scene) if isinstance(n, GraphicNode) else n for n in composition.graph.nodes)
+    converted.clip.composition = replace(composition, graph=replace(composition.graph, nodes=nodes))
     assert project_payload(project)["version"] == 22
 
 
@@ -276,33 +186,21 @@ def test_the_reader_reads_the_same_way_a_17_file_and_a_22_file(tmp_path):
     plain = tmp_path / "plain.kut"
     save_project(reference_projects()["graphics"], plain)
     assert [c.id for t in load_project(plain).tracks for c in t.clips if c.graphic] == [
-        c.id
-        for t in reference_projects()["graphics"].tracks
-        for c in t.clips
-        if c.graphic
-    ]
+        c.id for t in reference_projects()["graphics"].tracks for c in t.clips if c.graphic]
 
 
 def test_a_cut_clip_keeps_the_scene_and_advances_source_in(tmp_path):
     project, clip, scene = project_with_scene(tmp_path, start=1.0, duration=5.0)
     left, right = cut_clip(project, clip.id, 3.0)
     assert (left.source_in, left.source_out) == (0.0, 2.0)
-    assert (right.source_in, right.source_out) == (
-        2.0,
-        5.0,
-    ) and right.timeline_start == 3.0
+    assert (right.source_in, right.source_out) == (2.0, 5.0) and right.timeline_start == 3.0
     for half in (left, right):
-        assert (
-            half.graphic.type is GraphicType.SCENE3D
-            and half.graphic.source_path == str(scene.resolve())
-        )
+        assert half.graphic.type is GraphicType.SCENE3D and half.graphic.source_path == str(scene.resolve())
     path = tmp_path / "cut.kut"
     save_project(project, path)
     loaded = load_project(path)
     halves = {c.id: c for t in loaded.tracks for c in t.clips if c.graphic}
-    assert halves[right.id].source_in == 2.0 and halves[
-        right.id
-    ].graphic.source_path == str(scene.resolve())
+    assert halves[right.id].source_in == 2.0 and halves[right.id].graphic.source_path == str(scene.resolve())
 
 
 def test_a_duplicated_clip_keeps_the_scene_and_the_source_in(tmp_path):
@@ -311,9 +209,7 @@ def test_a_duplicated_clip_keeps_the_scene_and_the_source_in(tmp_path):
     assert cut.source_in == 1.0
     copy = duplicate_clip(project, clip.id)
     assert copy.id != clip.id and copy.source_in == 1.0
-    assert copy.graphic == clip.graphic and copy.graphic.source_path == str(
-        scene.resolve()
-    )
+    assert copy.graphic == clip.graphic and copy.graphic.source_path == str(scene.resolve())
 
 
 def test_a_pasted_layer_keeps_the_scene_and_the_source_in(tmp_path):
@@ -321,14 +217,7 @@ def test_a_pasted_layer_keeps_the_scene_and_the_source_in(tmp_path):
     trim_clip_left(project, clip.id, 2.0)
     clipboard = copy_layers(project, [clip.id])
     pasted = paste_layers(project, clipboard, at=10.0)[0]
-    assert (
-        pasted.id != clip.id
-        and pasted.source_in == 1.0
-        and pasted.timeline_start == 10.0
-    )
-    assert (
-        pasted.graphic.type is GraphicType.SCENE3D
-        and pasted.graphic.source_path == str(scene.resolve())
-    )
+    assert pasted.id != clip.id and pasted.source_in == 1.0 and pasted.timeline_start == 10.0
+    assert pasted.graphic.type is GraphicType.SCENE3D and pasted.graphic.source_path == str(scene.resolve())
     dup = duplicate_layers(project, [clip.id])[0]
     assert dup.graphic.source_path == str(scene.resolve()) and dup.source_in == 1.0

@@ -24,9 +24,7 @@ PIXEL_FORMATS = {
 }
 
 
-def test_pattern(
-    width: int, height: int, seed: int = 3, chroma_block: int = 2
-) -> np.ndarray:
+def test_pattern(width: int, height: int, seed: int = 3, chroma_block: int = 2) -> np.ndarray:
     """Codes YUV 8 bits (H, W, 3) : dégradés, damier, bords nets.
 
     ``chroma_block`` : côté des blocs de chroma aléatoire (2 = pire cas pour le
@@ -51,11 +49,7 @@ def smooth_pattern(width: int, height: int) -> np.ndarray:
     rééchantillonnage du filtre ``rotate`` de l'export domine toute autre mesure.
     """
     ys, xs = np.mgrid[0:height, 0:width].astype(np.float64)
-    y = (
-        120
-        + 70 * np.sin(2 * np.pi * xs / 97.0) * np.cos(2 * np.pi * ys / 61.0)
-        + 30 * xs / width
-    )
+    y = 120 + 70 * np.sin(2 * np.pi * xs / 97.0) * np.cos(2 * np.pi * ys / 61.0) + 30 * xs / width
     u = 128 + 60 * np.sin(2 * np.pi * (xs + ys) / 131.0)
     v = 128 + 60 * np.cos(2 * np.pi * (xs - 2 * ys) / 151.0)
     return np.clip(np.stack([y, u, v], axis=-1), 16, 235).round().astype(np.uint8)
@@ -73,24 +67,13 @@ def make_frame(codes: np.ndarray, layout: str) -> QVideoFrame:
         v = codes[::2, ::2, 2].astype(np.uint16)
         if layout == "nv12":
             _write(frame, 0, y.astype(np.uint8))
-            _write(
-                frame, 1, np.stack([u, v], -1).astype(np.uint8).reshape(u.shape[0], -1)
-            )
+            _write(frame, 1, np.stack([u, v], -1).astype(np.uint8).reshape(u.shape[0], -1))
         elif layout == "yuv420p":
             for index, plane in enumerate((y, u, v)):
                 _write(frame, index, plane.astype(np.uint8))
         elif layout == "p010":
-            _write(
-                frame, 0, (y << 8).astype("<u2").view(np.uint8)
-            )  # 8 bits → 10 bits alignés en haut
-            _write(
-                frame,
-                1,
-                (np.stack([u, v], -1) << 8)
-                .astype("<u2")
-                .reshape(u.shape[0], -1)
-                .view(np.uint8),
-            )
+            _write(frame, 0, (y << 8).astype("<u2").view(np.uint8))  # 8 bits → 10 bits alignés en haut
+            _write(frame, 1, (np.stack([u, v], -1) << 8).astype("<u2").reshape(u.shape[0], -1).view(np.uint8))
         elif layout == "yuv420p10":
             for index, plane in enumerate((y, u, v)):
                 _write(frame, index, (plane << 2).astype("<u2").view(np.uint8))
@@ -104,10 +87,7 @@ def make_frame(codes: np.ndarray, layout: str) -> QVideoFrame:
 def _write(frame: QVideoFrame, plane: int, data: np.ndarray) -> None:
     stride = frame.bytesPerLine(plane)
     view = np.frombuffer(frame.bits(plane), dtype=np.uint8)
-    rows, row_bytes = (
-        data.shape[0],
-        data.shape[1] * (data.itemsize if data.ndim == 2 else 1),
-    )
+    rows, row_bytes = data.shape[0], data.shape[1] * (data.itemsize if data.ndim == 2 else 1)
     raw = data.reshape(rows, -1).view(np.uint8).reshape(rows, -1)
     target = view[: stride * rows].reshape(rows, stride)
     target[:, : raw.shape[1]] = raw
@@ -127,9 +107,7 @@ def reference_codes(codes: np.ndarray) -> np.ndarray:
     out = codes.astype(np.float64) / 255.0
     for channel in (1, 2):
         plane = codes[::2, ::2, channel].astype(np.float64) / 255.0
-        out[..., channel] = np.repeat(np.repeat(plane, 2, axis=0), 2, axis=1)[
-            :height, :width
-        ]
+        out[..., channel] = np.repeat(np.repeat(plane, 2, axis=0), 2, axis=1)[:height, :width]
     return out
 
 
@@ -143,20 +121,13 @@ def sited_codes(codes: np.ndarray) -> np.ndarray:
     for channel in (1, 2):
         plane = codes[::2, ::2, channel].astype(np.float64) / 255.0
         for axis in (0, 1):
-            following = np.concatenate(
-                [
-                    np.take(plane, range(1, plane.shape[axis]), axis=axis),
-                    np.take(plane, [-1], axis=axis),
-                ],
-                axis=axis,
-            )
+            following = np.concatenate([np.take(plane, range(1, plane.shape[axis]), axis=axis),
+                                        np.take(plane, [-1], axis=axis)], axis=axis)
             shape = list(plane.shape)
             shape[axis] *= 2
             doubled = np.empty(shape)
             doubled[(slice(None),) * axis + (slice(0, None, 2),)] = plane
-            doubled[(slice(None),) * axis + (slice(1, None, 2),)] = 0.5 * (
-                plane + following
-            )
+            doubled[(slice(None),) * axis + (slice(1, None, 2),)] = 0.5 * (plane + following)
             plane = doubled
         out[..., channel] = plane[: codes.shape[0], : codes.shape[1]]
     return out
@@ -178,9 +149,7 @@ def grain_pattern(width: int, height: int, seed: int = 5) -> np.ndarray:
     return np.dstack((np.clip(y, 16, 235).round(), uv)).astype(np.uint8)
 
 
-def render_gpu(
-    frame_desc, video_frames: dict, mattes: dict | None = None, api: str = "metal"
-):
+def render_gpu(frame_desc, video_frames: dict, mattes: dict | None = None, api: str = "metal"):
     """Rend ``frame_desc`` avec le vrai widget ; ``None`` si le GPU est indisponible."""
     from PySide6.QtWidgets import QApplication
 
@@ -192,9 +161,7 @@ def render_gpu(
     failures: list[tuple[str, str]] = []
     widget.failed.connect(lambda kind, detail: failures.append((kind, detail)))
     widget.setFixedColorBufferSize(QSize(width, height))
-    dpr = (
-        widget.devicePixelRatioF() or 1.0
-    )  # le rectangle est en pixels logiques (écran Retina : 2)
+    dpr = widget.devicePixelRatioF() or 1.0  # le rectangle est en pixels logiques (écran Retina : 2)
     widget.set_canvas_rect((0.0, 0.0, width / dpr, height / dpr), (0.0, 0.0, 0.0))
     for source_id, frame in video_frames.items():
         widget.set_video_frame(source_id, frame)
@@ -208,8 +175,6 @@ def render_gpu(
     from PySide6.QtGui import QImage
 
     image = image.convertToFormat(QImage.Format.Format_RGB888)
-    data = np.frombuffer(image.constBits(), dtype=np.uint8).reshape(
-        image.height(), image.bytesPerLine()
-    )
+    data = np.frombuffer(image.constBits(), dtype=np.uint8).reshape(image.height(), image.bytesPerLine())
     rgb = data[:, : image.width() * 3].reshape(image.height(), image.width(), 3)
     return rgb.astype(np.float64) / 255.0, failures

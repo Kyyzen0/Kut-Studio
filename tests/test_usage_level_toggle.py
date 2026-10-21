@@ -30,11 +30,7 @@ def _seed(tmp_path, monkeypatch, level: str | None):
 
 
 def _checked(window) -> list[str]:
-    return [
-        level.value
-        for level, action in window._usage_level_actions.items()
-        if action.isChecked()
-    ]
+    return [level.value for level, action in window._usage_level_actions.items() if action.isChecked()]
 
 
 def _assert_all_show(window, level: str, dialog=None) -> None:
@@ -56,9 +52,7 @@ def test_initial_state_follows_the_loaded_level(qtbot, monkeypatch, tmp_path):
         _assert_all_show(window, level)
 
 
-def test_fresh_install_shows_simple_and_old_file_shows_advanced(
-    qtbot, monkeypatch, tmp_path
-):
+def test_fresh_install_shows_simple_and_old_file_shows_advanced(qtbot, monkeypatch, tmp_path):
     fresh = _window(qtbot, monkeypatch, tmp_path / "fresh")
     _assert_all_show(fresh, "simple")
     old = tmp_path / "old"
@@ -71,9 +65,7 @@ def test_fresh_install_shows_simple_and_old_file_shows_advanced(
 
 
 @pytest.mark.parametrize("target", ["studio", "simple"])
-def test_the_window_menu_updates_model_chip_dialog_and_file(
-    qtbot, monkeypatch, tmp_path, target
-):
+def test_the_window_menu_updates_model_chip_dialog_and_file(qtbot, monkeypatch, tmp_path, target):
     _seed(tmp_path, monkeypatch, "advanced")
     window = _window(qtbot, monkeypatch, tmp_path)
     dialog = window_dialog(window, qtbot)
@@ -116,9 +108,7 @@ def test_the_chip_menu_updates_the_others(qtbot, monkeypatch, tmp_path):
     _assert_all_show(window, "studio", dialog)
     assert seen == ["studio"] and load_user_settings(tmp_path).usage_level == "studio"
     # Le sous-menu Fenêtre et la puce portent les mêmes actions : l'état coché est celui du modèle.
-    assert [a.objectName() for a in window.usage_level_menu.actions()] == [
-        f"usage_level_{v}" for v in LEVELS
-    ]
+    assert [a.objectName() for a in window.usage_level_menu.actions()] == [f"usage_level_{v}" for v in LEVELS]
 
 
 def test_the_preferences_dialog_updates_the_others(qtbot, monkeypatch, tmp_path):
@@ -130,13 +120,11 @@ def test_the_preferences_dialog_updates_the_others(qtbot, monkeypatch, tmp_path)
     dialog._usage_radios["simple"].click()
     _assert_all_show(window, "simple", dialog)
     assert seen == ["simple"] and load_user_settings(tmp_path).usage_level == "simple"
-    dialog._usage_radios["simple"].click()  # même choix : rien de plus
+    dialog._usage_radios["simple"].click()                      # même choix : rien de plus
     assert seen == ["simple"]
 
 
-def test_a_change_from_outside_the_ui_is_followed_everywhere(
-    qtbot, monkeypatch, tmp_path
-):
+def test_a_change_from_outside_the_ui_is_followed_everywhere(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "simple")
     window = _window(qtbot, monkeypatch, tmp_path)
     dialog = window_dialog(window, qtbot)
@@ -154,9 +142,7 @@ def test_no_confirmation_dialog_on_change(qtbot, monkeypatch, tmp_path):
     calls = []
     for name in ("question", "warning", "information", "critical"):
         monkeypatch.setattr(QMessageBox, name, lambda *a, **k: calls.append(name))
-    monkeypatch.setattr(
-        window.statusBar(), "showMessage", lambda *a, **k: calls.append("status")
-    )
+    monkeypatch.setattr(window.statusBar(), "showMessage", lambda *a, **k: calls.append("status"))
     window._usage_level_actions[UsageLevel.SIMPLE].trigger()
     assert calls == []
 
@@ -169,9 +155,7 @@ def test_the_level_survives_a_simulated_restart(qtbot, monkeypatch, tmp_path):
     _assert_all_show(reopened, "studio")
 
 
-def test_changing_the_level_keeps_the_level_choices_and_shortens_the_window_menu(
-    qtbot, monkeypatch, tmp_path
-):
+def test_changing_the_level_keeps_the_level_choices_and_shortens_the_window_menu(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "advanced")
     window = _window(qtbot, monkeypatch, tmp_path)
     window.show()
@@ -180,9 +164,7 @@ def test_changing_the_level_keeps_the_level_choices_and_shortens_the_window_menu
     window.set_usage_level("simple")
     assert {id(w): w.isVisible() for w in window.findChildren(QRadioButton)} == before
     shorter = [a.text() for a in window.window_menu.actions()]
-    assert 0 < len(shorter) < len(entries) and set(shorter) <= set(
-        entries
-    )  # le lot 4 retire des entrées (voir test_usage_level_menus)
+    assert 0 < len(shorter) < len(entries) and set(shorter) <= set(entries)      # le lot 4 retire des entrées (voir test_usage_level_menus)
     window.set_usage_level("advanced")
     assert [a.text() for a in window.window_menu.actions()] == entries
 
@@ -202,11 +184,7 @@ def test_the_dialog_always_has_exactly_one_checked_level(qtbot, current):
 
 def test_the_usage_group_is_declared_with_the_other_choice_groups():
     group = next(g for g in _CHOICE_GROUPS if g.key == "usage")
-    assert (
-        group.codes == LEVELS
-        and group.signal_name == "usage_level_changed"
-        and group.hints
-    )
+    assert group.codes == LEVELS and group.signal_name == "usage_level_changed" and group.hints
 
 
 def test_the_dialog_levels_have_a_short_hint_in_every_language(qtbot):
@@ -221,9 +199,7 @@ def test_the_dialog_levels_have_a_short_hint_in_every_language(qtbot):
     i18n.set_language("fr")
 
 
-def test_restoring_defaults_keeps_the_level_in_the_dialog_and_the_window(
-    qtbot, monkeypatch, tmp_path
-):
+def test_restoring_defaults_keeps_the_level_in_the_dialog_and_the_window(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "studio")
     window = _window(qtbot, monkeypatch, tmp_path)
     dialog = window_dialog(window, qtbot)
@@ -237,9 +213,7 @@ def test_closing_the_dialog_does_not_change_the_level(qtbot, monkeypatch, tmp_pa
     dialog = window_dialog(window, qtbot)
     dialog.reject()
     assert window.usage_level is UsageLevel.STUDIO
-    window.set_usage_level(
-        "advanced"
-    )  # le dialogue fermé n'est plus joint : aucune erreur
+    window.set_usage_level("advanced")          # le dialogue fermé n'est plus joint : aucune erreur
     assert load_user_settings(tmp_path).usage_level == "advanced"
 
 
@@ -250,12 +224,7 @@ def _mnemonic(title: str) -> str | None:
     match = re.search(r"(?<!&)&(?!&)(.)", title)
     if match is None:
         return None
-    return (
-        unicodedata.normalize("NFD", match.group(1))
-        .encode("ascii", "ignore")
-        .decode("ascii")
-        .casefold()
-    )
+    return unicodedata.normalize("NFD", match.group(1)).encode("ascii", "ignore").decode("ascii").casefold()
 
 
 @pytest.mark.parametrize("language", ["fr", "en", "es"])
@@ -269,9 +238,7 @@ def test_level_mnemonics_are_unique_and_present(language):
         i18n.set_language(original)
 
 
-def test_the_levels_are_exclusive_checkable_actions_without_default_shortcut(
-    qtbot, monkeypatch, tmp_path
-):
+def test_the_levels_are_exclusive_checkable_actions_without_default_shortcut(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "advanced")
     window = _window(qtbot, monkeypatch, tmp_path)
     actions = list(window._usage_level_actions.values())
@@ -291,9 +258,7 @@ def test_the_three_places_follow_the_language(qtbot, monkeypatch, tmp_path):
     try:
         seen = {}
         for language in ("fr", "en", "es"):
-            window._apply_settings(
-                replace(window._settings_snapshot(), language=language)
-            )
+            window._apply_settings(replace(window._settings_snapshot(), language=language))
             seen[language] = (
                 window.usage_level_menu.title(),
                 window._usage_level_actions[UsageLevel.ADVANCED].text(),
@@ -304,32 +269,21 @@ def test_the_three_places_follow_the_language(qtbot, monkeypatch, tmp_path):
             )
             assert seen[language][0] == i18n.translate("usage.menu.title")
             assert seen[language][1] == i18n.translate("usage.menu.advanced")
-            assert seen[language][2] == i18n.translate(
-                "usage.chip.name", level="Studio"
-            )
+            assert seen[language][2] == i18n.translate("usage.chip.name", level="Studio")
             assert seen[language][4] == i18n.translate("prefs.usage.advanced")
             assert seen[language][5] == i18n.translate("prefs.usage")
-        assert (
-            len({v[2] for v in seen.values()}) == 3
-            and len({v[1] for v in seen.values()}) == 3
-        )
+        assert len({v[2] for v in seen.values()}) == 3 and len({v[1] for v in seen.values()}) == 3
     finally:
         window._apply_settings(replace(window._settings_snapshot(), language="fr"))
 
 
-def test_the_chip_has_an_accessible_name_that_follows_the_level(
-    qtbot, monkeypatch, tmp_path
-):
+def test_the_chip_has_an_accessible_name_that_follows_the_level(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "advanced")
     window = _window(qtbot, monkeypatch, tmp_path)
     chip = window.usage_level_chip
-    assert chip.accessibleName() == i18n.translate(
-        "usage.chip.name", level=i18n.translate("prefs.usage.advanced")
-    )
+    assert chip.accessibleName() == i18n.translate("usage.chip.name", level=i18n.translate("prefs.usage.advanced"))
     window.set_usage_level("simple")
-    assert chip.accessibleName() == i18n.translate(
-        "usage.chip.name", level=i18n.translate("prefs.usage.simple")
-    )
+    assert chip.accessibleName() == i18n.translate("usage.chip.name", level=i18n.translate("prefs.usage.simple"))
     assert chip.toolTip()
 
 
@@ -362,26 +316,12 @@ print("ok")
 
 # 1,2 : le critère du dépôt ; 1,45 : approche les polices de repli de Linux (Debian CI : « Réglages » à 86 px pour 140 voulus).
 @pytest.mark.parametrize("scale", [1.0, 1.2, 1.45])
-def test_top_bar_fits_with_the_chip_at_the_smallest_size_and_wider_fonts(
-    tmp_path, scale
-):
+def test_top_bar_fits_with_the_chip_at_the_smallest_size_and_wider_fonts(tmp_path, scale):
     env = {
-        **os.environ,
-        "QT_QPA_PLATFORM": "offscreen",
-        "KUT_STUDIO_CONFIG_DIR": str(tmp_path / "config"),
-        "KUT_STUDIO_CACHE_DIR": str(tmp_path / "cache"),
-        "KUT_STUDIO_PROXY_DIR": str(tmp_path / "proxies"),
+        **os.environ, "QT_QPA_PLATFORM": "offscreen", "KUT_STUDIO_CONFIG_DIR": str(tmp_path / "config"),
+        "KUT_STUDIO_CACHE_DIR": str(tmp_path / "cache"), "KUT_STUDIO_PROXY_DIR": str(tmp_path / "proxies"),
         "KUT_STUDIO_HARDWARE_ENCODING": "off",
     }
-    done = subprocess.run(
-        [sys.executable, "-c", _TOP_BAR_SCRIPT.replace("{scale}", str(scale))],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=False,
-    )
-    assert done.returncode == 0 and done.stdout.strip().endswith("ok"), (
-        f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"
-    )
+    done = subprocess.run([sys.executable, "-c", _TOP_BAR_SCRIPT.replace("{scale}", str(scale))], cwd=ROOT, env=env, capture_output=True, text=True,
+                          timeout=600, check=False)
+    assert done.returncode == 0 and done.stdout.strip().endswith("ok"), f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"

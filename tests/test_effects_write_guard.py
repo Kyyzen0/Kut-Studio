@@ -19,14 +19,10 @@ MUTATORS = {"append", "extend", "insert", "remove", "pop", "clear", "sort", "rev
 
 # (fichier, fonction englobante) -> raison. Chaque entrée doit exister (pas d'entrée périmée) et ne couvre que cette fonction.
 ALLOWED: dict[tuple[str, str], str] = {
-    (
-        "core/effects_model.py",
-        "set_clip_effects",
-    ): "c'est le point d'entrée lui-même : il écrit la chaîne puis appelle prune_effect_animation",
-    (
-        "core/project_templates.py",
-        "_Builder.night_look",
-    ): "crée un clip tout neuf (add_graphic_clip) : sans animation, donc aucune image clé fx.* à tenir à jour",
+    ("core/effects_model.py", "set_clip_effects"):
+        "c'est le point d'entrée lui-même : il écrit la chaîne puis appelle prune_effect_animation",
+    ("core/project_templates.py", "_Builder.night_look"):
+        "crée un clip tout neuf (add_graphic_clip) : sans animation, donc aucune image clé fx.* à tenir à jour",
 }
 
 
@@ -55,9 +51,7 @@ def _writes(tree: ast.AST) -> list[tuple[int, str, str]]:
                     found.append((node.lineno, name, "affectation"))
                     break
         if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in MUTATORS
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in MUTATORS
             and _is_effects(node.func.value)
         ):
             found.append((node.lineno, name, f".{node.func.attr}("))
@@ -73,9 +67,7 @@ def scan() -> list[tuple[str, int, str, str]]:
     for folder in SCANNED:
         for path in sorted((ROOT / folder).rglob("*.py")):
             relative = path.relative_to(ROOT).as_posix()
-            for line, scope, form in _writes(
-                ast.parse(path.read_text(encoding="utf-8"), relative)
-            ):
+            for line, scope, form in _writes(ast.parse(path.read_text(encoding="utf-8"), relative)):
                 result.append((relative, line, scope, form))
     return result
 
@@ -88,18 +80,13 @@ def test_every_write_of_clip_effects_is_classified():
     missing = unclassified(scan())
     assert not missing, (
         "Écriture de .effects hors du point d'entrée (core.effects_model.set_clip_effects) et hors de la liste blanche : "
-        + "; ".join(
-            f"{path}:{line} ({scope or 'module'}, {form})"
-            for path, line, scope, form in missing
-        )
+        + "; ".join(f"{path}:{line} ({scope or 'module'}, {form})" for path, line, scope, form in missing)
     )
 
 
 def test_the_allow_list_has_no_stale_entry():
     seen = {(path, scope) for path, _line, scope, _form in scan()}
-    assert set(ALLOWED) <= seen, (
-        f"entrées de la liste blanche sans écriture : {sorted(set(ALLOWED) - seen)}"
-    )
+    assert set(ALLOWED) <= seen, f"entrées de la liste blanche sans écriture : {sorted(set(ALLOWED) - seen)}"
     assert all(reason.strip() for reason in ALLOWED.values())
 
 
@@ -117,18 +104,10 @@ def test_the_guard_catches_a_new_unclassified_write():
         "    return clip.effects\n"
     )
     forms = _writes(ast.parse(source))
-    assert [form for _line, _scope, form in forms] == [
-        "affectation",
-        ".append(",
-        ".remove(",
-        "affectation",
-        "affectation",
-        "affectation",
-    ]
+    assert [form for _line, _scope, form in forms] == ["affectation", ".append(", ".remove(", "affectation", "affectation",
+                                                       "affectation"]
     assert all(scope == "sneaky" for _line, scope, _form in forms)
-    assert unclassified(
-        [("core/not_listed.py", line, scope, form) for line, scope, form in forms]
-    )
+    assert unclassified([("core/not_listed.py", line, scope, form) for line, scope, form in forms])
 
 
 def test_reads_are_not_writes():

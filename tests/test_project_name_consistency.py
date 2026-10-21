@@ -7,9 +7,7 @@ from tools import ui_audit as audit
 from ui import i18n
 from ui.main_window_mixins.project_files import ProjectFilesMixin
 
-_REAL_CONFIRM = (
-    ProjectFilesMixin._confirm_discard_changes
-)  # l'autouse de conftest le remplace par « abandonner »
+_REAL_CONFIRM = ProjectFilesMixin._confirm_discard_changes     # l'autouse de conftest le remplace par « abandonner »
 
 
 @pytest.fixture(scope="module")
@@ -43,14 +41,9 @@ def _asked_text(window, monkeypatch) -> str:
     return seen[0]
 
 
-@pytest.mark.parametrize(
-    "language,default_name",
-    [("fr", "Mon montage"), ("en", "My edit"), ("es", "Mi montaje")],
-)
+@pytest.mark.parametrize("language,default_name", [("fr", "Mon montage"), ("en", "My edit"), ("es", "Mi montaje")])
 @pytest.mark.parametrize("stored_name", ["Projet sans titre", "", "   "])
-def test_an_unnamed_project_has_the_same_name_in_the_title_bar_and_the_dialog(
-    window, monkeypatch, language, default_name, stored_name
-) -> None:
+def test_an_unnamed_project_has_the_same_name_in_the_title_bar_and_the_dialog(window, monkeypatch, language, default_name, stored_name) -> None:
     i18n.set_language(language)
     window.project.name = stored_name
     window._update_top_bar()

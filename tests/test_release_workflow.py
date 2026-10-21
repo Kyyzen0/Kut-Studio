@@ -19,17 +19,12 @@ from core.release_assets import RELEASE_TARGETS
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 
-pytestmark = pytest.mark.skipif(
-    not WORKFLOW.is_file(), reason="pas de .github/workflows dans cette arborescence"
-)
+pytestmark = pytest.mark.skipif(not WORKFLOW.is_file(), reason="pas de .github/workflows dans cette arborescence")
 
 
 def _text() -> str:
-    return "\n".join(
-        line
-        for line in WORKFLOW.read_text(encoding="utf-8").splitlines()
-        if not line.lstrip().startswith("#")
-    )
+    return "\n".join(line for line in WORKFLOW.read_text(encoding="utf-8").splitlines()
+                     if not line.lstrip().startswith("#"))
 
 
 def _jobs() -> dict[str, str]:
@@ -74,21 +69,14 @@ def test_the_matrix_builds_exactly_the_conventional_targets_and_checks_the_machi
 
 def test_a_release_is_built_from_a_green_state():
     build = _jobs()["build"]
-    for command in (
-        "python -m ruff check .",
-        "python -m pytest",
-        "python main.py --smoke-test",
-        "python build.py",
-        "--smoke-test",
-    ):
+    for command in ("python -m ruff check .", "python -m pytest", "python main.py --smoke-test", "python build.py",
+                    "--smoke-test"):
         assert command in build
     assert build.index("python -m pytest") < build.index("python build.py")
-    assert 'KUT_STUDIO_UPDATE_CHECK: "off"' in build
+    assert "KUT_STUDIO_UPDATE_CHECK: \"off\"" in build
 
 
-SLOWEST_HEALTHY_RELEASE_SUITE_MINUTES = (
-    38  # à relever si une suite saine de release dépasse cette valeur
-)
+SLOWEST_HEALTHY_RELEASE_SUITE_MINUTES = 38      # à relever si une suite saine de release dépasse cette valeur
 
 
 def test_a_hung_test_suite_leaves_its_stacks_and_fails_before_the_job_budget():
@@ -101,17 +89,11 @@ def test_a_hung_test_suite_leaves_its_stacks_and_fails_before_the_job_budget():
     assert timeout and dump and 0 < int(dump.group(1)) < int(timeout.group(1))
     step_minutes = re.search(r"^\s+timeout-minutes: (\d+)\s*$", suites[0], re.MULTILINE)
     job_minutes = re.search(r"^    timeout-minutes: (\d+)\s*$", build, re.MULTILINE)
-    assert (
-        step_minutes
-        and job_minutes
-        and int(step_minutes.group(1)) < int(job_minutes.group(1))
-    )
+    assert step_minutes and job_minutes and int(step_minutes.group(1)) < int(job_minutes.group(1))
     # La suite saine la plus lente d'une release : Windows, v0.7.0, 37,9 min (mesure du 2026-10-20) ; la limite de l'étape
     # laisse à un test bloqué (--timeout) le temps d'échouer par son nom au lieu d'une annulation muette de l'étape.
     needed = SLOWEST_HEALTHY_RELEASE_SUITE_MINUTES * 60 + int(timeout.group(1))
-    assert int(step_minutes.group(1)) * 60 >= needed, (
-        f"il faut au moins {needed / 60:.0f} min"
-    )
+    assert int(step_minutes.group(1)) * 60 >= needed, f"il faut au moins {needed / 60:.0f} min"
 
 
 def test_only_the_publish_job_can_write_and_only_for_a_tag():
@@ -124,12 +106,8 @@ def test_only_the_publish_job_can_write_and_only_for_a_tag():
     assert "needs.version.outputs.publish == 'true'" in publish
     assert "startsWith(github.ref, 'refs/tags/v')" in publish
     assert "gh release create" in publish and "--verify-tag" in publish
-    assert publish.index("python -m tools.release verify") < publish.index(
-        "gh release create"
-    )
-    assert all(
-        "gh release" not in body for name, body in jobs.items() if name != "publish"
-    )
+    assert publish.index("python -m tools.release verify") < publish.index("gh release create")
+    assert all("gh release" not in body for name, body in jobs.items() if name != "publish")
 
 
 def test_checksums_are_generated_and_verified_before_anything_is_published():
@@ -142,13 +120,9 @@ def test_checksums_are_generated_and_verified_before_anything_is_published():
 
 def test_the_real_macos_signing_status_reaches_the_notes_without_a_default():
     text = _text()
-    assert (
-        "macos_signing.sh notarize dist/Kut-Studio.app signing-status/macos.txt" in text
-    )
+    assert "macos_signing.sh notarize dist/Kut-Studio.app signing-status/macos.txt" in text
     assert text.count('--signing "$(cat signing-status/macos.txt)"') == 2
-    assert "|| echo adhoc" not in text, (
-        "un état de signature inconnu ne doit jamais devenir « adhoc » en silence"
-    )
+    assert "|| echo adhoc" not in text, "un état de signature inconnu ne doit jamais devenir « adhoc » en silence"
 
 
 def test_signing_secrets_only_reach_macos_steps():
@@ -159,26 +133,17 @@ def test_signing_secrets_only_reach_macos_steps():
     for name, body in _jobs().items():
         if name != "build":
             assert "secrets." not in body, f"secret utilisé par le job {name}"
-    assert (
-        "always() && runner.os == 'macOS'" in build
-        and "macos_signing.sh cleanup" in build
-    )
+    assert "always() && runner.os == 'macOS'" in build and "macos_signing.sh cleanup" in build
 
 
 def test_secret_names_are_the_documented_ones():
     used = set(re.findall(r"secrets\.([A-Z0-9_]+)", _text()))
     assert used == {
-        "MACOS_CERTIFICATE_P12_BASE64",
-        "MACOS_CERTIFICATE_PASSWORD",
-        "MACOS_SIGNING_IDENTITY",
-        "APPLE_API_KEY_P8_BASE64",
-        "APPLE_API_KEY_ID",
-        "APPLE_API_ISSUER_ID",
+        "MACOS_CERTIFICATE_P12_BASE64", "MACOS_CERTIFICATE_PASSWORD", "MACOS_SIGNING_IDENTITY",
+        "APPLE_API_KEY_P8_BASE64", "APPLE_API_KEY_ID", "APPLE_API_ISSUER_ID",
     }
     docs = (ROOT / "docs" / "updates.md").read_text(encoding="utf-8")
-    assert all(name in docs for name in used), (
-        "chaque secret est documenté dans docs/updates.md"
-    )
+    assert all(name in docs for name in used), "chaque secret est documenté dans docs/updates.md"
 
 
 def test_every_action_in_every_workflow_is_pinned_to_a_full_commit_sha():
@@ -194,25 +159,17 @@ def test_every_action_in_every_workflow_is_pinned_to_a_full_commit_sha():
             if match.group(1).startswith("./.github/actions/"):
                 continue  # action locale : versionnée avec le commit, rien à épingler
             found += 1
-            assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", match.group(1)), (
-                f"{workflow.name} : {match.group(1)}"
-            )
-            assert re.search(r"#\s*v\d+", match.group(2)), (
-                f"{workflow.name} : version en commentaire manquante ({line.strip()})"
-            )
+            assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", match.group(1)), f"{workflow.name} : {match.group(1)}"
+            assert re.search(r"#\s*v\d+", match.group(2)), f"{workflow.name} : version en commentaire manquante ({line.strip()})"
     assert found, "aucune action trouvée : le test ne vérifie plus rien"
 
 
 def test_no_certificate_key_or_token_is_tracked_in_the_repository():
     try:
-        tracked = subprocess.run(
-            ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
-        ).stdout
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
         pytest.skip("git indisponible : liste des fichiers suivis inconnue")
-    forbidden = re.compile(
-        r"\.(p12|p8|pfx|cer|mobileprovision|keychain-db|pem|key)$", re.IGNORECASE
-    )
+    forbidden = re.compile(r"\.(p12|p8|pfx|cer|mobileprovision|keychain-db|pem|key)$", re.IGNORECASE)
     assert [name for name in tracked.splitlines() if forbidden.search(name)] == []
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for pattern in ("*.p12", "*.p8", "*.pfx", "*.cer", "release-assets/"):
@@ -242,9 +199,7 @@ def _pins() -> dict[str, str]:
     pins: dict[str, str] = {}
     for spec in _requirements(ROOT / "constraints.txt"):
         name, separator, version = spec.partition("==")
-        assert separator and version and not re.search(r"[<>!~*,;]", version), (
-            f"contrainte non figée : {spec}"
-        )
+        assert separator and version and not re.search(r"[<>!~*,;]", version), f"contrainte non figée : {spec}"
         key = canonicalize_name(name)
         assert key not in pins, f"contrainte en double : {spec}"
         pins[key] = version
@@ -266,9 +221,7 @@ def test_every_direct_dependency_is_pinned_inside_its_allowed_range():
     for spec in _requirements(ROOT / "requirements-dev.txt"):
         requirement = Requirement(spec)
         version = pins.get(canonicalize_name(requirement.name))
-        assert version is not None, (
-            f"{requirement.name} n'est pas figé dans constraints.txt"
-        )
+        assert version is not None, f"{requirement.name} n'est pas figé dans constraints.txt"
         assert requirement.specifier.contains(version, prereleases=True), (
             f"constraints.txt fige {requirement.name}=={version}, hors de la plage « {requirement.specifier} »"
         )
@@ -282,9 +235,6 @@ def test_dependabot_does_not_raise_the_lower_bounds_and_keeps_numpy_on_a_python_
     tournent en 3.11) et « ruff>=0.6 » en « >=0.17.0 ». Un texte de configuration, donc une garde sur le texte."""
     text = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
     assert "versioning-strategy: increase-if-necessary" in text
-    numpy_block = text[text.index('dependency-name: "numpy"') :]
-    numpy_block = numpy_block[: numpy_block.index('dependency-name: "PySide6*"')]
-    assert (
-        "version-update:semver-minor" in numpy_block
-        and "version-update:semver-major" in numpy_block
-    )
+    numpy_block = text[text.index('dependency-name: "numpy"'):]
+    numpy_block = numpy_block[:numpy_block.index("dependency-name: \"PySide6*\"")]
+    assert "version-update:semver-minor" in numpy_block and "version-update:semver-major" in numpy_block

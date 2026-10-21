@@ -32,9 +32,7 @@ def test_flow_layout_wraps_buttons_instead_of_overflowing(qtbot):
     host = QWidget()
     qtbot.addWidget(host)
     flow = FlowLayout(host, spacing=4)
-    buttons = [
-        QPushButton(text) for text in ("Ajouter", "Supprimer", "Réinitialiser", "Stop")
-    ]
+    buttons = [QPushButton(text) for text in ("Ajouter", "Supprimer", "Réinitialiser", "Stop")]
     for button in buttons:
         flow.addWidget(button)
     natural = sum(b.sizeHint().width() for b in buttons) + 4 * 3
@@ -50,9 +48,7 @@ def test_flow_layout_wraps_buttons_instead_of_overflowing(qtbot):
         assert button.geometry().right() <= width
     assert flow.heightForWidth(width) >= 2 * buttons[0].sizeHint().height()
     # La largeur minimale est celle du plus large élément, pas la somme.
-    assert flow.minimumSize().width() == max(
-        b.minimumSizeHint().width() for b in buttons
-    )
+    assert flow.minimumSize().width() == max(b.minimumSizeHint().width() for b in buttons)
 
 
 def test_flow_layout_height_grows_in_a_parent_layout(qtbot):
@@ -86,9 +82,7 @@ def test_wrapping_check_box_wraps_its_label_and_stays_a_check_box(qtbot):
     box.toggled.connect(toggled.append)
     box.click()
     assert box.isChecked() and toggled == [True]
-    assert box.text().startswith(
-        "Analyser"
-    )  # nom accessible et lecture du texte inchangés
+    assert box.text().startswith("Analyser")  # nom accessible et lecture du texte inchangés
     box.grab()  # le dessin du libellé multiligne ne doit pas lever
 
 
@@ -97,9 +91,7 @@ def test_wrapping_check_box_makes_a_form_row_fit(qtbot):
     host = QWidget()
     qtbot.addWidget(host)
     form = QFormLayout(host)
-    long_text = (
-        "Analyser le proxy s'il existe (plus rapide), même sur une très longue ligne"
-    )
+    long_text = "Analyser le proxy s'il existe (plus rapide), même sur une très longue ligne"
     form.addRow(WrappingCheckBox(long_text))
     plain = QWidget()
     qtbot.addWidget(plain)
@@ -121,14 +113,10 @@ def test_shrinkable_scroll_area_follows_its_content_and_can_shrink(qtbot):
     area.resize(200, 60)
     area.show()
     _settle()
-    assert (
-        area.verticalScrollBar().maximum() > 0
-    )  # trop bas pour tout montrer : il défile
+    assert area.verticalScrollBar().maximum() > 0  # trop bas pour tout montrer : il défile
     layout.addWidget(QLabel("une ligne de plus"))
     _settle()
-    assert (
-        area.sizeHint().height() >= content.sizeHint().height()
-    )  # le hint suit le contenu
+    assert area.sizeHint().height() >= content.sizeHint().height()  # le hint suit le contenu
 
 
 def test_shrinkable_scroll_area_does_not_paint_the_system_background(qtbot):
@@ -156,14 +144,10 @@ def test_make_shrinkable_only_lowers_the_minimum_width(qtbot):
     plain = QComboBox()
     qtbot.addWidget(plain)
     plain.addItems(items)
-    shrinkable = make_shrinkable(
-        QComboBox(), 6
-    )  # à la construction, avant toute lecture de taille
+    shrinkable = make_shrinkable(QComboBox(), 6)  # à la construction, avant toute lecture de taille
     qtbot.addWidget(shrinkable)
     shrinkable.addItems(items)
-    assert (
-        shrinkable.sizeHint().width() == plain.sizeHint().width()
-    )  # rien ne change quand la place ne manque pas
+    assert shrinkable.sizeHint().width() == plain.sizeHint().width()  # rien ne change quand la place ne manque pas
     assert shrinkable.minimumSizeHint().width() < plain.minimumSizeHint().width() / 2
 
 

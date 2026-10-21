@@ -33,9 +33,7 @@ def test_override_ac_does_not_step_down_alone():
 
 
 def test_low_power_or_critical_thermal_steps_down():
-    assert power_requires_step_down(
-        PowerState(low_power_mode=True, thermal=THERMAL_NOMINAL)
-    )
+    assert power_requires_step_down(PowerState(low_power_mode=True, thermal=THERMAL_NOMINAL))
     assert power_requires_step_down(PowerState(thermal=THERMAL_CRITICAL))
     assert not power_requires_step_down(PowerState(source="unavailable"))
 

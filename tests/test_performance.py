@@ -54,8 +54,8 @@ def test_span_query_reads_only_the_visible_clips(count):
     lane = index._lanes[0]
     lane.ends, lane.keys = _CountingList(lane.ends), _CountingList(lane.keys)
     found = index.query(100.0, 140.0)
-    assert 10 <= len(found) <= 20  # ~16 clips visibles quelle que soit la taille
-    assert lane.ends.reads <= 30 and lane.keys.reads <= 30  # et on ne lit que ceux-là
+    assert 10 <= len(found) <= 20                         # ~16 clips visibles quelle que soit la taille
+    assert lane.ends.reads <= 30 and lane.keys.reads <= 30   # et on ne lit que ceux-là
 
 
 @pytest.mark.parametrize("count", [200, 20_000])
@@ -64,7 +64,7 @@ def test_snap_lookup_reads_only_the_edges_inside_the_threshold(count):
     index = SnapIndex(project, with_keyframes=False)
     index._owners = _CountingList(index._owners)
     index.nearest(250.0, 0.3, playhead=100.0)
-    assert index._owners.reads <= 12  # 2 bords par clip, seuil de 0,3 s
+    assert index._owners.reads <= 12                      # 2 bords par clip, seuil de 0,3 s
 
 
 def test_snap_cost_does_not_grow_with_the_number_of_clips():
@@ -76,9 +76,7 @@ def test_snap_cost_does_not_grow_with_the_number_of_clips():
         for _ in range(7):
             started = time.perf_counter()
             for step in range(300):
-                index.nearest(
-                    10.0 + step * 0.37, 0.1, excluded_ids=("V1-c5",), playhead=50.0
-                )
+                index.nearest(10.0 + step * 0.37, 0.1, excluded_ids=("V1-c5",), playhead=50.0)
             samples.append(time.perf_counter() - started)
         return statistics.median(samples)
 
@@ -109,56 +107,39 @@ def test_a_windowed_plan_builds_only_the_layers_of_the_window(monkeypatch):
 def test_one_preview_planning_never_builds_a_full_plan(qtbot, monkeypatch, tmp_path):
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
     window = MainWindow()
     qtbot.addWidget(window)
     window._preview_pump_timer.stop()
-    window.project = build_project(
-        4_000, "short_8t", media_path=str(tmp_path / "m.mp4")
-    )
+    window.project = build_project(4_000, "short_8t", media_path=str(tmp_path / "m.mp4"))
     window.timeline_panel.set_project(window.project)
     windows = []
     import core.preview_segments as segments
 
     real = segments.build_render_plan
-    monkeypatch.setattr(
-        segments,
-        "build_render_plan",
-        lambda project, **kw: (windows.append(kw.get("window")), real(project, **kw))[
-            1
-        ],
-    )
+    monkeypatch.setattr(segments, "build_render_plan",
+                        lambda project, **kw: (windows.append(kw.get("window")), real(project, **kw))[1])
     window._schedule_preview_around(800.0)
     assert 1 <= len(windows) <= 6 and all(w is not None for w in windows)
     windows.clear()
     window._cached_preview_at(800.0)
-    assert len(windows) <= 1 and all(
-        w is not None for w in windows
-    )  # un seek = au plus un plan de segment
+    assert len(windows) <= 1 and all(w is not None for w in windows)   # un seek = au plus un plan de segment
 
 
 def test_seeking_does_not_rescan_the_project_duration(qtbot, monkeypatch, tmp_path):
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
     window = MainWindow()
     qtbot.addWidget(window)
     window._preview_pump_timer.stop()
-    window.project = build_project(
-        1_000, "short_8t", media_path=str(tmp_path / "m.mp4")
-    )
+    window.project = build_project(1_000, "short_8t", media_path=str(tmp_path / "m.mp4"))
     window.timeline_panel.set_project(window.project)
     window._update_timeline_duration()
-    window.seek_to_position(1.0)  # construit l'index une fois
+    window.seek_to_position(1.0)                          # construit l'index une fois
 
     def boom(_project):
-        raise AssertionError(
-            "timeline_duration() parcourt tous les clips à chaque seek"
-        )
+        raise AssertionError("timeline_duration() parcourt tous les clips à chaque seek")
 
     monkeypatch.setattr("ui.main_window.timeline_duration", boom)
     for position in (3.0, 50.0, 300.0):
@@ -180,41 +161,35 @@ def _panel(qtbot, count):
     panel.resize(1100, 480)
     panel.show()
     qtbot.waitExposed(panel)
-    panel.set_timeline_duration(
-        max(c.timeline_start + c.duration for t in project.tracks for c in t.clips)
-    )
+    panel.set_timeline_duration(max(c.timeline_start + c.duration for t in project.tracks for c in t.clips))
     panel.set_project(project)
     return panel
 
 
-def test_scroll_zoom_playhead_and_selection_never_iterate_every_clip(
-    qtbot, monkeypatch
-):
+def test_scroll_zoom_playhead_and_selection_never_iterate_every_clip(qtbot, monkeypatch):
     import ui.timeline_panel_mixins.previews as previews
 
     monkeypatch.setattr(previews, "extract_thumbnail", lambda *_a, **_k: b"")
     monkeypatch.setattr(previews, "extract_envelope", lambda *_a, **_k: None)
     panel = _panel(qtbot, 3_000)
     views = _CountingList(panel.clip_views)
-    panel.clip_views = views  # même contenu, instrumenté
+    panel.clip_views = views                              # même contenu, instrumenté
     bar = panel.scroll.horizontalScrollBar()
-    bar.setValue(int(bar.maximum() * 0.5))  # premier passage : construit l'index
+    bar.setValue(int(bar.maximum() * 0.5))                # premier passage : construit l'index
     qtbot.wait(5)
     views.reads = views.iterations = 0
     for fraction in (0.2, 0.4, 0.61, 0.8, 0.95, 0.1):
-        bar.setValue(int(bar.maximum() * fraction))  # défilement
+        bar.setValue(int(bar.maximum() * fraction))       # défilement
     panel.zoom_in()
-    panel.zoom_out()  # zoom
+    panel.zoom_out()                                      # zoom
     for step in range(30):
-        panel.set_playhead_seconds(step * 3.7)  # tête de lecture
-    panel._set_selection(
-        [panel.clip_views[10].id], panel.clip_views[10].id, announce=False
-    )
+        panel.set_playhead_seconds(step * 3.7)            # tête de lecture
+    panel._set_selection([panel.clip_views[10].id], panel.clip_views[10].id, announce=False)
     panel.find_view_by_id("V3-c40")
     panel._layout_children()
     panel._schedule_previews()
     panel.snap_position(100.0, excluded_clip_id="V1-c3")
-    assert views.iterations == 0 and views.reads <= 3  # aucun balayage des 3 000 clips
+    assert views.iterations == 0 and views.reads <= 3     # aucun balayage des 3 000 clips
     assert 0 < panel.mounted_clip_count < 400
 
 
@@ -226,18 +201,14 @@ def test_mounted_widgets_stay_bounded_when_the_project_grows(qtbot):
         bar.setValue(int(bar.maximum() * 0.5))
         qtbot.wait(5)
         counts.append(panel.mounted_clip_count)
-    assert (
-        counts[1] <= counts[0] * 2 and counts[1] < 400
-    )  # le coût visible suit l'écran, pas le projet
+    assert counts[1] <= counts[0] * 2 and counts[1] < 400   # le coût visible suit l'écran, pas le projet
 
 
 # --- cache disque : résistance aux incidents ------------------------------------------------------------------------
 
 
-def test_a_full_disk_while_storing_a_preview_segment_is_reported_and_leaves_nothing(
-    tmp_path, monkeypatch
-):
-    cache = DiskPreviewCache(directory=tmp_path / "c", budget_bytes=10**9)
+def test_a_full_disk_while_storing_a_preview_segment_is_reported_and_leaves_nothing(tmp_path, monkeypatch):
+    cache = DiskPreviewCache(directory=tmp_path / "c", budget_bytes=10 ** 9)
 
     def render(job, token):
         out = tmp_path / "out.mp4"
@@ -264,13 +235,13 @@ def test_a_full_disk_while_storing_a_preview_segment_is_reported_and_leaves_noth
 def test_the_cache_folder_is_recreated_if_it_vanishes_during_the_session(tmp_path):
     import shutil
 
-    cache = DiskPreviewCache(directory=tmp_path / "c", budget_bytes=10**9)
-    shutil.rmtree(tmp_path / "c")  # nettoyage manuel pendant l'exécution
+    cache = DiskPreviewCache(directory=tmp_path / "c", budget_bytes=10 ** 9)
+    shutil.rmtree(tmp_path / "c")                         # nettoyage manuel pendant l'exécution
     source = tmp_path / "seg.mp4"
     source.write_bytes(b"x" * 10)
     key = PreviewSegmentKey("clip", 0.0, 2.0, "standard", "h")
-    assert cache.lookup(key) is None  # absent : un échec propre
-    cache.store(key, source)  # puis il refonctionne
+    assert cache.lookup(key) is None                      # absent : un échec propre
+    cache.store(key, source)                              # puis il refonctionne
     assert cache.lookup(key) is not None
 
 
@@ -282,16 +253,12 @@ def test_an_unusable_cache_folder_disables_the_faithful_preview_without_breaking
     blocker = tmp_path / "cache-is-a-file"
     blocker.write_text("pas un dossier", encoding="utf-8")
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(blocker))
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
     window = MainWindow()
     qtbot.addWidget(window)
-    assert window.preview_engine is None  # aperçu fidèle coupé
-    assert (
-        window.cache_manager.usage() is not None
-    )  # la gestion de cache reste utilisable
-    window.seek_to_position(0.5)  # et l'aperçu simple fonctionne
+    assert window.preview_engine is None                  # aperçu fidèle coupé
+    assert window.cache_manager.usage() is not None       # la gestion de cache reste utilisable
+    window.seek_to_position(0.5)                          # et l'aperçu simple fonctionne
     assert window.cache_manager.enforce() >= 0 and window.cache_manager.purge() >= 0
     assert Path(blocker).is_file()
 
@@ -315,5 +282,5 @@ def test_a_segment_plan_through_the_index_does_not_touch_every_clip(monkeypatch)
     mode["name"] = "indexed"
     indexed = segment_plan(project, 100.0, 102.0, timeline_index=index)
     assert indexed == scanned and len(indexed.video_layers) > 0
-    assert reads["scan"] >= 6_000  # le balayage lit la durée de chaque clip
-    assert reads["indexed"] < 300  # via l'index : seulement les clips proches
+    assert reads["scan"] >= 6_000                      # le balayage lit la durée de chaque clip
+    assert reads["indexed"] < 300                      # via l'index : seulement les clips proches

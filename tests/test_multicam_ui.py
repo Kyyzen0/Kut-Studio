@@ -13,12 +13,7 @@ from PySide6.QtWidgets import QMenu
 
 from core.multicam_model import AudioMode, SyncMethod
 from multicam_stubs import keep_preview_player_off_the_disk
-from core.multicam_ops import (
-    AngleSpec,
-    create_multicam_source,
-    insert_multicam_clip,
-    set_audio_policy,
-)
+from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip, set_audio_policy
 from core.project_model import Clip, MediaAsset, Project, Track
 
 
@@ -27,9 +22,7 @@ def window(qtbot, monkeypatch):
     from ui import i18n
     from ui.main_window import MainWindow
 
-    i18n.set_language(
-        "fr"
-    )  # la langue est un état global : les messages attendus ci-dessous sont français
+    i18n.set_language("fr")  # la langue est un état global : les messages attendus ci-dessous sont français
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
     main = MainWindow()
@@ -47,36 +40,19 @@ def _load(window, project: Project) -> None:
 
 
 def _video(asset_id: str) -> MediaAsset:
-    return MediaAsset(
-        asset_id,
-        f"/media/{asset_id}.mp4",
-        asset_id,
-        60.0,
-        1920,
-        1080,
-        30.0,
-        "video",
-        True,
-    )
+    return MediaAsset(asset_id, f"/media/{asset_id}.mp4", asset_id, 60.0, 1920, 1080, 30.0, "video", True)
 
 
 def _multicam_window(window, *, angle: str = "angle-1"):
     project = Project(
         "Concert",
         media_assets=[_video("camA"), _video("camB"), _video("camC")],
-        tracks=[
-            Track("V1", "V1", "video"),
-            Track("V2", "V2", "video"),
-            Track("A1", "A1", "audio"),
-        ],
+        tracks=[Track("V1", "V1", "video"), Track("V2", "V2", "video"), Track("A1", "A1", "audio")],
     )
     source = create_multicam_source(
         project,
-        [
-            AngleSpec(asset_id="camA", name="Wide"),
-            AngleSpec(asset_id="camB", name="Close-up"),
-            AngleSpec(asset_id="camC", name="Drone"),
-        ],
+        [AngleSpec(asset_id="camA", name="Wide"), AngleSpec(asset_id="camB", name="Close-up"),
+         AngleSpec(asset_id="camC", name="Drone")],
         name="Concert",
     )
     set_audio_policy(project, source.id, AudioMode.FOLLOW_VIDEO)
@@ -86,10 +62,7 @@ def _multicam_window(window, *, angle: str = "angle-1"):
 
 
 def _clips(window):
-    return sorted(
-        (c for t in window.project.tracks for c in t.clips),
-        key=lambda c: c.timeline_start,
-    )
+    return sorted((c for t in window.project.tracks for c in t.clips), key=lambda c: c.timeline_start)
 
 
 def test_an_angle_key_cuts_at_the_playhead_and_is_one_undoable_history_entry(window):
@@ -97,10 +70,7 @@ def test_an_angle_key_cuts_at_the_playhead_and_is_one_undoable_history_entry(win
     window.playhead_seconds = 5.0
     QTest.keyClick(window, Qt.Key_2)
     clips = _clips(window)
-    assert [(c.angle_id, round(c.timeline_start, 2)) for c in clips] == [
-        ("angle-1", 0.0),
-        ("angle-2", 5.0),
-    ]
+    assert [(c.angle_id, round(c.timeline_start, 2)) for c in clips] == [("angle-1", 0.0), ("angle-2", 5.0)]
     assert window.history.undo_label == "Angle 2 : Close-up"
     window.undo_last()
     assert len(_clips(window)) == 1 and _clips(window)[0].angle_id == "angle-1"
@@ -111,11 +81,9 @@ def test_an_angle_key_cuts_at_the_playhead_and_is_one_undoable_history_entry(win
 def test_azerty_shift_digit_and_the_numeric_keypad_reach_the_angles(window):
     _multicam_window(window)
     window.playhead_seconds = 4.0
-    QTest.keyClick(
-        window, Qt.Key_3, Qt.ShiftModifier
-    )  # AZERTY : le 3 s'obtient avec Maj
+    QTest.keyClick(window, Qt.Key_3, Qt.ShiftModifier)          # AZERTY : le 3 s'obtient avec Maj
     window.playhead_seconds = 8.0
-    QTest.keyClick(window, Qt.Key_2, Qt.KeypadModifier)  # pavé numérique
+    QTest.keyClick(window, Qt.Key_2, Qt.KeypadModifier)         # pavé numérique
     assert [c.angle_id for c in _clips(window)] == ["angle-1", "angle-3", "angle-2"]
 
 
@@ -124,13 +92,7 @@ def test_a_live_session_builds_the_edit_one_cut_per_key(window):
     for time, number in [(3.0, 2), (6.0, 3), (9.0, 1), (12.0, 2)]:
         window.playhead_seconds = time
         assert window.switch_multicam_angle(number) is not None
-    assert [c.angle_id for c in _clips(window)] == [
-        "angle-1",
-        "angle-2",
-        "angle-3",
-        "angle-1",
-        "angle-2",
-    ]
+    assert [c.angle_id for c in _clips(window)] == ["angle-1", "angle-2", "angle-3", "angle-1", "angle-2"]
     for _ in range(4):
         window.undo_last()
     assert len(_clips(window)) == 1
@@ -144,22 +106,15 @@ def test_the_same_angle_again_does_not_add_a_useless_cut_or_history_entry(window
     assert len(_clips(window)) == 1 and len(window.history) == entries
 
 
-def test_angle_keys_are_silent_without_any_multicam_source_and_explain_otherwise(
-    window,
-):
+def test_angle_keys_are_silent_without_any_multicam_source_and_explain_otherwise(window):
     window.playhead_seconds = 1.0
     before = [c.id for c in _clips(window)]
     QTest.keyClick(window, Qt.Key_2)
-    assert [
-        c.id for c in _clips(window)
-    ] == before and window.statusBar().currentMessage() == ""
+    assert [c.id for c in _clips(window)] == before and window.statusBar().currentMessage() == ""
     _multicam_window(window)
     window.playhead_seconds = 100.0  # hors du segment
     QTest.keyClick(window, Qt.Key_2)
-    assert (
-        window.statusBar().currentMessage()
-        == "Aucun segment Multicam sous la tête de lecture."
-    )
+    assert window.statusBar().currentMessage() == "Aucun segment Multicam sous la tête de lecture."
     window.playhead_seconds = 5.0
     window.switch_multicam_angle(7)
     assert "3 angle" in window.statusBar().currentMessage()
@@ -178,9 +133,7 @@ def test_angle_keys_do_not_fire_while_typing_in_a_text_field(window, qtbot):
     assert len(_clips(window)) == 1 and field.text() == "2"
 
 
-def test_replace_angle_from_the_context_menu_signal_makes_no_cut_and_is_undoable(
-    window,
-):
+def test_replace_angle_from_the_context_menu_signal_makes_no_cut_and_is_undoable(window):
     _multicam_window(window)
     window.playhead_seconds = 5.0
     window.switch_multicam_angle(2)
@@ -211,9 +164,7 @@ def test_flatten_from_the_menu_signal_gives_ordinary_clips_and_is_undoable(windo
     second = _clips(window)[1]
     window.timeline_panel.multicam_flatten_requested.emit(second.id)
     clips = _clips(window)
-    assert [bool(c.sequence_id) for c in clips] == [True, False] and clips[
-        1
-    ].asset_id == "camB"
+    assert [bool(c.sequence_id) for c in clips] == [True, False] and clips[1].asset_id == "camB"
     window.undo_last()
     assert [c.sequence_id != "" for c in _clips(window)] == [True, True]
 
@@ -228,41 +179,22 @@ def test_flatten_that_cannot_keep_the_picture_is_refused_with_a_message(window):
     assert _clips(window)[0].sequence_id != ""
 
 
-def test_creating_a_multicam_from_selected_timeline_clips_replaces_them_by_one_segment(
-    window,
-):
+def test_creating_a_multicam_from_selected_timeline_clips_replaces_them_by_one_segment(window):
     project = Project(
-        "t",
-        media_assets=[_video("camA"), _video("camB")],
-        tracks=[
-            Track(
-                "V1",
-                "V1",
-                "video",
-                clips=[Clip("a", "camA", "V1", 10.0, 0.0, 20.0, label="Cam A")],
-            ),
-            Track(
-                "V2",
-                "V2",
-                "video",
-                clips=[Clip("b", "camB", "V2", 12.0, 0.0, 20.0, label="Cam B")],
-            ),
-        ],
+        "t", media_assets=[_video("camA"), _video("camB")],
+        tracks=[Track("V1", "V1", "video", clips=[Clip("a", "camA", "V1", 10.0, 0.0, 20.0, label="Cam A")]),
+                Track("V2", "V2", "video", clips=[Clip("b", "camB", "V2", 12.0, 0.0, 20.0, label="Cam B")])],
     )
     _load(window, project)
     window.timeline_panel._set_selection(["a", "b"], "a", announce=False)
     from ui.multicam_dialogs import CreationChoice
 
     result = window.create_multicam_from_timeline_selection(
-        choice=CreationChoice(
-            "Interview", SyncMethod.POSITIONS, (("a", "Cam A"), ("b", "Cam B"))
-        ),
+        choice=CreationChoice("Interview", SyncMethod.POSITIONS, (("a", "Cam A"), ("b", "Cam B"))),
     )
     assert result is not None
     sequence, segment = result
-    assert sequence.multicam is not None and [
-        a.name for a in sequence.multicam.angles
-    ] == ["Cam A", "Cam B"]
+    assert sequence.multicam is not None and [a.name for a in sequence.multicam.angles] == ["Cam A", "Cam B"]
     assert [c.id for c in _clips(window)] == [segment.id]
     assert window.history.undo_label == "Créer la séquence Multicam « Interview »"
     window.undo_last()
@@ -272,9 +204,7 @@ def test_creating_a_multicam_from_selected_timeline_clips_replaces_them_by_one_s
     assert "au moins deux clips" in window.statusBar().currentMessage()
 
 
-def test_a_segment_clip_carries_its_angle_in_the_timeline_and_paints_the_angle_colour(
-    window,
-):
+def test_a_segment_clip_carries_its_angle_in_the_timeline_and_paints_the_angle_colour(window):
     from PySide6.QtGui import QColor
 
     from ui.theme import THEMES
@@ -287,21 +217,13 @@ def test_a_segment_clip_carries_its_angle_in_the_timeline_and_paints_the_angle_c
     image = widget.grab().toImage()
     expected = QColor(THEMES["dark"].angle_colors[1])
     strip = image.pixelColor(1, 24)
-    assert (strip.red(), strip.green(), strip.blue()) == (
-        expected.red(),
-        expected.green(),
-        expected.blue(),
-    )
+    assert (strip.red(), strip.green(), strip.blue()) == (expected.red(), expected.green(), expected.blue())
     assert "Close-up" in widget.toolTip()
 
 
 def test_the_multicam_commands_exist_in_the_shortcut_table_with_handlers(window):
     ids = {f"multicam_angle_{n}" for n in range(1, 10)} | {
-        "multicam_viewer",
-        "multicam_create",
-        "multicam_open_source",
-        "multicam_flatten",
-        "multicam_settings",
+        "multicam_viewer", "multicam_create", "multicam_open_source", "multicam_flatten", "multicam_settings",
     }
     assert ids <= {c.id for c in window.shortcuts.shortcut_map.commands}
     assert not window.shortcuts.missing_handlers()
@@ -320,15 +242,13 @@ def _with_stub_feeds(window):
     return StubFeed
 
 
-def test_a_double_click_on_a_segment_shows_the_multicam_monitor_instead_of_opening_the_source(
-    window,
-):
+def test_a_double_click_on_a_segment_shows_the_multicam_monitor_instead_of_opening_the_source(window):
     project, source, segment = _multicam_window(window)
     _with_stub_feeds(window)
     widget = window.timeline_panel.clip_widgets[segment.id]
     QTest.mouseDClick(widget, Qt.LeftButton)
-    assert window._monitor_stack.currentWidget() is window.multicam_viewer  # noqa: SLF001
-    assert window.project.active_sequence_id != source.id  # la source n'est pas ouverte
+    assert window._monitor_stack.currentWidget() is window.multicam_viewer   # noqa: SLF001
+    assert window.project.active_sequence_id != source.id                     # la source n'est pas ouverte
 
 
 def test_the_source_stays_reachable_from_the_menu_command(window):
@@ -338,24 +258,19 @@ def test_the_source_stays_reachable_from_the_menu_command(window):
     assert window.project.active_sequence_id == source.id
 
 
-def test_the_monitor_command_toggles_between_the_viewer_and_the_multicam_monitor(
-    window,
-):
+def test_the_monitor_command_toggles_between_the_viewer_and_the_multicam_monitor(window):
     _multicam_window(window)
     _with_stub_feeds(window)
     window.toggle_multicam_viewer()
-    assert window._monitor_stack.currentWidget() is window.multicam_viewer  # noqa: SLF001
+    assert window._monitor_stack.currentWidget() is window.multicam_viewer   # noqa: SLF001
     window.toggle_multicam_viewer()
-    assert window._monitor_stack.currentWidget() is window.preview_panel  # noqa: SLF001
+    assert window._monitor_stack.currentWidget() is window.preview_panel     # noqa: SLF001
 
 
 def test_the_monitor_command_explains_when_the_project_has_no_multicam_source(window):
     window.toggle_multicam_viewer()
-    assert window._monitor_stack.currentWidget() is window.preview_panel  # noqa: SLF001
-    assert (
-        window.statusBar().currentMessage()
-        == "Ce projet ne contient aucune source Multicam."
-    )
+    assert window._monitor_stack.currentWidget() is window.preview_panel     # noqa: SLF001
+    assert window.statusBar().currentMessage() == "Ce projet ne contient aucune source Multicam."
 
 
 def test_clicking_a_tile_of_the_monitor_cuts_the_segment_at_the_playhead(window):
@@ -378,37 +293,29 @@ def test_showing_the_monitor_on_a_segment_moves_the_playhead_into_it(window):
 
 
 def test_closing_the_window_stops_the_monitor_feeds(window, monkeypatch):
-    monkeypatch.setattr(
-        "core.cache_keys.file_exists", lambda *_a, **_k: True
-    )  # médias factices considérés présents
+    monkeypatch.setattr("core.cache_keys.file_exists", lambda *_a, **_k: True)   # médias factices considérés présents
     _multicam_window(window)
     stubs = _with_stub_feeds(window)
-    window.show()  # le moniteur ne lit ses flux que visible
+    window.show()                       # le moniteur ne lit ses flux que visible
     window.show_multicam_viewer()
     window.multicam_viewer.refresh()
-    feeds = list(window.multicam_viewer._pool._feeds.values())  # noqa: SLF001
+    feeds = list(window.multicam_viewer._pool._feeds.values())    # noqa: SLF001
     assert feeds
     window.multicam_viewer.shutdown()
     assert all(feed.closed for feed in feeds) and stubs is not None
 
 
-def test_the_proxy_request_covers_every_camera_of_the_source_and_the_tile_menu_opens_the_source_on_an_angle(
-    window, monkeypatch
-):
+def test_the_proxy_request_covers_every_camera_of_the_source_and_the_tile_menu_opens_the_source_on_an_angle(window, monkeypatch):
     project, source, segment = _multicam_window(window)
     requested = []
-    monkeypatch.setattr(
-        window,
-        "_request_proxies",
-        lambda assets: requested.append(sorted(a.id for a in assets)) or len(assets),
-    )
+    monkeypatch.setattr(window, "_request_proxies", lambda assets: requested.append(sorted(a.id for a in assets)) or len(assets))
     window.generate_proxies_for_multicam()
     assert requested == [["camA", "camB", "camC"]]
     window.playhead_seconds = 1.0
     window.open_multicam_source_at_angle(2)
     assert window.project.active_sequence_id == source.id
     selected = window.timeline_panel.selected_clip_id
-    assert selected == source.tracks[2].clips[0].id  # le clip de la caméra 3
+    assert selected == source.tracks[2].clips[0].id                      # le clip de la caméra 3
     window.playhead_seconds = 500.0
     window.go_to_parent_sequence()
     window.playhead_seconds = 500.0

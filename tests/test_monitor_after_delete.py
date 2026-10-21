@@ -15,12 +15,8 @@ def window(tmp_path, monkeypatch):
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("KUT_STUDIO_PROXY_DIR", str(tmp_path / "proxies"))
     monkeypatch.setenv("KUT_STUDIO_HARDWARE_ENCODING", "off")
-    monkeypatch.setattr(
-        ProjectFilesMixin, "_confirm_discard_changes", lambda self: True
-    )
-    main = audit.make_main_window(
-        1280, 720, scopes=False, rich=False
-    )  # projet de démonstration : titre « Bienvenue… »
+    monkeypatch.setattr(ProjectFilesMixin, "_confirm_discard_changes", lambda self: True)
+    main = audit.make_main_window(1280, 720, scopes=False, rich=False)   # projet de démonstration : titre « Bienvenue… »
     i18n.set_language("fr")
     yield main
     main.close()
@@ -109,10 +105,7 @@ def test_undo_and_redo_restore_and_remove_a_graphic_title(window) -> None:
     window.seek_to_position(2.0)
     calls: list[bool] = []
     original = window.preview_panel.set_graphics_present
-    window.preview_panel.set_graphics_present = lambda value: (
-        calls.append(bool(value)),
-        original(value),
-    )[1]
+    window.preview_panel.set_graphics_present = lambda value: (calls.append(bool(value)), original(value))[1]
     window.timeline_panel.selected_clip_id = clip.id
     window.delete_selected_clip(clip.id)
     window._refresh_viewer_graphics()

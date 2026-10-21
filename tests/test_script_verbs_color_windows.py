@@ -29,23 +29,8 @@ def _french(monkeypatch):
 
 def _project() -> Project:
     return Project(
-        "Démo",
-        width=1280,
-        height=720,
-        fps=30.0,
-        media_assets=[
-            MediaAsset(
-                "m",
-                "/x/intro.mp4",
-                "intro",
-                10.0,
-                1280,
-                720,
-                30.0,
-                "video",
-                has_audio=True,
-            )
-        ],
+        "Démo", width=1280, height=720, fps=30.0,
+        media_assets=[MediaAsset("m", "/x/intro.mp4", "intro", 10.0, 1280, 720, 30.0, "video", has_audio=True)],
         tracks=[Track("V1", "V1", "video")],
     )
 
@@ -68,23 +53,9 @@ def _clip() -> dict:
 
 def test_add_set_remove_color_window():
     session, report = _apply(
-        _project(),
-        _clip(),
-        {
-            "op": "add_color_window",
-            "clip": "a",
-            "shape": "ellipse",
-            "as": "ciel",
-            "feather": 0.1,
-            "width": 0.6,
-        },
-        {
-            "op": "set_color_window",
-            "clip": "a",
-            "window": {"ref": "ciel"},
-            "opacity": 0.5,
-            "mode": "subtract",
-        },
+        _project(), _clip(),
+        {"op": "add_color_window", "clip": "a", "shape": "ellipse", "as": "ciel", "feather": 0.1, "width": 0.6},
+        {"op": "set_color_window", "clip": "a", "window": {"ref": "ciel"}, "opacity": 0.5, "mode": "subtract"},
     )
     assert report.ok, report.error
     window = window_by_id(find_clip(session.project, "a").color_grade, "ciel")
@@ -94,49 +65,21 @@ def test_add_set_remove_color_window():
     assert window.width == pytest.approx(0.6)
     assert window.opacity == pytest.approx(0.5)
     assert window.mode is MaskMode.SUBTRACT
-    _session, report = _apply(
-        session.project, {"op": "remove_color_window", "clip": "a", "window": "ciel"}
-    )
-    assert (
-        report.ok
-        and window_by_id(find_clip(session.project, "a").color_grade, "ciel") is None
-    )
+    _session, report = _apply(session.project, {"op": "remove_color_window", "clip": "a", "window": "ciel"})
+    assert report.ok and window_by_id(find_clip(session.project, "a").color_grade, "ciel") is None
 
 
 def test_window_bounds_reject_silent_clamp_candidates():
     for name, (low, high) in _MASK_BOUNDS.items():
         for outside in (low - 0.01, high + 0.01):
             with pytest.raises(ScriptInvalid):
-                parse_script(
-                    _script(
-                        {
-                            "op": "add_color_window",
-                            "clip": "a",
-                            "shape": "rectangle",
-                            name: outside,
-                        }
-                    )
-                )
+                parse_script(_script({"op": "add_color_window", "clip": "a", "shape": "rectangle", name: outside}))
             with pytest.raises(ScriptInvalid):
-                parse_script(
-                    _script(
-                        {
-                            "op": "set_color_window",
-                            "clip": "a",
-                            "window": "w",
-                            name: outside,
-                        }
-                    )
-                )
-    _session, report = _apply(
-        _project(),
-        _clip(),
-        {"op": "set_color_window", "clip": "a", "window": "missing"},
-    )
+                parse_script(_script({"op": "set_color_window", "clip": "a", "window": "w", name: outside}))
+    _session, report = _apply(_project(), _clip(), {"op": "set_color_window", "clip": "a", "window": "missing"})
     assert not report.ok
     _session, report = _apply(
-        _project(),
-        _clip(),
+        _project(), _clip(),
         {"op": "add_color_window", "clip": "a", "shape": "rectangle", "id": "w1"},
         {"op": "set_color_window", "clip": "a", "window": "w1"},
     )
@@ -152,35 +95,21 @@ def test_window_ids_are_scoped_per_clip():
         {"op": "add_color_window", "clip": "b", "shape": "ellipse", "id": "w1"},
     )
     assert report.ok, report.error
-    assert (
-        window_by_id(find_clip(session.project, "a").color_grade, "w1").shape
-        is MaskShape.RECTANGLE
-    )
-    assert (
-        window_by_id(find_clip(session.project, "b").color_grade, "w1").shape
-        is MaskShape.ELLIPSE
-    )
+    assert window_by_id(find_clip(session.project, "a").color_grade, "w1").shape is MaskShape.RECTANGLE
+    assert window_by_id(find_clip(session.project, "b").color_grade, "w1").shape is MaskShape.ELLIPSE
 
 
 def test_window_on_named_node_and_track_lock():
     session, report = _apply(
-        _project(),
-        _clip(),
+        _project(), _clip(),
         {"op": "add_color_node", "clip": "a", "id": "n2"},
-        {
-            "op": "add_color_window",
-            "clip": "a",
-            "node": "n2",
-            "shape": "rectangle",
-            "id": "w2",
-        },
+        {"op": "add_color_window", "clip": "a", "node": "n2", "shape": "rectangle", "id": "w2"},
     )
     assert report.ok, report.error
     node = as_graph(find_clip(session.project, "a").color_grade).corrector("n2")
     assert node.window("w2") is not None
     _session, report = _apply(
-        _project(),
-        _clip(),
+        _project(), _clip(),
         {"op": "set_track_locked", "track": "V1", "locked": True},
         {"op": "add_color_window", "clip": "a", "shape": "rectangle"},
     )
@@ -192,44 +121,21 @@ def test_window_on_named_node_and_track_lock():
 
 def test_set_and_clear_color_qualifier():
     session, report = _apply(
-        _project(),
-        _clip(),
-        {
-            "op": "set_color_qualifier",
-            "clip": "a",
-            "hue_center": 120,
-            "hue_width": 40,
-            "sat_low": 0.2,
-        },
+        _project(), _clip(),
+        {"op": "set_color_qualifier", "clip": "a", "hue_center": 120, "hue_width": 40, "sat_low": 0.2},
     )
     assert report.ok, report.error
-    qualifier = (
-        ColorGradingService().get_graph(session.project, "a").corrector("n1").qualifier
-    )
+    qualifier = ColorGradingService().get_graph(session.project, "a").corrector("n1").qualifier
     assert isinstance(qualifier, Qualifier)
-    assert (
-        qualifier.hue_center == 120
-        and qualifier.hue_width == 40
-        and qualifier.sat_low == 0.2
-    )
+    assert qualifier.hue_center == 120 and qualifier.hue_width == 40 and qualifier.sat_low == 0.2
     assert qualifier.restricts()
-    _session, report = _apply(
-        session.project, {"op": "clear_color_qualifier", "clip": "a"}
-    )
-    assert (
-        report.ok
-        and ColorGradingService()
-        .get_graph(session.project, "a")
-        .corrector("n1")
-        .qualifier
-        is None
-    )
+    _session, report = _apply(session.project, {"op": "clear_color_qualifier", "clip": "a"})
+    assert report.ok and ColorGradingService().get_graph(session.project, "a").corrector("n1").qualifier is None
 
 
 def test_qualifier_rejects_inverted_ranges_and_oob():
     _session, report = _apply(
-        _project(),
-        _clip(),
+        _project(), _clip(),
         {"op": "set_color_qualifier", "clip": "a", "sat_low": 0.8, "sat_high": 0.2},
     )
     assert not report.ok and "bas d'une plage" in report.error
@@ -240,17 +146,12 @@ def test_qualifier_rejects_inverted_ranges_and_oob():
     ):
         with pytest.raises(ScriptInvalid):
             parse_script(_script(op))
-    _session, report = _apply(
-        _project(), _clip(), {"op": "set_color_qualifier", "clip": "a"}
-    )
+    _session, report = _apply(_project(), _clip(), {"op": "set_color_qualifier", "clip": "a"})
     assert not report.ok and "au moins un champ" in report.error
 
 
 def test_the_new_verbs_are_in_the_table():
     assert {
-        "add_color_window",
-        "set_color_window",
-        "remove_color_window",
-        "set_color_qualifier",
-        "clear_color_qualifier",
+        "add_color_window", "set_color_window", "remove_color_window",
+        "set_color_qualifier", "clear_color_qualifier",
     } <= set(VERBS)

@@ -13,14 +13,7 @@ import pytest
 from test_multicam_core import _with_segment
 from test_sequences import _two_level_project
 from test_tracking_split import FPS as TRACK_FPS
-from test_tracking_split import (
-    _assert_same_motion,
-    _clip,
-    _follower,
-    _frames,
-    _point,
-    _positions,
-)
+from test_tracking_split import _assert_same_motion, _clip, _follower, _frames, _point, _positions
 from test_tracking_split import _project as tracked_project
 
 from core.animation import InterpolationType
@@ -36,9 +29,7 @@ from core.timeline_operations import cut_clip, find_clip
 def ramp(project, clip_id, *points):
     """Pose des points de vitesse ``(temps local, valeur)`` sur un clip."""
     for moment, value in points:
-        add_speed_point(
-            project, clip_id, moment, value, interpolation=InterpolationType.LINEAR
-        )
+        add_speed_point(project, clip_id, moment, value, interpolation=InterpolationType.LINEAR)
 
 
 # ---------------------------------------------------------------------------
@@ -51,21 +42,11 @@ def test_a_nested_clip_with_a_ramp_reads_its_child_through_the_time_map():
     nested = insert_sequence_clip(project, "intro", "V2", 0.0)
     ramp(project, nested.id, (0.0, 1.0), (1.0, 1.0), (2.0, 0.25))
     child = project.get_sequence("intro")
-    before = [
-        (c.timeline_start, c.source_in, c.source_out)
-        for track in child.tracks
-        for c in track.clips
-    ]
+    before = [(c.timeline_start, c.source_in, c.source_out) for track in child.tracks for c in track.clips]
     for moment in (0.25, 0.9, 1.5, 1.9, 2.4):
         red = next(a for a in evaluate_timeline(project, moment) if a.clip_id == "r1")
-        assert red.source_time == pytest.approx(
-            nested.time_map.source_time(moment), abs=1e-6
-        ), moment
-    assert [
-        (c.timeline_start, c.source_in, c.source_out)
-        for track in child.tracks
-        for c in track.clips
-    ] == before
+        assert red.source_time == pytest.approx(nested.time_map.source_time(moment), abs=1e-6), moment
+    assert [(c.timeline_start, c.source_in, c.source_out) for track in child.tracks for c in track.clips] == before
 
 
 def test_the_child_of_a_ramped_nested_clip_is_still_rendered_once_with_an_exact_duration():
@@ -74,10 +55,7 @@ def test_the_child_of_a_ramped_nested_clip_is_still_rendered_once_with_an_exact_
     ramp(project, nested.id, (0.0, 1.0), (2.0, 0.5))
     plan = build_render_plan(project)
     layer = next(layer for layer in plan.video_layers if layer.nested_key)
-    assert (
-        layer.time_map is not None
-        and layer.timeline_end - layer.timeline_start == pytest.approx(nested.duration)
-    )
+    assert layer.time_map is not None and layer.timeline_end - layer.timeline_start == pytest.approx(nested.duration)
     assert len(plan.nested_sequences) == 1
 
 
@@ -98,13 +76,9 @@ def test_an_angle_switch_in_a_ramped_segment_keeps_the_time_of_the_source_contin
     left, right = clips[0], clips[1]
     assert (left.angle_id, right.angle_id) == ("angle-1", "angle-2")
     for local in (0.0, 0.7, 1.4, 2.0, 2.45):
-        assert left.time_map.source_time(local) == pytest.approx(
-            reference.source_time(local), abs=1e-6
-        )
+        assert left.time_map.source_time(local) == pytest.approx(reference.source_time(local), abs=1e-6)
     for local in (0.0, 0.5, 1.0, 2.0, 3.0):
-        assert right.time_map.source_time(local) == pytest.approx(
-            reference.source_time(2.5 + local), abs=1e-6
-        )
+        assert right.time_map.source_time(local) == pytest.approx(reference.source_time(2.5 + local), abs=1e-6)
     assert left.duration + right.duration == pytest.approx(reference.duration, abs=1e-6)
 
 
@@ -115,9 +89,7 @@ def test_an_angle_switch_in_a_ramped_segment_keeps_the_time_of_the_source_contin
 
 def _follower_motion(project, follower_id):
     clip = _clip(project, follower_id)
-    return _positions(
-        project, follower_id, range(int(round(clip.duration * TRACK_FPS)))
-    )
+    return _positions(project, follower_id, range(int(round(clip.duration * TRACK_FPS))))
 
 
 def test_a_follower_moves_with_the_source_time_of_a_ramped_clip():
@@ -127,17 +99,9 @@ def test_a_follower_moves_with_the_source_time_of_a_ramped_clip():
     positions = _positions(project, follower.id, _frames(follower))
     source = _clip(project, "v")
     for index in (0, 5, 10, 20, 30):
-        position = (
-            source.time_map.source_time(index / TRACK_FPS) * TRACK_FPS
-        )  # l'image source montrée à cet instant
-        expected = (
-            _point(position)[0] - _point(0)[0],
-            _point(position)[1] - _point(0)[1],
-        )
-        got = (
-            positions[index][0] - positions[0][0],
-            positions[index][1] - positions[0][1],
-        )
+        position = source.time_map.source_time(index / TRACK_FPS) * TRACK_FPS             # l'image source montrée à cet instant
+        expected = (_point(position)[0] - _point(0)[0], _point(position)[1] - _point(0)[1])
+        got = (positions[index][0] - positions[0][0], positions[index][1] - positions[0][1])
         assert math.dist(got, expected) < 0.4, (index, got, expected)
 
 
@@ -161,27 +125,17 @@ def test_cutting_a_ramped_source_never_changes_what_its_follower_shows(cut):
 def test_the_subtitles_of_a_ramped_nested_sequence_are_lifted_through_the_time_map():
     project = _two_level_project()
     inner = project.get_sequence("intro")
-    inner.tracks.append(
-        Track(
-            "S1",
-            "S1",
-            "subtitle",
-            clips=[Clip("s", "red", "S1", 1.0, 0.0, 2.0, text="Bonjour")],
-        )
-    )
+    inner.tracks.append(Track("S1", "S1", "subtitle", clips=[Clip("s", "red", "S1", 1.0, 0.0, 2.0, text="Bonjour")]))
     nested = insert_sequence_clip(project, "intro", "V2", 0.0)
     ramp(project, nested.id, (0.0, 1.0), (1.0, 0.5), (3.0, 2.0))
     cues = build_render_plan(project).subtitle_cues
     assert [cue.text for cue in cues] == ["Bonjour"]
     # La phrase occupe l'intervalle de source [1 s ; 3 s] de l'enfant : à l'écran, celui que le mapping y fait correspondre.
-    ((start, end),) = nested.time_map.timeline_intervals_of(1.0, 3.0)[:1]
+    (start, end), = nested.time_map.timeline_intervals_of(1.0, 3.0)[:1]
     assert cues[0].start == pytest.approx(nested.timeline_start + start, abs=1e-3)
     assert cues[0].end == pytest.approx(nested.timeline_start + end, abs=1e-3)
     # Ce n'est pas l'identité : la rampe ralentit puis accélère, la phrase ne tombe plus sur [1 s ; 3 s] ni ne dure 2 s.
-    assert (
-        abs(cues[0].start - (nested.timeline_start + 1.0)) > 0.2
-        and abs((cues[0].end - cues[0].start) - 2.0) > 0.2
-    )
+    assert abs(cues[0].start - (nested.timeline_start + 1.0)) > 0.2 and abs((cues[0].end - cues[0].start) - 2.0) > 0.2
 
 
 def test_the_find_helper_sees_the_ramped_clip():
@@ -203,19 +157,13 @@ def test_pasting_an_interpolating_time_onto_a_nested_clip_is_refused_like_settin
     project = _two_level_project()
     nested = insert_sequence_clip(project, "intro", "V2", 0.0)
     plain = project.get_sequence("intro").tracks[0].clips[0]
-    plain.time_remapping = TimeRemapping(
-        speed=0.5, interpolation=TimeInterpolation.BLENDING
-    )
+    plain.time_remapping = TimeRemapping(speed=0.5, interpolation=TimeInterpolation.BLENDING)
     snapshot = copy_time(plain)
     before = nested.time_remapping
     with pytest.raises(ValueError, match="séquence imbriquée"):
         paste_time(project, nested.id, snapshot)
-    assert (
-        nested.time_remapping == before and not nested.animation
-    )  # rien n'a été touché
-    plain.time_remapping = TimeRemapping(
-        speed=0.5
-    )  # l'échantillonnage se colle partout
+    assert nested.time_remapping == before and not nested.animation                      # rien n'a été touché
+    plain.time_remapping = TimeRemapping(speed=0.5)                                      # l'échantillonnage se colle partout
     paste_time(project, nested.id, copy_time(plain))
     assert nested.time_remapping.speed == 0.5
 
@@ -228,16 +176,9 @@ def test_the_tracked_source_range_covers_a_curve_that_goes_forward_then_comes_ba
     from core.time_map import SPEED_PROPERTY, PiecewiseTimeMap
     from core.tracking_motion import clip_source_indices
 
-    keys = (
-        Keyframe(SPEED_PROPERTY, 0.0, 1.0, InterpolationType.LINEAR),
-        Keyframe(SPEED_PROPERTY, 2.0, -1.0, InterpolationType.LINEAR),
-    )
-    time_map = PiecewiseTimeMap(
-        0.0, 10.0, keyframes=keys, anchor=5.0, fixed_duration=2.0
-    )
+    keys = (Keyframe(SPEED_PROPERTY, 0.0, 1.0, InterpolationType.LINEAR), Keyframe(SPEED_PROPERTY, 2.0, -1.0, InterpolationType.LINEAR))
+    time_map = PiecewiseTimeMap(0.0, 10.0, keyframes=keys, anchor=5.0, fixed_duration=2.0)
     clip = SimpleNamespace(time_map=time_map, duration=2.0)
-    assert time_map.source_time(0.0) == pytest.approx(
-        time_map.source_time(2.0), abs=1e-6
-    )  # même point de départ et d'arrivée
+    assert time_map.source_time(0.0) == pytest.approx(time_map.source_time(2.0), abs=1e-6)         # même point de départ et d'arrivée
     first, last = clip_source_indices(clip, 30.0)
-    assert first == 150 and last == 165  # le sommet (5,5 s) est dans la plage
+    assert first == 150 and last == 165                                                          # le sommet (5,5 s) est dans la plage

@@ -38,9 +38,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802 - nom imposé par http.server
         path = urlsplit(self.path).path
-        self.server.owner.requests.append(
-            (path, {key.lower(): value for key, value in self.headers.items()})
-        )
+        self.server.owner.requests.append((path, {key.lower(): value for key, value in self.headers.items()}))
         route = self.server.owner.routes.get(path)
         if route is None:
             route = Route(status=404, body=b'{"message": "Not Found"}')
@@ -60,12 +58,12 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             size = max(1, -(-len(route.body) // max(1, route.chunks)))
             for start in range(0, len(route.body), size):
-                self.wfile.write(route.body[start : start + size])
+                self.wfile.write(route.body[start:start + size])
                 self.wfile.flush()
                 if route.pause and start + size < len(route.body):
                     time.sleep(route.pause)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-            pass  # le client a abandonné : c'est ce qu'on teste parfois
+            pass                                         # le client a abandonné : c'est ce qu'on teste parfois
 
 
 class _Server(ThreadingHTTPServer):
@@ -80,7 +78,7 @@ class _Server(ThreadingHTTPServer):
         self.server_name, self.server_port = str(host), port
 
     def handle_error(self, request, client_address):
-        return  # pas de trace pour une connexion coupée par le client
+        return                                           # pas de trace pour une connexion coupée par le client
 
 
 class UpdateServer:
@@ -89,9 +87,7 @@ class UpdateServer:
         self.requests: list[tuple[str, dict[str, str]]] = []
         self._server = _Server(("127.0.0.1", 0), _Handler)
         self._server.owner = self
-        self._thread = threading.Thread(
-            target=self._server.serve_forever, name="fake-github", daemon=True
-        )
+        self._thread = threading.Thread(target=self._server.serve_forever, name="fake-github", daemon=True)
         self._thread.start()
 
     @property
@@ -139,9 +135,7 @@ def publish_release(
     from core.release_assets import CHECKSUMS_FILE, format_checksums
 
     if checksums is None:
-        checksums = format_checksums(
-            {name: hashlib.sha256(data).hexdigest() for name, data in packages.items()}
-        )
+        checksums = format_checksums({name: hashlib.sha256(data).hexdigest() for name, data in packages.items()})
     files = dict(packages)
     if checksums:
         files[CHECKSUMS_FILE] = checksums.encode("utf-8")
@@ -149,32 +143,17 @@ def publish_release(
     for name, data in files.items():
         options = package_route if (package_route and name != CHECKSUMS_FILE) else {}
         server.routes[f"/download/{tag}/{name}"] = Route(body=data, **options)
-        assets.append(
-            {
-                "name": name,
-                "size": len(data),
-                "state": "uploaded",
-                "browser_download_url": server.url(f"/download/{tag}/{name}"),
-            }
-        )
+        assets.append({"name": name, "size": len(data), "state": "uploaded",
+                       "browser_download_url": server.url(f"/download/{tag}/{name}")})
     return {
-        "tag_name": tag,
-        "name": f"Kut-Studio {tag.lstrip('v')}",
-        "body": notes,
-        "draft": False,
-        "prerelease": prerelease,
-        "published_at": "2026-10-05T12:00:00Z",
-        "assets": assets,
+        "tag_name": tag, "name": f"Kut-Studio {tag.lstrip('v')}", "body": notes, "draft": False,
+        "prerelease": prerelease, "published_at": "2026-10-05T12:00:00Z", "assets": assets,
         "html_url": f"https://github.com/{repository}/releases/tag/{tag}",
     }
 
 
-def serve_releases(
-    server: UpdateServer, repository: str, releases: list[dict], **route
-) -> None:
+def serve_releases(server: UpdateServer, repository: str, releases: list[dict], **route) -> None:
     """Réponse de ``GET /repos/<repository>/releases``."""
     import json
 
-    server.routes[f"/repos/{repository}/releases"] = Route(
-        body=json.dumps(releases).encode("utf-8"), **route
-    )
+    server.routes[f"/repos/{repository}/releases"] = Route(body=json.dumps(releases).encode("utf-8"), **route)

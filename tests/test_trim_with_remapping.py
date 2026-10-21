@@ -25,56 +25,21 @@ CASES = [
 ]
 
 
-def _project(
-    speed: float,
-    reverse: bool,
-    *,
-    start: float = 3.0,
-    remapping: TimeRemapping | None = None,
-):
-    asset = MediaAsset(
-        id="a",
-        path="/tmp/x.mp4",
-        name="x",
-        duration=100.0,
-        width=1920,
-        height=1080,
-        fps=25.0,
-        media_type="video",
-        has_audio=False,
-    )
-    clip = Clip(
-        id="c1",
-        asset_id="a",
-        track_id="V1",
-        timeline_start=start,
-        source_in=10.0,
-        source_out=30.0,
-        time_remapping=remapping or TimeRemapping(speed=speed, reverse=reverse),
-    )
-    project = Project(
-        name="p",
-        width=1280,
-        height=720,
-        fps=25.0,
-        media_assets=[asset],
-        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
-    )
+def _project(speed: float, reverse: bool, *, start: float = 3.0, remapping: TimeRemapping | None = None):
+    asset = MediaAsset(id="a", path="/tmp/x.mp4", name="x", duration=100.0, width=1920, height=1080,
+                       fps=25.0, media_type="video", has_audio=False)
+    clip = Clip(id="c1", asset_id="a", track_id="V1", timeline_start=start, source_in=10.0, source_out=30.0,
+                time_remapping=remapping or TimeRemapping(speed=speed, reverse=reverse))
+    project = Project(name="p", width=1280, height=720, fps=25.0, media_assets=[asset],
+                      tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
     return project, clip
 
 
 def _source_at(clip: Clip, absolute_time: float) -> float:
     """Temps de source montré à l'instant ``absolute_time`` de la timeline."""
     remap = clip.time_remapping
-    return timeline_to_source_time(
-        absolute_time - clip.timeline_start,
-        clip.source_in,
-        clip.source_out,
-        remap.speed,
-        remap.reverse,
-        remap.freeze_mode,
-        remap.freeze_source_time,
-    )
+    return timeline_to_source_time(absolute_time - clip.timeline_start, clip.source_in, clip.source_out,
+                                   remap.speed, remap.reverse, remap.freeze_mode, remap.freeze_source_time)
 
 
 def _end(clip: Clip) -> float:
@@ -108,19 +73,11 @@ def test_a_right_trim_keeps_the_start_and_the_frames_that_remain(speed, reverse)
 def test_trimming_keeps_the_animation_on_the_same_timeline_instants(speed, reverse):
     """Les keyframes sont en temps local de timeline : la vitesse ne doit pas les déplacer."""
     project, clip = _project(speed, reverse)
-    clip.transform_keyframes = [
-        TransformKeyframe("scale", 0.0, 0.5),
-        TransformKeyframe("scale", clip.duration, 1.5),
-    ]
+    clip.transform_keyframes = [TransformKeyframe("scale", 0.0, 0.5), TransformKeyframe("scale", clip.duration, 1.5)]
     absolute = clip.timeline_start + 0.7 * clip.duration
 
     def scale_at(t):
-        return evaluate_transform(
-            clip.transform,
-            clip.transform_keyframes,
-            t - clip.timeline_start,
-            clip.duration,
-        ).scale
+        return evaluate_transform(clip.transform, clip.transform_keyframes, t - clip.timeline_start, clip.duration).scale
 
     expected = scale_at(absolute)
     trim_clip_left(project, "c1", clip.timeline_start + 0.3 * clip.duration)
@@ -145,16 +102,11 @@ def test_a_reversed_clip_cannot_be_extended_before_the_start_of_the_media():
 
 def test_a_frozen_clip_is_trimmed_by_its_freeze_duration():
     """Avant : le trim d'un arrêt sur image ne faisait rien (la durée vient de freeze_duration)."""
-    freeze = TimeRemapping(
-        freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=12.0, freeze_duration=4.0
-    )
+    freeze = TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=12.0, freeze_duration=4.0)
     project, clip = _project(1.0, False, start=1.0, remapping=freeze)
     trim_clip_right(project, "c1", 3.5)
     assert clip.duration == pytest.approx(2.5)
     trim_clip_left(project, "c1", 2.0)
     assert (clip.timeline_start, _end(clip)) == pytest.approx((2.0, 3.5))
-    assert (clip.source_in, clip.source_out) == (
-        10.0,
-        30.0,
-    )  # l'image tenue ne change pas
+    assert (clip.source_in, clip.source_out) == (10.0, 30.0)         # l'image tenue ne change pas
     assert clip.time_remapping.freeze_source_time == 12.0

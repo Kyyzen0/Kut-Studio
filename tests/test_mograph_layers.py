@@ -31,12 +31,7 @@ from core.mograph_layers import (
     siblings,
     ungroup,
 )
-from core.mograph_presets import (
-    apply_preset,
-    builtin_presets,
-    load_user_presets,
-    save_preset,
-)
+from core.mograph_presets import apply_preset, builtin_presets, load_user_presets, save_preset
 from core.project_model import Project
 from core.sequences import create_sequence
 from core.visual_effects import ClipTransform, TransformKeyframe
@@ -47,10 +42,7 @@ def _project() -> Project:
 
 
 def _three(project):
-    return [
-        add_graphic_clip(project, kind, timeline_start=0, duration=4)
-        for kind in ("text", "shape", "solid")
-    ]
+    return [add_graphic_clip(project, kind, timeline_start=0, duration=4) for kind in ("text", "shape", "solid")]
 
 
 def test_parenting_refuses_cycles_and_keeps_the_layer_in_place():
@@ -60,9 +52,7 @@ def test_parenting_refuses_cycles_and_keeps_the_layer_in_place():
     before = scene_for_project(project).world_matrix(a.id, 1.0)
     set_parent(project, a.id, b.id, at_time=1.0)
     set_parent(project, b.id, c.id, at_time=1.0)
-    assert scene_for_project(project).world_matrix(a.id, 1.0) == pytest.approx(
-        before, abs=1e-6
-    )
+    assert scene_for_project(project).world_matrix(a.id, 1.0) == pytest.approx(before, abs=1e-6)
     with pytest.raises(LayerError):
         set_parent(project, c.id, a.id)  # A → B → C → A
     with pytest.raises(LayerError):
@@ -76,12 +66,7 @@ def test_group_ungroup_and_enter_group_tree():
     group = group_layers(project, [a.id, b.id], name="Titre")
     tree = layer_tree(project)
     # Le groupe prend la place de son membre le plus haut : sous l'aplat.
-    assert [(n.name, n.depth) for n in tree] == [
-        ("Aplat", 0),
-        ("Titre", 0),
-        ("Rectangle", 1),
-        ("Titre", 1),
-    ]
+    assert [(n.name, n.depth) for n in tree] == [("Aplat", 0), ("Titre", 0), ("Rectangle", 1), ("Titre", 1)]
     inside = layer_tree(project, root_group=group.id)
     assert {n.clip_id for n in inside} == {a.id, b.id}
     with pytest.raises(LayerError):
@@ -146,16 +131,12 @@ def test_copy_paste_remaps_parent_and_group_and_never_breaks_references():
     by_label = {clip.label: clip for clip in pasted}
     new_ids = {clip.id for clip in pasted}
     assert by_label["Titre"].graphic.parent_id in new_ids  # parent copié avec lui
-    assert (
-        by_label["Rectangle"].graphic.parent_id == c.id
-    )  # parent resté dans la séquence
+    assert by_label["Rectangle"].graphic.parent_id == c.id  # parent resté dans la séquence
     # Collage dans une autre séquence : la référence vers C disparaît.
     other = create_sequence(project, "Autre")
     project.active_sequence_id = other.id
     elsewhere = paste_layers(project, clipboard, at=0.0)
-    assert {
-        clip.graphic.parent_id for clip in elsewhere if clip.label == "Rectangle"
-    } == {""}
+    assert {clip.graphic.parent_id for clip in elsewhere if clip.label == "Rectangle"} == {""}
 
 
 def test_paste_adapts_pixel_sizes_to_another_frame():
@@ -182,35 +163,20 @@ def test_attributes_copy_transform_effects_masks_and_keyframes():
     project = _project()
     source, target, _c = _three(project)
     source.transform = ClipTransform(rotation=12, anchor_x=0.1)
-    source.transform_keyframes = [
-        TransformKeyframe("opacity", 0, 0),
-        TransformKeyframe("opacity", 1, 1),
-    ]
+    source.transform_keyframes = [TransformKeyframe("opacity", 0, 0), TransformKeyframe("opacity", 1, 1)]
     source.effects = [create_effect(EffectType.BLUR)]
     mask = Mask(feather=0.2)
     source.compositing = Compositing(masks=(mask,))
     pid = mask_property_id(mask.id, "feather")
-    source.animation = [
-        Keyframe(pid, 0, 0.0),
-        Keyframe(pid, 1, 0.3),
-        Keyframe("graphic.tracking", 0, 5.0),
-    ]
+    source.animation = [Keyframe(pid, 0, 0.0), Keyframe(pid, 1, 0.3), Keyframe("graphic.tracking", 0, 5.0)]
     clipboard = copy_attributes(project, source.id)
-    paste_attributes(
-        project, [target.id], clipboard, ("transform", "effects", "masks", "keyframes")
-    )
+    paste_attributes(project, [target.id], clipboard, ("transform", "effects", "masks", "keyframes"))
     assert target.transform == source.transform and len(target.transform_keyframes) == 2
-    assert (
-        target.effects[0].type is EffectType.BLUR
-        and target.effects[0].id != source.effects[0].id
-    )
+    assert target.effects[0].type is EffectType.BLUR and target.effects[0].id != source.effects[0].id
     new_mask = target.compositing.masks[0]
     assert new_mask.id != mask.id and new_mask.feather == pytest.approx(0.2)
     names = {kf.property_name for kf in target.animation}
-    assert (
-        mask_property_id(new_mask.id, "feather") in names
-        and "graphic.tracking" in names
-    )
+    assert mask_property_id(new_mask.id, "feather") in names and "graphic.tracking" in names
 
 
 def test_attributes_keep_colour_windows_and_their_keyframes_apart_from_masks():
@@ -225,31 +191,18 @@ def test_attributes_keep_colour_windows_and_their_keyframes_apart_from_masks():
     project = _project()
     source, target, _c = _three(project)
     window, old = Mask(), Mask()
-    source.color_grade = ColorNodeGraph.serial(
-        (ColorNode("n1", ColorGrade(exposure=0.3), windows=(window,)),)
-    )
+    source.color_grade = ColorNodeGraph.serial((ColorNode("n1", ColorGrade(exposure=0.3), windows=(window,)),))
     source.animation = [Keyframe(mask_property_id(window.id, "position_x"), 0, 0.2)]
-    target.color_grade = ColorNodeGraph.serial(
-        (ColorNode("n1", ColorGrade(exposure=0.1), windows=(old,)),)
-    )
+    target.color_grade = ColorNodeGraph.serial((ColorNode("n1", ColorGrade(exposure=0.1), windows=(old,)),))
     target.animation = [Keyframe(mask_property_id(old.id, "width"), 0, 0.3)]
-    target.tracking = replace(
-        ClipTracking(),
-        links=(TrackLink(tracker_ids=("t",), target=TrackTarget.MASK, mask_id=old.id),),
-    )
-    paste_attributes(
-        project, [target.id], copy_attributes(project, source.id), ("masks",)
-    )
-    assert [kf.property_name for kf in target.animation] == [
-        mask_property_id(old.id, "width")
-    ], "coller des masques garde les images-clés des fenêtres"
-    paste_attributes(
-        project, [target.id], copy_attributes(project, source.id), ("effects",)
-    )
+    target.tracking = replace(ClipTracking(), links=(TrackLink(tracker_ids=("t",), target=TrackTarget.MASK,
+                                                               mask_id=old.id),))
+    paste_attributes(project, [target.id], copy_attributes(project, source.id), ("masks",))
+    assert [kf.property_name for kf in target.animation] == [mask_property_id(old.id, "width")], \
+        "coller des masques garde les images-clés des fenêtres"
+    paste_attributes(project, [target.id], copy_attributes(project, source.id), ("effects",))
     assert target.color_grade.correctors[0].windows == (window,)
-    assert [kf.property_name for kf in target.animation] == [
-        mask_property_id(window.id, "position_x")
-    ]
+    assert [kf.property_name for kf in target.animation] == [mask_property_id(window.id, "position_x")]
     assert not target.tracking.links, "la fenêtre remplacée emporte sa liaison"
 
 
@@ -260,15 +213,11 @@ def test_presets_apply_and_user_presets_round_trip(tmp_path):
     lower_third = next(p for p in presets if p.name == "Lower third")
     created = apply_preset(project, lower_third, at=3.0)
     groups = [c for c in created if c.graphic.type is GraphicType.GROUP]
-    assert len(groups) == 1 and all(
-        c.graphic.group_id == groups[0].id for c in created if c is not groups[0]
-    )
+    assert len(groups) == 1 and all(c.graphic.group_id == groups[0].id for c in created if c is not groups[0])
     assert min(c.timeline_start for c in created) == pytest.approx(3.0)
     saved = save_preset(project, [groups[0].id], "Mon bandeau", settings_dir=tmp_path)
     loaded = load_user_presets(settings_dir=tmp_path)
-    assert [p.name for p in loaded] == ["Mon bandeau"] and len(
-        loaded[0].clipboard.clips
-    ) == len(created)
+    assert [p.name for p in loaded] == ["Mon bandeau"] and len(loaded[0].clipboard.clips) == len(created)
     assert saved.path.endswith("mon-bandeau.json")
 
 
@@ -283,10 +232,7 @@ def test_every_layer_operation_is_undoable():
     update_graphic(a, "text", "Changé")
     history.record(project, "Texte")
     restored = history.undo()
-    assert (
-        next(c for t in restored.tracks for c in t.clips if c.id == a.id).graphic.text
-        != "Changé"
-    )
+    assert next(c for t in restored.tracks for c in t.clips if c.id == a.id).graphic.text != "Changé"
     restored = history.undo()
     assert group.id not in {c.id for t in restored.tracks for c in t.clips}
     restored = history.redo()
@@ -302,17 +248,9 @@ def test_builtin_presets_are_rebuilt_on_a_vertical_canvas():
     created = apply_preset(project, presets["Lower third"], at=0.0)
     group = next(c for c in created if c.graphic.type is GraphicType.GROUP)
     bar = next(c for c in created if c.graphic.type is GraphicType.SHAPE)
-    assert (
-        group.transform.position_x == 0.0 and bar.graphic.width <= project.width - 200
-    )
+    assert group.transform.position_x == 0.0 and bar.graphic.width <= project.width - 200
     (title,) = apply_preset(project, presets["Titre TikTok"], at=1.0)
-    assert (
-        title.graphic.stroke_position == "outside"
-        and title.graphic.font_family == "Anton"
-    )
-    assert {kf.property_name for kf in title.transform_keyframes} >= {
-        "scale",
-        "opacity",
-    }
+    assert title.graphic.stroke_position == "outside" and title.graphic.font_family == "Anton"
+    assert {kf.property_name for kf in title.transform_keyframes} >= {"scale", "opacity"}
     (caption,) = apply_preset(project, presets["Sous-titre karaoké"], at=2.0)
     assert caption.graphic.word_reveal == "karaoke"

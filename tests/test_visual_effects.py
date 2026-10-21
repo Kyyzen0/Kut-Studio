@@ -269,9 +269,7 @@ def test_ffmpeg_expression_with_multiple_segments():
     # Somme plate : un terme par segment, sans ``if`` imbriqués.
     assert expr.count("gte(T,") == 3 and "if(" not in expr
     for t in (0.0, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0):
-        assert evaluate_expression(expr, T=t) == pytest.approx(
-            evaluate_transform(ClipTransform(), kfs, t).scale
-        )
+        assert evaluate_expression(expr, T=t) == pytest.approx(evaluate_transform(ClipTransform(), kfs, t).scale)
 
 
 def test_ffmpeg_expression_no_scientific_notation():
@@ -315,10 +313,8 @@ def test_ffmpeg_expression_uses_time_var_for_referencing_t():
     expr = build_ffmpeg_expression(
         "scale",
         1.0,
-        [
-            TransformKeyframe(property_name="scale", time_seconds=1.0, value=2.0),
-            TransformKeyframe(property_name="scale", time_seconds=2.0, value=3.0),
-        ],
+        [TransformKeyframe(property_name="scale", time_seconds=1.0, value=2.0),
+         TransformKeyframe(property_name="scale", time_seconds=2.0, value=3.0)],
     )
     # L'expression contient ``T`` (variable de temps standard FFmpeg).
     assert "T" in expr
@@ -377,12 +373,8 @@ def test_module_does_not_import_pyside6():
                 assert not alias.name.startswith("PySide6"), alias.name
                 assert not alias.name.startswith("PyQt"), alias.name
         elif isinstance(node, ast.ImportFrom):
-            assert node.module is None or not node.module.startswith("PySide6"), (
-                node.module
-            )
-            assert node.module is None or not node.module.startswith("PyQt"), (
-                node.module
-            )
+            assert node.module is None or not node.module.startswith("PySide6"), node.module
+            assert node.module is None or not node.module.startswith("PyQt"), node.module
 
 
 def test_module_does_not_subprocess_ffmpeg():

@@ -31,7 +31,8 @@ ENTRY_POINTS = {
 # Modules écrits **avant** leur seul consommateur, parce qu'ils sont livrés (et testés) par étapes. Chaque entrée dit quand son
 # import arrive ; une fois le consommateur écrit, l'entrée n'a plus lieu d'être et le second test ci-dessous le dit. Un module qui
 # attend sans raison écrite reste du code mort.
-PENDING_CONSUMERS = {}
+PENDING_CONSUMERS = {
+}
 
 
 def _module_name(path: Path) -> str:
@@ -96,7 +97,7 @@ def _reachable_from_main() -> tuple[set[str], set[str]]:
         seen.add(module)
         pending.extend(graph[module])
         parent = module.rpartition(".")[0]
-        while parent:  # importer ``a.b.c`` charge aussi ``a`` et ``a.b``
+        while parent:                                   # importer ``a.b.c`` charge aussi ``a`` et ``a.b``
             if parent in known:
                 pending.append(parent)
             parent = parent.rpartition(".")[0]
@@ -112,10 +113,8 @@ def test_every_core_and_ui_module_is_reachable_from_the_entry_point():
     """
     seen, known = _reachable_from_main()
     orphans = sorted(
-        module
-        for module in known - seen
-        if module.split(".")[0] in PRODUCTION_PACKAGES
-        and module not in PENDING_CONSUMERS
+        module for module in known - seen
+        if module.split(".")[0] in PRODUCTION_PACKAGES and module not in PENDING_CONSUMERS
     )
     assert not orphans, f"Modules que personne n'importe : {orphans}"
 
@@ -125,15 +124,11 @@ def test_a_module_waiting_for_its_consumer_is_still_waiting():
     seen, known = _reachable_from_main()
     for module, reason in PENDING_CONSUMERS.items():
         assert module in known, f"{module} n'existe plus : retirer l'entrée"
-        assert module not in seen, (
-            f"{module} est maintenant importé : retirer l'entrée ({reason})"
-        )
+        assert module not in seen, f"{module} est maintenant importé : retirer l'entrée ({reason})"
         assert reason.strip()
 
 
-def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_operations(
-    qtbot, monkeypatch
-):
+def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_operations(qtbot, monkeypatch):
     """L'interface coupe avec ``core.timeline_operations.cut_clip`` (sur un ``Project``), pas avec l'ancien module.
 
     L'ancien ``core.timeline_model.cut_clip`` travaillait sur une liste de dictionnaires et nommait les morceaux
@@ -159,15 +154,10 @@ def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_
     window.cut_selected_clip("intro", 2.0)
 
     assert calls == [(Project, "intro")]
-    assert {view.id for view in window.timeline_panel.clip_views} >= {
-        "intro",
-        "intro-split-2",
-    }
+    assert {view.id for view in window.timeline_panel.clip_views} >= {"intro", "intro-split-2"}
 
 
-def test_core_effects_is_gone_and_its_one_live_use_is_wired_directly(
-    qtbot, monkeypatch
-):
+def test_core_effects_is_gone_and_its_one_live_use_is_wired_directly(qtbot, monkeypatch):
     """``core/effects.py`` mêlait une ligne utile à deux chemins morts ; la ligne utile est maintenant en place.
 
     Le curseur « Audio > Volume du moniteur » de l'inspecteur règle le volume de lecture du moniteur sans passer par un module
@@ -182,9 +172,7 @@ def test_core_effects_is_gone_and_its_one_live_use_is_wired_directly(
     assert window.preview_panel.audio_output.volume() == 0.5
 
 
-def test_a_colour_change_reaches_the_monitor_through_the_preview_pipeline(
-    qtbot, monkeypatch
-):
+def test_a_colour_change_reaches_the_monitor_through_the_preview_pipeline(qtbot, monkeypatch):
     """L'étalonnage se voit par l'invalidation et la resynchronisation de l'aperçu, pas par un effet de teinte Qt.
 
     L'ancien ``apply_color_effect`` ne s'exécutait jamais : il visait ``preview_panel.color_effect``, un attribut
@@ -192,16 +180,8 @@ def test_a_colour_change_reaches_the_monitor_through_the_preview_pipeline(
     """
     window = _window(qtbot, monkeypatch)
     calls: list[tuple] = []
-    monkeypatch.setattr(
-        window,
-        "_invalidate_preview_for_clip",
-        lambda clip_id: calls.append(("invalidate", clip_id)),
-    )
-    monkeypatch.setattr(
-        window,
-        "_sync_preview_to_timeline",
-        lambda *args, **kwargs: calls.append(("sync",)),
-    )
+    monkeypatch.setattr(window, "_invalidate_preview_for_clip", lambda clip_id: calls.append(("invalidate", clip_id)))
+    monkeypatch.setattr(window, "_sync_preview_to_timeline", lambda *args, **kwargs: calls.append(("sync",)))
 
     window._refresh_color_monitor("intro")
 
@@ -214,9 +194,7 @@ def test_a_transition_picked_on_the_timeline_goes_to_the_inspector(qtbot, monkey
     reposait sur un signal ``transition_clicked`` que la timeline n'émettait jamais."""
     window = _window(qtbot, monkeypatch)
     cleared: list[str] = []
-    monkeypatch.setattr(
-        window.properties_panel, "clear_transition", lambda: cleared.append("clear")
-    )
+    monkeypatch.setattr(window.properties_panel, "clear_transition", lambda: cleared.append("clear"))
 
     window.timeline_panel.transition_selected.emit("transition-inconnue")
 
@@ -229,10 +207,7 @@ def _names_imported_from(module_suffix: str) -> set[str]:
     names: set[str] = set()
     for path in _python_files(*PRODUCTION_PACKAGES).values():
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and (node.module or "").split(".")[-1] == module_suffix
-            ):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[-1] == module_suffix:
                 names.update(alias.name for alias in node.names)
     return names
 
@@ -245,11 +220,7 @@ def test_every_public_function_of_the_audio_mixer_is_used_by_the_export():
     ajoutée ici doit avoir un appelant en production.
     """
     tree = ast.parse((ROOT / "core" / "audio_mixer.py").read_text(encoding="utf-8"))
-    public = {
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")
-    }
+    public = {node.name for node in tree.body if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")}
     assert public == {"pan_to_gains", "pan_needs_filter"}
     assert public <= _names_imported_from("audio_mixer")
 
@@ -268,11 +239,7 @@ def _referenced_names(paths) -> set[str]:
                 used.add(node.name.rpartition(".")[2])
             elif isinstance(node, ast.keyword) and node.arg:
                 used.add(node.arg)
-            elif (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and node.value.isidentifier()
-            ):
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
                 used.add(node.value)
     return used
 
@@ -310,15 +277,9 @@ def test_the_view_model_keeps_only_what_the_timeline_uses():
     Les adaptateurs ``build_export_clips`` (dont l'appelant documenté, ``core.effects.save_subtitles``, n'existait
     plus), ``transition_gap_pixels`` et ``v1_transition_pairs`` n'avaient aucun appelant hors de leurs tests.
     """
-    production = [
-        path
-        for path in _all_python_files()
-        if "tests" not in path.relative_to(ROOT).parts
-    ]
+    production = [path for path in _all_python_files() if "tests" not in path.relative_to(ROOT).parts]
     used = _referenced_names(production)
     unused = [
-        name
-        for name in _toplevel_functions(ROOT / "core" / "timeline_view_model.py")
-        if name not in used
+        name for name in _toplevel_functions(ROOT / "core" / "timeline_view_model.py") if name not in used
     ]
     assert not unused

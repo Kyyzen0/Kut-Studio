@@ -125,11 +125,9 @@ def test_probe_video_raises_when_file_is_missing(tmp_path: Path, monkeypatch):
     """Un fichier inexistant lève une ``MediaProbeError`` claire."""
     missing = tmp_path / "ghost.mp4"
     monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
-
     # ffprobe ne doit même pas être lancé.
     def fail(*args, **kwargs):
         raise AssertionError("ffprobe ne doit pas être lancé")
-
     monkeypatch.setattr("core.media_probe.supervised_run", fail)
 
     with pytest.raises(MediaProbeError, match="introuvable"):
@@ -157,9 +155,7 @@ def test_probe_video_raises_on_ffprobe_failure(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
-            stdout="",
-            stderr="Invalid data found when processing input",
-            returncode=1,
+            stdout="", stderr="Invalid data found when processing input", returncode=1,
         ),
     )
 
@@ -205,12 +201,10 @@ def test_probe_video_raises_on_invalid_dimensions(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
-            json.dumps(
-                _payload(
-                    streams=[_video_stream(width=0, height=0)],
-                    duration=1.0,
-                )
-            )
+            json.dumps(_payload(
+                streams=[_video_stream(width=0, height=0)],
+                duration=1.0,
+            ))
         ),
     )
 
@@ -226,12 +220,10 @@ def test_probe_video_raises_on_invalid_fps(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
-            json.dumps(
-                _payload(
-                    streams=[_video_stream(fps_num=0, fps_den=1)],
-                    duration=1.0,
-                )
-            )
+            json.dumps(_payload(
+                streams=[_video_stream(fps_num=0, fps_den=1)],
+                duration=1.0,
+            ))
         ),
     )
 
@@ -244,7 +236,9 @@ def test_probe_video_does_not_depend_on_pyside6():
     import re
 
     source = (
-        Path(__file__).resolve().parent.parent / "core" / "media_probe.py"
+        Path(__file__).resolve().parent.parent
+        / "core"
+        / "media_probe.py"
     ).read_text(encoding="utf-8")
     stripped = re.sub(r'^\s*""".*?"""\s*', "", source, count=1, flags=re.DOTALL)
     assert not re.search(r"^\s*(?:from|import)\s+PySide", stripped, flags=re.MULTILINE)

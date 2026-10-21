@@ -80,11 +80,7 @@ class LibassStatus:
 def _run(command: tuple[str, ...], *arguments: str) -> str:
     completed = subprocess.run(
         [*command, "-hide_banner", *arguments],
-        capture_output=True,
-        text=True,
-        errors="replace",
-        timeout=_PROBE_TIMEOUT_SECONDS,
-        check=False,
+        capture_output=True, text=True, errors="replace", timeout=_PROBE_TIMEOUT_SECONDS, check=False,
     )
     return completed.stdout
 
@@ -145,8 +141,5 @@ def ensure_libass() -> None:
             del export_engine._ffmpeg_supports_subtitles._cached  # type: ignore[attr-defined]
         return
     if strict:
-        pytest.fail(
-            f"{REQUIRE_LIBASS_VARIABLE}=1 : libass est exigé mais {problem}",
-            pytrace=False,
-        )
+        pytest.fail(f"{REQUIRE_LIBASS_VARIABLE}=1 : libass est exigé mais {problem}", pytrace=False)
     pytest.skip(problem)

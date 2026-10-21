@@ -15,9 +15,7 @@ from multicam_stubs import keep_preview_player_off_the_disk
 from core.project_model import Clip, MediaAsset, Project, Track
 from ui import i18n
 
-needs_ffmpeg = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None, reason="FFmpeg absent"
-)
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
 
 
 @pytest.fixture
@@ -36,29 +34,10 @@ def window(qtbot, monkeypatch):
 
 def _load(window, media: Path, duration: float) -> None:
     asset = MediaAsset("a", str(media), "A", duration, 160, 90, 25.0, "video", False)
-    track = Track(
-        id="V1",
-        name="V1",
-        type="video",
-        clips=[
-            Clip(
-                id="c1",
-                asset_id="a",
-                track_id="V1",
-                timeline_start=0.0,
-                source_in=0.0,
-                source_out=duration,
-            ),
-        ],
-    )
-    project = Project(
-        name="Plans",
-        width=160,
-        height=90,
-        fps=25.0,
-        media_assets=[asset],
-        tracks=[track],
-    )
+    track = Track(id="V1", name="V1", type="video", clips=[
+        Clip(id="c1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=duration),
+    ])
+    project = Project(name="Plans", width=160, height=90, fps=25.0, media_assets=[asset], tracks=[track])
     window.project = project
     window.history.reset(project)
     window.timeline_panel.set_project(project)
@@ -67,25 +46,9 @@ def _load(window, media: Path, duration: float) -> None:
 
 def _two_colour_clip(path: Path) -> None:
     subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=red:s=160x90:d=1:r=25",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=blue:s=160x90:d=2:r=25",
-            "-filter_complex",
-            "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p",
-            "-t",
-            "3",
-            str(path),
-        ],
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=160x90:d=1:r=25",
+         "-f", "lavfi", "-i", "color=blue:s=160x90:d=2:r=25",
+         "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p", "-t", "3", str(path)],
         check=True,
     )
 
@@ -110,9 +73,7 @@ def test_the_selected_clip_is_cut_at_the_real_scene_change(qtbot, window, tmp_pa
     clips = sorted(window.project.tracks[0].clips, key=lambda clip: clip.timeline_start)
     assert clips[0].id == "c1" and abs(clips[0].duration - 1.0) < 0.1
     assert abs(clips[1].timeline_start - 1.0) < 0.1
-    assert (
-        getattr(window, "_scene_detections", {}) == {}
-    )  # la boîte de progression et le minuteur sont libérés
+    assert getattr(window, "_scene_detections", {}) == {}      # la boîte de progression et le minuteur sont libérés
 
 
 @needs_ffmpeg

@@ -17,12 +17,8 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
+    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
@@ -49,9 +45,7 @@ def test_beginner_flow_add_move_style_animate_and_shadow(window):
     # 2. Le déplacer directement dans le viewer (un seul geste = une entrée d'historique).
     entries = len(window.history)
     for step in range(1, 6):
-        window.preview_panel.overlay.transform_dragged.emit(
-            text.id, {"position_x": 0.02 * step}
-        )
+        window.preview_panel.overlay.transform_dragged.emit(text.id, {"position_x": 0.02 * step})
     window.preview_panel.overlay.transform_released.emit(text.id, "Déplacer le calque")
     assert text.transform.position_x == pytest.approx(0.1)
     assert len(window.history) == entries + 1
@@ -64,10 +58,7 @@ def test_beginner_flow_add_move_style_animate_and_shadow(window):
     # 4. Une petite animation : image-clé d'opacité au début, puis à 1 s.
     window.on_transform_keyframe_added(text.id, "opacity", 0.0, 0.0)
     window.on_transform_keyframe_added(text.id, "opacity", 1.0, 1.0)
-    assert (
-        len([kf for kf in text.transform_keyframes if kf.property_name == "opacity"])
-        == 2
-    )
+    assert len([kf for kf in text.transform_keyframes if kf.property_name == "opacity"]) == 2
     # 5. Une ombre douce.
     editor.shadow_blur_spin.setValue(6.0)
     window._finalize_graphic_history()
@@ -91,9 +82,7 @@ def test_layers_panel_lists_hierarchy_and_edits_with_undo(window):
     panel.rename_requested.emit(shape.id, "Pastille")
     assert shape.label == "Pastille"
     panel.enter_group(group_id)
-    assert panel.tree.topLevelItemCount() == 2 and panel.exit_group_button.isVisibleTo(
-        panel
-    )
+    assert panel.tree.topLevelItemCount() == 2 and panel.exit_group_button.isVisibleTo(panel)
     window._ungroup_layer(group_id)
     assert all(not clip.graphic.group_id for clip in _layers(window))
 
@@ -106,9 +95,7 @@ def test_parent_from_inspector_refuses_cycles(window):
     assert shape.graphic.parent_id == controller.id
     window._on_layer_parent(controller.id, shape.id)  # cycle : refusé, rien ne change
     assert controller.graphic.parent_id == ""
-    assert shape.id not in {
-        cid for cid, _n in window._parent_choices_for(controller.id)
-    }
+    assert shape.id not in {cid for cid, _n in window._parent_choices_for(controller.id)}
 
 
 def test_compositing_editor_drives_masks_and_blend(window):
@@ -139,12 +126,7 @@ def test_advanced_transform_inspector_sets_values_and_keyframes(window):
     advanced.keyframe_toggled.emit("skew")
     assert [kf.property_name for kf in shape.transform_keyframes] == ["skew"]
     window.history.undo()
-    assert (
-        not window.history.current_project()
-        .active_sequence.tracks[0]
-        .clips[0]
-        .transform_keyframes
-    )
+    assert not window.history.current_project().active_sequence.tracks[0].clips[0].transform_keyframes
 
 
 def test_guides_are_saved_but_never_reach_the_render_graph(window, tmp_path):
@@ -152,21 +134,11 @@ def test_guides_are_saved_but_never_reach_the_render_graph(window, tmp_path):
     from core.render_plan import build_render_plan
 
     window.add_layer_at_playhead("text", "")
-    before = fingerprint_plan(
-        build_render_plan(window.project), width=1280, height=720, fps=25
-    )
+    before = fingerprint_plan(build_render_plan(window.project), width=1280, height=720, fps=25)
     window.add_viewer_guide("horizontal")
     window._set_viewer_flag("show_safe_areas", True)
-    assert (
-        window.project.active_sequence.guides[0].orientation
-        is GuideOrientation.HORIZONTAL
-    )
-    assert (
-        fingerprint_plan(
-            build_render_plan(window.project), width=1280, height=720, fps=25
-        )
-        == before
-    )
+    assert window.project.active_sequence.guides[0].orientation is GuideOrientation.HORIZONTAL
+    assert fingerprint_plan(build_render_plan(window.project), width=1280, height=720, fps=25) == before
     window.clear_viewer_guides()
     assert window.project.active_sequence.guides == []
 
@@ -177,61 +149,31 @@ def test_overlay_drag_math_snaps_to_center_and_scales_about_the_anchor():
     overlay = ViewerOverlay()
     overlay.set_canvas(QRectF(0, 0, 640, 360), (1280.0, 720.0))
     world = (1.0, 0.0, 0.0, 1.0, 100.0, 100.0)  # boîte 200×100 en (100, 100)
-    overlay.selection = SelectionGeometry(
-        "c",
-        world,
-        (1, 0, 0, 1, 0, 0),
-        (200.0, 100.0),
-        {
-            "position_x": 0.0,
-            "position_y": 0.0,
-            "scale": 1.0,
-            "anchor_x": 0.5,
-            "anchor_y": 0.5,
-            "scale_x": 1.0,
-        },
-    )
-    drag = {
-        "mode": "move",
-        "clip_id": "c",
-        "start": (200.0, 150.0),
-        "world": world,
-        "parent_world": (1, 0, 0, 1, 0, 0),
-        "box": (200.0, 100.0),
-        "values": dict(overlay.selection.values),
-    }
+    overlay.selection = SelectionGeometry("c", world, (1, 0, 0, 1, 0, 0), (200.0, 100.0),
+                                          {"position_x": 0.0, "position_y": 0.0, "scale": 1.0,
+                                           "anchor_x": 0.5, "anchor_y": 0.5, "scale_x": 1.0})
+    drag = {"mode": "move", "clip_id": "c", "start": (200.0, 150.0), "world": world,
+            "parent_world": (1, 0, 0, 1, 0, 0), "box": (200.0, 100.0),
+            "values": dict(overlay.selection.values)}
     # Déplacer le centre (200, 150) près du centre du cadre (640, 360) : aimantation exacte.
     values = overlay._drag_values(drag, (636.0, 357.0), Qt.NoModifier)
     assert values["position_x"] * 1280 == pytest.approx(440.0)
     assert values["position_y"] * 720 == pytest.approx(210.0)
     drag["mode"] = "br"
-    drag["start"] = (
-        300.0,
-        200.0,
-    )  # coin bas-droit ; l'ancrage (centre) est en (200, 150)
-    values = overlay._drag_values(
-        drag, (400.0, 250.0), Qt.NoModifier
-    )  # distance ×2 depuis l'ancrage
+    drag["start"] = (300.0, 200.0)  # coin bas-droit ; l'ancrage (centre) est en (200, 150)
+    values = overlay._drag_values(drag, (400.0, 250.0), Qt.NoModifier)  # distance ×2 depuis l'ancrage
     assert values["scale"] == pytest.approx(2.0)
     drag["mode"] = "r"
-    values = overlay._drag_values(
-        drag, (400.0, 150.0), Qt.NoModifier
-    )  # côté : échelle X seule
+    values = overlay._drag_values(drag, (400.0, 150.0), Qt.NoModifier)  # côté : échelle X seule
     assert values == {"scale_x": pytest.approx(2.0)}
 
 
 def test_snapping_and_safe_areas_are_pure_and_visual():
-    dx, dy, lines = snap_box(
-        (95, 4, 195, 54), 1920, 1080, threshold=8, layer_boxes=[(200, 0, 300, 50)]
-    )
-    assert (dx, dy) == pytest.approx(
-        (5.0, -4.0)
-    )  # bord d'un autre calque, bord du cadre
+    dx, dy, lines = snap_box((95, 4, 195, 54), 1920, 1080, threshold=8, layer_boxes=[(200, 0, 300, 50)])
+    assert (dx, dy) == pytest.approx((5.0, -4.0))  # bord d'un autre calque, bord du cadre
     assert {line.source for line in lines} == {"layer", "frame"}
     areas = safe_area_rects(1080, 1920)
-    assert (
-        areas["title"][0] > areas["action"][0]
-    )  # vertical : marges plus larges pour le titre
+    assert areas["title"][0] > areas["action"][0]  # vertical : marges plus larges pour le titre
 
 
 def test_viewer_hides_live_layers_when_the_composited_segment_is_shown(window):
@@ -269,9 +211,7 @@ def test_no_clip_message_never_shows_over_visible_layers(window, qtbot, playing)
         window._sync_preview_to_timeline()
         qtbot.wait(20)  # laisse passer le rafraîchissement différé des calques
         assert not empty.isVisible()
-    assert counter.shown == 0, (
-        "l'état vide a été ré-affiché alors que des calques sont visibles"
-    )
+    assert counter.shown == 0, "l'état vide a été ré-affiché alors que des calques sont visibles"
 
 
 def test_no_clip_message_returns_in_a_real_gap(window):
@@ -295,12 +235,8 @@ def test_empty_state_follows_layers_but_never_covers_a_video(window, monkeypatch
     assert not panel.empty_state.isVisible()
     panel.set_graphics_present(False)  # vrai trou de nouveau : le message revient
     assert panel.empty_state.isVisible()
-    type(panel).preview_at(
-        panel, "/tmp/clip.mp4", 0.0
-    )  # (la fixture neutralise ``panel.preview_at``)
-    assert (
-        not panel.empty_state.isVisible()
-    )  # un clip vidéo s'affiche : jamais de message dessus
+    type(panel).preview_at(panel, "/tmp/clip.mp4", 0.0)  # (la fixture neutralise ``panel.preview_at``)
+    assert not panel.empty_state.isVisible()  # un clip vidéo s'affiche : jamais de message dessus
     panel.set_graphics_present(False)
     assert not panel.empty_state.isVisible()
 

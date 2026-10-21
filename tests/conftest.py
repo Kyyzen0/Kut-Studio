@@ -87,10 +87,7 @@ def pytest_configure(config):
     système : avec des workers parallèles, ils verraient les fichiers
     légitimes d'un autre worker.
     """
-    config.addinivalue_line(
-        "markers",
-        "real_probe_threads: laisse tourner les sondes d'étiquette de fond (core.media_probe)",
-    )
+    config.addinivalue_line("markers", "real_probe_threads: laisse tourner les sondes d'étiquette de fond (core.media_probe)")
     config.addinivalue_line(
         "markers",
         "libass: test qui exige un FFmpeg avec libass (filtre « subtitles ») ; sauté sans libass, "
@@ -153,18 +150,11 @@ def pytest_sessionfinish(session, exitstatus):
     import threading
 
     try:
-        alive = [
-            f"{t.name} daemon={t.daemon}"
-            for t in threading.enumerate()
-            if t is not threading.main_thread()
-        ]
+        alive = [f"{t.name} daemon={t.daemon}" for t in threading.enumerate() if t is not threading.main_thread()]
         if os.environ.get("CI"):
             Path(f"kut-session-threads-{os.getpid()}.txt").write_text(
-                f"exitstatus={exitstatus} worker={os.environ.get('PYTEST_XDIST_WORKER', 'main')}\n"
-                + "\n".join(alive)
-                + "\n",
-                encoding="utf-8",
-            )
+                f"exitstatus={exitstatus} worker={os.environ.get('PYTEST_XDIST_WORKER', 'main')}\n" + "\n".join(alive) + "\n",
+                encoding="utf-8")
     except OSError:
         pass
 
@@ -179,9 +169,7 @@ def _isolate_kut_studio_config(monkeypatch, tmp_path):
     monkeypatch.setenv("KUT_STUDIO_PROXY_DIR", str(tmp_path / "proxies"))
     # Reproductibilité : jamais de détection GPU réelle, ni de cache de capacités partagé.
     # Les tests d'encodage matériel construisent leur propre ``CapabilityService``.
-    monkeypatch.setenv(
-        "KUT_STUDIO_CACHE_DIR", str(tmp_path.parent / f"{tmp_path.name}-cache")
-    )
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path.parent / f"{tmp_path.name}-cache"))
     monkeypatch.setenv("KUT_STUDIO_HARDWARE_ENCODING", "off")
     # Reproductibilité : jamais la batterie ni la chauffe réelles de la machine qui lance les tests (un portable sur
     # batterie dégraderait l'aperçu de chaque test). Les tests du régulateur forcent leurs propres valeurs.
@@ -227,16 +215,10 @@ def restore_global_theme():
 
     marker_name = "_kut_studio_theme_stylesheet"
     app = QApplication.instance()
-    stylesheet, marker, palette = (
-        app.styleSheet(),
-        app.property(marker_name),
-        active_palette(),
-    )
+    stylesheet, marker, palette = app.styleSheet(), app.property(marker_name), active_palette()
     yield
     set_active_palette(palette)
-    if (
-        app.styleSheet() != stylesheet
-    ):  # ``setStyleSheet`` repolit tous les widgets, même à l'identique
+    if app.styleSheet() != stylesheet:   # ``setStyleSheet`` repolit tous les widgets, même à l'identique
         app.setStyleSheet(stylesheet)
     app.setProperty(marker_name, marker)
 
@@ -301,9 +283,7 @@ def _no_unsaved_changes_prompt(monkeypatch):
     modifications ; ``test_unsaved_changes_prompt`` réactive la vraie boîte."""
     from ui.main_window_mixins.project_files import ProjectFilesMixin
 
-    monkeypatch.setattr(
-        ProjectFilesMixin, "_confirm_discard_changes", lambda self: True
-    )
+    monkeypatch.setattr(ProjectFilesMixin, "_confirm_discard_changes", lambda self: True)
 
 
 MAX_TEST_ID = 2000
@@ -313,13 +293,8 @@ de la CI s'arrêtait net après « ERRORS »). Les paramètres démesurés (entr
 
 
 def pytest_collection_modifyitems(config, items):
-    too_long = [
-        item.nodeid[:120] + f"… ({len(item.nodeid)} caractères)"
-        for item in items
-        if len(item.nodeid) > MAX_TEST_ID
-    ]
+    too_long = [item.nodeid[:120] + f"… ({len(item.nodeid)} caractères)" for item in items if len(item.nodeid) > MAX_TEST_ID]
     if too_long:
         raise pytest.UsageError(
             f"Identifiants de test trop longs (> {MAX_TEST_ID}, ``PYTEST_CURRENT_TEST`` plafonne à 32 767 sous Windows) ; "
-            "ajoutez ids=… à parametrize :\n" + "\n".join(too_long[:10])
-        )
+            "ajoutez ids=… à parametrize :\n" + "\n".join(too_long[:10]))

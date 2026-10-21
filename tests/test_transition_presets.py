@@ -246,7 +246,9 @@ def test_apply_preset_propagates_model_errors() -> None:
     preset = next(p for p in builtin_transition_presets() if p.id == "crossfade")
     # Durée trop grande pour le clip court.
     with pytest.raises(ValueError, match="moitié"):
-        apply_transition_preset(project, "clip-a", "clip-b", preset, duration=2.5)
+        apply_transition_preset(
+            project, "clip-a", "clip-b", preset, duration=2.5
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -548,7 +550,10 @@ def test_builtin_preset_maps_to_expected_ffmpeg_xfade(preset_id, ffmpeg_name):
     )
     plan = build_render_plan(project)
     graph, *_ = ExportEngine._build_filter_complex(plan, 1920, 1080, 30, None)
-    assert f"xfade=transition={ffmpeg_name}:duration={preset.default_duration}" in graph
+    assert (
+        f"xfade=transition={ffmpeg_name}:duration="
+        f"{preset.default_duration}" in graph
+    )
 
 
 def test_builtin_presets_are_pure_functions() -> None:

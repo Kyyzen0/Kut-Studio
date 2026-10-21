@@ -47,47 +47,28 @@ def _clean(tree) -> bool:
 
 
 LAYER_ENTRIES = {  # libellé -> niveau minimal (menu d'un calque texte)
-    "Renommer": SIMPLE,
-    "Dupliquer": SIMPLE,
-    "Supprimer": SIMPLE,
-    "Grouper": STUDIO,
-    "Copier transform, masques et effets": STUDIO,
-    "Coller les attributs…": STUDIO,
-    "Enregistrer comme preset…": STUDIO,
-    "Parent": ADVANCED,
-    "Flou de mouvement": ADVANCED,
+    "Renommer": SIMPLE, "Dupliquer": SIMPLE, "Supprimer": SIMPLE,
+    "Grouper": STUDIO, "Copier transform, masques et effets": STUDIO, "Coller les attributs…": STUDIO,
+    "Enregistrer comme preset…": STUDIO, "Parent": ADVANCED, "Flou de mouvement": ADVANCED,
 }
 
 
-@pytest.mark.parametrize(
-    "level", [SIMPLE, STUDIO, ADVANCED], ids=lambda level: level.value
-)
+@pytest.mark.parametrize("level", [SIMPLE, STUDIO, ADVANCED], ids=lambda level: level.value)
 def test_the_layer_menu_shows_each_entry_from_its_level(window, level):
     window.set_usage_level(level)
     dumps = all_dumps(window)
     shown = _texts(dumps["ctx_layer"])
     for label, minimum in LAYER_ENTRIES.items():
-        assert (label in shown) == level.at_least(minimum), (
-            f"{label!r} au niveau {level.value}"
-        )
+        assert (label in shown) == level.at_least(minimum), f"{label!r} au niveau {level.value}"
     group = _texts(dumps["ctx_layer_group"])
     for label in ("Dégrouper", "Entrer dans le groupe"):
         assert (label in group) == level.at_least(STUDIO)
     assert "Flou de mouvement" not in group, "un groupe n'a jamais de flou de mouvement"
-    for name in (
-        "ctx_layer",
-        "ctx_layer_group",
-        "ctx_layer_background",
-        "ctx_layer_add_button",
-    ):
-        assert _clean(dumps[name]), (
-            f"séparateurs mal placés dans {name} : {dumps[name]}"
-        )
+    for name in ("ctx_layer", "ctx_layer_group", "ctx_layer_background", "ctx_layer_add_button"):
+        assert _clean(dumps[name]), f"séparateurs mal placés dans {name} : {dumps[name]}"
 
 
-@pytest.mark.parametrize(
-    "level", [SIMPLE, STUDIO, ADVANCED], ids=lambda level: level.value
-)
+@pytest.mark.parametrize("level", [SIMPLE, STUDIO, ADVANCED], ids=lambda level: level.value)
 def test_the_add_menu_and_the_toolbar_follow_the_level(window, level):
     window.set_usage_level(level)
     add = _texts(all_dumps(window)["ctx_layer_background"])
@@ -97,11 +78,7 @@ def test_the_add_menu_and_the_toolbar_follow_the_level(window, level):
     for label in ("Forme", "Contrôleur (null)", "Calque d'effets (adjustment)"):
         assert (label in add) == studio
     toolbar = layers_buttons(window)
-    assert (
-        ("group_button" in toolbar) == studio
-        and ("presets_button" in toolbar) == studio
-        and "add_button" in toolbar
-    )
+    assert ("group_button" in toolbar) == studio and ("presets_button" in toolbar) == studio and "add_button" in toolbar
     panel = window.project_panel.graphics_view.layers_panel
     assert ("Forme" in [a.text() for a in panel.add_button.menu().actions()]) == studio
 
@@ -130,9 +107,7 @@ def test_the_layer_panel_without_a_window_keeps_the_menu_of_before(qtbot):
     qtbot.addWidget(panel)
     assert panel.usage_level is ADVANCED
     assert "Forme" in [a.text() for a in panel.add_button.menu().actions()]
-    assert (
-        not panel.group_button.isHidden() or not panel.isVisible()
-    )  # jamais caché hors fenêtre
+    assert not panel.group_button.isHidden() or not panel.isVisible()      # jamais caché hors fenêtre
 
 
 def test_an_invalid_level_leaves_the_layer_panel_unchanged(qtbot):
@@ -179,29 +154,17 @@ def _lane(window):
     return lane
 
 
-@pytest.mark.parametrize(
-    "level", [SIMPLE, STUDIO, ADVANCED], ids=lambda level: level.value
-)
-def test_the_automation_lane_menu_keeps_the_cleanup_and_gates_the_editing(
-    window, level
-):
+@pytest.mark.parametrize("level", [SIMPLE, STUDIO, ADVANCED], ids=lambda level: level.value)
+def test_the_automation_lane_menu_keeps_the_cleanup_and_gates_the_editing(window, level):
     from menu_order import load_scenario
 
     load_scenario(window, pytest.MonkeyPatch())
     window.set_usage_level(level)
     lane = _lane(window)
-    on_point = _texts(
-        menu_tree(lane.build_menu(QPointF(lane.x_of(1.0), lane.y_of(-3.0))))
-    )
-    on_band = _texts(
-        menu_tree(lane.build_menu(QPointF(lane.x_of(4.0), lane.y_of(0.0))))
-    )
+    on_point = _texts(menu_tree(lane.build_menu(QPointF(lane.x_of(1.0), lane.y_of(-3.0)))))
+    on_band = _texts(menu_tree(lane.build_menu(QPointF(lane.x_of(4.0), lane.y_of(0.0)))))
     advanced = level.at_least(ADVANCED)
-    assert (
-        "Supprimer le point" in on_point
-        and "Effacer la courbe" in on_point
-        and "Effacer la courbe" in on_band
-    )
+    assert "Supprimer le point" in on_point and "Effacer la courbe" in on_point and "Effacer la courbe" in on_band
     assert ("Remettre à 0 dB" in on_point) == advanced
     assert ("Ajouter un point ici" in on_band) == advanced
 
@@ -215,13 +178,7 @@ def test_a_locked_lane_opens_no_menu_at_any_level(window, monkeypatch):
     monkeypatch.setattr(QMenu, "exec", lambda self, *a, **k: opened.append(self))
     for level in (SIMPLE, STUDIO, ADVANCED):
         window.set_usage_level(level)
-        lane.contextMenuEvent(
-            QContextMenuEvent(
-                QContextMenuEvent.Mouse,
-                lane.rect().center(),
-                lane.mapToGlobal(lane.rect().center()),
-            )
-        )
+        lane.contextMenuEvent(QContextMenuEvent(QContextMenuEvent.Mouse, lane.rect().center(), lane.mapToGlobal(lane.rect().center())))
     assert opened == []
 
 
@@ -232,13 +189,7 @@ def test_a_menu_without_entry_is_not_opened(window, monkeypatch):
     monkeypatch.setattr(lane, "build_menu", lambda position: QMenu(lane))
     opened = []
     monkeypatch.setattr(QMenu, "exec", lambda self, *a, **k: opened.append(self))
-    lane.contextMenuEvent(
-        QContextMenuEvent(
-            QContextMenuEvent.Mouse,
-            lane.rect().center(),
-            lane.mapToGlobal(lane.rect().center()),
-        )
-    )
+    lane.contextMenuEvent(QContextMenuEvent(QContextMenuEvent.Mouse, lane.rect().center(), lane.mapToGlobal(lane.rect().center())))
     assert opened == []
 
 
@@ -257,11 +208,7 @@ def test_the_folder_menus_are_the_same_at_every_level(window):
         dumps = all_dumps(window)
         seen[level] = {k: v for k, v in dumps.items() if k.startswith("ctx_folder")}
     assert seen[SIMPLE] == seen[STUDIO] == seen[ADVANCED]
-    assert _texts(seen[SIMPLE]["ctx_folder"]) == [
-        "Renommer le dossier…",
-        "Nouveau sous-dossier…",
-        "Supprimer le dossier…",
-    ]
+    assert _texts(seen[SIMPLE]["ctx_folder"]) == ["Renommer le dossier…", "Nouveau sous-dossier…", "Supprimer le dossier…"]
 
 
 def test_the_node_editors_appear_only_with_their_page(window):

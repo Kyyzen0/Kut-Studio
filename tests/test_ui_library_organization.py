@@ -165,9 +165,7 @@ def test_folder_tree_set_folder_counts(qapp, tmp_path) -> None:
             "fld-v": 1,
         }
     )
-    labels = [
-        tree.tree.topLevelItem(i).text(0) for i in range(tree.tree.topLevelItemCount())
-    ]
+    labels = [tree.tree.topLevelItem(i).text(0) for i in range(tree.tree.topLevelItemCount())]
     assert any("Tous  (3)" in label for label in labels)
     assert any("Vidéos  (1)" in label for label in labels)
 
@@ -247,9 +245,7 @@ def test_tag_manager_dialog_creates_tag(qapp, qtbot, tmp_path) -> None:
     assert any(t.name == "Héros" for t in org.list_tags())
 
 
-def test_tag_manager_dialog_rejects_empty_name(
-    qapp, qtbot, monkeypatch, tmp_path
-) -> None:
+def test_tag_manager_dialog_rejects_empty_name(qapp, qtbot, monkeypatch, tmp_path) -> None:
     project = _project_with_videos(tmp_path)
     org = LibraryOrganization(project)
     dialog = TagManagerDialog(org)
@@ -257,7 +253,6 @@ def test_tag_manager_dialog_rejects_empty_name(
     # On neutralise QMessageBox.warning pour ne pas bloquer le test
     # sur un dialogue modal synchrone.
     from PySide6.QtWidgets import QMessageBox
-
     monkeypatch.setattr(
         QMessageBox, "warning", staticmethod(lambda *args, **kwargs: None)
     )
@@ -274,10 +269,8 @@ def test_tag_manager_dialog_renames_tag(qapp, qtbot, monkeypatch, tmp_path) -> N
     qtbot.addWidget(dialog)
     # On monkeypatche QInputDialog.getText pour ne pas ouvrir de modale.
     from PySide6.QtWidgets import QInputDialog
-
     monkeypatch.setattr(
-        QInputDialog,
-        "getText",
+        QInputDialog, "getText",
         staticmethod(lambda *args, **kwargs: ("New", True)),
     )
     dialog._rename_tag("tag-x")
@@ -352,9 +345,7 @@ def test_asset_context_menu_shows_missing_warning(qapp, tmp_path) -> None:
     assert "⚠" in builder._make_header_text()
 
 
-def test_asset_context_menu_hides_select_in_timeline_when_unused(
-    qapp, tmp_path
-) -> None:
+def test_asset_context_menu_hides_select_in_timeline_when_unused(qapp, tmp_path) -> None:
     builder = AssetContextMenuBuilder(
         asset_id="asset-a",
         asset_name="Plan A",
@@ -419,9 +410,7 @@ def test_asset_context_menu_tag_submenu_marks_assigned_tags(qapp, tmp_path) -> N
             submenu = action.menu()
             assert submenu is not None
             checked_labels = [
-                a.text().strip()
-                for a in submenu.actions()
-                if a.isCheckable() and a.isChecked()
+                a.text().strip() for a in submenu.actions() if a.isCheckable() and a.isChecked()
             ]
             assert "Héros" in checked_labels
             assert "B-roll" not in checked_labels
@@ -455,27 +444,24 @@ def test_compute_badges_includes_usage_when_clips_exist(qapp, tmp_path) -> None:
     org = LibraryOrganization(project)
     # On pose deux clips sur le média ``asset-a``.
     from core.project_model import Clip
-
-    project.tracks[0].clips.extend(
-        [
-            Clip(
-                id="c1",
-                asset_id="asset-a",
-                track_id="V1",
-                timeline_start=0.0,
-                source_in=0.0,
-                source_out=1.0,
-            ),
-            Clip(
-                id="c2",
-                asset_id="asset-a",
-                track_id="V1",
-                timeline_start=2.0,
-                source_in=0.0,
-                source_out=1.0,
-            ),
-        ]
-    )
+    project.tracks[0].clips.extend([
+        Clip(
+            id="c1",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=1.0,
+        ),
+        Clip(
+            id="c2",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=2.0,
+            source_in=0.0,
+            source_out=1.0,
+        ),
+    ])
     badges = compute_badges(project, org)
     assert badges["asset-a"].usage_count == 2
     assert badges["asset-b"].usage_count == 0
@@ -489,7 +475,6 @@ def test_compute_badges_includes_usage_when_clips_exist(qapp, tmp_path) -> None:
 def test_project_panel_set_library_rebuilds_tree(qapp, qtbot, tmp_path) -> None:
     """Vérifie l'intégration du panneau avec LibraryOrganization."""
     from ui.project_panel import ProjectPanel
-
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     project = _project_with_videos(tmp_path)
@@ -505,7 +490,6 @@ def test_project_panel_set_library_rebuilds_tree(qapp, qtbot, tmp_path) -> None:
 
 def test_project_panel_filter_chips_apply_to_grids(qapp, qtbot, tmp_path) -> None:
     from ui.project_panel import ProjectPanel
-
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     project = _project_with_videos(tmp_path)
@@ -519,11 +503,8 @@ def test_project_panel_filter_chips_apply_to_grids(qapp, qtbot, tmp_path) -> Non
     assert panel.bin_audios.count() == 0
 
 
-def test_project_panel_filter_missing_keeps_only_unreachable(
-    qapp, qtbot, tmp_path
-) -> None:
+def test_project_panel_filter_missing_keeps_only_unreachable(qapp, qtbot, tmp_path) -> None:
     from ui.project_panel import ProjectPanel
-
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     project = _project_with_videos(tmp_path)
@@ -538,12 +519,9 @@ def test_project_panel_filter_missing_keeps_only_unreachable(
     assert item.data(Qt.UserRole) == "asset-b"
 
 
-def test_project_panel_filter_used_keeps_only_with_occurrences(
-    qapp, qtbot, tmp_path
-) -> None:
+def test_project_panel_filter_used_keeps_only_with_occurrences(qapp, qtbot, tmp_path) -> None:
     from core.project_model import Clip
     from ui.project_panel import ProjectPanel
-
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     project = _project_with_videos(tmp_path)
@@ -571,7 +549,6 @@ def test_project_panel_filter_used_keeps_only_with_occurrences(
 
 def test_project_panel_folder_scope_filters_assets(qapp, qtbot, tmp_path) -> None:
     from ui.project_panel import ProjectPanel
-
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     project = _project_with_videos(tmp_path)
@@ -599,7 +576,6 @@ def test_project_panel_folder_scope_filters_assets(qapp, qtbot, tmp_path) -> Non
 
 def test_project_panel_emits_signals_for_actions(qapp, qtbot, tmp_path) -> None:
     from ui.project_panel import ProjectPanel
-
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     captured: list[tuple[str, ...]] = []
@@ -609,13 +585,21 @@ def test_project_panel_emits_signals_for_actions(qapp, qtbot, tmp_path) -> None:
     panel.folder_rename_requested.connect(
         lambda *args: captured.append(("rename", *args))
     )
-    panel.folder_delete_requested.connect(lambda fid: captured.append(("delete", fid)))
+    panel.folder_delete_requested.connect(
+        lambda fid: captured.append(("delete", fid))
+    )
     panel.asset_move_to_folder_requested.connect(
         lambda *args: captured.append(("move", *args))
     )
-    panel.asset_tag_toggled.connect(lambda *args: captured.append(("tag", *args)))
-    panel.asset_relink_requested.connect(lambda aid: captured.append(("relink", aid)))
-    panel.tag_manager_requested.connect(lambda: captured.append(("tag_manager",)))
+    panel.asset_tag_toggled.connect(
+        lambda *args: captured.append(("tag", *args))
+    )
+    panel.asset_relink_requested.connect(
+        lambda aid: captured.append(("relink", aid))
+    )
+    panel.tag_manager_requested.connect(
+        lambda: captured.append(("tag_manager",))
+    )
     # Émettre via les méthodes internes (le menu / l'arborescence).
     project = _project_with_videos(tmp_path)
     org = LibraryOrganization(project)

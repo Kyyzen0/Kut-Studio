@@ -93,7 +93,7 @@ def source(tmp_path):
 
 def _manager(tmp_path, runner=None, **kwargs):
     kwargs.setdefault("memo", SignatureMemo(ttl=0.0))
-    kwargs.setdefault("disk_ttl", 0.0)  # les tests relisent le disque à chaque appel
+    kwargs.setdefault("disk_ttl", 0.0)     # les tests relisent le disque à chaque appel
     return ProxyManager(
         tmp_path / "proxies",
         ffmpeg_command=lambda: ["ffmpeg-fake"],
@@ -127,11 +127,7 @@ def _remove_tree(path: Path, seconds: float = 5.0) -> None:
 def _generate(manager, path, **kwargs):
     profile_id = kwargs.get("profile_id")
     manager.request(path, duration=2.0, **kwargs)
-    assert _wait(
-        lambda: (
-            manager.info(path, profile_id).state in (ProxyState.READY, ProxyState.ERROR)
-        )
-    )
+    assert _wait(lambda: manager.info(path, profile_id).state in (ProxyState.READY, ProxyState.ERROR))
     return manager.info(path, profile_id)
 
 
@@ -144,9 +140,7 @@ def test_registered_profiles_are_available_but_not_builtin():
     register_profile(ProxyProfile("extra", "proxy.profile.low", 200))
     assert "extra" in {p.id for p in available_profiles()}
     assert [p.id for p in builtin_profiles()] == ["low", "medium", "high"]
-    assert [p.max_height for p in available_profiles()] == sorted(
-        p.max_height for p in available_profiles()
-    )
+    assert [p.max_height for p in available_profiles()] == sorted(p.max_height for p in available_profiles())
 
 
 def test_builtin_profiles_cover_low_medium_high_in_ascending_resolution():
@@ -159,27 +153,19 @@ def test_builtin_profiles_cover_low_medium_high_in_ascending_resolution():
 def test_h264_profile_builds_scale_codec_gop_and_audio_arguments():
     args = get_profile("medium").ffmpeg_output_args()
     joined = " ".join(args)
-    assert "scale=-2:'min(ih,720)'" in joined  # jamais d'agrandissement
+    assert "scale=-2:'min(ih,720)'" in joined          # jamais d'agrandissement
     assert "-c:v libx264" in joined and "-crf 26" in joined
-    assert "-g 12" in joined  # GOP court : scrubbing fluide
+    assert "-g 12" in joined                           # GOP court : scrubbing fluide
     assert "-c:a aac" in joined and "-b:a 96k" in joined
     assert "-movflags +faststart" in joined and "-pix_fmt yuv420p" in joined
 
 
 def test_proxy_codec_is_not_tied_to_one_codec():
-    prores = ProxyProfile(
-        "pr", "proxy.profile.medium", 540, codec="prores_proxy", quality=0
-    )
+    prores = ProxyProfile("pr", "proxy.profile.medium", 540, codec="prores_proxy", quality=0)
     joined = " ".join(prores.ffmpeg_output_args())
-    assert (
-        "-c:v prores_ks" in joined
-        and "-profile:v 0" in joined
-        and "yuv422p10le" in joined
-    )
+    assert "-c:v prores_ks" in joined and "-profile:v 0" in joined and "yuv422p10le" in joined
     assert prores.extension == "mov" and "-movflags" not in joined
-    register_codec(
-        ProxyCodec("copy_h264", "h264", "mp4", "yuv420p", lambda p: ["-c:v", "libx264"])
-    )
+    register_codec(ProxyCodec("copy_h264", "h264", "mp4", "yuv420p", lambda p: ["-c:v", "libx264"]))
     assert "copy_h264" in PROXY_CODECS
     PROXY_CODECS.pop("copy_h264")
 
@@ -191,22 +177,10 @@ def test_a_muted_profile_drops_audio_and_says_so():
 
 def test_fingerprint_tracks_what_changes_the_file_but_not_the_display_name():
     base = ProxyProfile("x", "proxy.profile.low", 480, quality=30)
-    assert (
-        base.fingerprint()
-        == ProxyProfile("x", "proxy.profile.medium", 480, quality=30).fingerprint()
-    )
-    assert (
-        base.fingerprint()
-        != ProxyProfile("x", "proxy.profile.low", 480, quality=28).fingerprint()
-    )
-    assert (
-        base.fingerprint()
-        != ProxyProfile("x", "proxy.profile.low", 540, quality=30).fingerprint()
-    )
-    assert (
-        base.fingerprint()
-        != ProxyProfile("x", "proxy.profile.low", 480, quality=30, gop=24).fingerprint()
-    )
+    assert base.fingerprint() == ProxyProfile("x", "proxy.profile.medium", 480, quality=30).fingerprint()
+    assert base.fingerprint() != ProxyProfile("x", "proxy.profile.low", 480, quality=28).fingerprint()
+    assert base.fingerprint() != ProxyProfile("x", "proxy.profile.low", 540, quality=30).fingerprint()
+    assert base.fingerprint() != ProxyProfile("x", "proxy.profile.low", 480, quality=30, gop=24).fingerprint()
 
 
 def test_profiles_are_validated_and_extensible():
@@ -223,17 +197,13 @@ def test_profiles_are_validated_and_extensible():
 def test_hardware_request_is_accepted_and_falls_back_on_the_cpu_encoder():
     profile = ProxyProfile("hw", "proxy.profile.low", 480, hardware="nvenc")
     assert profile.hardware == "nvenc"
-    assert (
-        "libx264" in profile.ffmpeg_output_args()
-    )  # repli CPU tant que rien n'est implémenté
+    assert "libx264" in profile.ffmpeg_output_args()   # repli CPU tant que rien n'est implémenté
 
 
 # --- génération et états ---------------------------------------------------------------------------------
 
 
-def test_a_proxy_goes_through_pending_generating_ready_and_leaves_no_partial_file(
-    tmp_path, source
-):
+def test_a_proxy_goes_through_pending_generating_ready_and_leaves_no_partial_file(tmp_path, source):
     manager = _manager(tmp_path)
     states = []
     manager.subscribe(lambda _path, info: states.append(info.state))
@@ -280,9 +250,7 @@ def test_progress_is_reported_during_generation(tmp_path, source):
     # (retrait de _active, invalidation, notification) : on l'attend (CI macOS, run 37667588029 : [0, 25, 50, 75]).
     assert _wait(lambda: any(name == "kut-proxy" and p == 100 for name, _s, p in seen))
     assert [p for name, _s, p in seen if name == "kut-proxy"] == [0, 25, 50, 75, 100]
-    assert all(
-        (p == 100) == (s is ProxyState.READY) for _n, s, p in seen
-    )  # 100 % seulement une fois prêt
+    assert all((p == 100) == (s is ProxyState.READY) for _n, s, p in seen)   # 100 % seulement une fois prêt
     manager.shutdown()
 
 
@@ -303,12 +271,7 @@ def test_generation_is_sequential_with_one_worker_and_keeps_request_order(tmp_pa
         path.write_bytes(name.encode() * 10)
         medias.append(str(path))
     order = []
-    manager = _manager(
-        tmp_path,
-        _ok_runner(
-            on_call=lambda cmd: order.append(Path(cmd[cmd.index("-i") + 1]).name)
-        ),
-    )
+    manager = _manager(tmp_path, _ok_runner(on_call=lambda cmd: order.append(Path(cmd[cmd.index("-i") + 1]).name)))
     result = manager.request_many([(m, 2.0) for m in medias])
     assert set(result.values()) <= {ProxyState.PENDING, ProxyState.GENERATING}
     assert _wait(lambda: all(manager.info(m).state is ProxyState.READY for m in medias))
@@ -323,15 +286,10 @@ def test_preview_uses_the_proxy_and_everything_else_uses_the_original(manager, s
     info = _generate(manager, source)
     assert manager.resolve(source) == info.proxy_path
     assert manager.preview_resolver()(source) == info.proxy_path
-    assert manager.resolve_for_export(source) == source  # export : TOUJOURS l'original
-    assert (
-        manager.resolve_for_export(source, allow_proxy_for_debug=True)
-        == info.proxy_path
-    )
+    assert manager.resolve_for_export(source) == source                      # export : TOUJOURS l'original
+    assert manager.resolve_for_export(source, allow_proxy_for_debug=True) == info.proxy_path
     manager.set_enabled(False)
-    assert (
-        manager.resolve(source) == source and not manager.enabled
-    )  # coupé globalement
+    assert manager.resolve(source) == source and not manager.enabled        # coupé globalement
     manager.set_enabled(True)
     assert manager.resolve(source) == info.proxy_path
 
@@ -341,36 +299,23 @@ def test_a_proxy_without_audio_is_not_used_when_audio_is_needed(tmp_path, source
     manager = _manager(tmp_path, profile_id="silent")
     info = _generate(manager, source)
     assert manager.resolve(source) == info.proxy_path
-    assert (
-        manager.resolve(source, need_audio=True) == source
-    )  # l'audio reste celui de l'original
+    assert manager.resolve(source, need_audio=True) == source       # l'audio reste celui de l'original
     manager.shutdown()
 
 
 def test_unknown_or_empty_paths_resolve_to_themselves(manager):
-    assert (
-        manager.resolve("") == ""
-        and manager.resolve("/nulle/part.mp4") == "/nulle/part.mp4"
-    )
+    assert manager.resolve("") == "" and manager.resolve("/nulle/part.mp4") == "/nulle/part.mp4"
 
 
-def test_a_lighter_ready_proxy_is_preferred_when_the_preview_quality_is_reduced(
-    tmp_path, source
-):
+def test_a_lighter_ready_proxy_is_preferred_when_the_preview_quality_is_reduced(tmp_path, source):
     manager = _manager(tmp_path, profile_id="high")
     low = _generate(manager, source, profile_id="low")
     high = _generate(manager, source, profile_id="high")
     assert manager.resolve(source, divisor=1) == high.proxy_path
-    assert (
-        manager.resolve(source, divisor=2) == high.proxy_path
-    )  # 1080/2 = 540 : le 480p est trop petit
-    assert (
-        manager.resolve(source, divisor=4) == low.proxy_path
-    )  # 1080/4 = 270 : le 480p suffit
+    assert manager.resolve(source, divisor=2) == high.proxy_path    # 1080/2 = 540 : le 480p est trop petit
+    assert manager.resolve(source, divisor=4) == low.proxy_path     # 1080/4 = 270 : le 480p suffit
     medium = _generate(manager, source, profile_id="medium")
-    assert (
-        manager.resolve(source, divisor=2) == medium.proxy_path
-    )  # le plus léger qui reste assez net
+    assert manager.resolve(source, divisor=2) == medium.proxy_path  # le plus léger qui reste assez net
     manager.set_enabled(False)
     assert manager.resolve(source, divisor=4) == source
     manager.shutdown()
@@ -379,37 +324,11 @@ def test_a_lighter_ready_proxy_is_preferred_when_the_preview_quality_is_reduced(
 def test_export_plans_never_contain_proxies(manager, source):
     info = _generate(manager, source)
     project = Project(
-        name="p",
-        media_assets=[
-            MediaAsset(
-                id="a",
-                path=source,
-                name="a",
-                duration=5,
-                width=1920,
-                height=1080,
-                fps=25.0,
-                media_type="video",
-                has_audio=True,
-            )
-        ],
-        tracks=[
-            Track(
-                id="V1",
-                name="V1",
-                type="video",
-                clips=[
-                    Clip(
-                        id="c",
-                        asset_id="a",
-                        track_id="V1",
-                        timeline_start=0,
-                        source_in=0,
-                        source_out=2.0,
-                    )
-                ],
-            )
-        ],
+        name="p", media_assets=[MediaAsset(id="a", path=source, name="a", duration=5, width=1920,
+                                           height=1080, fps=25.0, media_type="video", has_audio=True)],
+        tracks=[Track(id="V1", name="V1", type="video",
+                      clips=[Clip(id="c", asset_id="a", track_id="V1", timeline_start=0,
+                                  source_in=0, source_out=2.0)])],
     )
     plan = build_render_plan(project)
     assert plan.video_layers[0].source_path == source != info.proxy_path
@@ -419,9 +338,7 @@ def test_export_plans_never_contain_proxies(manager, source):
 # --- fallback : proxy absent, supprimé, obsolète, incomplet ------------------------------------------------
 
 
-def test_manually_deleting_the_proxy_falls_back_to_the_original_without_error(
-    manager, source
-):
+def test_manually_deleting_the_proxy_falls_back_to_the_original_without_error(manager, source):
     info = _generate(manager, source)
     Path(info.proxy_path).unlink()
     assert manager.resolve(source) == source
@@ -437,11 +354,9 @@ def test_deleting_the_whole_proxy_folder_is_harmless(manager, source, tmp_path):
     assert manager.cleanup_orphans() == 0
 
 
-def test_a_modified_source_makes_the_proxy_stale_and_unused_until_regenerated(
-    manager, source
-):
+def test_a_modified_source_makes_the_proxy_stale_and_unused_until_regenerated(manager, source):
     first = _generate(manager, source)
-    Path(source).write_bytes(b"S" * 2000)  # la source a changé
+    Path(source).write_bytes(b"S" * 2000)                            # la source a changé
     stale = manager.info(source)
     assert stale.state is ProxyState.STALE and not stale.valid
     assert manager.resolve(source) == source
@@ -453,10 +368,10 @@ def test_a_modified_source_makes_the_proxy_stale_and_unused_until_regenerated(
 
 def test_an_offline_original_keeps_its_proxy_usable_for_preview(manager, source):
     info = _generate(manager, source)
-    Path(source).unlink()  # média hors ligne
+    Path(source).unlink()                                            # média hors ligne
     offline = manager.info(source)
     assert offline.state is ProxyState.READY and offline.source_missing
-    assert manager.resolve(source) == info.proxy_path  # on peut encore l'afficher
+    assert manager.resolve(source) == info.proxy_path                # on peut encore l'afficher
 
 
 def test_a_moved_original_has_no_proxy_at_its_new_location(manager, source, tmp_path):
@@ -470,33 +385,27 @@ def test_a_moved_original_has_no_proxy_at_its_new_location(manager, source, tmp_
 def test_a_project_opened_on_another_machine_simply_has_no_proxies(tmp_path, source):
     here = _manager(tmp_path)
     _generate(here, source)
-    there = ProxyManager(
-        tmp_path / "autre-machine", memo=SignatureMemo(ttl=0.0), disk_ttl=0.0
-    )
-    assert (
-        there.resolve(source) == source and there.info(source).state is ProxyState.NONE
-    )
+    there = ProxyManager(tmp_path / "autre-machine", memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
+    assert there.resolve(source) == source and there.info(source).state is ProxyState.NONE
     here.shutdown()
 
 
 def test_a_truncated_proxy_is_never_used(manager, source):
     info = _generate(manager, source)
     with open(info.proxy_path, "r+b") as handle:
-        handle.truncate(10)  # copie interrompue
+        handle.truncate(10)                                          # copie interrompue
     assert manager.info(source).state is ProxyState.NONE
     assert manager.resolve(source) == source
 
 
-def test_a_proxy_with_a_mismatching_profile_fingerprint_is_not_ready(
-    manager, source, tmp_path
-):
+def test_a_proxy_with_a_mismatching_profile_fingerprint_is_not_ready(manager, source, tmp_path):
     info = _generate(manager, source)
     sidecar = Path(info.proxy_path).with_suffix(".json")
     marker = json.loads(sidecar.read_text(encoding="utf-8"))
     marker["fingerprint"] = "autre"
     sidecar.write_text(json.dumps(marker), encoding="utf-8")
     assert manager.info(source).state is ProxyState.NONE
-    sidecar.write_text("pas du json", encoding="utf-8")  # marqueur corrompu
+    sidecar.write_text("pas du json", encoding="utf-8")              # marqueur corrompu
     assert manager.info(source).state is ProxyState.NONE
 
 
@@ -505,26 +414,20 @@ def test_changing_a_profile_setting_makes_old_proxies_unavailable(tmp_path, sour
     manager = _manager(tmp_path, profile_id="tunable")
     _generate(manager, source)
     assert manager.info(source).state is ProxyState.READY
-    register_profile(
-        ProxyProfile("tunable", "proxy.profile.low", 480, quality=24)
-    )  # réglage modifié
+    register_profile(ProxyProfile("tunable", "proxy.profile.low", 480, quality=24))   # réglage modifié
     manager.set_profile("tunable")
     assert manager.info(source).state is ProxyState.NONE
     manager.shutdown()
 
 
-def test_orphans_from_a_crash_are_cleaned_but_valid_proxies_are_kept(
-    manager, source, tmp_path
-):
+def test_orphans_from_a_crash_are_cleaned_but_valid_proxies_are_kept(manager, source, tmp_path):
     info = _generate(manager, source)
     folder = tmp_path / "proxies"
-    (folder / "proxy-dead.partial.mp4").write_bytes(
-        b"x" * 10
-    )  # FFmpeg tué en plein travail
-    (folder / "proxy-nomarker.mp4").write_bytes(b"x" * 10)  # promu mais sans marqueur
+    (folder / "proxy-dead.partial.mp4").write_bytes(b"x" * 10)       # FFmpeg tué en plein travail
+    (folder / "proxy-nomarker.mp4").write_bytes(b"x" * 10)           # promu mais sans marqueur
     (folder / "proxy-half.json.tmp").write_bytes(b"{")
     (folder / "autre-fichier.txt").write_text("à moi", encoding="utf-8")
-    long_ago = time.time() - 3600  # abandonnés depuis longtemps
+    long_ago = time.time() - 3600                                    # abandonnés depuis longtemps
     for name in ("proxy-dead.partial.mp4", "proxy-half.json.tmp"):
         os.utime(folder / name, (long_ago, long_ago))
     assert manager.cleanup_orphans() == 3
@@ -534,9 +437,7 @@ def test_orphans_from_a_crash_are_cleaned_but_valid_proxies_are_kept(
 # --- erreurs ---------------------------------------------------------------------------------------------
 
 
-def test_ffmpeg_failure_is_an_error_state_with_a_readable_message_and_no_leftovers(
-    tmp_path, source
-):
+def test_ffmpeg_failure_is_an_error_state_with_a_readable_message_and_no_leftovers(tmp_path, source):
     def runner(command, cancel, on_progress, on_start):
         Path(command[-1]).write_bytes(b"junk")
         return RunResult(1, "Invalid data found when processing input")
@@ -549,25 +450,16 @@ def test_ffmpeg_failure_is_an_error_state_with_a_readable_message_and_no_leftove
     manager.shutdown()
 
 
-def test_ffmpeg_unavailable_is_an_error_not_a_crash_and_recovers_later(
-    tmp_path, source
-):
+def test_ffmpeg_unavailable_is_an_error_not_a_crash_and_recovers_later(tmp_path, source):
     available = {"ok": False}
 
     def command():
         if not available["ok"]:
-            raise FileNotFoundError(
-                "FFmpeg est introuvable : génération de proxies impossible."
-            )
+            raise FileNotFoundError("FFmpeg est introuvable : génération de proxies impossible.")
         return ["ffmpeg-fake"]
 
-    manager = ProxyManager(
-        tmp_path / "proxies",
-        ffmpeg_command=command,
-        runner=_ok_runner(),
-        memo=SignatureMemo(ttl=0.0),
-        disk_ttl=0.0,
-    )
+    manager = ProxyManager(tmp_path / "proxies", ffmpeg_command=command, runner=_ok_runner(),
+                           memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
     info = _generate(manager, source)
     assert info.state is ProxyState.ERROR and "FFmpeg" in info.error
     assert manager.resolve(source) == source
@@ -577,9 +469,7 @@ def test_ffmpeg_unavailable_is_an_error_not_a_crash_and_recovers_later(
 
 
 def test_a_full_disk_reported_by_ffmpeg_gives_a_clear_message(tmp_path, source):
-    manager = _manager(
-        tmp_path, lambda *a: RunResult(1, "Error writing: No space left on device")
-    )
+    manager = _manager(tmp_path, lambda *a: RunResult(1, "Error writing: No space left on device"))
     info = _generate(manager, source)
     assert info.state is ProxyState.ERROR and "Espace disque insuffisant" in info.error
     manager.shutdown()
@@ -595,9 +485,7 @@ def test_a_full_disk_raised_as_an_os_error_is_handled(tmp_path, source):
     manager.shutdown()
 
 
-def test_a_failure_while_writing_the_marker_leaves_no_half_proxy(
-    tmp_path, source, monkeypatch
-):
+def test_a_failure_while_writing_the_marker_leaves_no_half_proxy(tmp_path, source, monkeypatch):
     manager = _manager(tmp_path)
 
     def broken(*_args, **_kwargs):
@@ -613,13 +501,8 @@ def test_a_failure_while_writing_the_marker_leaves_no_half_proxy(
 def test_an_unwritable_cache_folder_is_reported_not_raised(tmp_path, source):
     blocker = tmp_path / "cache-is-a-file"
     blocker.write_text("je ne suis pas un dossier", encoding="utf-8")
-    manager = ProxyManager(
-        blocker,
-        ffmpeg_command=lambda: ["ffmpeg-fake"],
-        runner=_ok_runner(),
-        memo=SignatureMemo(ttl=0.0),
-        disk_ttl=0.0,
-    )
+    manager = ProxyManager(blocker, ffmpeg_command=lambda: ["ffmpeg-fake"], runner=_ok_runner(),
+                           memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
     info = _generate(manager, source)
     assert info.state is ProxyState.ERROR and info.error
     assert manager.resolve(source) == source and manager.usage_bytes() == 0
@@ -691,10 +574,7 @@ def test_cancelling_a_queued_generation_prevents_it_from_ever_running(tmp_path):
 def test_delete_removes_the_files_and_the_state(manager, source, tmp_path):
     info = _generate(manager, source)
     assert manager.delete(source) is True
-    assert (
-        not Path(info.proxy_path).exists()
-        and manager.info(source).state is ProxyState.NONE
-    )
+    assert not Path(info.proxy_path).exists() and manager.info(source).state is ProxyState.NONE
     assert manager.delete(source) is False
     _generate(manager, source)
     assert manager.delete_all() == 2
@@ -714,26 +594,16 @@ def _hold_sidecar(monkeypatch, failures: int) -> list[str]:
     real_unlink = Path.unlink
 
     def unlink(path, *args, **kwargs):
-        if (
-            path.suffix == ".json"
-            and path.parent.name == "proxies"
-            and len(refused) < failures
-        ):
+        if path.suffix == ".json" and path.parent.name == "proxies" and len(refused) < failures:
             refused.append(path.name)
-            raise PermissionError(
-                13,
-                "The process cannot access the file because it is being used",
-                str(path),
-            )
+            raise PermissionError(13, "The process cannot access the file because it is being used", str(path))
         return real_unlink(path, *args, **kwargs)
 
     monkeypatch.setattr(module.Path, "unlink", unlink)
     return refused
 
 
-def test_ready_is_reported_only_once_the_worker_has_written_and_released_everything(
-    tmp_path, source, monkeypatch
-):
+def test_ready_is_reported_only_once_the_worker_has_written_and_released_everything(tmp_path, source, monkeypatch):
     """Hypothèses écartées : un READY annoncé avant la promotion ou le marqueur, ou une fin de worker (invalidation,
     notification) qui réécrirait après le retrait de ``_active``. Avec des délais injectés à ces deux endroits, READY
     n'apparaît qu'une fois tout écrit et le travail retiré : delete() ne trouve plus rien à la seconde fois."""
@@ -742,12 +612,12 @@ def test_ready_is_reported_only_once_the_worker_has_written_and_released_everyth
     real_invalidate = manager._invalidate_disk_state
 
     def slow_write(*args, **kwargs):
-        time.sleep(0.15)  # promotion faite, marqueur pas encore écrit
+        time.sleep(0.15)                        # promotion faite, marqueur pas encore écrit
         real_write(*args, **kwargs)
 
     def slow_invalidate(*args, **kwargs):
         if threading.current_thread().name.startswith("kut-proxy"):
-            time.sleep(0.15)  # fin de worker retardée, après le retrait de _active
+            time.sleep(0.15)                    # fin de worker retardée, après le retrait de _active
         real_invalidate(*args, **kwargs)
 
     monkeypatch.setattr(manager, "_write_sidecar", slow_write)
@@ -755,23 +625,17 @@ def test_ready_is_reported_only_once_the_worker_has_written_and_released_everyth
     try:
         info = _generate(manager, source)
         assert info.state is ProxyState.READY
-        final, _partial, sidecar = manager._paths(
-            info.source_path, get_profile(info.profile_id)
-        )
-        assert final.is_file() and sidecar.is_file(), (
-            "READY n'est lu que sur un proxy complet"
-        )
+        final, _partial, sidecar = manager._paths(info.source_path, get_profile(info.profile_id))
+        assert final.is_file() and sidecar.is_file(), "READY n'est lu que sur un proxy complet"
         assert manager.delete(source) is True
-        time.sleep(0.3)  # la fin retardée du worker a le temps de passer
+        time.sleep(0.3)                         # la fin retardée du worker a le temps de passer
         assert manager.delete(source) is False
         assert not final.exists() and not sidecar.exists()
     finally:
         manager.shutdown()
 
 
-def test_delete_retries_a_marker_held_for_a_moment_by_another_process(
-    manager, source, monkeypatch
-):
+def test_delete_retries_a_marker_held_for_a_moment_by_another_process(manager, source, monkeypatch):
     """Cause reproduite : sous Windows, le marqueur tout juste écrit était tenu un instant ; son effacement échouait
     en silence, delete() rendait True quand même, et le second delete() le retrouvait (True au lieu de False)."""
     info = _generate(manager, source)
@@ -780,15 +644,11 @@ def test_delete_retries_a_marker_held_for_a_moment_by_another_process(
     assert manager.delete(source) is True
     assert refused, "la violation de partage a bien été injectée"
     assert manager.delete(source) is False
-    final, partial, sidecar = manager._paths(
-        info.source_path, get_profile(info.profile_id)
-    )
+    final, partial, sidecar = manager._paths(info.source_path, get_profile(info.profile_id))
     assert not final.exists() and not partial.exists() and not sidecar.exists()
 
 
-def test_a_marker_held_beyond_the_retry_window_is_reported_not_hidden(
-    manager, source, monkeypatch, caplog
-):
+def test_a_marker_held_beyond_the_retry_window_is_reported_not_hidden(manager, source, monkeypatch, caplog):
     _generate(manager, source)
     _hold_sidecar(monkeypatch, failures=10_000)
 
@@ -813,9 +673,7 @@ def test_shutdown_during_a_generation_stops_it_and_the_threads(tmp_path, source)
     assert started.wait(5)
     assert manager.shutdown(timeout=5.0) is True
     assert list((tmp_path / "proxies").iterdir()) == []
-    assert (
-        manager.request(source) is ProxyState.NONE
-    )  # plus rien ne démarre après la fermeture
+    assert manager.request(source) is ProxyState.NONE                 # plus rien ne démarre après la fermeture
 
 
 def _pid_alive(pid):
@@ -828,40 +686,20 @@ def _pid_alive(pid):
     return True
 
 
-def test_cancel_and_shutdown_really_kill_the_ffmpeg_process(
-    tmp_path, source, monkeypatch
-):
+def test_cancel_and_shutdown_really_kill_the_ffmpeg_process(tmp_path, source, monkeypatch):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "60")
     pid_file = tmp_path / "pid.txt"
     monkeypatch.setenv("FAKE_FFMPEG_PID_FILE", str(pid_file))
-    manager = ProxyManager(
-        tmp_path / "proxies",
-        ffmpeg_command=lambda: [sys.executable, str(FAKE_FFMPEG)],
-        memo=SignatureMemo(ttl=0.0),
-        disk_ttl=0.0,
-    )
+    manager = ProxyManager(tmp_path / "proxies", ffmpeg_command=lambda: [sys.executable, str(FAKE_FFMPEG)],
+                           memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
     manager.request(source, duration=60.0)
-    assert _wait(
-        lambda: (
-            pid_file.exists()
-            and pid_file.read_text().strip()
-            and manager.active_process_ids()
-        )
-    )
+    assert _wait(lambda: pid_file.exists() and pid_file.read_text().strip() and manager.active_process_ids())
     pid = int(pid_file.read_text())
     assert manager.cancel(source)
-    assert _wait(lambda: not _pid_alive(pid)) and _wait(
-        lambda: manager.info(source).state is ProxyState.NONE
-    )
+    assert _wait(lambda: not _pid_alive(pid)) and _wait(lambda: manager.info(source).state is ProxyState.NONE)
     pid_file.unlink()
     manager.request(source, duration=60.0, force=True)
-    assert _wait(
-        lambda: (
-            pid_file.exists()
-            and pid_file.read_text().strip()
-            and manager.active_process_ids()
-        )
-    )
+    assert _wait(lambda: pid_file.exists() and pid_file.read_text().strip() and manager.active_process_ids())
     pid = int(pid_file.read_text())
     assert manager.shutdown(timeout=10.0) is True
     assert not _pid_alive(pid)
@@ -869,26 +707,11 @@ def test_cancel_and_shutdown_really_kill_the_ffmpeg_process(
 
 def test_the_default_runner_reports_failures_and_progress_with_a_real_process(tmp_path):
     seen = []
-    result = run_ffmpeg(
-        [sys.executable, str(FAKE_FFMPEG), "-i", "x", str(tmp_path / "o.mp4")],
-        threading.Event(),
-        seen.append,
-    )
-    assert (
-        result.returncode == 0
-        and (tmp_path / "o.mp4").exists()
-        and seen
-        and not result.cancelled
-    )
-    failing = run_ffmpeg(
-        [
-            sys.executable,
-            "-c",
-            "import sys; print('nope', file=sys.stderr); sys.exit(3)",
-        ],
-        threading.Event(),
-        seen.append,
-    )
+    result = run_ffmpeg([sys.executable, str(FAKE_FFMPEG), "-i", "x", str(tmp_path / "o.mp4")],
+                        threading.Event(), seen.append)
+    assert result.returncode == 0 and (tmp_path / "o.mp4").exists() and seen and not result.cancelled
+    failing = run_ffmpeg([sys.executable, "-c", "import sys; print('nope', file=sys.stderr); sys.exit(3)"],
+                         threading.Event(), seen.append)
     assert failing.returncode == 3 and "nope" in failing.stderr
 
 
@@ -898,26 +721,15 @@ def test_the_default_runner_reports_failures_and_progress_with_a_real_process(tm
 def test_the_project_file_contains_no_proxy_reference(manager, source, tmp_path):
     _generate(manager, source)
     project = Project(
-        name="p",
-        media_assets=[
-            MediaAsset(
-                id="a",
-                path=source,
-                name="a",
-                duration=5,
-                width=1,
-                height=1,
-                fps=25.0,
-                media_type="video",
-            )
-        ],
+        name="p", media_assets=[MediaAsset(id="a", path=source, name="a", duration=5, width=1, height=1,
+                                           fps=25.0, media_type="video")],
         tracks=[Track(id="V1", name="V1", type="video", clips=[])],
     )
     assert "proxy" not in json.dumps(project_payload(project)).lower()
     assert not any("proxy" in f.name for f in fields(MediaAsset))
     path = tmp_path / "film.kut"
     save_project(project, str(path))
-    _remove_tree(tmp_path / "proxies")  # cache supprimé : le projet s'ouvre
+    _remove_tree(tmp_path / "proxies")                               # cache supprimé : le projet s'ouvre
     assert load_project(str(path)).media_assets[0].path == source
 
 
@@ -930,75 +742,29 @@ def test_real_ffmpeg_generates_a_smaller_playable_proxy(tmp_path):
         pytest.skip("ffmpeg / ffprobe indisponibles")
     media = tmp_path / "big.mp4"
     subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc=s=1280x720:r=25:d=2",
-            "-f",
-            "lavfi",
-            "-i",
-            "anullsrc=r=48000:cl=stereo",
-            "-t",
-            "2",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-shortest",
-            str(media),
-        ],
-        check=True,
-        capture_output=True,
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=1280x720:r=25:d=2",
+         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(media)],
+        check=True, capture_output=True,
     )
-    manager = ProxyManager(
-        tmp_path / "proxies",
-        profile_id="low",
-        memo=SignatureMemo(ttl=0.0),
-        disk_ttl=0.0,
-    )
+    manager = ProxyManager(tmp_path / "proxies", profile_id="low", memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
     info = _generate(manager, str(media))
     assert info.state is ProxyState.READY, info.error
 
     def probe(entry):
         out = subprocess.run(
-            [
-                ffprobe,
-                "-v",
-                "error",
-                "-select_streams",
-                entry,
-                "-show_entries",
-                "stream=codec_name,height",
-                "-of",
-                "json",
-                info.proxy_path,
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
+            [ffprobe, "-v", "error", "-select_streams", entry, "-show_entries",
+             "stream=codec_name,height", "-of", "json", info.proxy_path],
+            check=True, capture_output=True, text=True).stdout
         return json.loads(out)["streams"]
 
     video, audio = probe("v:0")[0], probe("a:0")[0]
-    assert (
-        video["height"] == 480
-        and video["codec_name"] == "h264"
-        and audio["codec_name"] == "aac"
-    )
+    assert video["height"] == 480 and video["codec_name"] == "h264" and audio["codec_name"] == "aac"
     assert manager.resolve(str(media)) == info.proxy_path
     assert manager.shutdown()
 
 
-def test_request_lighter_generates_the_lighter_profile_only_and_never_when_disabled(
-    manager, source
-):
+def test_request_lighter_generates_the_lighter_profile_only_and_never_when_disabled(manager, source):
     current = manager.profile
     lighter = manager.lighter_profile(2)
     assert lighter is not None and lighter.max_height < current.max_height
@@ -1006,9 +772,6 @@ def test_request_lighter_generates_the_lighter_profile_only_and_never_when_disab
     manager.request_lighter(source, 2, duration=2.0)
     assert _wait(lambda: manager.info(source, lighter.id).state is ProxyState.READY)
     assert manager.info(source, current.id).state is ProxyState.NONE
-    assert (
-        manager.resolve(source, divisor=2)
-        == manager.info(source, lighter.id).proxy_path
-    )
+    assert manager.resolve(source, divisor=2) == manager.info(source, lighter.id).proxy_path
     manager.set_enabled(False)
     assert manager.request_lighter(source, 2, duration=2.0) is None

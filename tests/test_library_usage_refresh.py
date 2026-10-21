@@ -28,30 +28,16 @@ def _count(window, asset_id: str) -> int:
 
 
 def _settle(qtbot) -> None:
-    qtbot.wait(250)  # le rafraîchissement est regroupé (100 ms)
+    qtbot.wait(250)           # le rafraîchissement est regroupé (100 ms)
 
 
 def _fresh_asset(window, asset_id: str) -> None:
-    window.project.media_assets.append(
-        MediaAsset(
-            asset_id,
-            f"/nonexistent/{asset_id}.mp4",
-            asset_id,
-            5.0,
-            1920,
-            1080,
-            30.0,
-            "video",
-            True,
-        )
-    )
+    window.project.media_assets.append(MediaAsset(asset_id, f"/nonexistent/{asset_id}.mp4", asset_id, 5.0, 1920, 1080, 30.0, "video", True))
     window._refresh_project_library()
     assert _count(window, asset_id) == 0
 
 
-def test_adding_a_clip_with_the_add_button_clears_the_unused_badge(
-    window, qtbot
-) -> None:
+def test_adding_a_clip_with_the_add_button_clears_the_unused_badge(window, qtbot) -> None:
     _fresh_asset(window, "added")
     window.add_asset_to_timeline("added")
     _settle(qtbot)
@@ -73,17 +59,11 @@ def test_duplicate_delete_and_undo_keep_the_badge_exact(window, qtbot) -> None:
     assert _count(window, "cycle") == 2
 
 
-def test_editing_without_changing_usage_does_not_rebuild_the_library(
-    window, qtbot, monkeypatch
-) -> None:
+def test_editing_without_changing_usage_does_not_rebuild_the_library(window, qtbot, monkeypatch) -> None:
     _fresh_asset(window, "quiet")
     calls = []
     original = window.project_panel.set_usage_for_assets
-    monkeypatch.setattr(
-        window.project_panel,
-        "set_usage_for_assets",
-        lambda: (calls.append(1), original())[1],
-    )
+    monkeypatch.setattr(window.project_panel, "set_usage_for_assets", lambda: (calls.append(1), original())[1])
     window._mark_dirty()
     window._mark_dirty()
     _settle(qtbot)

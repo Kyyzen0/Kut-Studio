@@ -175,19 +175,22 @@ def test_default_parameters_returns_all_specs() -> None:
 def test_validate_parameters_rejects_out_of_range() -> None:
     with pytest.raises(ValueError):
         validate_parameters(
-            AudioEffectType.LIMITER,
-            {"limit_db": 12.0},  # borne max = 0.0
+            AudioEffectType.LIMITER, {"limit_db": 12.0}  # borne max = 0.0
         )
 
 
 def test_validate_parameters_rejects_unknown_key() -> None:
     with pytest.raises(ValueError):
-        validate_parameters(AudioEffectType.LIMITER, {"not_a_param": 1.0})
+        validate_parameters(
+            AudioEffectType.LIMITER, {"not_a_param": 1.0}
+        )
 
 
 def test_validate_parameters_rejects_non_numeric() -> None:
     with pytest.raises(ValueError):
-        validate_parameters(AudioEffectType.LIMITER, {"limit_db": "abc"})
+        validate_parameters(
+            AudioEffectType.LIMITER, {"limit_db": "abc"}
+        )
 
 
 def test_single_instance_audio_effects_is_empty() -> None:
@@ -208,12 +211,16 @@ def test_create_audio_effect_assigns_id_and_validates() -> None:
 
 
 def test_create_audio_effect_uses_explicit_id() -> None:
-    effect = create_audio_effect(AudioEffectType.LIMITER, effect_id="custom-id")
+    effect = create_audio_effect(
+        AudioEffectType.LIMITER, effect_id="custom-id"
+    )
     assert effect.id == "custom-id"
 
 
 def test_audio_effect_with_parameters_validation() -> None:
-    effect = create_audio_effect(AudioEffectType.LIMITER, params={"limit_db": -3.0})
+    effect = create_audio_effect(
+        AudioEffectType.LIMITER, params={"limit_db": -3.0}
+    )
     assert effect.parameter("limit_db") == -3.0
 
 
@@ -329,7 +336,9 @@ def test_is_single_instance_returns_false_for_all() -> None:
 
 def test_add_audio_effect_to_clip_appends_to_list() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.NORMALIZE)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.NORMALIZE
+    )
     assert effect.id in [e.id for e in project.tracks[0].clips[0].audio_effects]
 
 
@@ -340,16 +349,17 @@ def test_clip_audio_effects_returns_copy() -> None:
     assert len(effects) == 1
     # C'est une copie.
     effects.clear()
-    assert (
-        clip_audio_effects(project, "clip-1") == effects.__class__(effects)
-        or len(clip_audio_effects(project, "clip-1")) == 1
-    )
+    assert clip_audio_effects(project, "clip-1") == effects.__class__(effects) or len(
+        clip_audio_effects(project, "clip-1")
+    ) == 1
 
 
 def test_audio_effects_accepted_on_video_clip_with_audio() -> None:
     """Les clips vidéo dont le média porte de l'audio acceptent les effets."""
     project = _project_with_video_audio()
-    effect = add_audio_effect_to_clip(project, "clip-v", AudioEffectType.NORMALIZE)
+    effect = add_audio_effect_to_clip(
+        project, "clip-v", AudioEffectType.NORMALIZE
+    )
     assert effect in project.tracks[0].clips[0].audio_effects
 
 
@@ -388,21 +398,29 @@ def test_audio_effects_rejected_on_locked_track() -> None:
 
 def test_remove_audio_effect_from_clip_drops_effect() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.NORMALIZE)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.NORMALIZE
+    )
     remove_audio_effect_from_clip(project, "clip-1", effect.id)
     assert project.tracks[0].clips[0].audio_effects == []
 
 
 def test_set_clip_audio_effect_enabled_toggles_flag() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.LIMITER)
-    updated = set_clip_audio_effect_enabled(project, "clip-1", effect.id, False)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.LIMITER
+    )
+    updated = set_clip_audio_effect_enabled(
+        project, "clip-1", effect.id, False
+    )
     assert updated.enabled is False
 
 
 def test_update_clip_audio_effect_parameters_validates() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.LIMITER)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.LIMITER
+    )
     updated = update_clip_audio_effect_parameters(
         project, "clip-1", effect.id, {"limit_db": -3.0}
     )
@@ -469,12 +487,8 @@ def test_invalid_audio_effect_entry_is_dropped(tmp_path) -> None:
     raw = json.loads(target.read_text(encoding="utf-8"))
     # On injecte un effet mal formé + un effet valide (id unique).
     raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["audio_effects"] = [
-        {
-            "id": "valid",
-            "type": "limiter",
-            "enabled": True,
-            "params": {"limit_db": -3.0},
-        },
+        {"id": "valid", "type": "limiter", "enabled": True,
+         "params": {"limit_db": -3.0}},
         {"id": "broken", "type": "alien_type"},  # type inconnu
         {"id": "second_valid", "type": "normalize"},
         # params absents : defaults appliqués
@@ -497,48 +511,50 @@ def test_audio_effect_on_subtitle_track_not_serialized(tmp_path) -> None:
     save_project(project, str(target))
     raw = json.loads(target.read_text(encoding="utf-8"))
     # Ajout artificiel d'une piste sous-titre.
-    raw["project"]["sequences"][0]["tracks"].append(
-        {
-            "id": "S1",
-            "name": "S1",
-            "type": "subtitle",
-            "locked": False,
-            "visible": True,
-            "muted": False,
-            "solo": False,
-            "armed": False,
-            "height_mode": "default",
-            "collapsed": False,
-            "volume_db": 0.0,
-            "pan": 0.0,
-            "clips": [
-                {
-                    "id": "sc1",
-                    "asset_id": "asset-audio",
-                    "track_id": "S1",
-                    "timeline_start": 0.0,
-                    "source_in": 0.0,
-                    "source_out": 1.0,
-                    "enabled": True,
-                    "label": "",
-                    "text": "sub",
-                    "gain_db": 0.0,
-                    "pan": 0.0,
-                    "fade_in": 0.0,
-                    "fade_out": 0.0,
-                    "transform": {},
-                    "transform_keyframes": [],
-                    "time_remapping": {},
-                    "effects": [],
-                    "text_style": {},
-                }
-            ],
-        }
-    )
+    raw["project"]["sequences"][0]["tracks"].append({
+        "id": "S1",
+        "name": "S1",
+        "type": "subtitle",
+        "locked": False,
+        "visible": True,
+        "muted": False,
+        "solo": False,
+        "armed": False,
+        "height_mode": "default",
+        "collapsed": False,
+        "volume_db": 0.0,
+        "pan": 0.0,
+        "clips": [
+            {
+                "id": "sc1",
+                "asset_id": "asset-audio",
+                "track_id": "S1",
+                "timeline_start": 0.0,
+                "source_in": 0.0,
+                "source_out": 1.0,
+                "enabled": True,
+                "label": "",
+                "text": "sub",
+                "gain_db": 0.0,
+                "pan": 0.0,
+                "fade_in": 0.0,
+                "fade_out": 0.0,
+                "transform": {},
+                "transform_keyframes": [],
+                "time_remapping": {},
+                "effects": [],
+                "text_style": {},
+            }
+        ],
+    })
     target.write_text(json.dumps(raw), encoding="utf-8")
     loaded = load_project(str(target))
     # Le clip sous-titre a une liste audio_effects vide (jamais peuplée).
-    sub_clip = next(clip for clip in loaded.tracks[1].clips if clip.id == "sc1")
+    sub_clip = next(
+        clip
+        for clip in loaded.tracks[1].clips
+        if clip.id == "sc1"
+    )
     assert sub_clip.audio_effects == []
 
 
@@ -569,9 +585,9 @@ def test_build_clip_audio_effect_filters_uses_ffmpeg_names() -> None:
         effect = create_audio_effect(ttype)
         filters = _build_clip_audio_effect_filters((effect,))
         expected_filter = AUDIO_EFFECT_FFMPEG_FILTER[ttype]
-        assert any(line.startswith(expected_filter) for line in filters), (
-            f"{ttype} devrait produire un filtre ``{expected_filter}``"
-        )
+        assert any(
+            line.startswith(expected_filter) for line in filters
+        ), f"{ttype} devrait produire un filtre ``{expected_filter}``"
 
 
 def test_normalize_filter_uses_loudnorm_keys() -> None:
@@ -830,8 +846,12 @@ def test_store_persistence_roundtrip(tmp_path) -> None:
         params_override={"limit_db": -4.0},
     )
     target = tmp_path / AUDIO_EFFECT_PRESETS_FILE
-    save_audio_effect_preset_data([preset], ["normalize"], settings_dir=target.parent)
-    user_presets, favorites = load_audio_effect_preset_data(settings_dir=target.parent)
+    save_audio_effect_preset_data(
+        [preset], ["normalize"], settings_dir=target.parent
+    )
+    user_presets, favorites = load_audio_effect_preset_data(
+        settings_dir=target.parent
+    )
     assert any(p.id == preset.id for p in user_presets)
     assert "normalize" in favorites
 
@@ -878,7 +898,9 @@ def test_undo_redo_add_audio_effect() -> None:
 
 def test_undo_redo_remove_audio_effect() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.LIMITER)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.LIMITER
+    )
 
     history = ProjectHistory()
     history.reset(project)
@@ -894,7 +916,9 @@ def test_undo_redo_remove_audio_effect() -> None:
 
 def test_undo_redo_update_audio_effect_parameters() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.LIMITER)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.LIMITER
+    )
 
     history = ProjectHistory()
     history.reset(project)
@@ -903,7 +927,10 @@ def test_undo_redo_update_audio_effect_parameters() -> None:
         project, "clip-1", effect.id, {"limit_db": -4.0}
     )
     history.record(project, "Modifier paramètres limiteur")
-    assert project.tracks[0].clips[0].audio_effects[0].parameter("limit_db") == -4.0
+    assert (
+        project.tracks[0].clips[0].audio_effects[0].parameter("limit_db")
+        == -4.0
+    )
 
     restored = history.undo()
     assert restored is not None
@@ -915,8 +942,12 @@ def test_undo_redo_update_audio_effect_parameters() -> None:
 
 def test_undo_redo_reorder_audio_effects() -> None:
     project = _audio_project()
-    a = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.NORMALIZE)
-    b = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.LIMITER)
+    a = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.NORMALIZE
+    )
+    b = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.LIMITER
+    )
 
     history = ProjectHistory()
     history.reset(project)
@@ -935,7 +966,9 @@ def test_undo_redo_reorder_audio_effects() -> None:
 
 def test_undo_redo_disable_audio_effect() -> None:
     project = _audio_project()
-    effect = add_audio_effect_to_clip(project, "clip-1", AudioEffectType.LIMITER)
+    effect = add_audio_effect_to_clip(
+        project, "clip-1", AudioEffectType.LIMITER
+    )
 
     history = ProjectHistory()
     history.reset(project)

@@ -21,41 +21,13 @@ def _project(tmp_path) -> Project:
     media = tmp_path / "m.mp4"
     if not media.exists():  # l'identité du fichier (mtime, taille) fait partie de l'empreinte : ne pas la changer
         media.write_bytes(b"x" * 100)
-    asset = MediaAsset(
-        id="a",
-        path=str(media),
-        name="m",
-        duration=100.0,
-        width=1920,
-        height=1080,
-        fps=25.0,
-        media_type="video",
-        has_audio=True,
-    )
-    clip = Clip(
-        id="c1",
-        asset_id="a",
-        track_id="V1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=10.0,
-    )
-    cue = Clip(
-        id="s1",
-        asset_id="",
-        track_id="S1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=10.0,
-        text="Hello",
-    )
-    tracks = [
-        Track(id="V1", name="V1", type="video", clips=[clip]),
-        Track(id="S1", name="S1", type="subtitle", clips=[cue]),
-    ]
-    return Project(
-        name="p", width=1280, height=720, fps=25.0, media_assets=[asset], tracks=tracks
-    )
+    asset = MediaAsset(id="a", path=str(media), name="m", duration=100.0, width=1920, height=1080,
+                       fps=25.0, media_type="video", has_audio=True)
+    clip = Clip(id="c1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=10.0)
+    cue = Clip(id="s1", asset_id="", track_id="S1", timeline_start=0.0, source_in=0.0, source_out=10.0, text="Hello")
+    tracks = [Track(id="V1", name="V1", type="video", clips=[clip]),
+              Track(id="S1", name="S1", type="subtitle", clips=[cue])]
+    return Project(name="p", width=1280, height=720, fps=25.0, media_assets=[asset], tracks=tracks)
 
 
 def _hash(project, **master) -> str:
@@ -78,24 +50,15 @@ MIX_EDITS = {
     "track volume": lambda p: _video(p).set_volume_db(-12.0),
     "track pan": lambda p: _video(p).set_pan(-1.0),
     "track mute": lambda p: setattr(_video(p), "muted", True),
-    "audio effect": lambda p: (
-        _video(p)
-        .clips[0]
-        .audio_effects.append(
-            create_audio_effect(next(iter(AudioEffectType)), effect_id="afx-test")
-        )
-    ),
+    "audio effect": lambda p: _video(p).clips[0].audio_effects.append(
+        create_audio_effect(next(iter(AudioEffectType)), effect_id="afx-test")),
     "track automation": lambda p: _video(p).automation.add_point(1.0, -9.0),
 }
 
 SUBTITLE_EDITS = {
     "subtitle text": lambda p: setattr(_cue(p), "text", "Bye"),
-    "subtitle size": lambda p: setattr(
-        _cue(p), "text_style", replace(_cue(p).text_style, font_size=90.0)
-    ),
-    "subtitle color": lambda p: setattr(
-        _cue(p), "text_style", replace(_cue(p).text_style, color="#ff0000")
-    ),
+    "subtitle size": lambda p: setattr(_cue(p), "text_style", replace(_cue(p).text_style, font_size=90.0)),
+    "subtitle color": lambda p: setattr(_cue(p), "text_style", replace(_cue(p).text_style, color="#ff0000")),
 }
 
 
@@ -105,9 +68,7 @@ def test_an_edit_that_changes_the_render_changes_the_segment_hash(tmp_path, labe
     before = _hash(_project(tmp_path))
     edited = _project(tmp_path)
     edit(edited)
-    assert _hash(edited) != before, (
-        f"« {label} » ne change pas l'empreinte : le cache servirait un rendu périmé"
-    )
+    assert _hash(edited) != before, f"« {label} » ne change pas l'empreinte : le cache servirait un rendu périmé"
 
 
 @pytest.mark.parametrize("master", [{"master_gain_db": -6.0}, {"master_muted": True}])
@@ -119,13 +80,7 @@ def test_the_master_fader_and_mute_change_the_segment_hash(tmp_path, master):
 def test_a_bus_fader_mute_or_insert_changes_the_segment_hash(tmp_path):
     """Le fader, la coupure et les inserts d'un bus ne sont pas sur la couche : sans eux dans l'empreinte, le cache
     ressert le son d'avant le réglage."""
-    from core.audio_buses import (
-        add_bus,
-        add_bus_insert,
-        route_track,
-        set_bus_muted,
-        set_bus_volume,
-    )
+    from core.audio_buses import add_bus, add_bus_insert, route_track, set_bus_muted, set_bus_volume
 
     project = _project(tmp_path)
     bus = add_bus(project, "Voix")
@@ -155,7 +110,5 @@ def test_the_engine_version_is_part_of_the_hash(tmp_path, monkeypatch):
 
     plan = build_segment_job(_project(tmp_path), 0, quality="standard").plan
     before = fingerprint_plan(plan, width=1280, height=720, fps=25.0)
-    monkeypatch.setattr(
-        graph, "RENDER_ENGINE_VERSION", graph.RENDER_ENGINE_VERSION + 1, raising=False
-    )
+    monkeypatch.setattr(graph, "RENDER_ENGINE_VERSION", graph.RENDER_ENGINE_VERSION + 1, raising=False)
     assert fingerprint_plan(plan, width=1280, height=720, fps=25.0) != before

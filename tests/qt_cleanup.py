@@ -37,10 +37,7 @@ def destroy_leftover_windows() -> int:
         return 0
     count = 0
     for widget in QApplication.topLevelWidgets():
-        if (
-            not isinstance(widget, QWidget)
-            or type(widget).__module__.split(".")[0] != "ui"
-        ):
+        if not isinstance(widget, QWidget) or type(widget).__module__.split(".")[0] != "ui":
             continue
         widget.close()
         widget.deleteLater()

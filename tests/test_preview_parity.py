@@ -16,20 +16,12 @@ def test_preview_command_uses_same_graph_as_export():
     tmp.write(b"1\n00:00:00,000 --> 00:00:01,000\nHi\n")
     tmp.close()
     out_w, out_h = 960, 540
-    common, video_label, *_rest = ExportEngine._build_filter_complex(
-        plan, out_w, out_h, 30, tmp.name
-    )
+    common, video_label, *_rest = ExportEngine._build_filter_complex(plan, out_w, out_h, 30, tmp.name)
     # Même graphe que l'export, y compris la dernière étape : la conversion de couleur BT.709.
     expected_complex, _label = with_output_color_stage(common, video_label)
     command = build_preview_command(
-        plan,
-        width=1920,
-        height=1080,
-        fps=30,
-        quality="standard",
-        start=0.0,
-        duration=2.0,
-        output_path="/tmp/seg.mp4",
+        plan, width=1920, height=1080, fps=30, quality="standard",
+        start=0.0, duration=2.0, output_path="/tmp/seg.mp4",
         srt_path=tmp.name,
     )
     idx = command.index("-filter_complex")

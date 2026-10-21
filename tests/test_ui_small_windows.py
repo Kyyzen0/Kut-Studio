@@ -42,35 +42,23 @@ def _no_global_style_leak():
     before = app.styleSheet() if app is not None else ""
     yield
     app = QApplication.instance()
-    if before:  # avant : vide ; le premier test qui crée une fenêtre installe légitimement la feuille de style du thème
-        assert app is not None and app.styleSheet() == before, (
-            "ce test a modifié la feuille de style globale"
-        )
+    if before:   # avant : vide ; le premier test qui crée une fenêtre installe légitimement la feuille de style du thème
+        assert app is not None and app.styleSheet() == before, "ce test a modifié la feuille de style globale"
 
 
 def _isolated_environment(base: Path) -> dict[str, str]:
     return {
-        **os.environ,
-        "QT_QPA_PLATFORM": "offscreen",
-        "KUT_STUDIO_CONFIG_DIR": str(base / "config"),
-        "KUT_STUDIO_CACHE_DIR": str(base / "cache"),
-        "KUT_STUDIO_PROXY_DIR": str(base / "proxies"),
-        "KUT_STUDIO_HARDWARE_ENCODING": "off",
+        **os.environ, "QT_QPA_PLATFORM": "offscreen",
+        "KUT_STUDIO_CONFIG_DIR": str(base / "config"), "KUT_STUDIO_CACHE_DIR": str(base / "cache"),
+        "KUT_STUDIO_PROXY_DIR": str(base / "proxies"), "KUT_STUDIO_HARDWARE_ENCODING": "off",
     }
 
 
-def _run_in_subprocess(
-    arguments: list[str], base: Path, *, timeout: float = 600.0
-) -> subprocess.CompletedProcess[str]:
+def _run_in_subprocess(arguments: list[str], base: Path, *, timeout: float = 600.0) -> subprocess.CompletedProcess[str]:
     """Interpréteur neuf : la feuille de style globale et les fenêtres de ce processus ne sont pas touchées."""
     return subprocess.run(
-        [sys.executable, *arguments],
-        cwd=ROOT,
-        env=_isolated_environment(base),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
+        [sys.executable, *arguments], cwd=ROOT, env=_isolated_environment(base), capture_output=True, text=True,
+        timeout=timeout, check=False,
     )
 
 
@@ -110,9 +98,7 @@ def window_at(tmp_path_factory):
 def _assert_none(findings, context: str = "") -> None:
     """Échec lisible : chaque constat est nommé (widget, nature, dépassement) dans le message, donc dans le journal de CI."""
     if findings:
-        raise AssertionError(
-            f"{context} {[str(f) for f in findings][:8]} | {audit.environment_summary()}".strip()
-        )
+        raise AssertionError(f"{context} {[str(f) for f in findings][:8]} | {audit.environment_summary()}".strip())
 
 
 def _blocking(findings) -> list[str]:
@@ -123,13 +109,9 @@ def _blocking(findings) -> list[str]:
 
 
 @pytest.mark.parametrize("size", audit.SIZES, ids=SIZE_IDS)
-@pytest.mark.parametrize(
-    "tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS]
-)
+@pytest.mark.parametrize("tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS])
 @LEVELS
-def test_inspector_content_fits_the_viewport_on_every_tab(
-    window_at, size, tab, name, usage_level
-):
+def test_inspector_content_fits_the_viewport_on_every_tab(window_at, size, tab, name, usage_level):
     """Le défilement horizontal de l'inspecteur est désactivé : ce qui dépasse est coupé, donc inaccessible."""
     window = window_at(size, usage_level)
     window.properties_panel._select_inspector_tab(tab)
@@ -141,9 +123,7 @@ def test_inspector_content_fits_the_viewport_on_every_tab(
 
 @pytest.mark.parametrize("size", audit.SIZES, ids=SIZE_IDS)
 @LEVELS
-def test_tracking_panel_children_stay_inside_their_parents(
-    window_at, size, usage_level
-):
+def test_tracking_panel_children_stay_inside_their_parents(window_at, size, usage_level):
     """Régression : « Réinitialiser » coupé, « Avant ▶▶ » à moitié visible, champs de « Zones » débordants."""
     window = window_at(size, usage_level)
     window.show_tracking_panel()
@@ -152,34 +132,17 @@ def test_tracking_panel_children_stay_inside_their_parents(
     if usage_level != "advanced":
         # Le suivi est un groupe Avancé de l'inspecteur : à Simple et à Studio il est caché, ce n'est pas un défaut de mise en
         # page. « Afficher plus d'options » (le geste de l'ADR-0006) le révèle ; la vérification ci-dessous est la même.
-        assert not panel.isVisible(), (
-            "le suivi doit être caché à ce niveau tant que le lien n'est pas ouvert"
-        )
+        assert not panel.isVisible(), "le suivi doit être caché à ce niveau tant que le lien n'est pas ouvert"
         audit.open_all_inspector_options(window)
     try:
         assert panel.isVisible()
         _assert_none(audit.parent_overflow(panel), "enfant hors de son parent :")
         viewport_width = window.properties_panel.scroll_area.viewport().width()
-        for widget in (
-            panel.add_button,
-            panel.remove_button,
-            panel.reset_button,
-            panel.backward_button,
-            panel.stop_button,
-            panel.forward_button,
-            panel.pattern_w,
-            panel.pattern_h,
-            panel.search_w,
-            panel.search_h,
-            panel.link_button,
-            panel.bake_button,
-            panel.auto_stab,
-        ):
+        for widget in (panel.add_button, panel.remove_button, panel.reset_button, panel.backward_button,
+                       panel.stop_button, panel.forward_button, panel.pattern_w, panel.pattern_h,
+                       panel.search_w, panel.search_h, panel.link_button, panel.bake_button, panel.auto_stab):
             if widget.isVisibleTo(panel):
-                right = widget.mapTo(
-                    window.properties_panel.scroll_area.widget(),
-                    widget.rect().topRight(),
-                ).x()
+                right = widget.mapTo(window.properties_panel.scroll_area.widget(), widget.rect().topRight()).x()
                 assert right <= viewport_width, widget.objectName()
     finally:
         audit.close_all_inspector_options(window)
@@ -198,27 +161,21 @@ def test_inspector_groups_of_special_clips_fit(window_at, size, name, usage_leve
     else:
         scenarios[f"inspecteur-{name}"]()
     audit.settle(window)
-    _assert_none(
-        audit.scroll_clipping(window.properties_panel.scroll_area), "inspecteur coupé :"
-    )
+    _assert_none(audit.scroll_clipping(window.properties_panel.scroll_area), "inspecteur coupé :")
 
 
 @pytest.mark.parametrize("size", audit.SIZES, ids=SIZE_IDS)
 @pytest.mark.parametrize("effect_type", ["color_correction", "vignette"])
 @LEVELS
-def test_inspector_with_an_animatable_effect_selected_fits(
-    window_at, size, effect_type, usage_level
-):
+def test_inspector_with_an_animatable_effect_selected_fits(window_at, size, effect_type, usage_level):
     """Étape 4 de l'ADR-0008 : les rangées ‹ ◆ › sous les réglages d'effets ne coupent ni ne débordent, à chaque niveau.
 
     Aux niveaux Simple et Studio, la même vérification avec « Afficher plus d'options » et les pliants ouverts."""
     window = window_at(size, usage_level)
-    dict(audit.effect_scenarios(window))[
-        f"inspecteur-effet-{effect_type.replace('_', '-')}"
-    ]()
+    dict(audit.effect_scenarios(window))[f"inspecteur-effet-{effect_type.replace('_', '-')}"]()
     panel = window.properties_panel
     try:
-        for opened in (False, True) if usage_level != "advanced" else (False,):
+        for opened in ((False, True) if usage_level != "advanced" else (False,)):
             if opened:
                 audit.open_all_inspector_options(window)
             rows = panel.effect_keyframe_widgets()
@@ -227,10 +184,7 @@ def test_inspector_with_an_animatable_effect_selected_fits(
             assert all(shown) if (usage_level != "simple" or opened) else not any(shown)
             audit.settle(window)
             scroll = panel.scroll_area
-            _assert_none(
-                audit.scroll_clipping(scroll),
-                f"effet {effect_type} coupé à {size} ({usage_level}, ouvert={opened}) :",
-            )
+            _assert_none(audit.scroll_clipping(scroll), f"effet {effect_type} coupé à {size} ({usage_level}, ouvert={opened}) :")
             assert audit.content_min_width_excess(scroll) <= 0
     finally:
         audit.close_all_inspector_options(window)
@@ -259,10 +213,7 @@ def test_every_library_section_fits_its_column(window_at, size, section, usage_l
     """Bibliothèque ouverte par l'API réelle (``select_section``) : rien de coupé, écrasé ou superposé."""
     window = window_at(size, usage_level)
     audit.open_library_section(window, section)
-    _assert_none(
-        _blocking(audit.audit_main_window(window, f"{size} {section}")),
-        f"{size} {section} :",
-    )
+    _assert_none(_blocking(audit.audit_main_window(window, f"{size} {section}")), f"{size} {section} :")
     audit.open_library_section(window, "media")
 
 
@@ -274,13 +225,7 @@ def test_library_filter_tabs_wrap_instead_of_being_squeezed(window_at, usage_lev
     for section, buttons in (
         ("transitions", lambda: panel.transition_view.filter_buttons),
         ("effects", lambda: panel.effects_view.category_buttons),
-        (
-            "audio-effects",
-            lambda: [
-                *panel.audio_effects_view.category_buttons,
-                panel.audio_effects_view.favorites_button,
-            ],
-        ),
+        ("audio-effects", lambda: [*panel.audio_effects_view.category_buttons, panel.audio_effects_view.favorites_button]),
     ):
         audit.open_library_section(window, section)
         for button in buttons():
@@ -289,9 +234,7 @@ def test_library_filter_tabs_wrap_instead_of_being_squeezed(window_at, usage_lev
 
 
 @LEVELS
-def test_library_preset_cards_elide_long_names_instead_of_pushing_their_buttons_out(
-    window_at, usage_level
-):
+def test_library_preset_cards_elide_long_names_instead_of_pushing_their_buttons_out(window_at, usage_level):
     """Régression : la carte d'une transition dont le nom est long sortait de la colonne (étoile coupée)."""
     window = window_at((1180, 720), usage_level)
     panel = window.project_panel
@@ -300,9 +243,7 @@ def test_library_preset_cards_elide_long_names_instead_of_pushing_their_buttons_
     cards = list(panel.transition_view._cards.values())
     assert cards
     for card in cards:
-        card._title.setText(
-            "Un nom de preset beaucoup trop long pour tenir dans une colonne de 230 px"
-        )
+        card._title.setText("Un nom de preset beaucoup trop long pour tenir dans une colonne de 230 px")
     audit.settle(window)
     _assert_none(audit.scroll_clipping(scroll), "zone défilante coupée :")
     audit.open_library_section(window, "media")
@@ -320,19 +261,13 @@ def test_filter_chip_bar_fits_the_narrowest_media_column():
 def _bar_geometry(window) -> dict[str, list]:
     """Rectangles (dans le parent) des entrées de menu et boutons visibles de chaque barre, pour un message d'échec lisible."""
     bar = window.menuBar()
-    menus = [
-        (a.text(), bar.actionGeometry(a).getRect())
-        for a in bar.actions()
-        if a.isVisible()
-    ]
+    menus = [(a.text(), bar.actionGeometry(a).getRect()) for a in bar.actions() if a.isVisible()]
     return {"menuBar": [(bar.width(), menus)]}
 
 
 @pytest.mark.parametrize("size", audit.SIZES, ids=SIZE_IDS)
 @LEVELS
-def test_menu_bar_page_bar_rail_and_timeline_toolbar_fit_at_every_level(
-    window_at, size, usage_level
-):
+def test_menu_bar_page_bar_rail_and_timeline_toolbar_fit_at_every_level(window_at, size, usage_level):
     """Les barres suivent le niveau (entrées, boutons de pages, rail, outils) sans rien couper ni superposer."""
     window = window_at(size, usage_level)
     audit.settle(window)
@@ -340,42 +275,26 @@ def test_menu_bar_page_bar_rail_and_timeline_toolbar_fit_at_every_level(
     for action in bar.actions():
         if action.isVisible():
             rect = bar.actionGeometry(action)
-            assert rect.right() <= bar.width() + audit.TOLERANCE, (
-                f"menu « {action.text()} » coupé : {_bar_geometry(window)}"
-            )
+            assert rect.right() <= bar.width() + audit.TOLERANCE, f"menu « {action.text()} » coupé : {_bar_geometry(window)}"
     buttons = [b for b in window.page_buttons.values() if not b.isHidden()]
     assert buttons, "aucune page visible"
     top_bar = buttons[0].parentWidget()
-    for scope, root in (
-        ("barre du haut", top_bar),
-        ("rail", window.side_rail),
-        ("barre de la timeline", window.timeline_panel.snap_button.parentWidget()),
-    ):
-        _assert_none(
-            audit.parent_overflow(root), f"{scope} : enfant hors de son parent :"
-        )
+    for scope, root in (("barre du haut", top_bar), ("rail", window.side_rail), ("barre de la timeline", window.timeline_panel.snap_button.parentWidget())):
+        _assert_none(audit.parent_overflow(root), f"{scope} : enfant hors de son parent :")
         _assert_none(audit.sibling_overlaps(root), f"{scope} : chevauchement :")
     for button in buttons:
-        assert button.width() >= button.sizeHint().width() - audit.TOLERANCE, (
-            f"page « {button.text()} » écrasée"
-        )
+        assert button.width() >= button.sizeHint().width() - audit.TOLERANCE, f"page « {button.text()} » écrasée"
     host = window.side_rail
     for section in host._sections:
         button = host._buttons[section.id]
         if not button.isHidden():
-            assert button.geometry().bottom() <= host.height() + audit.TOLERANCE, (
-                f"rail : « {section.id} » hors de la colonne"
-            )
+            assert button.geometry().bottom() <= host.height() + audit.TOLERANCE, f"rail : « {section.id} » hors de la colonne"
 
 
 @pytest.mark.parametrize("size", audit.SIZES, ids=SIZE_IDS)
-@pytest.mark.parametrize(
-    "tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS]
-)
+@pytest.mark.parametrize("tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS])
 @pytest.mark.parametrize("usage_level", ["simple", "studio"])
-def test_inspector_with_every_option_open_fits_the_viewport(
-    window_at, size, tab, name, usage_level
-):
+def test_inspector_with_every_option_open_fits_the_viewport(window_at, size, tab, name, usage_level):
     """« Afficher plus d'options » et tous les pliants « Avancé » ouverts : la mise en page la plus chargée du niveau tient."""
     window = window_at(size, usage_level)
     audit.open_all_inspector_options(window)
@@ -383,10 +302,7 @@ def test_inspector_with_every_option_open_fits_the_viewport(
         window.properties_panel._select_inspector_tab(tab)
         audit.settle(window)
         scroll = window.properties_panel.scroll_area
-        _assert_none(
-            audit.scroll_clipping(scroll),
-            f"onglet {name} tout ouvert, niveau {usage_level}, coupé à {size} :",
-        )
+        _assert_none(audit.scroll_clipping(scroll), f"onglet {name} tout ouvert, niveau {usage_level}, coupé à {size} :")
         assert audit.content_min_width_excess(scroll) <= 0
     finally:
         audit.close_all_inspector_options(window)
@@ -401,20 +317,8 @@ def test_panels_stay_inside_their_hosts(window_at, size, usage_level):
     """Régression : la timeline dépassait de 30 px son hôte, l'inspecteur de 20 px, à 1180 / 1280 × 720."""
     window = window_at(size, usage_level)
     audit.settle(window)
-    _assert_none(
-        [
-            f
-            for f in audit.parent_overflow(window)
-            if "panelHost" in f.where or "dockZone" in f.where
-        ],
-        "panneau hors de son hôte :",
-    )
-    for name in (
-        "project_panel",
-        "properties_panel",
-        "timeline_panel",
-        "preview_panel",
-    ):
+    _assert_none([f for f in audit.parent_overflow(window) if "panelHost" in f.where or "dockZone" in f.where], "panneau hors de son hôte :")
+    for name in ("project_panel", "properties_panel", "timeline_panel", "preview_panel"):
         panel = getattr(window, name)
         host = panel.parentWidget()
         assert panel.height() <= host.height() + 1, name
@@ -423,9 +327,7 @@ def test_panels_stay_inside_their_hosts(window_at, size, usage_level):
 
 @pytest.mark.parametrize("size", SMALL_SIZES, ids=[f"{w}x{h}" for w, h in SMALL_SIZES])
 @LEVELS
-def test_monitor_keeps_a_useful_height_when_the_window_is_low(
-    window_at, size, usage_level
-):
+def test_monitor_keeps_a_useful_height_when_the_window_is_low(window_at, size, usage_level):
     """À 720 px le moniteur n'avait plus que ~85 px d'image : les scopes cèdent d'abord."""
     window = window_at(size, usage_level)
     assert window.scopes_panel.isVisible()
@@ -450,13 +352,8 @@ def test_library_keeps_its_natural_height_when_the_window_allows_it():
     try:
         library = window.project_panel
         root = window.workspace._root_splitter
-        wanted = min(
-            library.sizeHint().height(),
-            root.height() - root.handleWidth() - Sizes.timeline_min_height,
-        )
-        assert library.height() >= wanted - 16, (
-            f"bibliothèque de {library.height()} px, il en faut {wanted}"
-        )
+        wanted = min(library.sizeHint().height(), root.height() - root.handleWidth() - Sizes.timeline_min_height)
+        assert library.height() >= wanted - 16, f"bibliothèque de {library.height()} px, il en faut {wanted}"
     finally:
         window.close()
 
@@ -470,15 +367,11 @@ def test_the_offscreen_platform_has_real_fonts(qapp):
     """Sans police (Windows ``offscreen``), chaque caractère devient une boîte carrée : les mesures sont fausses."""
     from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
 
-    assert QFontDatabase.families(), (
-        "aucune police : les largeurs de texte mesurées ne sont pas celles d'une vraie police"
-    )
+    assert QFontDatabase.families(), "aucune police : les largeurs de texte mesurées ne sont pas celles d'une vraie police"
     font = QFont()
     font.setPixelSize(13)
     sample = "État : Aucun clip sélectionné"
-    assert QFontMetrics(font).horizontalAdvance(sample) < len(sample) * 13 * 0.8, (
-        "texte mesuré avec des glyphes-boîtes"
-    )
+    assert QFontMetrics(font).horizontalAdvance(sample) < len(sample) * 13 * 0.8, "texte mesuré avec des glyphes-boîtes"
 
 
 def test_declared_minimums_agree_with_the_panels():
@@ -488,9 +381,7 @@ def test_declared_minimums_agree_with_the_panels():
 
     assert Sizes.timeline_min_height <= MIN_SIZE[PanelId.TIMELINE]
     assert TimelinePanel(None).minimumHeight() <= MIN_SIZE[PanelId.TIMELINE]
-    assert (
-        PropertiesPanel(lambda *_a: None).minimumWidth() <= MIN_SIZE[PanelId.INSPECTOR]
-    )
+    assert PropertiesPanel(lambda *_a: None).minimumWidth() <= MIN_SIZE[PanelId.INSPECTOR]
 
 
 # --- l'outil d'audit lui-même ------------------------------------------------------------------------------------
@@ -504,17 +395,12 @@ def test_audit_tool_replays_and_saves_one_capture_per_scenario(tmp_path):
     assert "1180x720-defaut.png" in captures
     assert "1180x720-inspecteur-suivi.png" in captures
     assert any(name.startswith("1180x720-bibliotheque-") for name in captures)
-    assert not any(
-        "simple" in name or "studio" in name or "tout-ouvert" in name
-        for name in captures
-    )
+    assert not any("simple" in name or "studio" in name or "tout-ouvert" in name for name in captures)
 
 
 def test_audit_tool_replays_the_levels_it_is_given_and_names_their_captures(tmp_path):
     """``levels=...`` rejoue chaque scénario à chaque niveau ; Simple et Studio ajoutent les scénarios « tout ouvert »."""
-    findings = audit.run_audit(
-        ((1180, 720),), out_dir=tmp_path, levels=("simple", "studio")
-    )
+    findings = audit.run_audit(((1180, 720),), out_dir=tmp_path, levels=("simple", "studio"))
     _assert_none(_blocking(findings))
     captures = {path.name for path in tmp_path.glob("*.png")}
     for level in ("simple", "studio"):
@@ -533,9 +419,7 @@ def test_audit_command_line_reads_the_levels_argument():
 
 
 @LEVELS
-def test_layouts_survive_20_percent_wider_fonts_at_the_smallest_size(
-    tmp_path, usage_level
-):
+def test_layouts_survive_20_percent_wider_fonts_at_the_smallest_size(tmp_path, usage_level):
     """Robustesse entre plateformes : les polices de Windows / Linux sont plus larges que celles de macOS.
 
     Les tests ne comparent aucune taille absolue ; celui-ci simule des polices 20 % plus larges (``scale_fonts``) et exige
@@ -543,21 +427,8 @@ def test_layouts_survive_20_percent_wider_fonts_at_the_smallest_size(
     agrandir les polices modifie la feuille de style globale, ce qui ralentissait (70 s) puis cassait les tests voisins.
     """
     done = _run_in_subprocess(
-        [
-            "-m",
-            "tools.ui_audit",
-            "--sizes",
-            "1180x720",
-            "--font-scale",
-            "1.2",
-            "--levels",
-            usage_level,
-        ],
-        tmp_path,
-    )
-    assert done.returncode == 0, (
-        f"constats bloquants à +20 % de police ({usage_level}) :\n{done.stdout[-3000:]}\n{done.stderr[-500:]}"
-    )
+        ["-m", "tools.ui_audit", "--sizes", "1180x720", "--font-scale", "1.2", "--levels", usage_level], tmp_path)
+    assert done.returncode == 0, f"constats bloquants à +20 % de police ({usage_level}) :\n{done.stdout[-3000:]}\n{done.stderr[-500:]}"
 
 
 _SCALE_FONTS_SCRIPT = """
@@ -584,9 +455,7 @@ print("ok")
 def test_audit_font_scale_restarts_from_the_original_stylesheet(tmp_path):
     """Régression de l'outil : l'agrandissement des polices se cumulait d'une fenêtre à l'autre (sous-processus)."""
     done = _run_in_subprocess(["-c", _SCALE_FONTS_SCRIPT], tmp_path)
-    assert done.returncode == 0 and done.stdout.strip().endswith("ok"), (
-        f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"
-    )
+    assert done.returncode == 0 and done.stdout.strip().endswith("ok"), f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"
 
 
 def test_graph_editor_can_be_narrower_than_a_small_screen(window_at):
@@ -594,14 +463,10 @@ def test_graph_editor_can_be_narrower_than_a_small_screen(window_at):
     window = window_at((1280, 720))
     editor = window.open_graph_editor()
     audit.settle(window)
-    assert editor.minimumSizeHint().width() <= 900, (
-        f"largeur minimale de l'éditeur : {editor.minimumSizeHint().width()} px"
-    )
+    assert editor.minimumSizeHint().width() <= 900, f"largeur minimale de l'éditeur : {editor.minimumSizeHint().width()} px"
     editor.resize(100, 100)
     audit.settle(window)
-    assert editor.width() <= 900, (
-        f"largeur de l'éditeur réduit au minimum : {editor.width()} px"
-    )
+    assert editor.width() <= 900, f"largeur de l'éditeur réduit au minimum : {editor.width()} px"
     _assert_none(audit.sibling_overlaps(editor), "éditeur de courbes : chevauchement :")
     editor.hide()
 
@@ -613,10 +478,7 @@ def test_export_page_fits_at_the_smallest_size(window_at):
     try:
         for scroll in window.export_panel.findChildren(QScrollArea):
             _assert_none(audit.scroll_clipping(scroll), "page d'export coupée :")
-        _assert_none(
-            audit.parent_overflow(window.export_panel),
-            "page d'export : enfant hors de son parent :",
-        )
+        _assert_none(audit.parent_overflow(window.export_panel), "page d'export : enfant hors de son parent :")
     finally:
         window.show_editor()
 
@@ -632,16 +494,12 @@ def test_the_audit_scratch_directory_cleanup_never_decides_the_verdict(monkeypat
 
     def locked(path, *args, **kwargs):
         if os.path.basename(str(path)) == ".blank-960x540.1.tmp.png":
-            raise PermissionError(
-                32,
-                "Le processus ne peut pas accéder au fichier car ce fichier est utilisé par un autre processus",
-            )
+            raise PermissionError(32, "Le processus ne peut pas accéder au fichier car ce fichier est utilisé par un autre processus")
         return real_unlink(path, *args, **kwargs)
 
     monkeypatch.setattr(os, "unlink", locked)
     with scratch_directory() as scratch:
         (Path(scratch) / "cache" / "mograph").mkdir(parents=True)
-        (Path(scratch) / "cache" / "mograph" / ".blank-960x540.1.tmp.png").write_bytes(
-            b"png"
-        )
+        (Path(scratch) / "cache" / "mograph" / ".blank-960x540.1.tmp.png").write_bytes(b"png")
     # arrivé ici : la sortie du bloc n'a rien levé
+

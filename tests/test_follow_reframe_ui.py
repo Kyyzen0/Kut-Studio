@@ -19,38 +19,15 @@ def window(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
     main = MainWindow()
-    main.set_usage_level(
-        "advanced"
-    )  # ces tests lisent des entrées de menu de niveau Studio et Avancé
+    main.set_usage_level("advanced")      # ces tests lisent des entrées de menu de niveau Studio et Avancé
     qtbot.addWidget(main)
     main.timeline_timer.stop()
     keep_preview_player_off_the_disk(main, monkeypatch)
-    asset = MediaAsset(
-        id="a",
-        path=str(tmp_path / "plan.mp4"),
-        name="plan",
-        duration=2.0,
-        width=SRC_W,
-        height=SRC_H,
-        fps=float(FPS),
-        media_type="video",
-    )
-    clip = Clip(
-        id="c",
-        asset_id="a",
-        track_id="V1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=2.0,
-    )
-    project = Project(
-        name="9:16",
-        width=SEQ_W,
-        height=SEQ_H,
-        fps=float(FPS),
-        media_assets=[asset],
-        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
-    )
+    asset = MediaAsset(id="a", path=str(tmp_path / "plan.mp4"), name="plan", duration=2.0, width=SRC_W, height=SRC_H,
+                       fps=float(FPS), media_type="video")
+    clip = Clip(id="c", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)
+    project = Project(name="9:16", width=SEQ_W, height=SEQ_H, fps=float(FPS), media_assets=[asset],
+                      tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
     main.project = project
     main.history.reset(project)
     main.timeline_panel.set_project(project)
@@ -64,11 +41,7 @@ def _clip(window) -> Clip:
 
 
 def _pan_frames(window) -> list:
-    return [
-        frame
-        for frame in _clip(window).transform_keyframes
-        if frame.property_name == "pan_x"
-    ]
+    return [frame for frame in _clip(window).transform_keyframes if frame.property_name == "pan_x"]
 
 
 def test_the_command_sits_in_the_social_menu(window):
@@ -81,18 +54,14 @@ def test_the_selected_clip_follows_its_tracker_in_one_undo_step(window):
     window.history.reset(window.project)
     window.follow_subject_in_selection()
     assert _clip(window).transform.fill is True and len(_pan_frames(window)) >= 2
-    assert window.statusBar().currentMessage() == i18n.translate(
-        "social.message.reframed", count=1
-    )
+    assert window.statusBar().currentMessage() == i18n.translate("social.message.reframed", count=1)
     window.undo_last()
     assert _clip(window).transform.fill is False and _pan_frames(window) == []
 
 
 def test_without_tracker_the_user_is_told_what_to_do(window):
     window.follow_subject_in_selection()
-    assert window.statusBar().currentMessage() == i18n.translate(
-        "social.message.reframe_no_tracker"
-    )
+    assert window.statusBar().currentMessage() == i18n.translate("social.message.reframe_no_tracker")
     assert _clip(window).transform.fill is False
 
 
@@ -101,14 +70,10 @@ def test_an_unanalysed_tracker_is_explained(window):
 
     _clip(window).tracking = ClipTracking(trackers=(Tracker(id="vide"),))
     window.follow_subject_in_selection()
-    assert window.statusBar().currentMessage() == i18n.translate(
-        "social.message.reframe_no_positions"
-    )
+    assert window.statusBar().currentMessage() == i18n.translate("social.message.reframe_no_positions")
 
 
 def test_without_selection_nothing_happens(window):
     window.timeline_panel.selected_clip_id = None
     window.follow_subject_in_selection()
-    assert window.statusBar().currentMessage() == i18n.translate(
-        "social.message.no_video"
-    )
+    assert window.statusBar().currentMessage() == i18n.translate("social.message.no_video")

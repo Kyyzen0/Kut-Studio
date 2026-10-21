@@ -52,12 +52,7 @@ from core.sequences import (
 )
 from core.timeline_evaluator import evaluate_timeline, timeline_duration
 from core.timeline_index import build_timeline_index
-from core.timeline_operations import (
-    cut_clip,
-    duplicate_clip,
-    trim_clip_left,
-    trim_clip_right,
-)
+from core.timeline_operations import cut_clip, duplicate_clip, trim_clip_left, trim_clip_right
 from core.transitions import Transition
 from core.visual_effects import ClipTransform, TransformKeyframe
 
@@ -67,49 +62,29 @@ from core.visual_effects import ClipTransform, TransformKeyframe
 # ---------------------------------------------------------------------------
 
 
-def _video(
-    asset_id: str = "red", duration: float = 10.0, has_audio: bool = True
-) -> MediaAsset:
-    return MediaAsset(
-        asset_id,
-        f"/media/{asset_id}.mp4",
-        asset_id,
-        duration,
-        1920,
-        1080,
-        30.0,
-        "video",
-        has_audio,
-    )
+def _video(asset_id: str = "red", duration: float = 10.0, has_audio: bool = True) -> MediaAsset:
+    return MediaAsset(asset_id, f"/media/{asset_id}.mp4", asset_id, duration, 1920, 1080, 30.0, "video", has_audio)
 
 
 def _audio(asset_id: str = "music", duration: float = 20.0) -> MediaAsset:
-    return MediaAsset(
-        asset_id, f"/media/{asset_id}.wav", asset_id, duration, 0, 0, 0.0, "audio", True
-    )
+    return MediaAsset(asset_id, f"/media/{asset_id}.wav", asset_id, duration, 0, 0, 0.0, "audio", True)
 
 
-def _clip(
-    clip_id: str, asset_id: str, track_id: str, start: float, length: float, **kwargs
-) -> Clip:
-    return Clip(
-        clip_id, asset_id, track_id, start, 0.0, length, label=clip_id, **kwargs
-    )
+def _clip(clip_id: str, asset_id: str, track_id: str, start: float, length: float, **kwargs) -> Clip:
+    return Clip(clip_id, asset_id, track_id, start, 0.0, length, label=clip_id, **kwargs)
 
 
 def _two_level_project() -> Project:
     """``main`` (V1 bleu, V2 vide, A1) + ``intro`` (V1 rouge 0–4 s, A1 musique 0–4 s)."""
     intro = Sequence(
-        "intro",
-        "Intro",
+        "intro", "Intro",
         tracks=[
             Track("V1", "V1", "video", clips=[_clip("r1", "red", "V1", 0.0, 4.0)]),
             Track("A1", "A1", "audio", clips=[_clip("m1", "music", "A1", 0.0, 4.0)]),
         ],
     )
     main = Sequence(
-        "main",
-        "Master",
+        "main", "Master",
         tracks=[
             Track("V1", "V1", "video", clips=[_clip("b1", "blue", "V1", 0.0, 10.0)]),
             Track("V2", "V2", "video"),
@@ -133,24 +108,9 @@ def _chain(levels: int) -> Project:
         if index == levels:
             clips = [_clip(f"leaf{index}", "red", "V1", 0.0, 4.0)]
         else:
-            clips = [
-                Clip(
-                    f"n{index}", "", "V1", 0.0, 0.0, 4.0, sequence_id=f"seq{index + 1}"
-                )
-            ]
-        sequences.append(
-            Sequence(
-                f"seq{index}",
-                f"S{index}",
-                tracks=[Track("V1", "V1", "video", clips=clips)],
-            )
-        )
-    return Project(
-        "chain",
-        media_assets=[_video("red")],
-        sequences=sequences,
-        active_sequence_id="seq0",
-    )
+            clips = [Clip(f"n{index}", "", "V1", 0.0, 0.0, 4.0, sequence_id=f"seq{index + 1}")]
+        sequences.append(Sequence(f"seq{index}", f"S{index}", tracks=[Track("V1", "V1", "video", clips=clips)]))
+    return Project("chain", media_assets=[_video("red")], sequences=sequences, active_sequence_id="seq0")
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +145,7 @@ def test_unknown_active_sequence_falls_back_instead_of_crashing():
 
 def test_ambiguous_constructor_is_rejected():
     with pytest.raises(ValueError):
-        Project(
-            "p", tracks=[Track("V1", "V1", "video")], sequences=[Sequence("s", "S")]
-        )
+        Project("p", tracks=[Track("V1", "V1", "video")], sequences=[Sequence("s", "S")])
 
 
 def test_sequence_validates_its_canvas():
@@ -266,9 +224,7 @@ def test_duplicate_gives_an_independent_timeline_with_shared_references():
     copy_ids = {c.id for t in copy.tracks for c in t.clips}
     assert not original_ids & copy_ids
     nested = [c for t in copy.tracks for c in t.clips if c.sequence_id]
-    assert [c.sequence_id for c in nested] == [
-        "intro"
-    ]  # pas de copie profonde récursive
+    assert [c.sequence_id for c in nested] == ["intro"]  # pas de copie profonde récursive
     assert len(project.sequences) == 3
     copy.tracks[0].clips[0].timeline_start = 5.0
     assert project.get_sequence("main").tracks[0].clips[0].timeline_start == 0.0
@@ -369,9 +325,7 @@ def test_self_reference_is_a_cycle_of_one():
 
 def test_unknown_reference_never_crashes_evaluation_or_rendering():
     project = _two_level_project()
-    project.tracks[1].clips.append(
-        Clip("ghost", "", "V2", 0.0, 0.0, 3.0, sequence_id="nope")
-    )
+    project.tracks[1].clips.append(Clip("ghost", "", "V2", 0.0, 0.0, 3.0, sequence_id="nope"))
     plan = build_render_plan(project)
     assert all(layer.clip_id != "ghost" for layer in plan.video_layers)
     assert any("introuvable" in warning for warning in plan.warnings)
@@ -387,21 +341,15 @@ def test_unknown_reference_never_crashes_evaluation_or_rendering():
 def test_nest_selection_preserves_relative_positions_and_replaces_the_selection():
     project = _two_level_project()
     main = project.get_sequence("main")
-    main.tracks[1].clips.append(
-        _clip("t1", "red", "V2", 3.0, 2.0, effects=[ClipEffect("fx", EffectType.BLUR)])
-    )
+    main.tracks[1].clips.append(_clip("t1", "red", "V2", 3.0, 2.0, effects=[ClipEffect("fx", EffectType.BLUR)]))
     main.tracks[2].clips.append(_clip("a1", "music", "A1", 4.0, 3.0, gain_db=-6.0))
     main.markers.extend([Marker("in", 3.5, "dans"), Marker("out", 9.0, "dehors")])
     result = create_sequence_from_selection(project, ["t1", "a1"], "Scene 01")
     inner = result.sequence
     assert inner.name == "Scene 01" and [t.id for t in inner.tracks] == ["V2", "A1"]
     moved = {c.id: c for t in inner.tracks for c in t.clips}
-    assert moved["t1"].timeline_start == 0.0 and moved[
-        "a1"
-    ].timeline_start == pytest.approx(1.0)
-    assert (
-        moved["t1"].effects[0].type == EffectType.BLUR and moved["a1"].gain_db == -6.0
-    )
+    assert moved["t1"].timeline_start == 0.0 and moved["a1"].timeline_start == pytest.approx(1.0)
+    assert moved["t1"].effects[0].type == EffectType.BLUR and moved["a1"].gain_db == -6.0
     assert [m.time_seconds for m in inner.markers] == [pytest.approx(0.5)]
     assert len(main.markers) == 2  # les repères du parent sont copiés, pas déplacés
     nested = result.clip
@@ -415,13 +363,9 @@ def test_nest_selection_preserves_relative_positions_and_replaces_the_selection(
 def test_nest_selection_moves_inner_transitions_and_drops_crossing_ones():
     project = _two_level_project()
     main = project.get_sequence("main")
-    main.tracks[1].clips.extend(
-        [_clip("x", "red", "V2", 0.0, 2.0), _clip("y", "red", "V2", 2.0, 2.0)]
-    )
+    main.tracks[1].clips.extend([_clip("x", "red", "V2", 0.0, 2.0), _clip("y", "red", "V2", 2.0, 2.0)])
     main.tracks[0].clips.append(_clip("z", "red", "V1", 10.0, 2.0))
-    main.transitions.extend(
-        [Transition("inside", "x", "y"), Transition("crossing", "b1", "z")]
-    )
+    main.transitions.extend([Transition("inside", "x", "y"), Transition("crossing", "b1", "z")])
     result = create_sequence_from_selection(project, ["x", "y", "b1"], "Nest")
     assert [t.id for t in result.sequence.transitions] == ["inside"]
     assert result.dropped_transition_ids == ("crossing",)
@@ -446,9 +390,7 @@ def test_nesting_keeps_the_rendered_layers_equivalent():
     after = build_render_plan(project)
     assert len(after.nested_sequences) == 1
     inner = after.nested_sequences[0].plan
-    assert [l.clip_id for l in inner.video_layers] == [
-        l.clip_id for l in before.video_layers
-    ]
+    assert [l.clip_id for l in inner.video_layers] == [l.clip_id for l in before.video_layers]
     assert after.duration == before.duration
 
 
@@ -465,10 +407,7 @@ def test_trim_right_is_bounded_by_the_sequence_duration():
     with pytest.raises(ValueError, match="séquence 'Intro'"):
         trim_clip_right(project, clip.id, 5.0)
     trim_clip_left(project, clip.id, 1.0)
-    assert (clip.source_in, clip.timeline_start) == (
-        pytest.approx(1.0),
-        pytest.approx(1.0),
-    )
+    assert (clip.source_in, clip.timeline_start) == (pytest.approx(1.0), pytest.approx(1.0))
 
 
 def test_lengthened_source_keeps_clip_in_out():
@@ -484,9 +423,7 @@ def test_lengthened_source_keeps_clip_in_out():
 def test_shortened_source_clamps_overflowing_clips_but_never_deletes():
     project = _two_level_project()
     whole = insert_sequence_clip(project, "intro", "V2", 0.0)
-    tail = insert_sequence_clip(
-        project, "intro", "V2", 5.0, source_in=3.0, source_out=4.0
-    )
+    tail = insert_sequence_clip(project, "intro", "V2", 5.0, source_in=3.0, source_out=4.0)
     inner = project.get_sequence("intro")
     for track in inner.tracks:
         track.clips[0].source_out = 2.5
@@ -494,9 +431,7 @@ def test_shortened_source_clamps_overflowing_clips_but_never_deletes():
     adjustments = clamp_nested_clips(project)
     assert [(a.clip_id, a.new_source_out) for a in adjustments] == [(whole.id, 2.5)]
     assert whole.source_out == 2.5
-    assert (
-        tail.source_out == 4.0 and tail in project.tracks[1].clips
-    )  # hors source, conservé
+    assert tail.source_out == 4.0 and tail in project.tracks[1].clips  # hors source, conservé
 
 
 def test_overflowing_clip_renders_empty_not_frozen():
@@ -518,10 +453,7 @@ def test_split_and_duplicate_keep_the_sequence_reference():
     clip.effects.append(ClipEffect("fx", EffectType.SEPIA))
     left, right = cut_clip(project, clip.id, 1.5)
     assert left.sequence_id == right.sequence_id == "intro"
-    assert (
-        right.source_in == pytest.approx(1.5)
-        and right.effects[0].type == EffectType.SEPIA
-    )
+    assert right.source_in == pytest.approx(1.5) and right.effects[0].type == EffectType.SEPIA
     assert right.effects is not left.effects
     assert duplicate_clip(project, right.id).sequence_id == "intro"
 
@@ -538,9 +470,7 @@ def test_multiple_instances_share_one_nested_plan():
     plan = build_render_plan(project)
     assert [entry.key for entry in plan.nested_sequences] == ["intro"]
     nested_layers = [l for l in plan.video_layers if l.nested_key]
-    assert len(nested_layers) == 3 and {l.nested_key for l in nested_layers} == {
-        "intro"
-    }
+    assert len(nested_layers) == 3 and {l.nested_key for l in nested_layers} == {"intro"}
     assert all(l.source_path == "" for l in nested_layers)
     graph, *_ = ExportEngine._build_filter_complex(plan, 1920, 1080, 30, None)
     assert graph.count("[0:v]") + graph.count("[1:v]") >= 1
@@ -553,9 +483,7 @@ def test_changes_in_the_source_propagate_to_every_instance():
     for start in (0.0, 5.0):
         insert_sequence_clip(project, "intro", "V2", start)
     before = fingerprint_plan(build_render_plan(project))
-    project.get_sequence("intro").tracks[0].clips[0].transform = ClipTransform(
-        scale=0.5
-    )
+    project.get_sequence("intro").tracks[0].clips[0].transform = ClipTransform(scale=0.5)
     plan = build_render_plan(project)
     assert fingerprint_plan(plan) != before
     assert plan.nested_sequences[0].plan.video_layers[0].transform.scale == 0.5
@@ -606,14 +534,10 @@ def test_nested_and_inner_keyframes_stay_independent():
     project = _two_level_project()
     inner_clip = project.get_sequence("intro").tracks[0].clips[0]
     inner_clip.transform_keyframes = [
-        TransformKeyframe("opacity", 0.0, 0.0),
-        TransformKeyframe("opacity", 1.0, 1.0),
+        TransformKeyframe("opacity", 0.0, 0.0), TransformKeyframe("opacity", 1.0, 1.0)
     ]
     clip = insert_sequence_clip(project, "intro", "V2", 2.0)
-    clip.transform_keyframes = [
-        TransformKeyframe("scale", 0.0, 1.0),
-        TransformKeyframe("scale", 2.0, 0.5),
-    ]
+    clip.transform_keyframes = [TransformKeyframe("scale", 0.0, 1.0), TransformKeyframe("scale", 2.0, 0.5)]
     plan = build_render_plan(project)
     outer = next(l for l in plan.video_layers if l.nested_key)
     inner = plan.nested_sequences[0].plan.video_layers[0]
@@ -627,19 +551,10 @@ def test_nested_and_inner_keyframes_stay_independent():
 def test_nested_subtitles_are_lifted_into_the_parent_timeline():
     project = _two_level_project()
     inner = project.get_sequence("intro")
-    inner.tracks.append(
-        Track(
-            "S1",
-            "S1",
-            "subtitle",
-            clips=[_clip("s", "red", "S1", 1.0, 2.0, text="Bonjour")],
-        )
-    )
+    inner.tracks.append(Track("S1", "S1", "subtitle", clips=[_clip("s", "red", "S1", 1.0, 2.0, text="Bonjour")]))
     insert_sequence_clip(project, "intro", "V2", 5.0)
     plan = build_render_plan(project)
-    assert [(c.start, c.end, c.text) for c in plan.subtitle_cues] == [
-        (6.0, 8.0, "Bonjour")
-    ]
+    assert [(c.start, c.end, c.text) for c in plan.subtitle_cues] == [(6.0, 8.0, "Bonjour")]
 
 
 def test_nested_sequence_with_its_own_resolution_is_scaled_like_a_media():
@@ -667,26 +582,16 @@ def test_render_plan_can_target_any_sequence():
 
 def test_evaluator_descends_into_nested_sequences_with_time_mapping():
     project = _two_level_project()
-    clip = insert_sequence_clip(
-        project, "intro", "V2", 2.0, source_in=1.0, source_out=4.0
-    )
+    clip = insert_sequence_clip(project, "intro", "V2", 2.0, source_in=1.0, source_out=4.0)
     active = evaluate_timeline(project, 3.0)
     nested = [a for a in active if a.root_clip_id == clip.id]
     assert {a.clip_id for a in nested} == {"r1", "m1"}
     red = next(a for a in nested if a.clip_id == "r1")
     assert red.source_time == pytest.approx(2.0)  # 1.0 (in) + 1.0 dans le clip
-    assert (
-        red.track_id == "V2" and red.timeline_start == 2.0 and red.timeline_end == 5.0
-    )
-    assert (
-        red.owner_clip_id == clip.id
-        and red.nested_path == (clip.id,)
-        and red.sequence_id == "intro"
-    )
+    assert red.track_id == "V2" and red.timeline_start == 2.0 and red.timeline_end == 5.0
+    assert red.owner_clip_id == clip.id and red.nested_path == (clip.id,) and red.sequence_id == "intro"
     indexed = build_timeline_index(project).active_at(project, 3.0)
-    assert [(a.clip_id, a.source_time) for a in indexed] == [
-        (a.clip_id, a.source_time) for a in active
-    ]
+    assert [(a.clip_id, a.source_time) for a in indexed] == [(a.clip_id, a.source_time) for a in active]
 
 
 def test_evaluator_honours_speed_and_inner_solo():
@@ -696,10 +601,7 @@ def test_evaluator_honours_speed_and_inner_solo():
     red = next(a for a in evaluate_timeline(project, 1.0) if a.clip_id == "r1")
     assert red.source_time == pytest.approx(2.0)
     project.get_sequence("intro").tracks[0].solo = True
-    assert {a.clip_id for a in evaluate_timeline(project, 0.5) if a.root_clip_id} == {
-        "r1",
-        "m1",
-    }
+    assert {a.clip_id for a in evaluate_timeline(project, 0.5) if a.root_clip_id} == {"r1", "m1"}
 
 
 # ---------------------------------------------------------------------------
@@ -759,16 +661,12 @@ def test_editing_a_sequence_only_invalidates_dependent_segments():
 
     def hashes():
         return {
-            start: segment_params_hash(
-                segment_plan(project, start, start + 2.0), project, "draft", start + 2.0
-            )
+            start: segment_params_hash(segment_plan(project, start, start + 2.0), project, "draft", start + 2.0)
             for start in (0.0, 2.0, 4.0, 8.0)
         }
 
     before = hashes()
-    project.get_sequence("intro").tracks[0].clips[0].effects.append(
-        ClipEffect("fx", EffectType.SEPIA)
-    )
+    project.get_sequence("intro").tracks[0].clips[0].effects.append(ClipEffect("fx", EffectType.SEPIA))
     after = hashes()
     assert after[0.0] == before[0.0] and after[8.0] == before[8.0]
     assert after[2.0] != before[2.0] and after[4.0] != before[4.0]
@@ -786,15 +684,10 @@ def test_proxies_never_replace_a_nested_layer():
 
     project = _two_level_project()
     insert_sequence_clip(project, "intro", "V2", 0.0)
-    plan = apply_path_resolver(
-        build_render_plan(project), lambda path, need_audio=False: f"proxy:{path}"
-    )
+    plan = apply_path_resolver(build_render_plan(project), lambda path, need_audio=False: f"proxy:{path}")
     nested = next(l for l in plan.video_layers if l.nested_key)
     assert nested.source_path == ""
-    assert (
-        plan.nested_sequences[0].plan.video_layers[0].source_path
-        == "proxy:/media/red.mp4"
-    )
+    assert plan.nested_sequences[0].plan.video_layers[0].source_path == "proxy:/media/red.mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -828,41 +721,14 @@ def test_legacy_single_timeline_project_loads_as_a_main_sequence(tmp_path):
         "format": "kut-studio-project",
         "version": 13,
         "project": {
-            "name": "Ancien",
-            "width": 1280,
-            "height": 720,
-            "fps": 25.0,
-            "media_assets": [
-                {
-                    "id": "a",
-                    "path": "/m/a.mp4",
-                    "name": "a",
-                    "duration": 5.0,
-                    "width": 1280,
-                    "height": 720,
-                    "fps": 25.0,
-                    "media_type": "video",
-                }
-            ],
+            "name": "Ancien", "width": 1280, "height": 720, "fps": 25.0,
+            "media_assets": [{"id": "a", "path": "/m/a.mp4", "name": "a", "duration": 5.0,
+                              "width": 1280, "height": 720, "fps": 25.0, "media_type": "video"}],
             "markers": [{"id": "m", "time_seconds": 1.0}],
             "transitions": [],
-            "tracks": [
-                {
-                    "id": "V1",
-                    "name": "V1",
-                    "type": "video",
-                    "clips": [
-                        {
-                            "id": "c",
-                            "asset_id": "a",
-                            "track_id": "V1",
-                            "timeline_start": 0.0,
-                            "source_in": 0.0,
-                            "source_out": 5.0,
-                        }
-                    ],
-                }
-            ],
+            "tracks": [{"id": "V1", "name": "V1", "type": "video", "clips": [
+                {"id": "c", "asset_id": "a", "track_id": "V1", "timeline_start": 0.0,
+                 "source_in": 0.0, "source_out": 5.0}]}],
         },
     }
     path = tmp_path / "old.kut"
@@ -876,18 +742,9 @@ def test_legacy_single_timeline_project_loads_as_a_main_sequence(tmp_path):
 
 
 def test_version_one_project_still_loads(tmp_path):
-    payload = {
-        "format": "kut-studio-project",
-        "version": 1,
-        "project": {
-            "name": "v1",
-            "width": 640,
-            "height": 360,
-            "fps": 24.0,
-            "media_assets": [],
-            "tracks": [],
-        },
-    }
+    payload = {"format": "kut-studio-project", "version": 1,
+               "project": {"name": "v1", "width": 640, "height": 360, "fps": 24.0,
+                           "media_assets": [], "tracks": []}}
     path = tmp_path / "v1.kut"
     path.write_text(json.dumps(payload), encoding="utf-8")
     project = load_project(str(path))
@@ -896,9 +753,7 @@ def test_version_one_project_still_loads(tmp_path):
 
 def test_broken_references_and_cycles_load_without_modification(tmp_path):
     project = _cyclic_project()
-    project.tracks[0].clips.append(
-        Clip("ghost", "", "V1", 9.0, 0.0, 1.0, sequence_id="deleted")
-    )
+    project.tracks[0].clips.append(Clip("ghost", "", "V1", 9.0, 0.0, 1.0, sequence_id="deleted"))
     path = tmp_path / "corrupt.kut"
     save_project(project, str(path))
     loaded = load_project(str(path))
@@ -910,39 +765,17 @@ def test_broken_references_and_cycles_load_without_modification(tmp_path):
 
 def test_invalid_sequence_entries_are_reported_clearly(tmp_path):
     path = tmp_path / "bad.kut"
-    path.write_text(
-        json.dumps(
-            {
-                "format": "kut-studio-project",
-                "version": 14,
-                "project": {"name": "x", "sequences": ["nope"]},
-            }
-        ),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps({"format": "kut-studio-project", "version": 14,
+                                "project": {"name": "x", "sequences": ["nope"]}}), encoding="utf-8")
     with pytest.raises(ValueError, match="Séquence invalide"):
         load_project(str(path))
-    path.write_text(
-        json.dumps(
-            {
-                "format": "kut-studio-project",
-                "version": 14,
-                "project": {
-                    "name": "x",
-                    "sequences": [
-                        {"id": "s", "name": "A", "tracks": []},
-                        {"id": "s", "name": "B", "tracks": []},
-                    ],
-                    "active_sequence_id": "ghost",
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps({"format": "kut-studio-project", "version": 14,
+                                "project": {"name": "x", "sequences": [
+                                    {"id": "s", "name": "A", "tracks": []},
+                                    {"id": "s", "name": "B", "tracks": []}],
+                                    "active_sequence_id": "ghost"}}), encoding="utf-8")
     loaded = load_project(str(path))
-    assert (
-        len({s.id for s in loaded.sequences}) == 2 and loaded.active_sequence_id == "s"
-    )
+    assert len({s.id for s in loaded.sequences}) == 2 and loaded.active_sequence_id == "s"
 
 
 # ---------------------------------------------------------------------------
@@ -976,9 +809,7 @@ def test_snapshots_share_unchanged_sequences():
     shared = [a is b for a, b in zip(first.sequences, second.sequences)]
     assert shared[0] is False and all(shared[1:])
     restored = history.undo()
-    assert (
-        restored.sequences[1] is not first.sequences[1]
-    )  # la restauration est une copie
+    assert restored.sequences[1] is not first.sequences[1]  # la restauration est une copie
 
 
 def test_undo_stays_in_the_sequence_where_the_change_happened():
@@ -1024,18 +855,14 @@ def test_navigator_resyncs_after_deletion_and_remembers_playheads():
     navigator.sync(project)
     assert navigator.path == ["seq0"] and "seq1" not in navigator.playheads
     navigator.remember_playhead("seq0", 2.0)
-    assert (
-        navigator.playhead_for("seq0") == 2.0 and navigator.playhead_for("seq2") == 0.0
-    )
+    assert navigator.playhead_for("seq0") == 2.0 and navigator.playhead_for("seq2") == 0.0
 
 
 def test_usages_report_where_a_sequence_is_used():
     project = _two_level_project()
     insert_sequence_clip(project, "intro", "V2", 3.0)
     usages = sequence_usages(project, "intro")
-    assert [(u.parent_sequence_name, u.track_id, u.timeline_start) for u in usages] == [
-        ("Master", "V2", 3.0)
-    ]
+    assert [(u.parent_sequence_name, u.track_id, u.timeline_start) for u in usages] == [("Master", "V2", 3.0)]
 
 
 # ---------------------------------------------------------------------------

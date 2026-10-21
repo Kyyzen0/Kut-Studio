@@ -127,7 +127,9 @@ def test_luminance_rec601_known_value() -> None:
 
 
 def test_luminance_unknown_color_space_falls_back_to_709() -> None:
-    assert sample_luminance(0, 255, 0, "nope") == pytest.approx(255 * 0.7152, abs=0.01)
+    assert sample_luminance(0, 255, 0, "nope") == pytest.approx(
+        255 * 0.7152, abs=0.01
+    )
 
 
 def test_luminance_is_monotonic_on_grey_ramp() -> None:
@@ -403,7 +405,9 @@ def test_alerts_tolerance_absorbs_noise() -> None:
     # que du bruit de quantification vidéo.
     frame = _solid_frame(4, 4, (10, 10, 10))
     strict = compute_alerts(frame, levels=VideoLevels.VIDEO, tolerance=0)
-    tolerant = compute_alerts(frame, levels=VideoLevels.VIDEO, tolerance=8)
+    tolerant = compute_alerts(
+        frame, levels=VideoLevels.VIDEO, tolerance=8
+    )
     assert strict.black_clipping == pytest.approx(1.0)
     assert tolerant.black_clipping == 0.0
 
@@ -470,7 +474,9 @@ def test_analyze_frame_respects_color_space() -> None:
 def test_analyzer_throttles_rapid_requests() -> None:
     frame = _solid_frame(4, 4, (50, 50, 50))
     results: list[ScopeAnalysis] = []
-    analyzer = ScopeAnalyzer(on_result=results.append, min_interval=10.0)
+    analyzer = ScopeAnalyzer(
+        on_result=results.append, min_interval=10.0
+    )
     first = analyzer.submit_frame(frame, playhead=0.0, force=True)
     second = analyzer.submit_frame(frame, playhead=0.04, force=False)
     assert first is not None
@@ -484,7 +490,9 @@ def test_analyzer_throttles_rapid_requests() -> None:
 def test_analyzer_force_bypasses_rate_limit() -> None:
     frame = _solid_frame(4, 4, (50, 50, 50))
     results: list[ScopeAnalysis] = []
-    analyzer = ScopeAnalyzer(on_result=results.append, min_interval=10.0)
+    analyzer = ScopeAnalyzer(
+        on_result=results.append, min_interval=10.0
+    )
     analyzer.submit_frame(frame, playhead=0.0, force=True)
     _drain(analyzer)
     analyzer.submit_frame(frame, playhead=1.0, force=True)
@@ -496,7 +504,9 @@ def test_analyzer_force_bypasses_rate_limit() -> None:
 def test_analyzer_reset_rate_limit_allows_next_request() -> None:
     frame = _solid_frame(4, 4, (50, 50, 50))
     results: list[ScopeAnalysis] = []
-    analyzer = ScopeAnalyzer(on_result=results.append, min_interval=10.0)
+    analyzer = ScopeAnalyzer(
+        on_result=results.append, min_interval=10.0
+    )
     analyzer.submit_frame(frame, playhead=0.0, force=True)
     _drain(analyzer)
     analyzer.reset_rate_limit()
@@ -597,14 +607,15 @@ def test_analyzer_pending_request_is_replaced_by_the_newest() -> None:
 
     delivered: list[ScopeAnalysis] = []
     analyzer = ScopeAnalyzer(
-        on_result=delivered.append,
-        min_interval=0.0,
+        on_result=delivered.append, min_interval=0.0,
         extractor=slow_extractor,
     )
     analyzer.submit(playhead=0.0, ffmpeg_command=["fake"], force=True)
     assert entered.wait(timeout=2.0)
     for playhead in (1.0, 2.0, 3.0):
-        analyzer.submit(playhead=playhead, ffmpeg_command=["fake"], force=True)
+        analyzer.submit(
+            playhead=playhead, ffmpeg_command=["fake"], force=True
+        )
     release.set()
     _drain(analyzer)
     # Seules deux analyses sont réellement traitées : la première
@@ -618,7 +629,9 @@ def test_analyzer_pending_request_is_replaced_by_the_newest() -> None:
 def test_analyzer_cancel_all_prevents_result_delivery() -> None:
     frame = _solid_frame(4, 4, (30, 30, 30))
     results: list[ScopeAnalysis] = []
-    analyzer = ScopeAnalyzer(on_result=results.append, min_interval=0.0)
+    analyzer = ScopeAnalyzer(
+        on_result=results.append, min_interval=0.0
+    )
     analyzer.submit_frame(frame, playhead=0.0, force=True)
     _drain(analyzer)
     assert len(results) == 1
@@ -759,7 +772,9 @@ def test_analyzer_is_thread_safe() -> None:
 
     def worker(index: int) -> None:
         for step in range(5):
-            analyzer.submit_frame(frame, playhead=index * 10 + step, force=True)
+            analyzer.submit_frame(
+                frame, playhead=index * 10 + step, force=True
+            )
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
     for thread in threads:
@@ -835,12 +850,10 @@ def test_analysis_is_bounded_by_grid_size_not_pixels() -> None:
     pixels : deux images de tailles très différentes avec la même
     taille de grille produisent des résultats de dimensions
     identiques."""
-    small = analyze_frame(
-        _solid_frame(8, 8, (1, 2, 3)), columns=32, vectorscope_bins=32
-    )
-    large = analyze_frame(
-        _solid_frame(64, 64, (1, 2, 3)), columns=32, vectorscope_bins=32
-    )
+    small = analyze_frame(_solid_frame(8, 8, (1, 2, 3)), columns=32,
+                          vectorscope_bins=32)
+    large = analyze_frame(_solid_frame(64, 64, (1, 2, 3)), columns=32,
+                          vectorscope_bins=32)
     assert small.columns == large.columns == 32
     assert small.vectorscope_bins == large.vectorscope_bins == 32
     assert small.pixel_count != large.pixel_count
@@ -859,9 +872,7 @@ def test_realistic_frame_analysis_is_fast_enough() -> None:
     # un runner Windows, 0,80 s sur le run couvert Linux). Mesuré le 2026-10-07
     # sur un Mac M : 0,042 s (0,05 à 0,07 s avec 8 processus en parallèle) ;
     # 0,206 s sous le traceur C de coverage.py (Python 3.11, branches).
-    elapsed = best_cpu_seconds(
-        lambda: analyze_frame(frame, columns=320, vectorscope_bins=128)
-    )
+    elapsed = best_cpu_seconds(lambda: analyze_frame(frame, columns=320, vectorscope_bins=128))
     limit = budget(0.5)
     assert elapsed < limit, f"Analyse trop lente : {elapsed:.3f}s (budget {limit:.2f}s)"
 
@@ -929,9 +940,7 @@ def test_1080p_analysis_stays_within_realtime_budget() -> None:
     # traceur C de coverage.py (Python 3.11) multiplie ce temps par ~4
     # (0,059 → 0,233 s en local), d'où la majoration d'instrumentation (3 s).
     limit = budget(0.25)
-    assert elapsed < limit, (
-        f"Analyse 1080p trop lente : {elapsed:.3f}s (budget {limit:.2f}s)"
-    )
+    assert elapsed < limit, f"Analyse 1080p trop lente : {elapsed:.3f}s (budget {limit:.2f}s)"
 
 
 def test_sampled_1080p_histogram_stays_representative() -> None:
@@ -951,22 +960,22 @@ def test_sampled_1080p_histogram_stays_representative() -> None:
     frame = ScopeFrame(width=1920, height=1080, pixels=tuple(pixels))
     sampled = _accumulate(
         frame,
-        columns=32,
-        bins=16,
+        columns=32, bins=16,
         color_space=_coerce_color_space("rec709"),
         levels=_coerce_levels("video"),
         tolerance=0,
         stride=16,
     )
     reference = compute_histogram(frame)
-
     # Les deux histograms doivent garder la même forme générale :
     # la moyenne de luminance doit rester proche.
     def mean_level(hist: tuple[int, ...]) -> float:
         total = sum(hist)
         return sum(i * n for i, n in enumerate(hist)) / total
 
-    assert abs(mean_level(sampled.histogram_luma) - mean_level(reference[0])) < 2.0
+    assert abs(
+        mean_level(sampled.histogram_luma) - mean_level(reference[0])
+    ) < 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -1107,7 +1116,8 @@ def test_panel_layout_change_emits_signal(qtbot) -> None:
 def test_panel_set_result_feeds_every_canvas(qtbot) -> None:
     panel = _panel(qtbot)
     assert panel.result() is None
-    result = analyze_frame(_ramp_frame(32, 32), columns=32, vectorscope_bins=32)
+    result = analyze_frame(_ramp_frame(32, 32), columns=32,
+                           vectorscope_bins=32)
     panel.set_result(result)
     assert panel.result() is result
     for canvas in panel._canvases.values():
@@ -1154,7 +1164,9 @@ def test_panel_alerts_shown_when_enabled(qtbot) -> None:
     panel.set_alerts_enabled(True)
     assert panel.alerts_enabled() is True
     panel.set_result(
-        analyze_frame(_solid_frame(8, 8, (0, 0, 0)), columns=16, vectorscope_bins=16)
+        analyze_frame(
+            _solid_frame(8, 8, (0, 0, 0)), columns=16, vectorscope_bins=16
+        )
     )
     assert panel._black_alert.isVisibleTo(panel)
     assert "%" in panel._black_alert.text()
@@ -1162,8 +1174,7 @@ def test_panel_alerts_shown_when_enabled(qtbot) -> None:
     # Une image propre fait disparaître l'alerte et remet le libellé.
     panel.set_result(
         analyze_frame(
-            _solid_frame(8, 8, (128, 128, 128)),
-            columns=16,
+            _solid_frame(8, 8, (128, 128, 128)), columns=16,
             vectorscope_bins=16,
         )
     )
@@ -1197,7 +1208,9 @@ def test_panel_apply_preferences_ignores_garbage(qtbot) -> None:
     from ui.scopes_panel import ScopeLayout
 
     panel = _panel(qtbot)
-    panel.apply_preferences({"layout": "nope", "single_view": "nope", "levels": "nope"})
+    panel.apply_preferences(
+        {"layout": "nope", "single_view": "nope", "levels": "nope"}
+    )
     assert panel.layout_mode() is ScopeLayout.QUAD
     assert panel.levels() is VideoLevels.VIDEO
 
@@ -1206,9 +1219,8 @@ def test_panel_paints_every_scope(qtbot) -> None:
     """Les quatre scopes se dessinent réellement (pas d'exception, ni
     de zone vide) pour un résultat non trivial."""
     panel = _panel(qtbot)
-    panel.set_result(
-        analyze_frame(_ramp_frame(64, 64), columns=64, vectorscope_bins=32)
-    )
+    panel.set_result(analyze_frame(_ramp_frame(64, 64), columns=64,
+                                   vectorscope_bins=32))
     qtbot.addWidget(panel)
     panel.show()
     qtbot.waitExposed(panel)
@@ -1277,14 +1289,19 @@ def _window(qtbot, monkeypatch, config_dir=None):
     """
     import tempfile
 
+
     from ui.main_window import MainWindow
 
     monkeypatch.setenv(
         "KUT_STUDIO_CONFIG_DIR",
         str(config_dir or tempfile.mkdtemp(prefix="kut-scopes-test-")),
     )
-    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
-    monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.information", lambda *_, **__: None
+    )
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.critical", lambda *_, **__: None
+    )
     window = MainWindow()
     qtbot.addWidget(window)
     if getattr(window, "timeline_timer", None) is not None:
@@ -1300,23 +1317,10 @@ def _scopes_window(qtbot, monkeypatch):
     window.scopes_analyzer.close()
     window.scopes_analyzer = analyzer
     # La commande est fabriquée par le thread de l'analyseur : la fenêtre ne lui remet qu'une fabrique.
-    window._prepare_scopes_command = lambda playhead: (
-        lambda: (
-            [
-                "ffmpeg",
-                "-i",
-                "clip.mp4",
-                "-frames:v",
-                "1",
-                "-f",
-                "image2pipe",
-                "-vcodec",
-                "png",
-                "-",
-            ],
-            (),
-        )
-    )
+    window._prepare_scopes_command = lambda playhead: (lambda: ([
+        "ffmpeg", "-i", "clip.mp4", "-frames:v", "1",
+        "-f", "image2pipe", "-vcodec", "png", "-",
+    ], ()))
     window._scopes_visible = True
     return window, analyzer
 
@@ -1335,8 +1339,7 @@ def test_scopes_splitter_holds_viewer_and_panel(qtbot, monkeypatch) -> None:
 
 
 def test_toggle_scopes_visible_updates_splitter_and_persists(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     from core.user_settings import load_user_settings
     from ui.scopes_panel import ScopeLayout
@@ -1386,8 +1389,7 @@ def test_scopes_preferences_survive_a_restart(qtbot, monkeypatch, tmp_path) -> N
 
 
 def test_request_scopes_analysis_submits_to_analyzer(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     window, analyzer = _scopes_window(qtbot, monkeypatch)
     window.playhead_seconds = 3.0
@@ -1402,8 +1404,7 @@ def test_request_scopes_analysis_submits_to_analyzer(
 
 
 def test_request_scopes_analysis_skips_identical_playhead(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     window, analyzer = _scopes_window(qtbot, monkeypatch)
     window.playhead_seconds = 3.0
@@ -1418,8 +1419,7 @@ def test_request_scopes_analysis_skips_identical_playhead(
 
 
 def test_request_scopes_analysis_is_noop_when_hidden(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     window, analyzer = _scopes_window(qtbot, monkeypatch)
     window._scopes_visible = False
@@ -1429,8 +1429,7 @@ def test_request_scopes_analysis_is_noop_when_hidden(
 
 
 def test_color_change_forces_immediate_scopes_refresh(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     """En pause, un changement couleur relance les scopes sans attendre."""
     window, analyzer = _scopes_window(qtbot, monkeypatch)
@@ -1442,8 +1441,7 @@ def test_color_change_forces_immediate_scopes_refresh(
 
 
 def test_playback_tick_requests_throttled_scopes(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     """Pendant la lecture, le tick demande une analyse mais sans forcer."""
     window, analyzer = _scopes_window(qtbot, monkeypatch)
@@ -1460,15 +1458,17 @@ def test_playback_tick_requests_throttled_scopes(
 
 
 def test_scopes_result_is_applied_in_the_gui_thread(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     """Le résultat arrive depuis le thread de travail mais le panneau
     n'est touché qu'après rebasculement dans la boucle Qt."""
     window, _ = _scopes_window(qtbot, monkeypatch)
-    result = analyze_frame(_ramp_frame(16, 16), columns=16, vectorscope_bins=16)
+    result = analyze_frame(_ramp_frame(16, 16), columns=16,
+                           vectorscope_bins=16)
     analysis = ScopeAnalysis(
-        request=ScopeRequest(request_id=1, playhead=0.0, ffmpeg_command=("fake",)),
+        request=ScopeRequest(
+            request_id=1, playhead=0.0, ffmpeg_command=("fake",)
+        ),
         result=result,
         elapsed_seconds=0.01,
         stale=False,
@@ -1480,15 +1480,19 @@ def test_scopes_result_is_applied_in_the_gui_thread(
     worker = threading.Thread(target=lambda: window._on_scopes_analysis_ready(analysis))
     worker.start()
     worker.join()
-    qtbot.waitUntil(lambda: window.scopes_panel.result() is not None, timeout=3000)
+    qtbot.waitUntil(lambda: window.scopes_panel.result() is not None,
+                    timeout=3000)
     assert window.scopes_panel.result() is result
 
 
 def test_stale_scopes_result_is_ignored(qtbot, monkeypatch) -> None:
     window, _ = _scopes_window(qtbot, monkeypatch)
     stale = ScopeAnalysis(
-        request=ScopeRequest(request_id=1, playhead=0.0, ffmpeg_command=("fake",)),
-        result=analyze_frame(_ramp_frame(16, 16), columns=16, vectorscope_bins=16),
+        request=ScopeRequest(
+            request_id=1, playhead=0.0, ffmpeg_command=("fake",)
+        ),
+        result=analyze_frame(_ramp_frame(16, 16), columns=16,
+                             vectorscope_bins=16),
         elapsed_seconds=0.01,
         stale=True,
     )
@@ -1508,8 +1512,7 @@ def test_scopes_extraction_error_is_silent(qtbot, monkeypatch) -> None:
 
 
 def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     window = _window(qtbot, monkeypatch)
     captured: dict = {}
@@ -1526,23 +1529,9 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
         captured["playhead"] = playhead
         captured["request"] = request
         return [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{playhead:.3f}",
-            "-i",
-            "clip.mp4",
-            "-filter_complex",
-            "[0:v]eq=1[v]",
-            "-map",
-            "[v]",
-            "-frames:v",
-            "1",
-            "-f",
-            "image2pipe",
-            "-vcodec",
-            "png",
-            "-",
+            "ffmpeg", "-y", "-ss", f"{playhead:.3f}", "-i", "clip.mp4",
+            "-filter_complex", "[0:v]eq=1[v]", "-map", "[v]",
+            "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
         ]
 
     monkeypatch.setattr(window, "get_render_plan", fake_plan)
@@ -1558,19 +1547,12 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
     # La commande analyse une image unique sur stdout, sans audio.
     assert "-map" in command
     assert command[-7:] == [
-        "-frames:v",
-        "1",
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        "png",
-        "-",
+        "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
     ]
 
 
 def test_a_dropped_analysis_never_destroys_a_qt_object_off_the_interface_thread(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     """La fabrique d'une analyse meurt sur le thread d'analyse : elle ne doit posséder aucun ``QObject``.
 
@@ -1589,41 +1571,27 @@ def test_a_dropped_analysis_never_destroys_a_qt_object_off_the_interface_thread(
         fps = 30.0
 
     monkeypatch.setattr(window, "get_render_plan", lambda at=None: _Plan())
-    monkeypatch.setattr(
-        "ui.main_window.ExportEngine.build_frame_command",
-        lambda _engine, request, playhead: ["ffmpeg", "-"],
-    )
-    factories = [
-        window._prepare_scopes_command(1.0),
-        window._prepare_scopes_command(2.0),
-    ]
-    owned = {
-        id(cell.cell_contents): cell.cell_contents
-        for factory in factories
-        for cell in factory.__closure__ or ()
-        if isinstance(cell.cell_contents, QObject)
-    }
-    assert list(owned.values()) == [window._scopes_engine], (
-        "un seul moteur, celui de la fenêtre"
-    )
+    monkeypatch.setattr("ui.main_window.ExportEngine.build_frame_command",
+                        lambda _engine, request, playhead: ["ffmpeg", "-"])
+    factories = [window._prepare_scopes_command(1.0), window._prepare_scopes_command(2.0)]
+    owned = {id(cell.cell_contents): cell.cell_contents for factory in factories
+             for cell in factory.__closure__ or () if isinstance(cell.cell_contents, QObject)}
+    assert list(owned.values()) == [window._scopes_engine], "un seul moteur, celui de la fenêtre"
     assert window._scopes_engine.parent() is window
     engine = window._scopes_engine
 
-    def drop():  # comme le thread d'analyse en fin de demande
+    def drop():                                            # comme le thread d'analyse en fin de demande
         factories[0]()
         factories.clear()
 
     worker = threading.Thread(target=drop)
     worker.start()
     worker.join(5.0)
-    assert not worker.is_alive() and engine.parent() is window, (
-        "le moteur survit à la demande"
-    )
+    assert not worker.is_alive() and engine.parent() is window, "le moteur survit à la demande"
 
 
 def test_scopes_ffmpeg_command_returns_none_without_video(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     """Aucun média vidéo au projet : rien à analyser, et surtout pas
     d'appel à ``build_frame_command``."""
@@ -1644,8 +1612,7 @@ def test_scopes_ffmpeg_command_returns_none_without_video(
 
 
 def test_scopes_ffmpeg_command_returns_none_without_plan(
-    qtbot,
-    monkeypatch,
+    qtbot, monkeypatch,
 ) -> None:
     window = _window(qtbot, monkeypatch)
 
@@ -1674,37 +1641,22 @@ def test_build_frame_command_matches_export_filter_graph(tmp_path) -> None:
     source = tmp_path / "clip.mp4"
     source.write_bytes(b"\x00" * 16)
     asset = MediaAsset(
-        id="a1",
-        name="clip.mp4",
-        path=str(source),
-        duration=4.0,
-        width=640,
-        height=360,
-        fps=30.0,
+        id="a1", name="clip.mp4", path=str(source),
+        duration=4.0, width=640, height=360, fps=30.0,
         media_type="video",
     )
     track = Track(
-        id="V1",
-        name="V1",
-        type="video",
+        id="V1", name="V1", type="video",
         clips=[
             Clip(
-                id="c1",
-                asset_id="a1",
-                track_id="V1",
-                timeline_start=0.0,
-                source_in=0.0,
-                source_out=3.0,
+                id="c1", asset_id="a1", track_id="V1",
+                timeline_start=0.0, source_in=0.0, source_out=3.0,
             )
         ],
     )
     project = Project(
-        name="Scopes",
-        width=640,
-        height=360,
-        fps=30.0,
-        media_assets=[asset],
-        tracks=[track],
+        name="Scopes", width=640, height=360, fps=30.0,
+        media_assets=[asset], tracks=[track],
     )
     plan = build_render_plan(project)
 
@@ -1728,10 +1680,7 @@ def test_build_frame_command_matches_export_filter_graph(tmp_path) -> None:
     # L'export ajoute en plus l'étape de conversion BT.709 (YUV) ; l'extraction PNG lit du RVB et s'en passe.
     common = graph(single).split(";[aout]anullsink")[0]
     assert graph(full).startswith(common)
-    assert (
-        graph(full)[len(common) :].startswith(";[")
-        and "out_color_matrix=bt709" in graph(full)[len(common) :]
-    )
+    assert graph(full)[len(common):].startswith(";[") and "out_color_matrix=bt709" in graph(full)[len(common):]
     assert ";[aout]anullsink;" in graph(single)
     assert graph(single).endswith("trim=start=4.983333,setpts=PTS-STARTPTS[kut_frame]")
     # Plus de ``-ss`` sur une entrée : il ignorait la position, la vitesse et le point d'entrée du clip.
@@ -1791,17 +1740,14 @@ def test_large_frames_subsample_the_vectorscope_only() -> None:
     frame = ScopeFrame(width=1920, height=1080, pixels=tuple(pixels))
     stride = 8
     result = _accumulate(
-        frame,
-        columns=64,
-        bins=16,
-        color_space=ColorSpace.REC709,
-        levels=VideoLevels.VIDEO,
-        tolerance=0,
-        stride=stride,
+        frame, columns=64, bins=16, color_space=ColorSpace.REC709,
+        levels=VideoLevels.VIDEO, tolerance=0, stride=stride,
         vector_step=stride * 4,
     )
     # Histogrammes et alertes portent sur les échantillons, la
     # waveform sur la grille : rien n'indique un pixels manquant.
     assert sum(result.histogram_luma) == (1920 * 1080) // stride
     assert result.columns == 64
-    assert all(any(value > 0.0 for value in column) for column in result.waveform)
+    assert all(
+        any(value > 0.0 for value in column) for column in result.waveform
+    )

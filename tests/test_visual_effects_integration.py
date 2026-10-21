@@ -282,20 +282,12 @@ def test_trim_left_shifts_keyframes_in_place():
     # Trim gauche : timeline_start = 1.0 → source_in = 1.0, delta = +1.0.
     # Les keyframes suivent le média : 1.0s et 2.0s deviennent 0.0s et 1.0s
     # (l'ancien moteur les décalait dans le mauvais sens, à 2.0s et 3.0s).
-    before = evaluate_transform(
-        ClipTransform(), find_clip(project, "vclip").transform_keyframes, 1.5
-    ).scale
+    before = evaluate_transform(ClipTransform(), find_clip(project, "vclip").transform_keyframes, 1.5).scale
     trim_clip_left(project, "vclip", 1.0)
     clip = find_clip(project, "vclip")
-    times = sorted(
-        kf.time_seconds
-        for kf in clip.transform_keyframes
-        if kf.property_name == "scale"
-    )
+    times = sorted(kf.time_seconds for kf in clip.transform_keyframes if kf.property_name == "scale")
     assert times == [0.0, 1.0]
-    assert evaluate_transform(
-        ClipTransform(), clip.transform_keyframes, 0.5
-    ).scale == pytest.approx(before)
+    assert evaluate_transform(ClipTransform(), clip.transform_keyframes, 0.5).scale == pytest.approx(before)
 
 
 def test_trim_right_drops_keyframes_beyond_new_duration():
@@ -348,7 +340,9 @@ def test_render_plan_propagates_transform_and_keyframes():
 @pytest.fixture
 def engine(monkeypatch):
     """Crée un ``ExportEngine`` avec un binaire FFmpeg simulé."""
-    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(
+        shutil, "which", lambda _: "/usr/bin/ffmpeg"
+    )
     monkeypatch.setattr(export_engine, "_ffmpeg_path", "/usr/bin/ffmpeg")
     return ExportEngine()
 

@@ -60,7 +60,9 @@ def test_builtin_presets_are_marked_as_builtin() -> None:
 
 
 def test_builtin_preset_ids_match_catalog() -> None:
-    assert builtin_text_preset_ids() == frozenset(p.id for p in builtin_text_presets())
+    assert builtin_text_preset_ids() == frozenset(
+        p.id for p in builtin_text_presets()
+    )
 
 
 def test_get_builtin_preset_lookup() -> None:
@@ -179,20 +181,10 @@ def test_load_handles_corrupted_json(tmp_path) -> None:
 
 def test_load_drops_invalid_preset_entries(tmp_path) -> None:
     payload = [
-        {
-            "id": "user-1",
-            "name": "Valid",
-            "description": "",
-            "default_text": "",
-            "style": {"font_size": 32.0},
-        },
-        {
-            "id": "user-bad",
-            "name": "",
-            "description": "",
-            "default_text": "",
-            "style": {},
-        },
+        {"id": "user-1", "name": "Valid", "description": "",
+         "default_text": "", "style": {"font_size": 32.0}},
+        {"id": "user-bad", "name": "", "description": "",
+         "default_text": "", "style": {}},
         "not-a-mapping",
     ]
     path = text_presets_path(settings_dir=tmp_path)

@@ -26,13 +26,10 @@ from core.visual_effects import ClipTransform
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
-CORNER = (
-    5,
-    5,
-)  # hors du rouge (réduit de moitié) : transparent dans la séquence imbriquée
-CENTER = (W // 2, H // 2)  # sur le rouge de la séquence imbriquée
+CORNER = (5, 5)                 # hors du rouge (réduit de moitié) : transparent dans la séquence imbriquée
+CENTER = (W // 2, H // 2)       # sur le rouge de la séquence imbriquée
 BLUE = (0, 0, 255)
-RED_GRAY = (74, 74, 74)  # rouge pur passé en noir et blanc (luma BT.709)
+RED_GRAY = (74, 74, 74)         # rouge pur passé en noir et blanc (luma BT.709)
 
 
 def _build(media, *, in_sequence: str, opacity: float = 1.0):
@@ -54,16 +51,10 @@ def _frame(project, tmp_path, name: str):
     return out
 
 
-def test_an_adjustment_inside_a_nested_sequence_keeps_the_parent_visible(
-    media, tmp_path
-):
+def test_an_adjustment_inside_a_nested_sequence_keeps_the_parent_visible(media, tmp_path):
     out = _frame(_build(media, in_sequence="intro"), tmp_path, "inside")
-    assert _close(_pixel(out, 1.0, *CORNER), BLUE, 12), (
-        "le parent doit rester visible autour du contenu imbriqué"
-    )
-    assert _close(_pixel(out, 1.0, *CENTER), RED_GRAY, 12), (
-        "le contenu imbriqué doit être passé en noir et blanc"
-    )
+    assert _close(_pixel(out, 1.0, *CORNER), BLUE, 12), "le parent doit rester visible autour du contenu imbriqué"
+    assert _close(_pixel(out, 1.0, *CENTER), RED_GRAY, 12), "le contenu imbriqué doit être passé en noir et blanc"
 
 
 def test_an_adjustment_inside_a_nested_sequence_honours_its_opacity(media, tmp_path):
@@ -76,9 +67,7 @@ def test_an_adjustment_inside_a_nested_sequence_honours_its_opacity(media, tmp_p
 def test_an_adjustment_in_the_parent_still_grades_everything_below(media, tmp_path):
     """Comportement inchangé : l'ajustement du parent agit sur toute la composition, nested compris."""
     out = _frame(_build(media, in_sequence="main"), tmp_path, "parent")
-    assert _close(
-        _pixel(out, 1.0, *CORNER), (29, 29, 29), 12
-    )  # le bleu du parent, en noir et blanc
+    assert _close(_pixel(out, 1.0, *CORNER), (29, 29, 29), 12)    # le bleu du parent, en noir et blanc
     assert _close(_pixel(out, 1.0, *CENTER), RED_GRAY, 12)
 
 
@@ -87,13 +76,9 @@ def test_the_root_graph_is_unchanged_and_only_nested_graphs_preserve_alpha(media
 
     # Séquence racine seule : pas de multiplication d'alpha (le fond est opaque, rien ne change).
     root = _build(media, in_sequence="main")
-    graph = ExportEngine._build_filter_complex(build_render_plan(root), W, H, 25, None)[
-        0
-    ]
+    graph = ExportEngine._build_filter_complex(build_render_plan(root), W, H, 25, None)[0]
     assert "multiply" not in graph
     # La séquence imbriquée porte l'ajustement : son graphe, lui, préserve l'alpha du dessous.
     nested = _build(media, in_sequence="intro")
-    graph = ExportEngine._build_filter_complex(
-        build_render_plan(nested), W, H, 25, None
-    )[0]
+    graph = ExportEngine._build_filter_complex(build_render_plan(nested), W, H, 25, None)[0]
     assert "blend=all_mode=multiply" in graph

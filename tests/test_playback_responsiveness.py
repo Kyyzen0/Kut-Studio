@@ -22,9 +22,7 @@ from core.scopes_analyzer import BACKGROUND_SHARE, ScopeAnalyzer, png_to_scope_f
 # --- Analyseur : ne rien lancer d'inutile ----------------------------------------------------------------------------
 
 
-def _blocking_analyzer(
-    release: threading.Event, started: threading.Event
-) -> ScopeAnalyzer:
+def _blocking_analyzer(release: threading.Event, started: threading.Event) -> ScopeAnalyzer:
     from core.scopes import ScopeFrame
 
     def extractor(_request):
@@ -44,9 +42,7 @@ def test_a_busy_analyzer_refuses_playback_requests_but_not_forced_ones():
         assert started.wait(5)
         # Une demande de lecture lancée maintenant rendrait la précédente obsolète : aucune n'aboutirait.
         assert not analyzer.would_accept()
-        assert analyzer.would_accept(
-            force=True
-        )  # pause, réglage modifié : la dernière image compte
+        assert analyzer.would_accept(force=True)           # pause, réglage modifié : la dernière image compte
         release.set()
         assert analyzer.wait_idle(5)
     finally:
@@ -57,30 +53,21 @@ def test_a_busy_analyzer_refuses_playback_requests_but_not_forced_ones():
 def test_playback_requests_leave_the_analyzer_idle_most_of_the_time():
     from core.scopes import ScopeFrame
 
-    analyzer = ScopeAnalyzer(
-        extractor=lambda _r: (
-            time.sleep(0.05),
-            ScopeFrame.from_rgb_bytes(bytes(12), 2, 2),
-        )[1],
-        min_interval=0.0,
-    )
+    analyzer = ScopeAnalyzer(extractor=lambda _r: (time.sleep(0.05), ScopeFrame.from_rgb_bytes(bytes(12), 2, 2))[1],
+                             min_interval=0.0)
     try:
         analyzer.submit(playhead=0.0, ffmpeg_command=["x"], force=True)
         assert analyzer.wait_idle(5)
         cost = analyzer._last_cost
         assert cost >= 0.04
-        assert (
-            not analyzer.would_accept()
-        )  # juste après : l'analyseur doit rester libre un moment
+        assert not analyzer.would_accept()                 # juste après : l'analyseur doit rester libre un moment
         analyzer._last_finished -= cost * (1.0 / BACKGROUND_SHARE - 1.0) + 0.01
         assert analyzer.would_accept()
     finally:
         analyzer.close()
 
 
-def test_two_threads_writing_the_same_layer_playlist_both_succeed(
-    tmp_path, monkeypatch
-):
+def test_two_threads_writing_the_same_layer_playlist_both_succeed(tmp_path, monkeypatch):
     """Scopes et aperçu fidèle écrivent parfois la même liste ``.ffconcat`` au même moment, depuis deux threads."""
     from core import mograph_stream
 
@@ -92,18 +79,10 @@ def test_two_threads_writing_the_same_layer_playlist_both_succeed(
     def write():
         try:
             barrier.wait(5)
-            paths.append(
-                mograph_stream.write_stream(
-                    width=4,
-                    height=4,
-                    fps=10.0,
-                    duration=1.0,
-                    start=0.0,
-                    end=1.0,
-                    frame_key=lambda _t: None,
-                    render=lambda _t: None,
-                )
-            )
+            paths.append(mograph_stream.write_stream(
+                width=4, height=4, fps=10.0, duration=1.0, start=0.0, end=1.0,
+                frame_key=lambda _t: None, render=lambda _t: None,
+            ))
         except BaseException as error:  # noqa: BLE001 - le test rapporte toute erreur d'un thread
             errors.append(error)
 
@@ -114,7 +93,7 @@ def test_two_threads_writing_the_same_layer_playlist_both_succeed(
         thread.join(10)
     assert errors == []
     assert len(set(paths)) == 1 and len(paths) == 8
-    assert not list(tmp_path.glob("*.tmp"))  # aucun temporaire laissé
+    assert not list(tmp_path.glob("*.tmp"))                 # aucun temporaire laissé
 
 
 def _layer_stream(tmp_path):
@@ -125,21 +104,11 @@ def _layer_stream(tmp_path):
         image.fill(QColor(10, 20, 30))
         return image
 
-    return mograph_stream.write_stream(
-        width=4,
-        height=4,
-        fps=10.0,
-        duration=0.2,
-        start=0.0,
-        end=0.2,
-        frame_key=lambda _t: ("calque", 1),
-        render=render,
-    )
+    return mograph_stream.write_stream(width=4, height=4, fps=10.0, duration=0.2, start=0.0, end=0.2,
+                                       frame_key=lambda _t: ("calque", 1), render=render)
 
 
-def test_a_writer_refused_by_windows_accepts_the_identical_file_of_the_winner(
-    qapp, tmp_path, monkeypatch
-):
+def test_a_writer_refused_by_windows_accepts_the_identical_file_of_the_winner(qapp, tmp_path, monkeypatch):
     """Windows refuse de remplacer un fichier qu'un autre thread remplace au même instant (vu en CI) ; le nom étant
     l'empreinte du contenu, le fichier du gagnant est le bon."""
     import os
@@ -150,8 +119,8 @@ def test_a_writer_refused_by_windows_accepts_the_identical_file_of_the_winner(
     monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path)
 
     def windows_replace(source, target):
-        shutil.copyfile(source, target)  # l'autre écrivain a publié ce même contenu…
-        raise PermissionError(13, "Access is denied")  # …et Windows refuse le nôtre
+        shutil.copyfile(source, target)                     # l'autre écrivain a publié ce même contenu…
+        raise PermissionError(13, "Access is denied")       # …et Windows refuse le nôtre
 
     monkeypatch.setattr(os, "replace", windows_replace)
     playlist = _layer_stream(tmp_path)
@@ -161,9 +130,7 @@ def test_a_writer_refused_by_windows_accepts_the_identical_file_of_the_winner(
     assert not [path for path in tmp_path.iterdir() if ".tmp" in path.name]
 
 
-def test_a_refusal_without_a_winner_is_reported_and_leaves_no_temporary(
-    qapp, tmp_path, monkeypatch
-):
+def test_a_refusal_without_a_winner_is_reported_and_leaves_no_temporary(qapp, tmp_path, monkeypatch):
     import os
 
     from core import mograph_stream
@@ -180,15 +147,11 @@ def test_a_refusal_without_a_winner_is_reported_and_leaves_no_temporary(
     with pytest.raises(PermissionError):
         _layer_stream(tmp_path)
     monkeypatch.undo()
-    assert (
-        len(calls) == mograph_stream.SHARED_WRITE_ATTEMPTS
-    )  # quelques essais, pas une boucle sans fin
+    assert len(calls) == mograph_stream.SHARED_WRITE_ATTEMPTS  # quelques essais, pas une boucle sans fin
     assert not [path for path in tmp_path.iterdir() if ".tmp" in path.name]
 
 
-def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(
-    tmp_path,
-):
+def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(tmp_path):
     built_on: list[int] = []
     leftover = tmp_path / "graphe.txt"
     leftover.write_text("x")
@@ -198,15 +161,9 @@ def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(
         built_on.append(threading.get_ident())
         # Une commande qui échoue vite : seul le thread de construction et le nettoyage comptent ici. Un processus
         # Python trivial (et non un vrai ffmpeg, dont le démarrage dépendait du runner) échoue de façon déterministe.
-        return [sys.executable, "-I", "-S", "-c", "import sys; sys.exit(1)"], (
-            str(leftover),
-        )
+        return [sys.executable, "-I", "-S", "-c", "import sys; sys.exit(1)"], (str(leftover),)
 
-    analyzer = ScopeAnalyzer(
-        on_error=lambda *_a: done.set(),
-        on_result=lambda *_a: done.set(),
-        min_interval=0.0,
-    )
+    analyzer = ScopeAnalyzer(on_error=lambda *_a: done.set(), on_result=lambda *_a: done.set(), min_interval=0.0)
     try:
         analyzer.submit(playhead=0.0, command_factory=factory, force=True)
         # Borne de détection de blocage, pas de performance : échoue seulement si le fil est réellement bloqué.
@@ -231,31 +188,21 @@ def test_no_callback_reaches_the_owner_once_the_analyzer_is_closed():
 
     def slow_extractor(_request):
         in_extraction.set()
-        release.wait(60)  # garde-fou : libéré par le test, jamais attendu en entier
-        return ScopeFrame(
-            width=2, height=2, pixels=tuple((10, 20, 30) for _ in range(4))
-        )
+        release.wait(60)                       # garde-fou : libéré par le test, jamais attendu en entier
+        return ScopeFrame(width=2, height=2, pixels=tuple((10, 20, 30) for _ in range(4)))
 
-    analyzer = ScopeAnalyzer(
-        on_result=results.append,
-        on_error=lambda *_a: errors.append(_a),
-        min_interval=0.0,
-        extractor=slow_extractor,
-    )
+    analyzer = ScopeAnalyzer(on_result=results.append, on_error=lambda *_a: errors.append(_a), min_interval=0.0,
+                             extractor=slow_extractor)
     try:
         analyzer.submit(playhead=0.0, force=True, ffmpeg_command=("ffmpeg",))
         assert in_extraction.wait(60)
-        analyzer.close(
-            join_timeout=0.05
-        )  # l'extraction n'est pas finie : close rend la main sans le thread
+        analyzer.close(join_timeout=0.05)      # l'extraction n'est pas finie : close rend la main sans le thread
         release.set()
-        assert analyzer.wait_idle(60)  # le thread a bien terminé son travail…
+        assert analyzer.wait_idle(60)          # le thread a bien terminé son travail…
     finally:
         release.set()
         analyzer.close()
-    assert (
-        results == [] and errors == []
-    )  # …mais son résultat a été jeté, rien n'a atteint le propriétaire
+    assert results == [] and errors == []      # …mais son résultat a été jeté, rien n'a atteint le propriétaire
 
 
 # --- Image des scopes ------------------------------------------------------------------------------------------------
@@ -281,23 +228,12 @@ def test_a_png_whose_rows_are_padded_is_read(qapp, width):
     frame = png_to_scope_frame(bytes(payload))
     assert (frame.width, frame.height) == (width, 3)
     assert len(frame.pixels) == width * 3
-    assert frame.pixels[0][:3] == (200, 30, 60) and frame.pixels[-1][:3] == (
-        200,
-        30,
-        60,
-    )
+    assert frame.pixels[0][:3] == (200, 30, 60) and frame.pixels[-1][:3] == (200, 30, 60)
 
 
-def test_a_single_frame_command_rasterises_only_the_frame_it_needs(
-    tmp_path, monkeypatch
-):
+def test_a_single_frame_command_rasterises_only_the_frame_it_needs(tmp_path, monkeypatch):
     """Complexité : une image de scopes ne rastérise pas les calques sur toute leur durée."""
-    from core.export_engine import (
-        ExportEngine,
-        ExportFormat,
-        ExportPreset,
-        ExportRequest,
-    )
+    from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest
     from core.graphics import add_graphic_clip, update_graphic
     from core.mograph_raster import MographRenderer
     from core.project_model import Project
@@ -307,25 +243,14 @@ def test_a_single_frame_command_rasterises_only_the_frame_it_needs(
     project = Project(name="Horizon", width=160, height=90, fps=10.0)
     title = add_graphic_clip(project, "text", timeline_start=0.0, duration=6.0)
     update_graphic(title, "text", "Kut")
-    apply_text_animation(title, "bounce")  # une image différente à chaque instant
+    apply_text_animation(title, "bounce")                  # une image différente à chaque instant
     asked: list[float] = []
     original = MographRenderer.any_active
-    monkeypatch.setattr(
-        MographRenderer,
-        "any_active",
-        lambda self, ids, t: asked.append(t) or original(self, ids, t),
-    )
-    request = ExportRequest(
-        render_plan=build_render_plan(project),
-        output_path=str(tmp_path / "f.png"),
-        format=ExportFormat.MP4_H264,
-        preset=ExportPreset("s", (160, 90), 23, "128k"),
-        fps=10.0,
-    )
+    monkeypatch.setattr(MographRenderer, "any_active", lambda self, ids, t: asked.append(t) or original(self, ids, t))
+    request = ExportRequest(render_plan=build_render_plan(project), output_path=str(tmp_path / "f.png"),
+                            format=ExportFormat.MP4_H264, preset=ExportPreset("s", (160, 90), 23, "128k"), fps=10.0)
     ExportEngine().build_frame_command(request, 0.0)
-    assert (
-        asked and max(asked) <= 0.2 + 1e-9
-    )  # l'image 0 et une de marge, pas 60 images
+    assert asked and max(asked) <= 0.2 + 1e-9               # l'image 0 et une de marge, pas 60 images
 
 
 # --- Fenêtre : le tic de lecture -------------------------------------------------------------------------------------
@@ -337,17 +262,13 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
     monkeypatch.setattr(win, "_sync_preview_to_timeline", lambda: [])
     monkeypatch.setattr(win, "update_subtitle_overlay", lambda *_a: None)
-    monkeypatch.setattr(
-        win, "_ensure_timeline_index", lambda: type("I", (), {"duration": 100.0})()
-    )
+    monkeypatch.setattr(win, "_ensure_timeline_index", lambda: type("I", (), {"duration": 100.0})())
     return win
 
 
@@ -358,22 +279,18 @@ def test_the_playhead_follows_real_time_not_the_number_of_ticks(window, late, ex
     Même après un long gel : le lecteur a avancé de tout ce temps, une tête de lecture bornée le ferait reculer.
     """
     window.is_playing = True
-    window.playhead_seconds = 1.0  # le projet par défaut dure 12 s : 1 + 5 reste dedans
+    window.playhead_seconds = 1.0                           # le projet par défaut dure 12 s : 1 + 5 reste dedans
     window._playback_clock = None if late is None else time.perf_counter() - late
     window._tick_playback()
     assert window.playhead_seconds - 1.0 == pytest.approx(expected, abs=0.03)
     window.is_playing = False
 
 
-def test_a_refused_scopes_request_costs_nothing_on_the_interface_thread(
-    window, monkeypatch
-):
+def test_a_refused_scopes_request_costs_nothing_on_the_interface_thread(window, monkeypatch):
     prepared: list[float] = []
-    monkeypatch.setattr(
-        window, "_prepare_scopes_command", lambda playhead: prepared.append(playhead)
-    )
+    monkeypatch.setattr(window, "_prepare_scopes_command", lambda playhead: prepared.append(playhead))
     monkeypatch.setattr(window.scopes_analyzer, "would_accept", lambda **_k: False)
     window._scopes_visible = True
     window.playhead_seconds = 3.0
     window._request_scopes_analysis()
-    assert prepared == []  # ni plan, ni graphe, ni image de calque
+    assert prepared == []                                   # ni plan, ni graphe, ni image de calque

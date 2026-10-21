@@ -20,29 +20,18 @@ from tests.scene3d_samples import base_project
 
 SIZE = (64, 36)
 FPS = 10.0
-BACKGROUND = (32, 96, 160)  # couleur du fond vidéo du projet (0x2060A0)
+BACKGROUND = (32, 96, 160)               # couleur du fond vidéo du projet (0x2060A0)
 
 
-def png_bytes(
-    color: tuple[int, int, int, int] = (255, 255, 255, 255), size: int = 2
-) -> bytes:
+def png_bytes(color: tuple[int, int, int, int] = (255, 255, 255, 255), size: int = 2) -> bytes:
     """Un vrai PNG RGBA 8 bits uni de ``size`` x ``size`` pixels."""
-
     def chunk(kind: bytes, data: bytes) -> bytes:
         body = kind + data
-        return (
-            struct.pack(">I", len(data))
-            + body
-            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
-        )
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
 
     row = b"\x00" + bytes(color) * size
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
-        + chunk(b"IDAT", zlib.compress(row * size))
-        + chunk(b"IEND", b"")
-    )
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(row * size)) + chunk(b"IEND", b""))
 
 
 def _strip_textures(doc: dict) -> None:
@@ -67,34 +56,14 @@ def animated_document() -> dict:
     scene = doc["scene"]
     scene["background"] = None
     scene["camera"]["position"] = [0, 0, 6]
-    scene["models"] = [
-        {
-            "id": "quad",
-            "path": "quad.gltf",
-            "normalize": {
-                "up_axis": "y",
-                "unit_scale": 1.0,
-                "target_size": None,
-                "center": False,
-            },
-        }
-    ]
-    scene["instances"] = [
-        {
-            "model": "quad",
-            "transform": list(np.eye(4).reshape(-1)),
-            "clip": "wave",
-            "time_offset": 0,
-            "loop": False,
-            "name": "quad",
-        }
-    ]
+    scene["models"] = [{"id": "quad", "path": "quad.gltf",
+                        "normalize": {"up_axis": "y", "unit_scale": 1.0, "target_size": None, "center": False}}]
+    scene["instances"] = [{"model": "quad", "transform": list(np.eye(4).reshape(-1)), "clip": "wave", "time_offset": 0,
+                           "loop": False, "name": "quad"}]
     return doc
 
 
-def write_static_scene(
-    folder: Path, name: str = "static.kut3d", *, textured: bool = False
-) -> Path:
+def write_static_scene(folder: Path, name: str = "static.kut3d", *, textured: bool = False) -> Path:
     """Cube rouge sans texture, ou texturé par un vrai ``tex.png`` vert."""
     write_cube_obj(folder, texture=textured)
     if textured:
@@ -108,44 +77,18 @@ def write_animated_scene(folder: Path, name: str = "animated.kut3d") -> Path:
     return write_doc(folder / name, animated_document())
 
 
-def project_with_background(
-    folder: Path,
-    scene: Path,
-    *,
-    start: float = 0.0,
-    duration: float = 2.0,
-    clip_id: str = "s3d",
-):
+def project_with_background(folder: Path, scene: Path, *, start: float = 0.0, duration: float = 2.0, clip_id: str = "s3d"):
     """Projet 64x36 à 10 i/s : fond vidéo uni (FFmpeg) et un clip 3D par-dessus. Retourne ``(projet, clip)``."""
     import subprocess
 
     project = base_project()
     project.fps = FPS
     background = folder / "background.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            f"color=c=0x2060A0:s={SIZE[0]}x{SIZE[1]}:r={int(FPS)}:d=6",
-            "-pix_fmt",
-            "yuv420p",
-            str(background),
-        ],
-        check=True,
-    )
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    f"color=c=0x2060A0:s={SIZE[0]}x{SIZE[1]}:r={int(FPS)}:d=6", "-pix_fmt", "yuv420p", str(background)],
+                   check=True)
     project.media_assets[0].path = str(background)
     project.media_assets[0].fps = FPS
-    clip = add_graphic_clip(
-        project,
-        GraphicType.SCENE3D,
-        timeline_start=start,
-        duration=duration,
-        source_path=str(scene),
-        clip_id=clip_id,
-    )
+    clip = add_graphic_clip(project, GraphicType.SCENE3D, timeline_start=start, duration=duration,
+                            source_path=str(scene), clip_id=clip_id)
     return project, clip

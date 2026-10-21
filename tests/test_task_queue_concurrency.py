@@ -109,7 +109,7 @@ def test_replacing_an_already_running_task_is_safe():
     """Remplacer une clé déjà pompée ne doit pas lever ``ValueError``."""
     queue = TaskQueue()
     queue.submit("k", lambda t: queue.submit("k", lambda t2: None))
-    queue.pump(1)  # la tâche en cours se remplace elle-même
+    queue.pump(1)          # la tâche en cours se remplace elle-même
     queue.submit("k", lambda t: None)
     assert queue.pending == 1
     assert queue.pump(5) == 1
@@ -282,9 +282,9 @@ def test_mailbox_drops_results_from_a_previous_project():
     from core.studio_runtime import StudioRuntime
 
     runtime = StudioRuntime()
-    runtime.begin_project()  # session 2
+    runtime.begin_project()          # session 2
     first_session = runtime.session_id
-    runtime.begin_project()  # session 3 : le projet 2 est clos
+    runtime.begin_project()          # session 3 : le projet 2 est clos
 
     # Le worker du projet 2 termine tard et pousse son résultat.
     runtime.mailbox.push("thumb", b"vieux", 10, session_id=first_session)
@@ -304,7 +304,7 @@ def test_begin_project_discards_pending_results():
     runtime.begin_project()
     runtime.mailbox.push("k", b"v", 4, session_id=runtime.session_id)
 
-    runtime.begin_project()  # projet remplacé
+    runtime.begin_project()          # projet remplacé
     assert runtime.mailbox.drain(runtime.session_id) == []
 
 

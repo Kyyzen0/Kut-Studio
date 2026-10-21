@@ -171,9 +171,7 @@ def test_track_clips_list_is_not_shared_between_instances():
 def test_track_accepts_multiple_clips():
     """Une Track doit pouvoir stocker plusieurs clips."""
     clip_a = _make_clip(id="clip-a", track_id="track-1")
-    clip_b = _make_clip(
-        id="clip-b", track_id="track-1", source_in=10.0, source_out=15.0
-    )
+    clip_b = _make_clip(id="clip-b", track_id="track-1", source_in=10.0, source_out=15.0)
     track = Track(id="track-1", name="V1", type="video", clips=[clip_a, clip_b])
 
     assert [clip.id for clip in track.clips] == ["clip-a", "clip-b"]

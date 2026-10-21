@@ -46,6 +46,5 @@ def keep_preview_player_off_the_disk(window, monkeypatch) -> None:
     (SIGSEGV observé sous xdist, jamais en lançant le fichier seul ; voir aussi ``_release_media_players_at_exit``,
     qui traite la même famille de plantage à la sortie du processus). Aucun test Multicam ne lit un vrai média ici.
     """
-    monkeypatch.setattr(
-        window.preview_panel.player, "setSource", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr(window.preview_panel.player, "setSource", lambda *_a, **_k: None)
+

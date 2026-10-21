@@ -152,9 +152,7 @@ def test_format_ass_reports_background_colour_when_set() -> None:
     output = format_ass(cues, style)
     # Le fond est un calque de boîte opaque : sa couleur et son opacité sont l'OutlineColour du style ``DefaultBox``
     # (ASS BGR + alpha). ``BackColour`` est celle de l'ombre.
-    box_style = next(
-        line for line in output.splitlines() if line.startswith("Style: DefaultBox,")
-    )
+    box_style = next(line for line in output.splitlines() if line.startswith("Style: DefaultBox,"))
     assert box_style.split(",")[5] == "&H196E760F&"
 
 
@@ -165,9 +163,7 @@ def test_format_ass_escapes_newlines_as_backslash_n() -> None:
     assert r"Ligne 1\NLigne 2" in output
 
 
-def test_format_ass_escapes_override_braces_without_doubling_other_backslashes() -> (
-    None
-):
+def test_format_ass_escapes_override_braces_without_doubling_other_backslashes() -> None:
     """Un texte forgé ne doit pas injecter d'overrides ; les \\ littéraux restent visibles."""
     from core.subtitle_io import _escape_ass_text
 
@@ -201,7 +197,9 @@ def test_format_ass_with_styles_produces_one_style_per_cue() -> None:
         TextStyle(alignment=TextAlignment.TOP_CENTER),
         TextStyle(alignment=TextAlignment.BOTTOM_LEFT),
     ]
-    output = format_ass_with_styles(list(zip(cues, styles)), default_text_style())
+    output = format_ass_with_styles(
+        list(zip(cues, styles)), default_text_style()
+    )
     # Les deux styles sont matérialisés.
     assert "Style: Default," in output
     assert "Style: S1," in output
@@ -217,7 +215,9 @@ def test_format_ass_with_styles_produces_one_style_per_cue() -> None:
 def test_format_ass_with_styles_falls_back_to_default_style() -> None:
     cues = [SubtitleCue(start=0.0, end=1.0, text="A")]
     styles = [None]
-    output = format_ass_with_styles(list(zip(cues, styles)), default_text_style())
+    output = format_ass_with_styles(
+        list(zip(cues, styles)), default_text_style()
+    )
     style = default_text_style()
     margin_x = int(style.margin_x)
     margin_y = int(style.margin_y)
@@ -236,7 +236,9 @@ def test_format_ass_with_styles_reuses_default_for_standard_clips() -> None:
         SubtitleCue(start=1.0, end=2.0, text="B"),
     ]
     styles = [default_text_style(), TextStyle(font_size=72.0)]
-    output = format_ass_with_styles(list(zip(cues, styles)), default_text_style())
+    output = format_ass_with_styles(
+        list(zip(cues, styles)), default_text_style()
+    )
     assert output.count("Style: ") == 2
     assert ",Default,," in output
     assert ",S1,," in output
@@ -276,14 +278,9 @@ def test_generated_ass_declares_consistent_column_counts() -> None:
             # ``Text`` est la dernière colonne : il peut contenir des virgules (``{\pos(960,80)}``), libass ne coupe
             # que les colonnes qui précèdent.
             assert (
-                len(line.replace("Dialogue: ", "").split(",", event_columns - 1))
-                == event_columns
+                len(line.replace("Dialogue: ", "").split(",", event_columns - 1)) == event_columns
             )
-            assert (
-                not line.replace("Dialogue: ", "")
-                .split(",", event_columns - 1)[-1]
-                .startswith(",")
-            )
+            assert not line.replace("Dialogue: ", "").split(",", event_columns - 1)[-1].startswith(",")
 
 
 def test_format_srt_keeps_only_text_and_timing() -> None:

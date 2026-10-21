@@ -19,17 +19,9 @@ def _panel(qtbot, monkeypatch, tmp_path) -> PropertiesPanel:
 
 def _view(**overrides) -> TimelineClipView:
     values = dict(
-        id="clip",
-        track_id="V1",
-        track_index=0,
-        start=0.0,
-        end=2.0,
-        label="Plan",
-        text="",
-        source_path="",
-        color_key="#ffffff",
-        track_type="video",
-        color_grade=ColorGrade.identity(),
+        id="clip", track_id="V1", track_index=0, start=0.0, end=2.0,
+        label="Plan", text="", source_path="", color_key="#ffffff",
+        track_type="video", color_grade=ColorGrade.identity(),
     )
     values.update(overrides)
     return TimelineClipView(**values)
@@ -43,13 +35,8 @@ def test_color_tab_exposes_complete_grade_and_builtin_presets(
     panel._select_inspector_tab(1)
 
     assert set(panel.color_field_spins) == {
-        "exposure",
-        "contrast",
-        "saturation",
-        "temperature",
-        "hue",
-        "shadows",
-        "highlights",
+        "exposure", "contrast", "saturation", "temperature", "hue",
+        "shadows", "highlights",
     }
     assert panel.color_field_spins["exposure"].value() == pytest.approx(0.4)
     assert panel.color_field_spins["temperature"].value() == pytest.approx(25.0)
@@ -78,9 +65,7 @@ def test_missing_lut_is_visible_and_locked_track_disables_controls(
     panel = _panel(qtbot, monkeypatch, tmp_path)
     grade = ColorGrade(
         lut=LUTResource(
-            path="luts/absent.cube",
-            title="Absent",
-            sha1="0" * 40,
+            path="luts/absent.cube", title="Absent", sha1="0" * 40,
             missing=True,
         )
     )
@@ -114,6 +99,4 @@ def test_save_color_preset_embeds_it_in_project(qtbot, monkeypatch, tmp_path) ->
     window.on_color_grade_field_changed("intro", "contrast", 0.25)
     window.on_color_preset_save_requested("intro", "Mon contraste")
 
-    assert any(
-        preset.name == "Mon contraste" for preset in window.project.color_presets
-    )
+    assert any(preset.name == "Mon contraste" for preset in window.project.color_presets)

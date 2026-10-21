@@ -23,22 +23,13 @@ def _debt() -> list[str]:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     overrides = config["tool"]["mypy"]["overrides"]
     return sorted(
-        module
-        for override in overrides
-        if override.get("ignore_errors")
-        for module in override["module"]
+        module for override in overrides if override.get("ignore_errors") for module in override["module"]
     )
 
 
 def _baseline() -> list[str]:
-    lines = (
-        (ROOT / "tests" / "mypy_debt_baseline.txt")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    )
-    return sorted(
-        line.strip() for line in lines if line.strip() and not line.startswith("#")
-    )
+    lines = (ROOT / "tests" / "mypy_debt_baseline.txt").read_text(encoding="utf-8").splitlines()
+    return sorted(line.strip() for line in lines if line.strip() and not line.startswith("#"))
 
 
 def test_no_module_enters_the_typing_debt():
@@ -61,20 +52,11 @@ def test_every_debt_entry_is_an_existing_module_without_wildcard():
     for module in _debt():
         assert "*" not in module, f"Joker interdit dans la dette de typage : {module}"
         path = ROOT.joinpath(*module.split(".")).with_suffix(".py")
-        assert path.is_file(), (
-            f"{module} est listé en dette mais {path.relative_to(ROOT)} n'existe plus : retirez-le."
-        )
+        assert path.is_file(), f"{module} est listé en dette mais {path.relative_to(ROOT)} n'existe plus : retirez-le."
 
 
 def test_the_debt_list_is_sorted_and_without_duplicates():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    listed = [
-        m
-        for o in config["tool"]["mypy"]["overrides"]
-        if o.get("ignore_errors")
-        for m in o["module"]
-    ]
+    listed = [m for o in config["tool"]["mypy"]["overrides"] if o.get("ignore_errors") for m in o["module"]]
     assert len(listed) == len(set(listed)), "doublon dans la dette de typage"
-    assert listed == sorted(listed), (
-        "la liste de dette doit rester triée (relecture et fusion plus simples)"
-    )
+    assert listed == sorted(listed), "la liste de dette doit rester triée (relecture et fusion plus simples)"

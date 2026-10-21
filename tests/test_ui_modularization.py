@@ -62,8 +62,7 @@ def test_clip_widget_does_not_import_the_panel_at_runtime() -> None:
     runtime_imports = [
         node
         for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-        and (node.module or "").startswith("ui.timeline_panel")
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("ui.timeline_panel")
     ]
     assert not runtime_imports
 
@@ -72,22 +71,11 @@ def test_historical_imports_still_work() -> None:
     timeline = importlib.import_module("ui.timeline_panel")
     properties = importlib.import_module("ui.properties_panel")
     for name in (
-        "TimelinePanel",
-        "ClipWidget",
-        "TrackRowHeader",
-        "TransitionMarkerWidget",
-        "_TrackGrid",
-        "_HEIGHTS",
-        "_COLLAPSED_HEIGHT",
-        "_current_palette",
+        "TimelinePanel", "ClipWidget", "TrackRowHeader", "TransitionMarkerWidget",
+        "_TrackGrid", "_HEIGHTS", "_COLLAPSED_HEIGHT", "_current_palette",
     ):
         assert hasattr(timeline, name), name
-    for name in (
-        "PropertiesPanel",
-        "ColorCurveEditor",
-        "_DiamondButton",
-        "_PROPERTY_RANGES",
-    ):
+    for name in ("PropertiesPanel", "ColorCurveEditor", "_DiamondButton", "_PROPERTY_RANGES"):
         assert hasattr(properties, name), name
 
 
@@ -96,63 +84,25 @@ def test_panels_compose_their_mixins() -> None:
     from ui.timeline_panel import TimelinePanel
 
     timeline_mixins = {c.__name__ for c in TimelinePanel.__mro__}
-    assert {
-        "ToolbarMixin",
-        "LayoutMixin",
-        "ZoomPlayheadMixin",
-        "SelectionMixin",
-        "DragToolsMixin",
-        "PreviewsMixin",
-    } <= timeline_mixins
+    assert {"ToolbarMixin", "LayoutMixin", "ZoomPlayheadMixin", "SelectionMixin",
+            "DragToolsMixin", "PreviewsMixin"} <= timeline_mixins
     properties_mixins = {c.__name__ for c in PropertiesPanel.__mro__}
-    assert {
-        "ConstructionMixin",
-        "TabsMixin",
-        "ColorMixin",
-        "AudioMixin",
-        "EffectsMixin",
-        "AudioEffectsMixin",
-        "KeyframesMixin",
-        "ClipContextMixin",
-        "TransitionSubtitleMixin",
-        "TimeRemappingMixin",
-    } <= properties_mixins
+    assert {"ConstructionMixin", "TabsMixin", "ColorMixin", "AudioMixin", "EffectsMixin",
+            "AudioEffectsMixin", "KeyframesMixin", "ClipContextMixin",
+            "TransitionSubtitleMixin", "TimeRemappingMixin"} <= properties_mixins
 
 
 @pytest.mark.parametrize(
     ("owner", "methods"),
     [
-        (
-            "ui.timeline_panel.TimelinePanel",
-            (
-                "set_project",
-                "select_clip",
-                "set_tool",
-                "snap_time",
-                "zoom_in",
-                "zoom_out",
-                "fit_timeline",
-                "set_playhead_seconds",
-                "clip_rect",
-                "format_time",
-                "pixmap_for",
-            ),
-        ),
-        (
-            "ui.properties_panel.PropertiesPanel",
-            (
-                "show_clip",
-                "show_transition",
-                "update_color_grade_from_clip",
-                "update_effects_from_clip",
-                "update_audio_effects_from_clip",
-                "update_transform_from_clip",
-                "set_audio_clip",
-                "refresh_keyframe_diamonds",
-                "group_style",
-                "make_slider",
-            ),
-        ),
+        ("ui.timeline_panel.TimelinePanel",
+         ("set_project", "select_clip", "set_tool", "snap_time", "zoom_in", "zoom_out",
+          "fit_timeline", "set_playhead_seconds", "clip_rect", "format_time", "pixmap_for")),
+        ("ui.properties_panel.PropertiesPanel",
+         ("show_clip", "show_transition", "update_color_grade_from_clip",
+          "update_effects_from_clip", "update_audio_effects_from_clip",
+          "update_transform_from_clip", "set_audio_clip", "refresh_keyframe_diamonds",
+          "group_style", "make_slider")),
     ],
 )
 def test_public_methods_are_preserved(owner: str, methods: tuple[str, ...]) -> None:

@@ -10,13 +10,7 @@ from core.color_grading import ColorGrade, Wheel
 from core.color_nodes import ColorNodeGraph, MixerKind, as_graph
 from core.color_qualifier import Qualifier
 from core.color_render import Highlight
-from core.workspace_state import (
-    PAGE_COLOR,
-    PAGE_EDIT,
-    DockArea,
-    PanelId,
-    page_default_state,
-)
+from core.workspace_state import PAGE_COLOR, PAGE_EDIT, DockArea, PanelId, page_default_state
 from ui import i18n
 from ui.color_page.node_editor import NodeEditor, layout
 from ui.color_page.qualifier import QualifierEditor
@@ -36,22 +30,13 @@ def _branched() -> ColorNodeGraph:
 def test_the_layout_gives_a_column_per_depth_and_a_row_per_branch():
     graph = _branched()
     places = layout(graph)
-    parallel, layer = (
-        next(m.id for m in graph.mixers if m.kind is kind)
-        for kind in (MixerKind.PARALLEL, MixerKind.LAYER)
-    )
+    parallel, layer = (next(m.id for m in graph.mixers if m.kind is kind) for kind in (MixerKind.PARALLEL, MixerKind.LAYER))
     first, second = (link.source for link in graph.inputs(parallel))
     assert places["n1"] == (0, 0) and places[first][0] == places[second][0] == 1
     assert places[first][1] < places[second][1], "la deuxième branche est dessous"
-    assert (
-        places[parallel][0] == 2
-        and places[layer][0] == 4
-        and places[graph.sink.id] == places[layer]
-    )
+    assert places[parallel][0] == 2 and places[layer][0] == 4 and places[graph.sink.id] == places[layer]
     top = graph.inputs(layer)[1].source
-    assert places[top][1] > places[graph.inputs(layer)[0].source][1], (
-        "en calques, l'entrée haute est dessinée dessous"
-    )
+    assert places[top][1] > places[graph.inputs(layer)[0].source][1], "en calques, l'entrée haute est dessinée dessous"
 
 
 @pytest.fixture
@@ -68,15 +53,11 @@ def test_the_editor_draws_mixers_as_rounds_that_cannot_be_chosen(editor):
     editor.set_graph(graph, "n2")
     assert len(editor._mixers) == 2 and len(editor._items) == len(graph.correctors)
     assert [item.node.id for item in editor._items if item.node.id == "n2"]
-    assert graph.node_or_first(graph.mixers[0].id).id == "n1", (
-        "un mélangeur n'est jamais le nœud courant"
-    )
+    assert graph.node_or_first(graph.mixers[0].id).id == "n1", "un mélangeur n'est jamais le nœud courant"
 
 
 @pytest.mark.parametrize(("key", "kind"), [(Qt.Key_P, "parallel"), (Qt.Key_L, "layer")])
-def test_alt_p_and_alt_l_add_a_branch_next_to_the_current_node(
-    qtbot, editor, key, kind
-):
+def test_alt_p_and_alt_l_add_a_branch_next_to_the_current_node(qtbot, editor, key, kind):
     editor.set_graph(_branched(), "n2")
     editor.setFocus()
     with qtbot.waitSignal(editor.branch_requested) as asked:
@@ -92,9 +73,7 @@ def test_dragging_a_node_reorders_it_inside_its_serial_run_only(qtbot, editor):
     editor.set_graph(graph, "n1")
     first = next(item for item in editor._items if item.node.id == "n1")
     second = next(item for item in editor._items if item.node.id == "n2")
-    assert graph.serial_run("n1") == ["n1"], (
-        "n1 alimente deux branches : seul dans sa suite"
-    )
+    assert graph.serial_run("n1") == ["n1"], "n1 alimente deux branches : seul dans sa suite"
     first.setX(second.x() + 30)
     with qtbot.assertNotEmitted(editor.move_requested, wait=20):
         editor.drop(first)
@@ -114,9 +93,7 @@ def qualifier(qtbot):
 
 
 def test_qualifying_a_node_starts_from_a_selection_of_everything(qtbot, qualifier):
-    assert not qualifier.bars["hue"].isEnabled(), (
-        "sans qualifieur, les plages sont grisées"
-    )
+    assert not qualifier.bars["hue"].isEnabled(), "sans qualifieur, les plages sont grisées"
     with qtbot.waitSignal(qualifier.changed) as changed:
         qualifier.enabled_check.setChecked(True)
     assert changed.args[0] == Qualifier() and not changed.args[0].restricts()
@@ -133,9 +110,7 @@ def test_fields_set_the_ranges_in_degrees_and_percent(qtbot, qualifier):
     assert changed.args[0].sat_low == pytest.approx(0.3)
     with qtbot.waitSignal(qualifier.changed) as changed:
         qualifier.spins["lum_low"].setValue(100)
-    assert changed.args[0].lum_low == changed.args[0].lum_high == 1.0, (
-        "une borne poussée au-delà entraîne l'autre"
-    )
+    assert changed.args[0].lum_low == changed.args[0].lum_high == 1.0, "une borne poussée au-delà entraîne l'autre"
 
 
 def test_dragging_the_hue_bar_turns_the_range(qtbot, qualifier):
@@ -143,21 +118,9 @@ def test_dragging_the_hue_bar_turns_the_range(qtbot, qualifier):
     bar = qualifier.bars["hue"]
     start, end = QPointF(bar.width() * 0.1, 9), QPointF(bar.width() * 0.35, 9)
     with qtbot.waitSignal(qualifier.changed) as changed:
-        bar.mousePressEvent(
-            QMouseEvent(
-                QEvent.MouseButtonPress,
-                start,
-                start,
-                Qt.LeftButton,
-                Qt.LeftButton,
-                Qt.NoModifier,
-            )
-        )
-        bar.mouseMoveEvent(
-            QMouseEvent(
-                QEvent.MouseMove, end, end, Qt.NoButton, Qt.LeftButton, Qt.NoModifier
-            )
-        )
+        bar.mousePressEvent(QMouseEvent(QEvent.MouseButtonPress, start, start, Qt.LeftButton, Qt.LeftButton,
+                                        Qt.NoModifier))
+        bar.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, end, end, Qt.NoButton, Qt.LeftButton, Qt.NoModifier))
     assert changed.args[0].hue_center == pytest.approx(10.0 + 0.25 * 360.0, abs=2.0)
     assert changed.args[0].hue_width == 40.0
 
@@ -192,10 +155,7 @@ def _value(window, clip_id):
 
 def test_the_colour_page_shows_the_clip_strip_under_the_timeline():
     state = page_default_state(PAGE_COLOR)
-    assert (
-        state.is_visible(PanelId.CLIPS)
-        and state.area_of(PanelId.CLIPS) is DockArea.BOTTOM
-    )
+    assert state.is_visible(PanelId.CLIPS) and state.area_of(PanelId.CLIPS) is DockArea.BOTTOM
     assert not page_default_state(PAGE_EDIT).is_visible(PanelId.CLIPS)
 
 
@@ -203,18 +163,10 @@ def test_a_branch_from_the_panel_menu_is_one_step_and_becomes_the_current_node(w
     clip_id = _clip(window)
     window.color_panel.add_actions["parallel"].trigger()
     graph = _value(window, clip_id)
-    assert (
-        isinstance(graph, ColorNodeGraph) and graph.mixers[0].kind is MixerKind.PARALLEL
-    )
-    assert (
-        window._color_node_id == "n2"
-        and window.history.undo_label == i18n.translate("history.color.node_parallel")
-    )
+    assert isinstance(graph, ColorNodeGraph) and graph.mixers[0].kind is MixerKind.PARALLEL
+    assert window._color_node_id == "n2" and window.history.undo_label == i18n.translate("history.color.node_parallel")
     window.color_panel.add_actions["layer"].trigger()
-    assert {mixer.kind for mixer in _value(window, clip_id).mixers} == {
-        MixerKind.PARALLEL,
-        MixerKind.LAYER,
-    }
+    assert {mixer.kind for mixer in _value(window, clip_id).mixers} == {MixerKind.PARALLEL, MixerKind.LAYER}
     window.undo_last()
     window.undo_last()
     assert isinstance(_value(window, clip_id), (ColorGrade, type(None)))
@@ -225,11 +177,7 @@ def test_a_qualifier_burst_is_one_history_step_on_the_current_node(window, monke
     window.color_panel.nodes.add_requested.emit("n1")
     refreshed = []
     original = window._refresh_color_monitor
-    monkeypatch.setattr(
-        window,
-        "_refresh_color_monitor",
-        lambda cid: (refreshed.append(cid), original(cid)),
-    )
+    monkeypatch.setattr(window, "_refresh_color_monitor", lambda cid: (refreshed.append(cid), original(cid)))
     steps = len(window.history.entries())
     editor = window.color_panel.qualifier
     editor.enabled_check.setChecked(True)
@@ -237,15 +185,10 @@ def test_a_qualifier_burst_is_one_history_step_on_the_current_node(window, monke
     editor.spins["hue_center"].setValue(200)
     window._finalize_color_history()
     graph = _value(window, clip_id)
-    assert graph.corrector("n2").qualifier == Qualifier(
-        hue_center=200.0, hue_width=60.0
-    )
+    assert graph.corrector("n2").qualifier == Qualifier(hue_center=200.0, hue_width=60.0)
     assert graph.corrector("n1").qualifier is None
     assert len(window.history.entries()) == steps + 1
-    assert (
-        window.history.undo_label == i18n.translate("history.color.qualifier")
-        and len(refreshed) == 3
-    )
+    assert window.history.undo_label == i18n.translate("history.color.qualifier") and len(refreshed) == 3
 
 
 def test_showing_the_selection_changes_only_what_the_monitor_gets(window):
@@ -259,19 +202,11 @@ def test_showing_the_selection_changes_only_what_the_monitor_gets(window):
     assert window._monitor_color_grade(clip) is clip.color_grade
     window.on_color_highlight_toggled(True)
     shown = window._monitor_color_grade(clip)
-    assert (
-        isinstance(shown, Highlight)
-        and shown.node_id == "n1"
-        and shown.graph == clip.color_grade
-    )
+    assert isinstance(shown, Highlight) and shown.node_id == "n1" and shown.graph == clip.color_grade
     other = window.project.tracks[0].clips[1]
-    assert window._monitor_color_grade(other) is other.color_grade, (
-        "seul le clip de la page Couleur"
-    )
+    assert window._monitor_color_grade(other) is other.color_grade, "seul le clip de la page Couleur"
     window.switch_page(PAGE_EDIT)
-    assert window._monitor_color_grade(clip) is clip.color_grade, (
-        "panneau fermé : le vrai étalonnage"
-    )
+    assert window._monitor_color_grade(clip) is clip.color_grade, "panneau fermé : le vrai étalonnage"
 
 
 def test_choosing_another_node_refreshes_the_selection_shown(window, monkeypatch):
@@ -292,18 +227,12 @@ def test_before_after_splits_the_monitor_and_stops_on_the_edit_page(window):
     _clip(window)
     window._set_color_compare(0.5)
     overlay = window.preview_panel.overlay
-    assert (
-        overlay.compare_split == 0.5 and window.color_panel.compare_button.isChecked()
-    )
+    assert overlay.compare_split == 0.5 and window.color_panel.compare_button.isChecked()
     assert window.preview_panel._gpu_grade_split == 0.5
     overlay.compare_moved.emit(0.3)
-    assert overlay.compare_split == pytest.approx(
-        0.3
-    ) and window._color_compare == pytest.approx(0.3)
+    assert overlay.compare_split == pytest.approx(0.3) and window._color_compare == pytest.approx(0.3)
     window.switch_page(PAGE_EDIT)
-    assert (
-        overlay.compare_split is None and window.preview_panel._gpu_grade_split == 0.0
-    )
+    assert overlay.compare_split is None and window.preview_panel._gpu_grade_split == 0.0
     assert not window.color_panel.compare_button.isChecked()
 
 
@@ -337,22 +266,13 @@ def test_the_clip_strip_lists_the_video_shots_and_jumps_to_one(window):
     _clip(window)
     strip = window.clip_strip
     assert strip.isVisible()
-    views = sorted(
-        (
-            view
-            for view in window.timeline_panel.clip_views
-            if view.track_type == "video"
-        ),
-        key=lambda view: (view.start, view.track_id),
-    )
+    views = sorted((view for view in window.timeline_panel.clip_views if view.track_type == "video"),
+                   key=lambda view: (view.start, view.track_id))
     assert [clip.id for clip in strip.clips] == [view.id for view in views]
     assert strip.current_id == window.project.tracks[0].clips[0].id
     target = strip.clips[-1].id
     strip.clip_requested.emit(target)
-    assert (
-        window.properties_panel.selected_clip.id == target
-        and strip.current_id == target
-    )
+    assert window.properties_panel.selected_clip.id == target and strip.current_id == target
     window.color_panel.wheels.wheels["gain"].changed.emit(Wheel(y=0.2))
     window._finalize_color_history()
     assert next(clip for clip in strip.clips if clip.id == target).graded

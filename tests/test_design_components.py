@@ -24,11 +24,7 @@ def _luminance(color: QColor) -> float:
         value /= 255
         return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
 
-    return (
-        0.2126 * channel(color.red())
-        + 0.7152 * channel(color.green())
-        + 0.0722 * channel(color.blue())
-    )
+    return 0.2126 * channel(color.red()) + 0.7152 * channel(color.green()) + 0.0722 * channel(color.blue())
 
 
 def _contrast(a: QColor, b: QColor) -> float:
@@ -42,9 +38,7 @@ def _contrast(a: QColor, b: QColor) -> float:
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
-def test_the_qt_palette_carries_the_theme_so_unstyled_widgets_do_not_fall_back_to_the_system(
-    theme,
-):
+def test_the_qt_palette_carries_the_theme_so_unstyled_widgets_do_not_fall_back_to_the_system(theme):
     palette, qt = THEMES[theme], qt_palette(THEMES[theme])
     assert qt.color(QPalette.Window) == QColor(palette.background)
     assert qt.color(QPalette.Base) == QColor(palette.input_bg)
@@ -53,10 +47,7 @@ def test_the_qt_palette_carries_the_theme_so_unstyled_widgets_do_not_fall_back_t
     # Le texte posé sur ces surfaces reste lisible : c'est ce que prend, par défaut, tout widget non décrit.
     assert _contrast(qt.color(QPalette.WindowText), qt.color(QPalette.Window)) >= 7
     assert _contrast(qt.color(QPalette.Text), qt.color(QPalette.Base)) >= 7
-    assert (
-        _contrast(qt.color(QPalette.HighlightedText), qt.color(QPalette.Highlight))
-        >= 4.5
-    )
+    assert _contrast(qt.color(QPalette.HighlightedText), qt.color(QPalette.Highlight)) >= 4.5
 
 
 # ---------------------------------------------------------------------------
@@ -66,25 +57,16 @@ def test_the_qt_palette_carries_the_theme_so_unstyled_widgets_do_not_fall_back_t
 
 def test_every_overlay_colour_is_a_plain_hex_and_alpha_is_always_explicit():
     values = vars(OverlayColors()).values()
-    assert all(re.fullmatch(r"#[0-9A-Fa-f]{6}", value) for value in values), (
-        "une couleur de repère doit être « #rrggbb »"
-    )
+    assert all(re.fullmatch(r"#[0-9A-Fa-f]{6}", value) for value in values), "une couleur de repère doit être « #rrggbb »"
     colour = overlay_qcolor(OVERLAY.guide, 110)
-    assert (
-        colour.alpha() == 110 and colour.name().upper() == OVERLAY.guide.upper()
-    )  # pas « #rrggbbaa » lu comme « #aarrggbb »
+    assert colour.alpha() == 110 and colour.name().upper() == OVERLAY.guide.upper()   # pas « #rrggbbaa » lu comme « #aarrggbb »
 
 
 def test_a_white_overlay_line_stays_visible_on_a_white_image_thanks_to_its_halo():
     image = QImage(40, 20, QImage.Format_RGB32)
     image.fill(QColor("#FFFFFF"))
     painter = QPainter(image)
-    halo_stroke(
-        painter,
-        overlay_qcolor(OVERLAY.centre),
-        1.0,
-        lambda: painter.drawLine(5, 10, 35, 10),
-    )
+    halo_stroke(painter, overlay_qcolor(OVERLAY.centre), 1.0, lambda: painter.drawLine(5, 10, 35, 10))
     painter.end()
     darkest = min(image.pixelColor(20, y).lightness() for y in range(7, 14))
     assert darkest < 160, "sans halo, un trait blanc disparaît sur une image blanche"
@@ -100,14 +82,8 @@ def test_the_panel_header_has_the_shared_height_title_role_and_trailing_slot(qtb
 
     header = PanelHeader("Visionneuse")
     qtbot.addWidget(header)
-    assert (
-        header.height() == Sizes.panel_header
-        or header.maximumHeight() == Sizes.panel_header
-    )
-    assert (
-        header.title_label.text() == "Visionneuse"
-        and header.title_label.property("role") == "panel-title"
-    )
+    assert header.height() == Sizes.panel_header or header.maximumHeight() == Sizes.panel_header
+    assert header.title_label.text() == "Visionneuse" and header.title_label.property("role") == "panel-title"
     extra = QLabel("1920 × 1080")
     header.add_trailing(extra)
     assert extra.parent() is header
@@ -116,10 +92,8 @@ def test_the_panel_header_has_the_shared_height_title_role_and_trailing_slot(qtb
 def test_the_search_field_names_itself_after_its_placeholder_in_every_language(qtbot):
     field = SearchField("Rechercher…")
     qtbot.addWidget(field)
-    assert (
-        field.accessibleName() == "Rechercher…" and field.height() == Sizes.search_field
-    )
-    field.setPlaceholderText("Search…")  # un changement de langue
+    assert field.accessibleName() == "Rechercher…" and field.height() == Sizes.search_field
+    field.setPlaceholderText("Search…")                       # un changement de langue
     assert field.accessibleName() == "Search…" and field.isClearButtonEnabled()
 
 
@@ -141,12 +115,7 @@ def test_every_dialog_uses_the_shared_margins(window):
         dialog = factory()
         try:
             margins = dialog.layout().contentsMargins()
-            assert (
-                margins.left(),
-                margins.top(),
-                margins.right(),
-                margins.bottom(),
-            ) == DIALOG_MARGINS, name
+            assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == DIALOG_MARGINS, name
         finally:
             dialog.close()
 
@@ -155,13 +124,9 @@ def test_the_library_title_follows_the_page_that_is_shown(window):
     from ui import i18n
 
     panel = window.project_panel
-    for section, key in (
-        ("transitions", "rail.transitions"),
-        ("effects", "rail.effects"),
-        ("media", "rail.media"),
-    ):
+    for section, key in (("transitions", "rail.transitions"), ("effects", "rail.effects"), ("media", "rail.media")):
         panel.select_section(section)
-        assert panel._title_label.text() == i18n.translate(key)  # noqa: SLF001
+        assert panel._title_label.text() == i18n.translate(key)       # noqa: SLF001
 
 
 def test_a_tracker_swatch_tells_its_health_by_shape_and_not_by_colour_alone():
@@ -188,33 +153,18 @@ def test_a_style_sheet_is_only_written_when_it_changed(qtbot):
     label = QLabel("x")
     qtbot.addWidget(label)
     assert set_stylesheet_if_changed(label, "color: red;") is True
-    assert (
-        set_stylesheet_if_changed(label, "color: red;") is False
-    )  # identique : rien n'est écrit, rien n'est reparsé
-    assert (
-        set_stylesheet_if_changed(label, "color: blue;") is True
-        and label.styleSheet() == "color: blue;"
-    )
+    assert set_stylesheet_if_changed(label, "color: red;") is False        # identique : rien n'est écrit, rien n'est reparsé
+    assert set_stylesheet_if_changed(label, "color: blue;") is True and label.styleSheet() == "color: blue;"
 
 
-def test_refreshing_an_unchanged_clip_does_not_rewrite_its_style_sheets(
-    window, monkeypatch
-):
+def test_refreshing_an_unchanged_clip_does_not_rewrite_its_style_sheets(window, monkeypatch):
     """Trois ``setStyleSheet`` par clip à chaque rafraîchissement représentaient 87 % de ``refresh_clip_widgets`` (+45 % au banc)."""
     from PySide6.QtWidgets import QWidget
 
-    widget = window.timeline_panel.clip_widgets[
-        next(iter(window.timeline_panel.clip_widgets))
-    ]
-    widget.refresh_style()  # la première écriture est légitime
+    widget = window.timeline_panel.clip_widgets[next(iter(window.timeline_panel.clip_widgets))]
+    widget.refresh_style()                                                  # la première écriture est légitime
     writes: list[int] = []
     original = QWidget.setStyleSheet
-    monkeypatch.setattr(
-        QWidget,
-        "setStyleSheet",
-        lambda self, sheet: (writes.append(1), original(self, sheet))[1],
-    )
+    monkeypatch.setattr(QWidget, "setStyleSheet", lambda self, sheet: (writes.append(1), original(self, sheet))[1])
     widget.refresh_style()
-    assert writes == [], (
-        f"{len(writes)} feuille(s) de style réécrite(s) alors que rien n'a changé"
-    )
+    assert writes == [], f"{len(writes)} feuille(s) de style réécrite(s) alors que rien n'a changé"

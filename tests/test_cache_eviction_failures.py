@@ -18,9 +18,7 @@ from core.preview_cache import DiskPreviewCache, PreviewSegmentKey
 
 
 def _key(clip: str) -> PreviewSegmentKey:
-    return PreviewSegmentKey(
-        clip_id=clip, start=0.0, end=2.0, quality="standard", params_hash="p"
-    )
+    return PreviewSegmentKey(clip_id=clip, start=0.0, end=2.0, quality="standard", params_hash="p")
 
 
 @pytest.fixture
@@ -31,9 +29,7 @@ def locked(monkeypatch):
 
     def unlink(self, *args, **kwargs):
         if self.name in names:
-            raise PermissionError(
-                13, "Le fichier est utilisé par un autre processus", str(self)
-            )
+            raise PermissionError(13, "Le fichier est utilisé par un autre processus", str(self))
         return real_unlink(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "unlink", unlink)
@@ -41,16 +37,14 @@ def locked(monkeypatch):
 
 
 def _cache_with(tmp_path, clips: list[str]) -> tuple[DiskPreviewCache, dict[str, str]]:
-    cache = DiskPreviewCache(
-        directory=tmp_path / "previews", ttl_seconds=0, budget_bytes=10_000
-    )
+    cache = DiskPreviewCache(directory=tmp_path / "previews", ttl_seconds=0, budget_bytes=10_000)
     source = tmp_path / "segment.mp4"
     source.write_bytes(b"x" * 100)
     names: dict[str, str] = {}
     for age, clip in enumerate(clips):
         cache.store(_key(clip), str(source))
         names[clip] = cache.path_for(_key(clip)).name
-        stamp = 1_700_000_000 + age  # le premier est le plus ancien
+        stamp = 1_700_000_000 + age                      # le premier est le plus ancien
         os.utime(cache.path_for(_key(clip)), (stamp, stamp))
         cache._index[names[clip]][1] = stamp * 10**9
     return cache, names
@@ -58,17 +52,14 @@ def _cache_with(tmp_path, clips: list[str]) -> tuple[DiskPreviewCache, dict[str,
 
 def test_evict_bytes_only_counts_what_was_really_deleted(tmp_path, locked):
     cache, names = _cache_with(tmp_path, ["old", "mid", "new"])
-    locked.add(names["old"])  # le plus ancien est tenu ouvert
+    locked.add(names["old"])                              # le plus ancien est tenu ouvert
 
     freed = cache.evict_bytes(100)
 
-    assert freed == 100  # « mid » a été supprimé à sa place
-    assert (
-        cache.path_for(_key("old")).is_file()
-        and not cache.path_for(_key("mid")).is_file()
-    )
-    assert names["old"] in cache._index  # l'entrée n'est pas oubliée
-    assert cache.stats()["bytes"] == 200  # ce qui reste réellement sur le disque
+    assert freed == 100                                   # « mid » a été supprimé à sa place
+    assert cache.path_for(_key("old")).is_file() and not cache.path_for(_key("mid")).is_file()
+    assert names["old"] in cache._index                   # l'entrée n'est pas oubliée
+    assert cache.stats()["bytes"] == 200                  # ce qui reste réellement sur le disque
 
 
 def test_evict_bytes_terminates_when_nothing_can_be_deleted(tmp_path, locked):
@@ -80,9 +71,7 @@ def test_evict_bytes_terminates_when_nothing_can_be_deleted(tmp_path, locked):
 
 def test_budget_eviction_skips_a_locked_segment_and_still_terminates(tmp_path, locked):
     cache, names = _cache_with(tmp_path, ["old", "mid", "new"])
-    cache.budget_bytes = (
-        150  # baissé après coup : ``store`` appliquerait déjà le budget
-    )
+    cache.budget_bytes = 150                              # baissé après coup : ``store`` appliquerait déjà le budget
     locked.add(names["old"])
 
     evicted = cache.evict_if_needed()
@@ -99,7 +88,7 @@ def test_invalidation_counts_only_removed_segments(tmp_path, locked):
     assert cache.invalidate_clip("a") == 1
     assert cache.invalidate_clip("b") == 0
     assert names["b"] in cache._index
-    assert cache.invalidate_clips(["b", "c"]) == 1  # « c » part, « b » reste
+    assert cache.invalidate_clips(["b", "c"]) == 1        # « c » part, « b » reste
     assert cache.invalidate_all() == 0
     assert cache.stats()["entries"] == 1 and cache.path_for(_key("b")).is_file()
     locked.clear()
@@ -108,7 +97,7 @@ def test_invalidation_counts_only_removed_segments(tmp_path, locked):
 
 def test_a_file_already_gone_counts_as_removed(tmp_path):
     cache, names = _cache_with(tmp_path, ["a"])
-    cache.path_for(_key("a")).unlink()  # supprimé à la main entre-temps
+    cache.path_for(_key("a")).unlink()                    # supprimé à la main entre-temps
     assert cache.invalidate_all() == 1
     assert cache.stats()["entries"] == 0
 
@@ -123,9 +112,7 @@ class _Proxies:
         self.sizes, self.stuck, self.evicted = dict(sizes), set(stuck), []
 
     def entries(self):
-        return [
-            (name, size, index) for index, (name, size) in enumerate(self.sizes.items())
-        ]
+        return [(name, size, index) for index, (name, size) in enumerate(self.sizes.items())]
 
     def usage_bytes(self):
         return sum(self.sizes.values())
@@ -140,23 +127,19 @@ class _Proxies:
 
 def test_the_global_budget_does_not_count_an_undeletable_proxy_as_freed():
     proxies = _Proxies({"tenu": 400, "libre": 400}, stuck={"tenu"})
-    manager = CacheManager(
-        proxies=proxies, max_bytes=500
-    )  # 800 octets pour un budget de 500
+    manager = CacheManager(proxies=proxies, max_bytes=500)          # 800 octets pour un budget de 500
 
     freed = manager.enforce()
 
     assert proxies.evicted == ["libre"]
-    assert freed == 400  # pas 800 : « tenu » est toujours sur le disque
+    assert freed == 400                                              # pas 800 : « tenu » est toujours sur le disque
     assert manager.disk_bytes() == 400
 
 
 def test_the_proxy_manager_reports_whether_the_proxy_is_gone(tmp_path, locked):
     from core.proxy_manager import ProxyManager
 
-    manager = ProxyManager(
-        tmp_path / "proxies", ffmpeg_command=lambda: ["fake"], runner=lambda *a: None
-    )
+    manager = ProxyManager(tmp_path / "proxies", ffmpeg_command=lambda: ["fake"], runner=lambda *a: None)
     proxy = tmp_path / "proxies" / "proxy-abc.mp4"
     proxy.parent.mkdir(exist_ok=True)
     proxy.write_bytes(b"p" * 10)
@@ -164,7 +147,5 @@ def test_the_proxy_manager_reports_whether_the_proxy_is_gone(tmp_path, locked):
     assert manager.evict_path(proxy) is False and proxy.is_file()
     locked.clear()
     assert manager.evict_path(proxy) is True and not proxy.exists()
-    assert (
-        manager.evict_path(proxy) is True
-    )  # déjà absent : rien à libérer, rien à garder
+    assert manager.evict_path(proxy) is True                         # déjà absent : rien à libérer, rien à garder
     manager.shutdown()

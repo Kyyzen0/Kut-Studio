@@ -17,9 +17,7 @@ from core.compositing_guard import (
 from core.mograph_layers import layer_clips
 from core.project_model import Clip, MediaAsset, Project, Track
 
-NEW = Compositing(
-    masks=(Mask(),), chroma_key=ChromaKey(True, "#00FF00"), blend_mode="multiply"
-)
+NEW = Compositing(masks=(Mask(),), chroma_key=ChromaKey(True, "#00FF00"), blend_mode="multiply")
 
 
 # ---------------------------------------------------------------- fonction pure
@@ -28,16 +26,7 @@ NEW = Compositing(
 def _project(track_type="video", locked=False):
     project = Project(name="G", width=1280, height=720, fps=25.0)
     track = Track(id="t1", name="T1", type=track_type, locked=locked)
-    track.clips.append(
-        Clip(
-            id="c1",
-            asset_id="a1",
-            track_id="t1",
-            timeline_start=0.0,
-            source_in=0.0,
-            source_out=2.0,
-        )
-    )
+    track.clips.append(Clip(id="c1", asset_id="a1", track_id="t1", timeline_start=0.0, source_in=0.0, source_out=2.0))
     project.tracks.append(track)
     return project
 
@@ -75,12 +64,8 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
+    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
@@ -96,25 +81,12 @@ def window(qtbot, monkeypatch):
 
 def _add_track_clip(win, track_type, clip_id, locked=False):
     asset = MediaAsset(
-        id=f"a_{clip_id}",
-        path="/nonexistent/x.mp4",
-        name="x",
-        media_type="audio" if track_type == "audio" else "video",
-        duration=5.0,
-        width=0 if track_type == "audio" else 640,
-        height=0 if track_type == "audio" else 360,
-        fps=0.0 if track_type == "audio" else 25.0,
-        has_audio=track_type == "audio",
+        id=f"a_{clip_id}", path="/nonexistent/x.mp4", name="x", media_type="audio" if track_type == "audio" else "video",
+        duration=5.0, width=0 if track_type == "audio" else 640, height=0 if track_type == "audio" else 360,
+        fps=0.0 if track_type == "audio" else 25.0, has_audio=track_type == "audio",
     )
     track = Track(id=f"tr_{clip_id}", name=clip_id, type=track_type, locked=locked)
-    clip = Clip(
-        id=clip_id,
-        asset_id=asset.id,
-        track_id=track.id,
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=5.0,
-    )
+    clip = Clip(id=clip_id, asset_id=asset.id, track_id=track.id, timeline_start=0.0, source_in=0.0, source_out=5.0)
     track.clips.append(clip)
     win.project.media_assets.append(asset)
     win.project.tracks.append(track)
@@ -166,9 +138,7 @@ def test_refused_change_writes_nothing_and_says_so(window, kind):
 
 def test_refused_change_puts_the_inspector_back_to_the_real_value(window):
     _track, clip = _add_track_clip(window, "video", "v", locked=True)
-    _group(window).blend_mode.setCurrentIndex(
-        2
-    )  # le champ émet : le modèle refuse, le champ doit revenir
+    _group(window).blend_mode.setCurrentIndex(2)       # le champ émet : le modèle refuse, le champ doit revenir
     assert _group(window).blend_mode.currentData() == clip.compositing.blend_mode.value
     assert clip.compositing == Compositing()
 

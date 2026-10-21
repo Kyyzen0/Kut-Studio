@@ -23,17 +23,8 @@ def _probe_counter():
 
     def probe(path):
         calls.append(path)
-        return MediaAsset(
-            id=f"asset-probe{len(calls)}",
-            path=path,
-            name="a",
-            duration=5.0,
-            width=64,
-            height=64,
-            fps=25.0,
-            media_type="video",
-            has_audio=False,
-        )
+        return MediaAsset(id=f"asset-probe{len(calls)}", path=path, name="a", duration=5.0, width=64, height=64,
+                          fps=25.0, media_type="video", has_audio=False)
 
     return probe, calls
 
@@ -52,7 +43,7 @@ def test_relinking_an_asset_never_changes_what_the_next_import_gets(tmp_path):
     cache, (probe, _calls) = MemoryCache(), _probe_counter()
     path = _file(tmp_path)
     imported = cached_probe(cache, path, probe)
-    imported.path = _file(tmp_path, "b.mp4")  # relink : modification sur place
+    imported.path = _file(tmp_path, "b.mp4")                  # relink : modification sur place
     again = cached_probe(cache, path, probe)
     assert again.path == path
 

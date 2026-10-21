@@ -29,16 +29,7 @@ KINDS = ["track", "layer", "photo"]
 def _project(track_type="video", locked=False):
     project = Project(name="G", width=1280, height=720, fps=25.0)
     track = Track(id="t1", name="T1", type=track_type, locked=locked)
-    track.clips.append(
-        Clip(
-            id="c1",
-            asset_id="a1",
-            track_id="t1",
-            timeline_start=0.0,
-            source_in=0.0,
-            source_out=2.0,
-        )
-    )
+    track.clips.append(Clip(id="c1", asset_id="a1", track_id="t1", timeline_start=0.0, source_in=0.0, source_out=2.0))
     project.tracks.append(track)
     return project
 
@@ -46,18 +37,13 @@ def _project(track_type="video", locked=False):
 def test_shared_rule_without_the_genre_check_accepts_audio_but_not_a_locked_track():
     assert clip_edit_refusal(_project("audio"), "c1", visual_only=False) is None
     assert clip_edit_refusal(_project("audio"), "c1") == REFUSAL_NOT_VISUAL
-    assert (
-        clip_edit_refusal(_project("audio", locked=True), "c1", visual_only=False)
-        == REFUSAL_TRACK_LOCKED
-    )
+    assert clip_edit_refusal(_project("audio", locked=True), "c1", visual_only=False) == REFUSAL_TRACK_LOCKED
     assert clip_edit_refusal(_project(), "c1") is None
 
 
 def test_compositing_rule_is_the_shared_rule():
     for project in (_project(), _project(locked=True), _project("audio")):
-        assert compositing_edit_refusal(project, "c1") == clip_edit_refusal(
-            project, "c1"
-        )
+        assert compositing_edit_refusal(project, "c1") == clip_edit_refusal(project, "c1")
 
 
 def test_a_locked_graphic_carried_by_a_video_clip_is_refused():
@@ -76,12 +62,8 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
+    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     monkeypatch.setattr(QMessageBox, "warning", lambda *_a, **_k: QMessageBox.Ok)
     win = MainWindow()
     qtbot.addWidget(win)
@@ -98,25 +80,12 @@ def window(qtbot, monkeypatch):
 
 def _add_track_clip(win, track_type, clip_id, locked=False):
     asset = MediaAsset(
-        id=f"a_{clip_id}",
-        path="/nonexistent/x.mp4",
-        name="x",
-        media_type="audio" if track_type == "audio" else "video",
-        duration=5.0,
-        width=0 if track_type == "audio" else 640,
-        height=0 if track_type == "audio" else 360,
-        fps=0.0 if track_type == "audio" else 25.0,
-        has_audio=track_type == "audio",
+        id=f"a_{clip_id}", path="/nonexistent/x.mp4", name="x", media_type="audio" if track_type == "audio" else "video",
+        duration=5.0, width=0 if track_type == "audio" else 640, height=0 if track_type == "audio" else 360,
+        fps=0.0 if track_type == "audio" else 25.0, has_audio=track_type == "audio",
     )
     track = Track(id=f"tr_{clip_id}", name=clip_id, type=track_type, locked=locked)
-    clip = Clip(
-        id=clip_id,
-        asset_id=asset.id,
-        track_id=track.id,
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=5.0,
-    )
+    clip = Clip(id=clip_id, asset_id=asset.id, track_id=track.id, timeline_start=0.0, source_in=0.0, source_out=5.0)
     track.clips.append(clip)
     win.project.media_assets.append(asset)
     win.project.tracks.append(track)
@@ -199,47 +168,23 @@ def test_motion_slider_is_refused_and_the_field_goes_back(locked_clip):
     win, _track, clip = locked_clip
     spin = win.properties_panel._spin_boxes["position_x"]
     shown = spin.value()
-    _refused(
-        win, clip, lambda: spin.setValue(shown + 0.5)
-    )  # le champ émet : le modèle refuse, le champ revient
+    _refused(win, clip, lambda: spin.setValue(shown + 0.5))      # le champ émet : le modèle refuse, le champ revient
     assert spin.value() == pytest.approx(shown)
-    _refused(
-        win,
-        clip,
-        lambda: win.properties_panel.transform_changed.emit(clip.id, "opacity", 0.3),
-    )
+    _refused(win, clip, lambda: win.properties_panel.transform_changed.emit(clip.id, "opacity", 0.3))
 
 
 def test_motion_keyframe_buttons_and_reset_are_refused(locked_clip):
     win, _track, clip = locked_clip
-    _refused(
-        win,
-        clip,
-        lambda: win.on_transform_keyframe_added(clip.id, "position_y", 0.3, 0.1),
-    )
-    _refused(
-        win, clip, lambda: win.on_transform_keyframe_removed(clip.id, "position_x", 0.5)
-    )
+    _refused(win, clip, lambda: win.on_transform_keyframe_added(clip.id, "position_y", 0.3, 0.1))
+    _refused(win, clip, lambda: win.on_transform_keyframe_removed(clip.id, "position_x", 0.5))
     _refused(win, clip, lambda: win.on_transform_reset(clip.id))
 
 
 def test_advanced_transform_and_its_keyframe_toggle_are_refused(locked_clip):
     win, _track, clip = locked_clip
-    _refused(
-        win,
-        clip,
-        lambda: win.properties_panel.advanced_transform_changed.emit(
-            clip.id, "scale_x", 2.0
-        ),
-    )
-    _refused(
-        win, clip, lambda: win._on_advanced_transform_changed(clip.id, "anchor_x", 0.2)
-    )
-    _refused(
-        win,
-        clip,
-        lambda: win.properties_panel.advanced_keyframe_toggled.emit(clip.id, "scale_x"),
-    )
+    _refused(win, clip, lambda: win.properties_panel.advanced_transform_changed.emit(clip.id, "scale_x", 2.0))
+    _refused(win, clip, lambda: win._on_advanced_transform_changed(clip.id, "anchor_x", 0.2))
+    _refused(win, clip, lambda: win.properties_panel.advanced_keyframe_toggled.emit(clip.id, "scale_x"))
 
 
 def test_viewer_drag_cannot_write_and_its_handles_are_not_editable(locked_clip):
@@ -288,17 +233,9 @@ def test_effect_handlers_are_refused(locked_clip):
         pytest.skip("les effets ne s'appliquent qu'aux pistes vidéo")
     effect_id = clip.effects[0].id
     _refused(win, clip, lambda: win.on_clip_effect_added(clip.id, "sepia"))
-    _refused(
-        win, clip, lambda: win.on_clip_effect_enabled_changed(clip.id, effect_id, False)
-    )
+    _refused(win, clip, lambda: win.on_clip_effect_enabled_changed(clip.id, effect_id, False))
     _refused(win, clip, lambda: win.on_clip_effect_moved(clip.id, effect_id, 1))
-    _refused(
-        win,
-        clip,
-        lambda: win.on_clip_effect_parameter_changed(
-            clip.id, effect_id, "intensity", 3.0
-        ),
-    )
+    _refused(win, clip, lambda: win.on_clip_effect_parameter_changed(clip.id, effect_id, "intensity", 3.0))
     _refused(win, clip, lambda: win.on_clip_effect_removed(clip.id, effect_id))
 
 
@@ -316,21 +253,9 @@ def test_graphic_properties_are_refused_and_the_field_goes_back(window, kind):
     window.on_clip_selected(clip.id)
     window.history.reset(window.project)
     text_before = clip.graphic.text
-    _refused(
-        window,
-        clip,
-        lambda: window.properties_panel.graphic_property_changed.emit(
-            clip.id, "text", "autre"
-        ),
-    )
-    _refused(
-        window,
-        clip,
-        lambda: window.on_graphic_property_changed(clip.id, "fill_color", "#FF0000"),
-    )
-    _refused(
-        window, clip, lambda: window.apply_text_animation_to_clip(clip.id, "pop_in")
-    )
+    _refused(window, clip, lambda: window.properties_panel.graphic_property_changed.emit(clip.id, "text", "autre"))
+    _refused(window, clip, lambda: window.on_graphic_property_changed(clip.id, "fill_color", "#FF0000"))
+    _refused(window, clip, lambda: window.apply_text_animation_to_clip(clip.id, "pop_in"))
     _refused(window, clip, lambda: window.sync_text_on_voice(clip.id))
     assert clip.graphic.text == text_before
 
@@ -340,30 +265,20 @@ def test_graphic_properties_are_refused_and_the_field_goes_back(window, kind):
 
 def _groups(win):
     panel = win.properties_panel
-    return {
-        "movement": panel.movement_group,
-        "speed": panel.speed_group,
-        "effects": panel.effects_group,
-        "graphics": panel.graphics_group,
-    }
+    return {"movement": panel.movement_group, "speed": panel.speed_group, "effects": panel.effects_group,
+            "graphics": panel.graphics_group}
 
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_groups_are_disabled_when_locked_and_enabled_again(window, kind):
     track, clip = _prepare(window, kind)
     groups = _groups(window)
-    expected = (
-        {"movement", "speed"}
-        | ({"effects"} if track.type == "video" else set())
-        | ({"graphics"} if track.type == "graphics" else set())
-    )
+    expected = {"movement", "speed"} | ({"effects"} if track.type == "video" else set()) | (
+        {"graphics"} if track.type == "graphics" else set())
     assert all(groups[name].isEnabled() for name in expected)
     _lock(window, kind, track, clip)
     assert not any(groups[name].isEnabled() for name in expected)
-    assert (
-        window.properties_panel.advanced_transform.isEnabled()
-        or not groups["movement"].isEnabled()
-    )
+    assert window.properties_panel.advanced_transform.isEnabled() or not groups["movement"].isEnabled()
     _unlock(window, kind, track, clip)
     assert all(groups[name].isEnabled() for name in expected)
 
@@ -400,9 +315,7 @@ def test_editable_video_clip_still_changes_with_one_history_step(window):
     assert len(window.history) == entries + 1
     window.on_speed_changed(clip.id, 2.0)
     assert len(window.history) == entries + 2
-    window.on_clip_effect_parameter_changed(
-        clip.id, clip.effects[0].id, "intensity", 3.0
-    )
+    window.on_clip_effect_parameter_changed(clip.id, clip.effects[0].id, "intensity", 3.0)
     assert len(window.history) == entries + 3
     window.statusBar().clearMessage()
     window.on_transform_keyframe_added(clip.id, "position_y", 0.4, 0.1)
@@ -444,11 +357,7 @@ def test_audio_clip_controls_stay_refused_on_a_locked_track(window):
 
 def test_motion_handlers_refuse_an_audio_clip_with_a_message(window):
     _track, clip = _add_track_clip(window, "audio", "a")
-    _refused(
-        window,
-        clip,
-        lambda: window.on_transform_property_changed(clip.id, "position_x", 0.3),
-    )
+    _refused(window, clip, lambda: window.on_transform_property_changed(clip.id, "position_x", 0.3))
 
 
 # ---------------------------------------------------------------- verbes de script
@@ -458,9 +367,7 @@ def _script(project, *ops):
     from core.scripting import Session, apply_script, parse_script
 
     session = Session(project)
-    return session, apply_script(
-        session, parse_script({"kut_script": 1, "ops": list(ops)})
-    )
+    return session, apply_script(session, parse_script({"kut_script": 1, "ops": list(ops)}))
 
 
 def _script_layer(locked):
@@ -478,13 +385,7 @@ def test_script_verbs_refuse_a_locked_layer():
     before = copy.deepcopy(clip)
     for op in (
         {"op": "set_graphic", "clip": clip.id, "fill_color": "#FF0000"},
-        {
-            "op": "add_keyframe",
-            "clip": clip.id,
-            "property": "position_x",
-            "at": 0.5,
-            "value": 0.1,
-        },
+        {"op": "add_keyframe", "clip": clip.id, "property": "position_x", "at": 0.5, "value": 0.1},
         {"op": "set_crop", "clip": clip.id, "left": 0.1},
     ):
         _session, report = _script(project, op)
@@ -495,9 +396,7 @@ def test_script_verbs_refuse_a_locked_layer():
 
 def test_script_verbs_still_edit_an_unlocked_layer():
     project, clip = _script_layer(False)
-    _session, report = _script(
-        project, {"op": "set_graphic", "clip": clip.id, "fill_color": "#FF0000"}
-    )
+    _session, report = _script(project, {"op": "set_graphic", "clip": clip.id, "fill_color": "#FF0000"})
     assert report.ok, report.error
     assert find_clip(project, clip.id).graphic.fill_color.upper().startswith("#FF0000")
 

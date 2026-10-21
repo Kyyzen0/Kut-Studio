@@ -32,11 +32,7 @@ class FakeRegistry:
 class RecordingRunner:
     """Lanceur de substitution : enregistre les commandes, et répond avec le code de sortie prévu."""
 
-    def __init__(
-        self,
-        failing: dict[str, tuple[int, bytes]] | None = None,
-        raising: dict[str, Exception] | None = None,
-    ):
+    def __init__(self, failing: dict[str, tuple[int, bytes]] | None = None, raising: dict[str, Exception] | None = None):
         self.calls: list[list[str]] = []
         self.failing = failing or {}
         self.raising = raising or {}
@@ -54,9 +50,7 @@ def test_only_windows_and_linux_get_the_association(tmp_path):
     assert file_association_supported("win32") and file_association_supported("linux")
     assert not file_association_supported("darwin")
     registry = FakeRegistry()
-    result = associate_project_files(
-        platform="darwin", command=COMMAND, registry=registry, data_home=tmp_path
-    )
+    result = associate_project_files(platform="darwin", command=COMMAND, registry=registry, data_home=tmp_path)
     assert result.status == "unsupported"
     assert registry.values == {} and list(tmp_path.iterdir()) == []
 
@@ -76,14 +70,9 @@ def test_windows_extension_points_to_a_launcher_that_receives_the_project(monkey
 def test_windows_source_run_keeps_the_default_icon_out(monkeypatch):
     monkeypatch.delattr(sys, "frozen", raising=False)
     registry = FakeRegistry()
-    associate_project_files(
-        platform="win32", command=["C:\\python.exe", "main.py"], registry=registry
-    )
+    associate_project_files(platform="win32", command=["C:\\python.exe", "main.py"], registry=registry)
     assert "KutStudio.Projet\\DefaultIcon" not in registry.values
-    assert (
-        registry.values["KutStudio.Projet\\shell\\open\\command"]
-        == '"C:\\python.exe" "main.py" "%1"'
-    )
+    assert registry.values["KutStudio.Projet\\shell\\open\\command"] == '"C:\\python.exe" "main.py" "%1"'
 
 
 def test_desktop_entry_is_a_valid_launcher_with_quoted_arguments():
@@ -109,30 +98,17 @@ def test_mime_definition_is_well_formed_and_matches_the_kut_extension():
     assert mime_type.find(f"{namespace}glob").get("pattern") == "*.kut"
 
 
-def test_linux_association_writes_two_files_under_the_data_home_and_refreshes_databases(
-    tmp_path, monkeypatch
-):
-    tools = {
-        "update-mime-database": "/usr/bin/update-mime-database",
-        "update-desktop-database": "/usr/bin/update-desktop-database",
-    }
+def test_linux_association_writes_two_files_under_the_data_home_and_refreshes_databases(tmp_path, monkeypatch):
+    tools = {"update-mime-database": "/usr/bin/update-mime-database",
+             "update-desktop-database": "/usr/bin/update-desktop-database"}
     monkeypatch.setattr(association.shutil, "which", lambda name: tools.get(name))
     runner = RecordingRunner()
 
-    result = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=runner
-    )
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
 
     assert result.status == "associated"
-    written = sorted(
-        path.relative_to(tmp_path).as_posix()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    )
-    assert written == [
-        "applications/kut-studio.desktop",
-        "mime/packages/kut-studio.xml",
-    ]
+    written = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*") if path.is_file())
+    assert written == ["applications/kut-studio.desktop", "mime/packages/kut-studio.xml"]
     assert runner.calls == [
         ["/usr/bin/update-mime-database", str(tmp_path / "mime")],
         ["/usr/bin/update-desktop-database", str(tmp_path / "applications")],
@@ -141,29 +117,18 @@ def test_linux_association_writes_two_files_under_the_data_home_and_refreshes_da
 
 def test_running_the_association_twice_leaves_the_same_files(tmp_path, monkeypatch):
     _with_tools(monkeypatch, ALL_TOOLS)
-    first = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner()
-    )
-    before = (tmp_path / "applications" / "kut-studio.desktop").read_text(
-        encoding="utf-8"
-    )
-    second = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner()
-    )
+    first = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
+    before = (tmp_path / "applications" / "kut-studio.desktop").read_text(encoding="utf-8")
+    second = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
     assert first.status == second.status == "associated"
-    assert (tmp_path / "applications" / "kut-studio.desktop").read_text(
-        encoding="utf-8"
-    ) == before
+    assert (tmp_path / "applications" / "kut-studio.desktop").read_text(encoding="utf-8") == before
 
 
 def test_a_profile_that_cannot_be_written_is_reported_not_raised(tmp_path):
     blocker = tmp_path / "pas-un-dossier"
     blocker.write_text("x", encoding="utf-8")
     result = associate_project_files(
-        platform="linux",
-        command=COMMAND,
-        data_home=blocker / "data",
-        runner=RecordingRunner(),
+        platform="linux", command=COMMAND, data_home=blocker / "data", runner=RecordingRunner(),
     )
     assert result.status == "failed" and result.detail
 
@@ -179,66 +144,38 @@ def _with_tools(monkeypatch, tools):
     monkeypatch.setattr(association.shutil, "which", lambda name: tools.get(name))
 
 
-def test_a_failing_mime_refresh_fails_the_association_with_the_tool_output(
-    tmp_path, monkeypatch
-):
+def test_a_failing_mime_refresh_fails_the_association_with_the_tool_output(tmp_path, monkeypatch):
     # Un échec silencieux donnait « associé » alors que le système ignorait encore le type .kut.
     _with_tools(monkeypatch, ALL_TOOLS)
     runner = RecordingRunner(failing={"update-mime-database": (2, b"base verrouillee")})
-    result = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=runner
-    )
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
     assert result.status == "failed"
     assert result.detail == "update-mime-database a échoué (code 2) : base verrouillee"
 
 
-def test_a_default_application_refused_by_xdg_mime_fails_the_association(
-    tmp_path, monkeypatch
-):
+def test_a_default_application_refused_by_xdg_mime_fails_the_association(tmp_path, monkeypatch):
     _with_tools(monkeypatch, ALL_TOOLS)
     runner = RecordingRunner(failing={"xdg-mime": (1, b"type inconnu")})
-    result = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=runner
-    )
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
     assert result.status == "failed" and "xdg-mime a échoué" in result.detail
 
 
 def test_a_missing_mime_tool_fails_the_association(tmp_path, monkeypatch):
-    _with_tools(
-        monkeypatch,
-        {
-            key: value
-            for key, value in ALL_TOOLS.items()
-            if key != "update-mime-database"
-        },
-    )
-    result = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner()
-    )
-    assert (
-        result.status == "failed"
-        and result.detail == "update-mime-database introuvable"
-    )
+    _with_tools(monkeypatch, {key: value for key, value in ALL_TOOLS.items() if key != "update-mime-database"})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
+    assert result.status == "failed" and result.detail == "update-mime-database introuvable"
 
 
 def test_missing_optional_tools_do_not_fail_the_association(tmp_path, monkeypatch):
-    _with_tools(
-        monkeypatch, {"update-mime-database": ALL_TOOLS["update-mime-database"]}
-    )
-    result = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner()
-    )
+    _with_tools(monkeypatch, {"update-mime-database": ALL_TOOLS["update-mime-database"]})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
     assert result.status == "associated"
 
 
 def test_a_tool_that_times_out_is_reported_not_raised(tmp_path, monkeypatch):
     _with_tools(monkeypatch, ALL_TOOLS)
-    runner = RecordingRunner(
-        raising={"update-desktop-database": subprocess.TimeoutExpired("cmd", 30)}
-    )
-    result = associate_project_files(
-        platform="linux", command=COMMAND, data_home=tmp_path, runner=runner
-    )
+    runner = RecordingRunner(raising={"update-desktop-database": subprocess.TimeoutExpired("cmd", 30)})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
     assert result.status == "failed" and "update-desktop-database" in result.detail
 
 

@@ -9,34 +9,22 @@ from core.graphics import GraphicType, add_graphic_clip
 from core.mograph_layers import scene_for_project, viewer_pick_boxes
 from core.project_model import Clip, MediaAsset, Project, Track
 
-
 def _project(tracks=()) -> Project:
     project = Project(name="Pick", width=1280, height=720, fps=25.0)
     project.tracks.extend(tracks)
     return project
 
 
-def _video(
-    clip_id: str, track_id: str, start: float = 0.0, length: float = 4.0
-) -> Clip:
+def _video(clip_id: str, track_id: str, start: float = 0.0, length: float = 4.0) -> Clip:
     return Clip(clip_id, "asset", track_id, start, 0.0, length)
 
 
 def _ids(project: Project, t: float = 1.0) -> list[str]:
-    return [
-        cid for cid, _w, _b in viewer_pick_boxes(scene_for_project(project), project, t)
-    ]
+    return [cid for cid, _w, _b in viewer_pick_boxes(scene_for_project(project), project, t)]
 
 
 def _text(project: Project, track: Track, clip_id: str, **kwargs) -> Clip:
-    return add_graphic_clip(
-        project,
-        GraphicType.TEXT,
-        timeline_start=0.0,
-        duration=4.0,
-        track=track,
-        clip_id=clip_id,
-    )
+    return add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=4.0, track=track, clip_id=clip_id)
 
 
 # -- fonction pure ------------------------------------------------------------------------------
@@ -48,9 +36,7 @@ def test_visible_video_is_pickable_and_boxes_are_the_whole_frame():
     assert cid == "v" and box == (1280.0, 720.0)
 
 
-@pytest.mark.parametrize(
-    "case", ["hidden", "locked", "disabled", "nested", "before", "after"]
-)
+@pytest.mark.parametrize("case", ["hidden", "locked", "disabled", "nested", "before", "after"])
 def test_excluded_video_clips(case):
     clip = _video("v", "V1", start=0.0, length=2.0)
     track = Track("V1", "V1", "video", clips=[clip])
@@ -111,29 +97,14 @@ def _overlay(boxes, selection=None):
 def _selection(clip_id, world, box):
     from ui.viewer_overlay import SelectionGeometry
 
-    return SelectionGeometry(
-        clip_id,
-        world,
-        (1, 0, 0, 1, 0, 0),
-        box,
-        {
-            "position_x": 0.0,
-            "position_y": 0.0,
-            "scale": 1.0,
-            "anchor_x": 0.5,
-            "anchor_y": 0.5,
-            "scale_x": 1.0,
-        },
-    )
+    return SelectionGeometry(clip_id, world, (1, 0, 0, 1, 0, 0), box,
+                             {"position_x": 0.0, "position_y": 0.0, "scale": 1.0, "anchor_x": 0.5,
+                              "anchor_y": 0.5, "scale_x": 1.0})
 
 
 IDENT = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 FRAME = ("v", IDENT, (1280.0, 720.0))
-TEXT = (
-    "t",
-    (1.0, 0.0, 0.0, 1.0, 400.0, 300.0),
-    (200.0, 100.0),
-)  # canvas (400..600, 300..400) -> scène /2
+TEXT = ("t", (1.0, 0.0, 0.0, 1.0, 400.0, 300.0), (200.0, 100.0))  # canvas (400..600, 300..400) -> scène /2
 
 
 def test_hit_click_on_a_video_selects_it():
@@ -159,8 +130,8 @@ def test_hit_selected_layer_partly_covered_by_a_layer_above_gives_way_there():
     low = ("a", IDENT, (400.0, 300.0))
     high = ("b", (1.0, 0.0, 0.0, 1.0, 200.0, 0.0), (400.0, 300.0))
     overlay = _overlay([low, high], _selection(*low))
-    assert overlay._hit(QPointF(150, 75)) == ("select", "b")  # recouvrement
-    assert overlay._hit(QPointF(20, 75)) == ("move", "a")  # partie libre
+    assert overlay._hit(QPointF(150, 75)) == ("select", "b")   # recouvrement
+    assert overlay._hit(QPointF(20, 75)) == ("move", "a")      # partie libre
 
 
 def test_hit_handles_keep_absolute_priority():
@@ -184,23 +155,15 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
-    )
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
+    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
     monkeypatch.setattr(win.preview_panel, "preview_at", lambda *_a, **_k: None)
     win.project = Project(name="UI", width=1280, height=720, fps=25.0)
-    win.project.media_assets.append(
-        MediaAsset("asset", "/tmp/clip.mp4", "clip", 6, 1280, 720, 25.0, "video")
-    )
-    win.project.tracks.append(
-        Track("V1", "V1", "video", clips=[_video("v", "V1", 0.0, 6.0)])
-    )
+    win.project.media_assets.append(MediaAsset("asset", "/tmp/clip.mp4", "clip", 6, 1280, 720, 25.0, "video"))
+    win.project.tracks.append(Track("V1", "V1", "video", clips=[_video("v", "V1", 0.0, 6.0)]))
     win._timeline_index = None
     win._reload_timeline_preserving_selection()
     win.history.reset(win.project)
@@ -216,9 +179,7 @@ def test_clicking_a_video_in_the_monitor_selects_it_without_moving_the_playhead(
     assert [cid for cid, _w, _b in overlay.layer_boxes] == ["v"]
     center = overlay.to_scene(640.0, 360.0)
     assert overlay._hit(center) == ("select", "v")
-    _click_scene(
-        window, 640.0 - 200.0, 360.0 - 100.0
-    )  # vrai clic Qt (hors poignée d'ancrage au centre)
+    _click_scene(window, 640.0 - 200.0, 360.0 - 100.0)       # vrai clic Qt (hors poignée d'ancrage au centre)
     assert window._primary_selected_id() == "v"
     assert window.playhead_seconds == pytest.approx(2.0)
     assert overlay.selection is not None and overlay.selection.clip_id == "v"
@@ -236,21 +197,14 @@ def _click_scene(window, canvas_x: float, canvas_y: float) -> None:
     panel = window.preview_panel
     scene_point = panel.overlay.to_scene(canvas_x, canvas_y)
     pixel = panel.graphics_view.mapFromScene(scene_point)
-    QTest.mouseClick(
-        panel.graphics_view.viewport(),
-        Qt.LeftButton,
-        Qt.NoModifier,
-        QPoint(pixel.x(), pixel.y()),
-    )
+    QTest.mouseClick(panel.graphics_view.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(pixel.x(), pixel.y()))
 
 
 def test_real_clicks_select_among_overlapping_full_frame_videos_and_a_graphic(window):
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtTest import QTest
 
-    window.project.tracks.append(
-        Track("V2", "V2", "video", clips=[_video("v2", "V2", 0.0, 6.0)])
-    )
+    window.project.tracks.append(Track("V2", "V2", "video", clips=[_video("v2", "V2", 0.0, 6.0)]))
     graphics = Track("G1", "G1", "graphics")
     window.project.tracks.append(graphics)
     _text(window.project, graphics, "t")
@@ -260,37 +214,22 @@ def test_real_clicks_select_among_overlapping_full_frame_videos_and_a_graphic(wi
     window._refresh_viewer_graphics()
     overlay = window.preview_panel.overlay
     assert [cid for cid, _w, _b in overlay.layer_boxes][:2] == ["v", "v2"]
-    text_centre = next(
-        (w[4] + b[0] / 2 + 100.0, w[5] + b[1] / 2 + 60.0)
-        for cid, w, b in overlay.layer_boxes
-        if cid == "t"
-    )
+    text_centre = next((w[4] + b[0] / 2 + 100.0, w[5] + b[1] / 2 + 60.0) for cid, w, b in overlay.layer_boxes if cid == "t")
     # Deux vidéos plein cadre se recouvrent (nombre pair) : le clic doit quand même arriver à la surcouche.
-    pixel = window.preview_panel.graphics_view.mapFromScene(
-        overlay.to_scene(10.0, 10.0)
-    )
+    pixel = window.preview_panel.graphics_view.mapFromScene(overlay.to_scene(10.0, 10.0))
     assert overlay in window.preview_panel.graphics_view.items(pixel)
     _click_scene(window, 10.0, 10.0)
-    assert (
-        window._primary_selected_id() == "v2"
-    )  # la vidéo la plus haute de l'ordre de rendu
+    assert window._primary_selected_id() == "v2"                       # la vidéo la plus haute de l'ordre de rendu
     assert window.playhead_seconds == pytest.approx(2.0)
-    _click_scene(
-        window, *text_centre
-    )  # (hors du centre, qui est la poignée d'ancrage de la vidéo) recouvre aussi les deux vidéos : 3 formes
+    _click_scene(window, *text_centre)                                  # (hors du centre, qui est la poignée d'ancrage de la vidéo) recouvre aussi les deux vidéos : 3 formes
     assert window._primary_selected_id() == "t"
     assert window.playhead_seconds == pytest.approx(2.0)
-    _click_scene(window, 10.0, 710.0)  # hors du calque : la vidéo la plus haute
+    _click_scene(window, 10.0, 710.0)                                   # hors du calque : la vidéo la plus haute
     assert window._primary_selected_id() == "v2"
     assert window.playhead_seconds == pytest.approx(2.0)
     # Un clic hors du cadre (dans la vue) ne livre rien à la surcouche et ne change pas la sélection.
     panel = window.preview_panel
     outside = panel.graphics_view.mapFromScene(overlay.to_scene(-20.0, -20.0))
     if panel.graphics_view.viewport().rect().contains(outside):
-        QTest.mouseClick(
-            panel.graphics_view.viewport(),
-            Qt.LeftButton,
-            Qt.NoModifier,
-            QPoint(outside.x(), outside.y()),
-        )
+        QTest.mouseClick(panel.graphics_view.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(outside.x(), outside.y()))
         assert window._primary_selected_id() == "v2"

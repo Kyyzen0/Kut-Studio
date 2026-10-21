@@ -27,16 +27,12 @@ from core.render_plan import build_render_plan
 from core.text_animations import apply_text_animation
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
-needs_ffmpeg = pytest.mark.skipif(
-    not HAS_FFMPEG, reason="FFmpeg absent : rendu réel impossible"
-)
+needs_ffmpeg = pytest.mark.skipif(not HAS_FFMPEG, reason="FFmpeg absent : rendu réel impossible")
 
 W, H, FPS, LENGTH = 160, 90, 10, 6.0
 
 
-def _shape(
-    project: Project, start: float, duration: float, color: str, mode: BlendMode
-):
+def _shape(project: Project, start: float, duration: float, color: str, mode: BlendMode):
     shape = add_graphic_clip(project, "shape", timeline_start=start, duration=duration)
     update_graphic(shape, "fill_color", color)
     shape.compositing = Compositing(blend_mode=mode)
@@ -47,99 +43,55 @@ def _project(tmp_path: Path) -> Project:
     """Vidéo de fond, puis des éléments courts : au début, au milieu, à la fin de la composition, en Normal et en fusion."""
     project = Project(name="Plages", width=W, height=H, fps=float(FPS))
     source = tmp_path / "fond.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            f"testsrc2=s={W}x{H}:r={FPS}:d={LENGTH}",
-            "-pix_fmt",
-            "yuv420p",
-            str(source),
-        ],
-        check=True,
-    )
-    project.media_assets.append(
-        MediaAsset("a", str(source), "fond", LENGTH, W, H, FPS, "video")
-    )
-    project.tracks.append(
-        Track("V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, LENGTH)])
-    )
-    _shape(project, 0.0, 0.8, "#E0A040", BlendMode.MULTIPLY)  # dès la première image
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    f"testsrc2=s={W}x{H}:r={FPS}:d={LENGTH}", "-pix_fmt", "yuv420p", str(source)], check=True)
+    project.media_assets.append(MediaAsset("a", str(source), "fond", LENGTH, W, H, FPS, "video"))
+    project.tracks.append(Track("V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, LENGTH)]))
+    _shape(project, 0.0, 0.8, "#E0A040", BlendMode.MULTIPLY)        # dès la première image
     title = add_graphic_clip(project, "text", timeline_start=1.0, duration=1.0)
     update_graphic(title, "text", "Kut")
     update_graphic(title, "font_size", 24)
-    apply_text_animation(title, "bounce")  # une image différente à chaque instant
-    _shape(project, 2.5, 0.7, "#3060F0", BlendMode.ADD)  # au milieu
+    apply_text_animation(title, "bounce")                          # une image différente à chaque instant
+    _shape(project, 2.5, 0.7, "#3060F0", BlendMode.ADD)             # au milieu
     _shape(project, 3.3, 0.4, "#20C080", BlendMode.NORMAL)
-    _shape(project, 5.0, 1.0, "#F04080", BlendMode.SCREEN)  # jusqu'à la dernière image
+    _shape(project, 5.0, 1.0, "#F04080", BlendMode.SCREEN)          # jusqu'à la dernière image
     return project
 
 
 def _frames(plan, *, origin: float = 0.0) -> list[tuple[str, str]]:
     """``(horodatage, empreinte)`` de chaque image composée (RVBA), à partir de ``origin``."""
-    graph, video, audio, inputs = ExportEngine._build_filter_complex(
-        plan, W, H, FPS, None, origin=origin
-    )
+    graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None, origin=origin)
     command = ["ffmpeg", "-v", "error"]
     for path in inputs:
         command += input_arguments(path)
     # Le son part vers une seconde sortie : FFmpeg 7.x avorte quand ``anullsink`` vide une source interne (silence).
-    command += [
-        "-filter_complex",
-        f"{graph};[{video}]format=rgba[probe]",
-        "-map",
-        "[probe]",
-        "-fps_mode",
-        "passthrough",
-        "-f",
-        "framemd5",
-        "-",
-        "-map",
-        f"[{audio}]",
-        "-f",
-        "null",
-        "-",
-    ]
+    command += ["-filter_complex", f"{graph};[{video}]format=rgba[probe]", "-map", "[probe]",
+                "-fps_mode", "passthrough", "-f", "framemd5", "-", "-map", f"[{audio}]", "-f", "null", "-"]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
     assert completed.returncode == 0, completed.stderr
-    rows = [
-        line.split(",")
-        for line in completed.stdout.splitlines()
-        if line and line[0] != "#"
-    ]
+    rows = [line.split(",") for line in completed.stdout.splitlines() if line and line[0] != "#"]
     return [(row[2].strip(), row[5].strip()) for row in rows]
 
 
 @needs_ffmpeg
 @pytest.mark.parametrize("origin", [0.0, 2.0], ids=["export", "segment"])
-def test_limited_elements_compose_the_frames_of_the_full_streams_bit_for_bit(
-    tmp_path, monkeypatch, origin
-):
+def test_limited_elements_compose_the_frames_of_the_full_streams_bit_for_bit(tmp_path, monkeypatch, origin):
     plan = build_render_plan(_project(tmp_path))
     limited = _frames(plan, origin=origin)
     monkeypatch.setattr(mograph_ffmpeg, "LIMIT_TO_VISIBLE_SPAN", False)
     full = _frames(plan, origin=origin)
     assert len(limited) == round((LENGTH - origin) * FPS)
-    assert limited == full  # mêmes images, mêmes horodatages
+    assert limited == full                                      # mêmes images, mêmes horodatages
 
 
 def test_a_short_element_enters_the_graph_only_while_visible(tmp_path):
     project = Project(name="Titre", width=W, height=H, fps=float(FPS))
     _shape(project, 2.5, 0.7, "#3060F0", BlendMode.NORMAL)
     _shape(project, 1.0, 1.0, "#3060F0", BlendMode.ADD)
-    graph, _video, _audio, inputs = ExportEngine._build_filter_complex(
-        build_render_plan(project), W, H, FPS, None
-    )
+    graph, _video, _audio, inputs = ExportEngine._build_filter_complex(build_render_plan(project), W, H, FPS, None)
     # Ses 7 images, posées à la 25ᵉ, au lieu d'un flux transparent de 60 images.
     assert "trim=end_frame=7,setpts=PTS-STARTPTS+25" in graph
-    playlists = [
-        Path(path).read_text() for path in inputs if path.endswith(".ffconcat")
-    ]
+    playlists = [Path(path).read_text() for path in inputs if path.endswith(".ffconcat")]
     assert all("blank-" not in text for text in playlists)
     # La fusion ne voit que les images du dessous où le calque est visible ; ailleurs des images transparentes
     # dessinées une fois la complètent, et ``overlay`` laisse passer le dessous sans le parcourir.
@@ -148,15 +100,11 @@ def test_a_short_element_enters_the_graph_only_while_visible(tmp_path):
     assert "enable='between(t,0.95,1.95)'" in graph
 
 
-def test_an_element_that_is_never_visible_adds_nothing_to_the_graph(
-    tmp_path, monkeypatch
-):
+def test_an_element_that_is_never_visible_adds_nothing_to_the_graph(tmp_path, monkeypatch):
     project = Project(name="Vide", width=W, height=H, fps=float(FPS))
     _shape(project, 1.0, 1.0, "#3060F0", BlendMode.ADD)
     monkeypatch.setattr(MographRenderer, "any_active", lambda self, ids, t: False)
-    graph, _video, _audio, inputs = ExportEngine._build_filter_complex(
-        build_render_plan(project), W, H, FPS, None
-    )
+    graph, _video, _audio, inputs = ExportEngine._build_filter_complex(build_render_plan(project), W, H, FPS, None)
     assert not [path for path in inputs if path.endswith(".ffconcat")]
     assert "blend=" not in graph
 
@@ -174,57 +122,22 @@ def test_every_frame_of_a_30fps_animation_reaches_ffmpeg(tmp_path, monkeypatch):
     """Une image PNG s'ouvre à 25 i/s : sans cadence déclarée, deux images à 30 i/s tombaient sur le même tic de 40 ms
     et l'animation sautait une image sur six (vu à l'export : images 93, 99, 105 doublées)."""
     monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path)
-    playlist = mograph_stream.write_stream(
-        width=8,
-        height=8,
-        fps=30.0,
-        duration=1.0,
-        start=0.0,
-        end=1.0,
-        frame_key=lambda t: round(t * 30),
-        render=_numbered,
-    )
+    playlist = mograph_stream.write_stream(width=8, height=8, fps=30.0, duration=1.0, start=0.0, end=1.0,
+                                           frame_key=lambda t: round(t * 30), render=_numbered)
     assert "option framerate 30" in Path(playlist).read_text()
     completed = subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            *input_arguments(playlist),
-            "-vf",
-            mograph_stream.stream_input_filter(30, 1.0),
-            "-fps_mode",
-            "passthrough",
-            "-f",
-            "framemd5",
-            "-",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+        ["ffmpeg", "-v", "error", *input_arguments(playlist), "-vf", mograph_stream.stream_input_filter(30, 1.0),
+         "-fps_mode", "passthrough", "-f", "framemd5", "-"], capture_output=True, text=True, timeout=60)
     assert completed.returncode == 0, completed.stderr
-    digests = [
-        line.rsplit(",", 1)[-1]
-        for line in completed.stdout.splitlines()
-        if line and line[0] != "#"
-    ]
+    digests = [line.rsplit(",", 1)[-1] for line in completed.stdout.splitlines() if line and line[0] != "#"]
     assert len(digests) == 30
-    assert len(set(digests)) == 30  # aucune image sautée ni doublée
+    assert len(set(digests)) == 30                             # aucune image sautée ni doublée
 
 
 def test_only_layer_playlists_get_the_concat_options():
     whitelist = ["-protocol_whitelist", "file,pipe,crypto,data"]
     assert input_arguments("/cache/mograph/s-1.ffconcat") == [
-        *whitelist,
-        "-threads",
-        "2",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        "/cache/mograph/s-1.ffconcat",
+        *whitelist, "-threads", "2", "-f", "concat", "-safe", "0", "-i", "/cache/mograph/s-1.ffconcat",
     ]
     assert input_arguments("/media/clip.mp4") == [*whitelist, "-i", "/media/clip.mp4"]
 
@@ -233,26 +146,15 @@ def test_parallel_png_writes_produce_the_bytes_of_a_serial_write(tmp_path, monke
     def write(directory: Path) -> dict[str, str]:
         directory.mkdir()
         monkeypatch.setattr(mograph_stream, "cache_directory", lambda: directory)
-        mograph_stream.write_stream(
-            width=8,
-            height=8,
-            fps=30.0,
-            duration=1.0,
-            start=0.0,
-            end=1.0,
-            frame_key=lambda t: round(t * 30),
-            render=_numbered,
-        )
-        return {
-            path.name: hashlib.sha1(path.read_bytes()).hexdigest()
-            for path in directory.iterdir()
-        }
+        mograph_stream.write_stream(width=8, height=8, fps=30.0, duration=1.0, start=0.0, end=1.0,
+                                    frame_key=lambda t: round(t * 30), render=_numbered)
+        return {path.name: hashlib.sha1(path.read_bytes()).hexdigest() for path in directory.iterdir()}
 
     monkeypatch.setattr(mograph_stream, "WRITE_WORKERS", 1)
     serial = write(tmp_path / "serie")
     monkeypatch.setattr(mograph_stream, "WRITE_WORKERS", 4)
     parallel = write(tmp_path / "parallele")
-    assert len(serial) == 32  # 30 images, l'image vide, la liste
+    assert len(serial) == 32                                   # 30 images, l'image vide, la liste
     assert parallel == serial
 
 
@@ -268,36 +170,19 @@ def test_a_failed_png_write_is_reported_after_the_others_finish(tmp_path, monkey
 
     monkeypatch.setattr(mograph_stream, "_write_png", failing)
     with pytest.raises(OSError, match="disque plein"):
-        mograph_stream.write_stream(
-            width=8,
-            height=8,
-            fps=30.0,
-            duration=1.0,
-            start=0.0,
-            end=1.0,
-            frame_key=lambda t: round(t * 30),
-            render=_numbered,
-        )
-    assert not list(
-        tmp_path.glob("*.ffconcat")
-    )  # pas de liste vers des images manquantes
+        mograph_stream.write_stream(width=8, height=8, fps=30.0, duration=1.0, start=0.0, end=1.0,
+                                    frame_key=lambda t: round(t * 30), render=_numbered)
+    assert not list(tmp_path.glob("*.ffconcat"))               # pas de liste vers des images manquantes
 
 
 def test_several_media_share_the_decoding_threads(monkeypatch):
     from core.export_engine import decoder_threads
 
     monkeypatch.setattr("os.cpu_count", lambda: 10)
-    assert decoder_threads(["/media/a.mp4"]) == 0  # un média seul : réglage de FFmpeg
+    assert decoder_threads(["/media/a.mp4"]) == 0                       # un média seul : réglage de FFmpeg
     assert decoder_threads(["/media/a.mp4", "/media/b.wav"]) == 5
     assert decoder_threads([f"/media/{index}.mp4" for index in range(19)]) == 2
-    assert (
-        decoder_threads(["/media/a.mp4", "/cache/s-1.ffconcat"]) == 0
-    )  # les listes d'images ont leurs 2 fils
+    assert decoder_threads(["/media/a.mp4", "/cache/s-1.ffconcat"]) == 0  # les listes d'images ont leurs 2 fils
     assert input_arguments("/media/a.mp4", threads=2) == [
-        "-protocol_whitelist",
-        "file,pipe,crypto,data",
-        "-threads",
-        "2",
-        "-i",
-        "/media/a.mp4",
+        "-protocol_whitelist", "file,pipe,crypto,data", "-threads", "2", "-i", "/media/a.mp4",
     ]

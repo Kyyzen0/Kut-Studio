@@ -32,9 +32,7 @@ def test_apply_to_skips_an_identical_application_stylesheet() -> None:
     assert len(app.stylesheet_calls) == 1
 
 
-@pytest.mark.usefixtures(
-    "restore_global_theme"
-)  # ``set_mode("light")`` publie la palette claire pour tout le processus
+@pytest.mark.usefixtures("restore_global_theme")   # ``set_mode("light")`` publie la palette claire pour tout le processus
 def test_apply_to_replaces_stylesheet_when_theme_changes() -> None:
     app = _FakeApplication()
     manager = ThemeManager("dark")

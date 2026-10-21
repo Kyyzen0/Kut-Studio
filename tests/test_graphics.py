@@ -39,9 +39,7 @@ def test_add_graphics_creates_one_track_and_validated_overlays(tmp_path) -> None
         update_graphic(title, "type", "solid")
     with pytest.raises(FileNotFoundError):
         add_graphic_clip(
-            project,
-            "image",
-            timeline_start=0.0,
+            project, "image", timeline_start=0.0,
             source_path=str(tmp_path / "absente.png"),
         )
 
@@ -85,10 +83,7 @@ def test_graphics_roundtrip_and_legacy_project(tmp_path) -> None:
 
     raw = json.loads(target.read_text(encoding="utf-8"))
     assert raw["version"] == CURRENT_VERSION == 17
-    assert (
-        raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["graphic"]["text"]
-        == "Un vrai titre"
-    )
+    assert raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["graphic"]["text"] == "Un vrai titre"
     loaded = load_project(str(target))
     loaded_graphic = loaded.tracks[0].clips[0].graphic
     assert isinstance(loaded_graphic, GraphicOverlay)
@@ -173,13 +168,9 @@ def test_graphics_ui_creation_edit_and_undo(qtbot, tmp_path, monkeypatch) -> Non
 
     window = MainWindow()
     qtbot.addWidget(window)
-    before = sum(
-        len(track.clips) for track in window.project.tracks if track.type == "graphics"
-    )
+    before = sum(len(track.clips) for track in window.project.tracks if track.type == "graphics")
     window.add_graphic_at_playhead("rectangle")
-    graphic_tracks = [
-        track for track in window.project.tracks if track.type == "graphics"
-    ]
+    graphic_tracks = [track for track in window.project.tracks if track.type == "graphics"]
     assert len(graphic_tracks) == 1
     assert len(graphic_tracks[0].clips) == before + 1
     clip = graphic_tracks[0].clips[-1]
@@ -190,17 +181,13 @@ def test_graphics_ui_creation_edit_and_undo(qtbot, tmp_path, monkeypatch) -> Non
     assert graphic_tracks[0].clips[-1].graphic.fill_color == "#FF5500"
     window.undo_last()
     restored = next(
-        item
-        for track in window.project.tracks
-        for item in track.clips
+        item for track in window.project.tracks for item in track.clips
         if item.id == clip.id
     )
     assert restored.graphic.fill_color != "#FF5500"
     window.redo_last()
     restored = next(
-        item
-        for track in window.project.tracks
-        for item in track.clips
+        item for track in window.project.tracks for item in track.clips
         if item.id == clip.id
     )
     assert restored.graphic.fill_color == "#FF5500"
@@ -218,9 +205,7 @@ def test_graphic_edits_are_coalesced_and_noop_is_ignored(
     qtbot.addWidget(window)
     window.add_graphic_at_playhead("text")
     clip = next(
-        item
-        for track in window.project.tracks
-        if track.type == "graphics"
+        item for track in window.project.tracks if track.type == "graphics"
         for item in track.clips
     )
     initial_steps = len(window.history._undo_stack)
@@ -238,11 +223,8 @@ def test_graphic_edits_are_coalesced_and_noop_is_ignored(
     assert len(window.history._undo_stack) == initial_steps + 1
     window.undo_last()
     restored = next(
-        item
-        for track in window.project.tracks
-        if track.type == "graphics"
-        for item in track.clips
-        if item.id == clip.id
+        item for track in window.project.tracks if track.type == "graphics"
+        for item in track.clips if item.id == clip.id
     )
     assert restored.graphic.text == "Votre titre"
     window.close()
@@ -259,9 +241,7 @@ def test_graphic_and_transform_edits_keep_separate_undo_steps(
     qtbot.addWidget(window)
     window.add_graphic_at_playhead("text")
     clip = next(
-        item
-        for track in window.project.tracks
-        if track.type == "graphics"
+        item for track in window.project.tracks if track.type == "graphics"
         for item in track.clips
     )
     window.on_graphic_property_changed(clip.id, "text", "Titre propre")
@@ -295,12 +275,7 @@ def test_locked_graphic_rejects_property_edits(qtbot, tmp_path, monkeypatch) -> 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
 def test_real_ffmpeg_export_of_graphics_only_project(tmp_path) -> None:
-    from core.export_engine import (
-        ExportEngine,
-        ExportFormat,
-        ExportPreset,
-        ExportRequest,
-    )
+    from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest
     from core.render_plan import build_render_plan
 
     project = _project()

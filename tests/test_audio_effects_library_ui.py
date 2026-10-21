@@ -86,9 +86,7 @@ def test_user_preset_has_delete_button_and_emits(qtbot) -> None:
 
     view = AudioEffectsLibraryView()
     qtbot.addWidget(view)
-    user = make_user_audio_effect_preset(
-        "Mon preset", "", AudioEffectType.NORMALIZE, {}
-    )
+    user = make_user_audio_effect_preset("Mon preset", "", AudioEffectType.NORMALIZE, {})
     view.set_user_presets([user])
     builtin_id = builtin_audio_effect_presets()[0].id
     assert view._cards[builtin_id].delete_button.isHidden()

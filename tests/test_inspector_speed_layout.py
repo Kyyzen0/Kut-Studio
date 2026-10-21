@@ -14,13 +14,7 @@ from PySide6.QtWidgets import QLabel
 from tools import ui_audit as audit
 from ui import i18n
 
-PRESETS = (
-    "speed_0_25x_button",
-    "speed_0_5x_button",
-    "speed_1x_button",
-    "speed_2x_button",
-    "speed_4x_button",
-)
+PRESETS = ("speed_0_25x_button", "speed_0_5x_button", "speed_1x_button", "speed_2x_button", "speed_4x_button")
 
 
 @pytest.fixture(scope="module")
@@ -41,9 +35,7 @@ def _french():
 def _show_effects_tab(window) -> None:
     panel = window.properties_panel
     tab = dict((name, index) for index, name in audit.INSPECTOR_TABS)["effets"]
-    panel._select_inspector_tab(
-        0
-    )  # on en part, on y revient : c'est ce trajet qui laissait une mise en page périmée
+    panel._select_inspector_tab(0)             # on en part, on y revient : c'est ce trajet qui laissait une mise en page périmée
     audit.settle(window)
     panel._select_inspector_tab(tab)
     audit.settle(window)
@@ -63,33 +55,24 @@ def test_the_speed_presets_never_overlap_the_next_section_after_switching_tabs(w
     for _round in range(3):
         _show_effects_tab(window)
         presets_bottom = max(_bottom(getattr(panel, name), content) for name in PRESETS)
-        assert _top(panel.time_section, content) >= presets_bottom, (
-            "la section qui suit recouvre les préréglages de vitesse"
-        )
+        assert _top(panel.time_section, content) >= presets_bottom, "la section qui suit recouvre les préréglages de vitesse"
 
 
 def test_the_speed_presets_row_uses_the_full_width_under_its_label(window):
     panel = window.properties_panel
     _show_effects_tab(window)
     content = panel.scroll_area.widget()
-    label = next(
-        label for label, key in panel._stacked_labels if key == "mograph.layers.presets"
-    )  # noqa: SLF001
+    label = next(label for label, key in panel._stacked_labels if key == "mograph.layers.presets")  # noqa: SLF001
     first = min(_top(getattr(panel, name), content) for name in PRESETS)
     assert isinstance(label, QLabel) and _bottom(label, content) <= first
     form_width = panel.speed_group.width()
-    row_right = max(
-        getattr(panel, name)
-        .mapTo(panel.speed_group, getattr(panel, name).rect().topRight())
-        .x()
-        for name in PRESETS
-    )
+    row_right = max(getattr(panel, name).mapTo(panel.speed_group, getattr(panel, name).rect().topRight()).x() for name in PRESETS)
     assert row_right <= form_width
 
 
 def test_the_stacked_label_follows_the_language(window):
     panel = window.properties_panel
-    label, key = panel._stacked_labels[0]  # noqa: SLF001
+    label, key = panel._stacked_labels[0]                     # noqa: SLF001
     assert label.text() == i18n.translate(key)
     i18n.set_language("en")
     panel.retranslate()

@@ -37,26 +37,15 @@ def _fresh_cache():
 def test_importing_core_scene3d_does_not_import_kut3d_nor_numpy():
     code = (
         "import sys; sys.path.insert(0, %r); import core.scene3d, core.graphics; "
-        "bad = [m for m in ('kut3d', 'numpy', 'PySide6') if m in sys.modules]; assert not bad, bad"
-        % str(ROOT)
+        "bad = [m for m in ('kut3d', 'numpy', 'PySide6') if m in sys.modules]; assert not bad, bad" % str(ROOT)
     )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=False)
     assert result.returncode == 0, result.stderr
 
 
 def test_the_suffix_is_checked_without_the_disk():
     assert has_scene_suffix("/x/a.kut3d") and has_scene_suffix("A.KUT3D")
-    assert (
-        not has_scene_suffix("/x/a.png")
-        and not has_scene_suffix("")
-        and not has_scene_suffix(None)
-    )  # type: ignore[arg-type]
+    assert not has_scene_suffix("/x/a.png") and not has_scene_suffix("") and not has_scene_suffix(None)       # type: ignore[arg-type]
 
 
 def test_a_valid_scene_is_accepted(tmp_path):
@@ -126,13 +115,9 @@ def test_dependencies_lists_the_scene_then_its_files(tmp_path):
 def test_the_signature_is_stable_and_follows_every_dependency(tmp_path):
     scene = write_scene(tmp_path)
     first = scene_signature(scene)
-    assert (
-        first == scene_signature(scene)
-        and not first.startswith(INVALID_PREFIX)
-        and first != MISSING_SIGNATURE
-    )
+    assert first == scene_signature(scene) and not first.startswith(INVALID_PREFIX) and first != MISSING_SIGNATURE
     scene3d.clear_signature_cache()
-    assert scene_signature(scene) == first  # même contenu : même empreinte, sans mémo
+    assert scene_signature(scene) == first                               # même contenu : même empreinte, sans mémo
     obj = tmp_path / "cube.obj"
     obj.write_text(obj.read_text(encoding="utf-8") + "# changé\n", encoding="utf-8")
     changed = scene_signature(scene)
@@ -155,13 +140,9 @@ def test_a_content_change_with_the_same_size_is_seen_by_the_fingerprint(tmp_path
     first = scene_signature(scene)
     info = scene.stat()
     data = bytearray(scene.read_bytes())
-    data[-3] = (
-        ord("X") if data[-3] != ord("X") else ord("Y")
-    )  # même taille, début/fin différents
+    data[-3] = ord("X") if data[-3] != ord("X") else ord("Y")           # même taille, début/fin différents
     scene.write_bytes(bytes(data))
-    os.utime(
-        scene, ns=(info.st_atime_ns, info.st_mtime_ns)
-    )  # même date : seul le contenu a changé
+    os.utime(scene, ns=(info.st_atime_ns, info.st_mtime_ns))           # même date : seul le contenu a changé
     scene3d.clear_signature_cache()
     assert scene_signature(scene) != first
 
@@ -170,36 +151,27 @@ def test_the_signature_is_memoized_and_revalidated_by_stat(tmp_path, monkeypatch
     scene = write_scene(tmp_path)
     calls = []
     real = scene3d.dependencies
-    monkeypatch.setattr(
-        scene3d, "dependencies", lambda path: calls.append(path) or real(path)
-    )
+    monkeypatch.setattr(scene3d, "dependencies", lambda path: calls.append(path) or real(path))
     first = scene_signature(scene)
     for _ in range(5):
         assert scene_signature(scene) == first
-    assert len(calls) == 1  # un seul passage par l'analyse de la scène
+    assert len(calls) == 1                                               # un seul passage par l'analyse de la scène
     (tmp_path / "cube.obj").write_text("v 1 1 1\n", encoding="utf-8")
     scene_signature(scene)
-    assert len(calls) == 2  # un fichier a bougé : on recalcule
+    assert len(calls) == 2                                               # un fichier a bougé : on recalcule
 
 
 def test_missing_and_broken_scenes_give_a_signature_never_an_exception(tmp_path):
     assert scene_signature(tmp_path / "absent.kut3d") == MISSING_SIGNATURE
-    assert (
-        scene_signature("") == MISSING_SIGNATURE
-        and scene_signature(tmp_path / "x.png") == MISSING_SIGNATURE
-    )
+    assert scene_signature("") == MISSING_SIGNATURE and scene_signature(tmp_path / "x.png") == MISSING_SIGNATURE
     assert scene_signature("a\x00.kut3d") == MISSING_SIGNATURE
     scene = write_scene(tmp_path)
     good = scene_signature(scene)
     (tmp_path / "cube.obj").unlink()
     broken = scene_signature(scene)
     assert broken.startswith(INVALID_PREFIX) and broken != good
-    (tmp_path / "cube.obj").write_text(
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8"
-    )
-    assert not scene_signature(scene).startswith(
-        INVALID_PREFIX
-    )  # un échec n'est pas mémorisé : le fichier revenu se voit
+    (tmp_path / "cube.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")
+    assert not scene_signature(scene).startswith(INVALID_PREFIX)         # un échec n'est pas mémorisé : le fichier revenu se voit
     bad = tmp_path / "bad.kut3d"
     bad.write_text("{", encoding="utf-8")
     first_bad = scene_signature(bad)
@@ -212,7 +184,7 @@ def test_a_deleted_scene_gives_the_sentinel_even_when_memoized(tmp_path):
     scene_signature(scene)
     scene.unlink()
     assert scene_signature(scene) == MISSING_SIGNATURE
-    assert json.dumps(scene_signature(scene))  # sérialisable : une chaîne
+    assert json.dumps(scene_signature(scene))                            # sérialisable : une chaîne
 
 
 def test_the_memo_is_bounded(tmp_path, monkeypatch):

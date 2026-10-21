@@ -40,30 +40,14 @@ def _texts(source: str) -> list[str]:
     ("source", "expected", "category"),
     [
         ('label = QLabel("Durée")', "Durée", "widget"),
-        (
-            'button = QPushButton("Annuler")',
-            "Annuler",
-            "widget",
-        ),  # sans accent : mot du lexique
-        (
-            'self.setToolTip("Réinitialiser le mouvement")',
-            "Réinitialiser le mouvement",
-            "tooltip",
-        ),
+        ('button = QPushButton("Annuler")', "Annuler", "widget"),  # sans accent : mot du lexique
+        ('self.setToolTip("Réinitialiser le mouvement")', "Réinitialiser le mouvement", "tooltip"),
         ('self.setStatusTip("Ouvre le projet")', "Ouvre le projet", "tooltip"),
         ('menu.addAction("Dupliquer")', "Dupliquer", "menu"),
         ('submenu = menu.addMenu("Déplacer vers")', "Déplacer vers", "menu"),
         ('action = QAction("Copier", self)', "Copier", "menu"),
-        (
-            'self.statusBar().showMessage("Transition supprimée.", 3000)',
-            "Transition supprimée.",
-            "status",
-        ),
-        (
-            'box.setPlaceholderText("Rechercher un effet…")',
-            "Rechercher un effet…",
-            "widget",
-        ),
+        ('self.statusBar().showMessage("Transition supprimée.", 3000)', "Transition supprimée.", "status"),
+        ('box.setPlaceholderText("Rechercher un effet…")', "Rechercher un effet…", "widget"),
         ('self.setWindowTitle("Préférences")', "Préférences", "dialog"),
         ('tabs.addTab(panel, "Effets")', "Effets", "widget"),
         ('form.addRow("Hauteur", spin)', "Hauteur", "widget"),
@@ -86,53 +70,32 @@ def test_message_boxes_and_file_dialogs_report_every_text_argument():
         """
     )
     assert [finding.text for finding in findings] == [
-        "Erreur",
-        "Impossible d'ouvrir le fichier.",
-        "Renommer",
-        "Nouveau nom :",
-        "Importer des médias",
-        "Vidéos (*.mp4 *.mov)",
+        "Erreur", "Impossible d'ouvrir le fichier.", "Renommer", "Nouveau nom :",
+        "Importer des médias", "Vidéos (*.mp4 *.mov)",
     ]
     assert {finding.category for finding in findings} == {"dialog"}
 
 
 def test_f_strings_concatenations_and_format_are_normalised_to_a_stable_template():
-    assert _texts('self.setText(f"Piste {name} verrouillée")') == [
-        "Piste {} verrouillée"
-    ]
-    assert _texts('self.setText("Durée : " + str(seconds) + " s")') == [
-        "Durée :"
-    ]  # le morceau humain seul
+    assert _texts('self.setText(f"Piste {name} verrouillée")') == ["Piste {} verrouillée"]
+    assert _texts('self.setText("Durée : " + str(seconds) + " s")') == ["Durée :"]  # le morceau humain seul
     assert _texts('self.setText("Durée : {} s".format(seconds))') == ["Durée : {} s"]
     assert _texts('self.setText("Durée : %d s" % seconds)') == ["Durée : %d s"]
-    assert _texts('self.setText(("Impossible de couper "\n "le clip"))') == [
-        "Impossible de couper le clip"
-    ]
+    assert _texts('self.setText(("Impossible de couper "\n "le clip"))') == ["Impossible de couper le clip"]
     # espaces et retours à la ligne repliés : reformater le code ne change pas la clé
-    assert _texts('self.setText("Aucun clip\\n   sous la tête de lecture")') == [
-        "Aucun clip sous la tête de lecture"
-    ]
+    assert _texts('self.setText("Aucun clip\\n   sous la tête de lecture")') == ["Aucun clip sous la tête de lecture"]
 
 
 def test_both_branches_of_a_conditional_and_list_items_are_found():
-    assert _texts('button.setText("Activer" if on else "Désactiver")') == [
-        "Activer",
-        "Désactiver",
-    ]
-    assert _texts('combo.addItems(["Faible", "Moyen", "Élevé"])') == [
-        "Faible",
-        "Moyen",
-        "Élevé",
-    ]
+    assert _texts('button.setText("Activer" if on else "Désactiver")') == ["Activer", "Désactiver"]
+    assert _texts('combo.addItems(["Faible", "Moyen", "Élevé"])') == ["Faible", "Moyen", "Élevé"]
     assert _texts('tree.setHeaderLabels(["Calque", "Durée"])') == ["Calque", "Durée"]
 
 
 def test_a_french_literal_is_found_outside_a_sink_when_it_has_an_accent_or_a_french_word():
     # tables de libellés et valeurs de retour : le texte passe par une variable avant d'être affiché
     assert _texts('LABELS = {"fade": "Fondu enchaîné"}') == ["Fondu enchaîné"]
-    assert _texts("def name(self):\n    return 'Zone de recherche'") == [
-        "Zone de recherche"
-    ]
+    assert _texts("def name(self):\n    return 'Zone de recherche'") == ["Zone de recherche"]
 
 
 def test_any_language_is_found_when_passed_straight_to_a_display_sink():
@@ -174,7 +137,7 @@ def test_any_language_is_found_when_passed_straight_to_a_display_sink():
         'combo.addItem("Français")',  # nom de langue dans sa propre langue
         'combo.addItem(translate("audio.mono"), "mono")',  # la donnée (minuscule, sans espace) n'est pas un texte
         'combo.addItem("GPU")',  # sigle
-        "self.addAction(IconName.PLAY)",
+        'self.addAction(IconName.PLAY)',
         'LOGGER.info("Opération refusée : %s", reason)',  # journal technique
         'logging.getLogger(__name__).warning("Échec de lecture")',
         'x = "fr"',
@@ -188,9 +151,8 @@ def test_technical_and_already_translated_strings_are_not_reported(source):
 
 
 def test_docstrings_and_floating_strings_are_not_reported():
-    assert (
-        _scan(
-            '''
+    assert _scan(
+        '''
         """Module : réglages de l'aperçu, en français."""
 
         class Panneau:
@@ -200,9 +162,7 @@ def test_docstrings_and_floating_strings_are_not_reported():
                 "Décrit la méthode."
                 return 1
         '''
-        )
-        == []
-    )
+    ) == []
 
 
 def test_english_text_outside_a_display_sink_is_a_documented_blind_spot():
@@ -211,18 +171,13 @@ def test_english_text_outside_a_display_sink_is_a_documented_blind_spot():
 
 
 def test_an_ignore_marker_on_the_line_or_on_the_function_header_silences_the_report():
-    assert (
-        _scan('label = QLabel("Durée")  # i18n-ignore: nom propre d\'un format') == []
-    )
-    assert (
-        _scan(
-            """
+    assert _scan('label = QLabel("Durée")  # i18n-ignore: nom propre d\'un format') == []
+    assert _scan(
+        """
         def steps(self):  # i18n-ignore: noms d'étapes du journal d'arrêt
             return [("pompe d'aperçu", self.stop), ("sessions d'édition", self.finalize)]
         """
-        )
-        == []
-    )
+    ) == []
     # le marqueur d'une fonction ne couvre pas les autres
     assert _texts(
         """
@@ -236,20 +191,12 @@ def test_an_ignore_marker_on_the_line_or_on_the_function_header_silences_the_rep
 
 
 def test_repr_and_str_are_for_developers_and_are_not_reported():
-    assert (
-        _scan(
-            'class A:\n    def __repr__(self):\n        return f"A({self.n} jetons, thème actif)"'
-        )
-        == []
-    )
+    assert _scan('class A:\n    def __repr__(self):\n        return f"A({self.n} jetons, thème actif)"') == []
 
 
 def test_technical_reason_names_why_a_string_is_skipped():
     assert audit.technical_reason("proxy.state.ready") == "clé i18n"
-    assert (
-        audit.technical_reason("assets/icônes/lecture.svg")
-        == "chemin ou nom de fichier"
-    )
+    assert audit.technical_reason("assets/icônes/lecture.svg") == "chemin ou nom de fichier"
     assert audit.technical_reason("https://exemple.org") == "adresse"
     assert audit.technical_reason("QPushButton { color: red; }") == "CSS"
     assert audit.technical_reason("Français") == "nom de langue"
@@ -276,25 +223,17 @@ def _write(root: Path, relative: str, source: str) -> None:
 
 @pytest.fixture
 def mini_repo(tmp_path):
-    _write(
-        tmp_path,
-        "ui/panel.py",
-        'from x import QLabel\n\nlabel = QLabel("Durée")\nother = QLabel("Durée")\n',
-    )
+    _write(tmp_path, "ui/panel.py", 'from x import QLabel\n\nlabel = QLabel("Durée")\nother = QLabel("Durée")\n')
     _write(tmp_path, "ui/menu.py", 'menu.addAction("Dupliquer")\n')
     baseline = tmp_path / "tests" / "i18n_hardcoded_baseline.json"
-    assert (
-        audit.main(["--root", str(tmp_path), "--update-baseline", "--accept-new"]) == 0
-    )
+    assert audit.main(["--root", str(tmp_path), "--update-baseline", "--accept-new"]) == 0
     assert baseline.exists()
     return tmp_path
 
 
 def _compare(root: Path):
     findings = audit.scan_tree(root)
-    return audit.compare(
-        findings, audit.load_baseline(root / "tests" / "i18n_hardcoded_baseline.json")
-    )
+    return audit.compare(findings, audit.load_baseline(root / "tests" / "i18n_hardcoded_baseline.json"))
 
 
 def test_a_fresh_baseline_is_clean_and_counts_occurrences(mini_repo):
@@ -306,18 +245,12 @@ def test_a_fresh_baseline_is_clean_and_counts_occurrences(mini_repo):
 
 def test_shifting_lines_does_not_fail(mini_repo):
     source = (mini_repo / "ui" / "panel.py").read_text(encoding="utf-8")
-    (mini_repo / "ui" / "panel.py").write_text(
-        "# un commentaire\n\n\n" + source, encoding="utf-8"
-    )
+    (mini_repo / "ui" / "panel.py").write_text("# un commentaire\n\n\n" + source, encoding="utf-8")
     assert _compare(mini_repo).clean
 
 
 def test_a_new_hardcoded_string_fails_with_instructions(mini_repo):
-    _write(
-        mini_repo,
-        "ui/panel.py",
-        'label = QLabel("Durée")\nother = QLabel("Durée")\nnew = QLabel("Nouveau texte")\n',
-    )
+    _write(mini_repo, "ui/panel.py", 'label = QLabel("Durée")\nother = QLabel("Durée")\nnew = QLabel("Nouveau texte")\n')
     comparison = _compare(mini_repo)
     assert list(comparison.new) == [("ui/panel.py", "Nouveau texte")]
     assert not comparison.stale
@@ -327,11 +260,7 @@ def test_a_new_hardcoded_string_fails_with_instructions(mini_repo):
 
 
 def test_a_third_occurrence_of_a_known_string_is_new(mini_repo):
-    _write(
-        mini_repo,
-        "ui/panel.py",
-        'a = QLabel("Durée")\nb = QLabel("Durée")\nc = QLabel("Durée")\n',
-    )
+    _write(mini_repo, "ui/panel.py", 'a = QLabel("Durée")\nb = QLabel("Durée")\nc = QLabel("Durée")\n')
     comparison = _compare(mini_repo)
     assert comparison.new_excess == {("ui/panel.py", "Durée"): 1}
 
@@ -342,9 +271,7 @@ def test_the_same_text_in_another_file_is_new(mini_repo):
 
 
 def test_a_migrated_string_must_leave_the_baseline(mini_repo):
-    _write(
-        mini_repo, "ui/menu.py", 'menu.addAction(translate("menu.item.duplicate"))\n'
-    )
+    _write(mini_repo, "ui/menu.py", 'menu.addAction(translate("menu.item.duplicate"))\n')
     comparison = _compare(mini_repo)
     assert not comparison.new
     assert comparison.stale == {("ui/menu.py", "Dupliquer"): (1, 0)}
@@ -353,9 +280,7 @@ def test_a_migrated_string_must_leave_the_baseline(mini_repo):
 
 
 def test_a_partly_migrated_string_is_stale_until_the_count_is_lowered(mini_repo):
-    _write(
-        mini_repo, "ui/panel.py", 'a = QLabel(translate("x.y"))\nb = QLabel("Durée")\n'
-    )
+    _write(mini_repo, "ui/panel.py", 'a = QLabel(translate("x.y"))\nb = QLabel("Durée")\n')
     assert _compare(mini_repo).stale == {("ui/panel.py", "Durée"): (2, 1)}
 
 
@@ -366,9 +291,7 @@ def test_a_deleted_file_makes_its_entries_stale(mini_repo):
 
 def test_update_baseline_only_removes_debt(mini_repo, capsys):
     baseline_path = mini_repo / "tests" / "i18n_hardcoded_baseline.json"
-    _write(
-        mini_repo, "ui/menu.py", 'menu.addAction(translate("menu.item.duplicate"))\n'
-    )
+    _write(mini_repo, "ui/menu.py", 'menu.addAction(translate("menu.item.duplicate"))\n')
     assert audit.main(["--root", str(mini_repo), "--check"]) == 1
     assert audit.main(["--root", str(mini_repo), "--update-baseline"]) == 0
     assert audit.main(["--root", str(mini_repo), "--check"]) == 0
@@ -389,20 +312,13 @@ def test_list_prints_the_debt_by_zone(mini_repo, capsys):
     assert "ui/tracking_panel.py:1" in output and "« Suivi du point »" in output
     assert audit.main(["--root", str(mini_repo), "--list", "--zone", "autres"]) == 0
     other_zone = capsys.readouterr().out
-    assert (
-        "== autres : 2 chaîne(s), 3 occurrence(s) ==" in other_zone
-        and "== tracking" not in other_zone
-    )
+    assert "== autres : 2 chaîne(s), 3 occurrence(s) ==" in other_zone and "== tracking" not in other_zone
     assert audit.main(["--root", str(mini_repo), "--summary"]) == 0
     assert "TOTAL" in capsys.readouterr().out
 
 
 def test_i18n_tables_are_never_scanned(tmp_path):
-    _write(
-        tmp_path,
-        "ui/i18n_extra.py",
-        'T = {"a.b": {"fr": "Fichier ouvert", "en": "Open file"}}\n',
-    )
+    _write(tmp_path, "ui/i18n_extra.py", 'T = {"a.b": {"fr": "Fichier ouvert", "en": "Open file"}}\n')
     _write(tmp_path, "ui/i18n.py", 'X = "Ouvrir le projet"\n')
     assert audit.scan_tree(tmp_path) == []
 
@@ -429,9 +345,7 @@ def test_the_baseline_file_is_well_formed_sorted_and_assigned_to_a_zone():
     assert data["version"] == audit.BASELINE_VERSION
     entries = data["entries"]
     keys = [(entry["file"], entry["text"]) for entry in entries]
-    assert keys == sorted(keys), (
-        "baseline non triée : régénérez-la avec --update-baseline"
-    )
+    assert keys == sorted(keys), "baseline non triée : régénérez-la avec --update-baseline"
     assert len(keys) == len(set(keys)), "entrée en double"
     for entry in entries:
         assert set(entry) == {"file", "text", "count"}
@@ -489,10 +403,6 @@ def test_the_baseline_does_not_include_core_messages():
 
 
 def test_counter_equality_is_by_occurrence_not_by_line():
-    first = Counter(
-        finding.key for finding in _scan('QLabel("Durée")\nQLabel("Durée")')
-    )
-    second = Counter(
-        finding.key for finding in _scan('\n\nQLabel("Durée")\n\nQLabel("Durée")')
-    )
+    first = Counter(finding.key for finding in _scan('QLabel("Durée")\nQLabel("Durée")'))
+    second = Counter(finding.key for finding in _scan('\n\nQLabel("Durée")\n\nQLabel("Durée")'))
     assert first == second == Counter({("ui/example.py", "Durée"): 2})

@@ -11,13 +11,8 @@ from core.workspace_state import DEFAULT_HIDDEN, PanelId, WorkspaceState
 
 
 def _project() -> Project:
-    return Project(
-        name="H",
-        tracks=[Track(id="V1", name="V1", type="video")],
-        media_assets=[
-            MediaAsset("a", "/tmp/v.mp4", "V", 10.0, 1920, 1080, 30.0, "video")
-        ],
-    )
+    return Project(name="H", tracks=[Track(id="V1", name="V1", type="video")],
+                   media_assets=[MediaAsset("a", "/tmp/v.mp4", "V", 10.0, 1920, 1080, 30.0, "video")])
 
 
 def _history_with_steps(count: int = 4) -> tuple[ProjectHistory, Project]:
@@ -25,9 +20,7 @@ def _history_with_steps(count: int = 4) -> tuple[ProjectHistory, Project]:
     project = _project()
     history.reset(project)
     for index in range(count):
-        project.tracks[0].clips.append(
-            Clip(f"c{index}", "a", "V1", float(index), 0.0, 1.0)
-        )
+        project.tracks[0].clips.append(Clip(f"c{index}", "a", "V1", float(index), 0.0, 1.0))
         history.record(project, f"Ajouter c{index}")
     return history, project
 
@@ -41,42 +34,23 @@ def test_entries_list_every_state_from_the_initial_one():
     history.mark_saved()
     history.undo()
     entries = history.entries()
-    assert [entry.label for entry in entries] == [
-        "",
-        "Ajouter c0",
-        "Ajouter c1",
-        "Ajouter c2",
-    ]
+    assert [entry.label for entry in entries] == ["", "Ajouter c0", "Ajouter c1", "Ajouter c2"]
     assert [entry.current for entry in entries] == [False, False, True, False]
     assert [entry.undone for entry in entries] == [False, False, False, True]
-    assert [entry.saved for entry in entries] == [False, False, False, True], (
-        "l'état enregistré, même annulé"
-    )
+    assert [entry.saved for entry in entries] == [False, False, False, True], "l'état enregistré, même annulé"
 
 
-def test_going_back_several_steps_is_a_single_copy_with_the_redo_branch_kept(
-    monkeypatch,
-):
+def test_going_back_several_steps_is_a_single_copy_with_the_redo_branch_kept(monkeypatch):
     history, _project = _history_with_steps(4)
     copies: list[object] = []
     original = edit_history._deepcopy_project
-    monkeypatch.setattr(
-        edit_history,
-        "_deepcopy_project",
-        lambda project: copies.append(1) or original(project),
-    )
+    monkeypatch.setattr(edit_history, "_deepcopy_project", lambda project: copies.append(1) or original(project))
     restored = history.go_to(1)
     assert restored is not None and _clips(restored) == ["c0"]
     assert len(copies) == 1, "vingt étapes ne copient pas vingt projets"
     assert history.undo_label == "Ajouter c0" and history.redo_label == "Ajouter c1"
-    assert [entry.undone for entry in history.entries()] == [
-        False,
-        False,
-        True,
-        True,
-        True,
-    ]
-    forward = history.go_to(3)  # dans la branche annulée : autant de Rétablir
+    assert [entry.undone for entry in history.entries()] == [False, False, True, True, True]
+    forward = history.go_to(3)                               # dans la branche annulée : autant de Rétablir
     assert forward is not None and _clips(forward) == ["c0", "c1", "c2"]
     assert history.redo_label == "Ajouter c3"
 
@@ -110,9 +84,7 @@ def test_the_history_panel_is_hidden_until_opened_from_the_window_menu():
     assert PanelId.HISTORY in DEFAULT_HIDDEN
     state = WorkspaceState.from_dict({"panels": [{"panel": "mixer", "visible": True}]})
     history = next(panel for panel in state.panels if panel.panel is PanelId.HISTORY)
-    assert not history.visible, (
-        "un espace de travail enregistré avant ce panneau le garde fermé"
-    )
+    assert not history.visible, "un espace de travail enregistré avant ce panneau le garde fermé"
 
 
 @pytest.fixture
@@ -134,11 +106,9 @@ def test_clicking_a_step_in_the_panel_brings_the_montage_back_to_it(window):
         window._record_history("Supprimer un clip")
         window._reload_timeline_preserving_selection()
     panel = window.history_panel
-    assert panel.list.count() == 0, (
-        "panneau fermé : rien n'est reconstruit à chaque modification"
-    )
-    window.show()  # (le harnais ne montre pas la fenêtre)
-    window.toggle_panel(PanelId.HISTORY)  # Fenêtre › Panneaux › Historique
+    assert panel.list.count() == 0, "panneau fermé : rien n'est reconstruit à chaque modification"
+    window.show()                                        # (le harnais ne montre pas la fenêtre)
+    window.toggle_panel(PanelId.HISTORY)                 # Fenêtre › Panneaux › Historique
     assert panel.isVisible() and panel.list.count() == 3
     assert panel.list.currentItem().font().bold()
     first = panel.list.item(0)
@@ -148,6 +118,6 @@ def test_clicking_a_step_in_the_panel_brings_the_montage_back_to_it(window):
     assert panel.list.currentRow() == 0
     assert panel.list.item(2).font().italic(), "les étapes annulées restent, atténuées"
     assert window.undo_button.isEnabled() is False and window.redo_button.isEnabled()
-    panel.list.itemActivated.emit(panel.list.item(2))  # clavier (Entrée) : même effet
+    panel.list.itemActivated.emit(panel.list.item(2))   # clavier (Entrée) : même effet
     assert len(window.project.tracks[0].clips) == before - 2
     assert panel.list.item(0).data(Qt.DisplayRole)

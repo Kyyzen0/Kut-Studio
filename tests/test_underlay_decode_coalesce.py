@@ -10,11 +10,7 @@ from ui import preview_panel
 
 def test_stale_underlay_jobs_skip_decode_before_work(qtbot, monkeypatch):
     panel = preview_panel.PreviewPanel(
-        lambda: None,
-        lambda: None,
-        lambda _d: None,
-        lambda: None,
-        lambda: None,
+        lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None,
     )
     qtbot.addWidget(panel)
 
@@ -40,20 +36,9 @@ def test_stale_underlay_jobs_skip_decode_before_work(qtbot, monkeypatch):
     monkeypatch.setattr(preview_panel, "_decode_underlay_frame", _slow_decode)
 
     # Première demande : le worker va se bloquer dans decode.
-    panel.set_video_underlays(
-        (
-            (
-                "clip:a",
-                "/tmp/a.mp4",
-                0.1,
-                (1, 0, 0, 1, 0, 0),
-                (0, 0, 10, 10),
-                1.0,
-                "normal",
-                (),
-            ),
-        )
-    )
+    panel.set_video_underlays((
+        ("clip:a", "/tmp/a.mp4", 0.1, (1, 0, 0, 1, 0, 0), (0, 0, 10, 10), 1.0, "normal", ()),
+    ))
     deadline = time.time() + 2.0
     while not started and time.time() < deadline:
         time.sleep(0.01)
@@ -61,34 +46,12 @@ def test_stale_underlay_jobs_skip_decode_before_work(qtbot, monkeypatch):
 
     # Scrub rapide : deux clés plus récentes — le job 0.1 en cours et ceux en file
     # doivent voir la clé périmée avant (ou après) decode.
-    panel.set_video_underlays(
-        (
-            (
-                "clip:a",
-                "/tmp/a.mp4",
-                0.2,
-                (1, 0, 0, 1, 0, 0),
-                (0, 0, 10, 10),
-                1.0,
-                "normal",
-                (),
-            ),
-        )
-    )
-    panel.set_video_underlays(
-        (
-            (
-                "clip:a",
-                "/tmp/a.mp4",
-                0.3,
-                (1, 0, 0, 1, 0, 0),
-                (0, 0, 10, 10),
-                1.0,
-                "normal",
-                (),
-            ),
-        )
-    )
+    panel.set_video_underlays((
+        ("clip:a", "/tmp/a.mp4", 0.2, (1, 0, 0, 1, 0, 0), (0, 0, 10, 10), 1.0, "normal", ()),
+    ))
+    panel.set_video_underlays((
+        ("clip:a", "/tmp/a.mp4", 0.3, (1, 0, 0, 1, 0, 0), (0, 0, 10, 10), 1.0, "normal", ()),
+    ))
     release.set()
     deadline = time.time() + 2.0
     while time.time() < deadline and len(started) < 2:

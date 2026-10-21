@@ -26,44 +26,18 @@ from core.scene_detection import (
 def _two_colour_clip(ffmpeg: str, path: Path) -> None:
     """Rouge pendant 1 s, puis bleu pendant 2 s : une seule coupe, à 1,0 s du média."""
     subprocess.run(
-        [
-            ffmpeg,
-            "-v",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=red:s=160x90:d=1:r=25",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=blue:s=160x90:d=2:r=25",
-            "-filter_complex",
-            "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p",
-            "-t",
-            "3",
-            str(path),
-        ],
+        [ffmpeg, "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=red:s=160x90:d=1:r=25",
+         "-f", "lavfi", "-i", "color=blue:s=160x90:d=2:r=25",
+         "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p", "-t", "3", str(path)],
         check=True,
     )
 
 
 def _one_colour_clip(ffmpeg: str, path: Path) -> None:
     subprocess.run(
-        [
-            ffmpeg,
-            "-v",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=red:s=160x90:d=2:r=25",
-            "-pix_fmt",
-            "yuv420p",
-            str(path),
-        ],
+        [ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=160x90:d=2:r=25",
+         "-pix_fmt", "yuv420p", str(path)],
         check=True,
     )
 
@@ -77,14 +51,9 @@ def test_the_showinfo_times_are_moved_back_onto_the_media_clock():
 
 
 def test_the_command_seeks_before_the_input_and_applies_the_threshold():
-    command = scene_command(
-        "ffmpeg", "/films/a.mp4", start=2.5, duration=4.0, threshold=0.4
-    )
+    command = scene_command("ffmpeg", "/films/a.mp4", start=2.5, duration=4.0, threshold=0.4)
     assert command.index("-ss") < command.index("-i")
-    assert (
-        command[command.index("-ss") + 1] == "2.500"
-        and command[command.index("-t") + 1] == "4.000"
-    )
+    assert command[command.index("-ss") + 1] == "2.500" and command[command.index("-t") + 1] == "4.000"
     assert "select='gt(scene,0.400)',showinfo" in command
 
 
@@ -135,9 +104,7 @@ def test_a_single_colour_clip_has_no_cut(tmp_path):
 
 def test_an_unreadable_media_fails_with_ffmpeg_output(tmp_path):
     ffmpeg, _ffprobe = _require_ffmpeg()
-    job = SceneDetectionJob(
-        ffmpeg, str(tmp_path / "absent.mp4"), start=0.0, duration=1.0
-    )
+    job = SceneDetectionJob(ffmpeg, str(tmp_path / "absent.mp4"), start=0.0, duration=1.0)
     job.run()
     snapshot = job.snapshot()
     assert snapshot.state == "failed" and snapshot.message
@@ -154,39 +121,12 @@ def test_a_job_cancelled_before_it_runs_does_not_run(tmp_path):
 
 
 def _project() -> Project:
-    asset = MediaAsset(
-        id="a",
-        path="/films/a.mp4",
-        name="A",
-        duration=10.0,
-        width=160,
-        height=90,
-        fps=25.0,
-        media_type="video",
-    )
-    track = Track(
-        id="V1",
-        name="V1",
-        type="video",
-        clips=[
-            Clip(
-                id="c1",
-                asset_id="a",
-                track_id="V1",
-                timeline_start=0.0,
-                source_in=0.0,
-                source_out=4.0,
-            ),
-        ],
-    )
-    return Project(
-        name="Plans",
-        width=160,
-        height=90,
-        fps=25.0,
-        media_assets=[asset],
-        tracks=[track],
-    )
+    asset = MediaAsset(id="a", path="/films/a.mp4", name="A", duration=10.0, width=160, height=90, fps=25.0,
+                       media_type="video")
+    track = Track(id="V1", name="V1", type="video", clips=[
+        Clip(id="c1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=4.0),
+    ])
+    return Project(name="Plans", width=160, height=90, fps=25.0, media_assets=[asset], tracks=[track])
 
 
 def test_the_clip_is_cut_at_each_scene_change_on_the_timeline():

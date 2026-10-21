@@ -162,10 +162,7 @@ def test_transition_type_has_forty_three_values() -> None:
     """Le catalogue natif expose 43 valeurs (18 + 25 du catalogue élargi)."""
     assert len(TransitionType) == 43
     assert len(CATALOG_EXTENSION_TYPES) == 25
-    assert all(
-        member.value in {t.value for t in list(TransitionType)[18:]}
-        for member in CATALOG_EXTENSION_TYPES
-    )
+    assert all(member.value in {t.value for t in list(TransitionType)[18:]} for member in CATALOG_EXTENSION_TYPES)
 
 
 def test_historical_transition_types_are_preserved() -> None:
@@ -198,7 +195,9 @@ def test_all_expected_transition_types_exist() -> None:
         "smooth_right",
     }
     actual = {member.value for member in TransitionType}
-    assert expected.issubset(actual), f"Types manquants : {expected - actual}"
+    assert expected.issubset(actual), (
+        f"Types manquants : {expected - actual}"
+    )
 
 
 def test_builtin_transition_presets_count_is_forty_three() -> None:
@@ -211,9 +210,7 @@ def test_builtin_transition_presets_count_is_forty_three() -> None:
 
 def test_every_transition_type_has_a_builtin_preset() -> None:
     """Chaque type de l'enum est associé à un preset intégré."""
-    types_in_library = {
-        preset.transition_type for preset in builtin_transition_presets()
-    }
+    types_in_library = {preset.transition_type for preset in builtin_transition_presets()}
     assert types_in_library == set(TransitionType)
 
 
@@ -269,24 +266,17 @@ def test_every_transition_type_has_an_explicit_xfade_name() -> None:
     """Aucun type ne retombe en silence sur ``fade`` : seul ``crossfade`` s'appelle ``fade``, tous les noms diffèrent."""
     assert set(EXPECTED_FFMPEG_NAMES) == {member.value for member in TransitionType}
     produced = {
-        member: _ffmpeg_transition_name(_make_render_transition(member))
-        for member in TransitionType
+        member: _ffmpeg_transition_name(_make_render_transition(member)) for member in TransitionType
     }
-    assert [member for member, name in produced.items() if name == "fade"] == [
-        TransitionType.CROSSFADE
-    ]
+    assert [member for member, name in produced.items() if name == "fade"] == [TransitionType.CROSSFADE]
     assert len(set(produced.values())) == len(TransitionType)
 
 
 @pytest.mark.parametrize("member", list(TransitionType), ids=lambda t: t.value)
-def test_every_transition_type_has_a_family_and_a_matching_category(
-    member: TransitionType,
-) -> None:
+def test_every_transition_type_has_a_family_and_a_matching_category(member: TransitionType) -> None:
     family = transition_family(member)
     assert member in TRANSITION_FAMILIES[family]
-    preset = next(
-        p for p in builtin_transition_presets() if p.transition_type is member
-    )
+    preset = next(p for p in builtin_transition_presets() if p.transition_type is member)
     assert preset.category.value == family
 
 
@@ -315,7 +305,9 @@ def test_ffmpeg_mapping_handles_unknown_type() -> None:
 def test_ffmpeg_mapping_preserves_duration() -> None:
     """La durée est indépendante du nom : le test vérifie juste la
     cohérence du mapping entre le type et le nom du filtre."""
-    transition = _make_render_transition(TransitionType.WIPE_UP, duration=1.2345)
+    transition = _make_render_transition(
+        TransitionType.WIPE_UP, duration=1.2345
+    )
     name = _ffmpeg_transition_name(transition)
     assert name == "wipeup"
     assert transition.duration == 1.2345
@@ -333,14 +325,7 @@ def test_filter_by_category_fade_includes_three_presets() -> None:
         category=TransitionPresetCategory.FADE,
     )
     ids = {p.id for p in matches}
-    assert ids == {
-        "crossfade",
-        "fade_black",
-        "fade_white",
-        "fade_fast",
-        "fade_slow",
-        "fade_grays",
-    }
+    assert ids == {"crossfade", "fade_black", "fade_white", "fade_fast", "fade_slow", "fade_grays"}
 
 
 def test_filter_by_category_wipe_includes_eight_presets() -> None:
@@ -371,15 +356,7 @@ def test_filter_by_category_shape_includes_three_presets() -> None:
         category=TransitionPresetCategory.SHAPE,
     )
     ids = {p.id for p in matches}
-    assert ids == {
-        "circle_open",
-        "circle_close",
-        "radial",
-        "horz_open",
-        "horz_close",
-        "vert_open",
-        "vert_close",
-    }
+    assert ids == {"circle_open", "circle_close", "radial", "horz_open", "horz_close", "vert_open", "vert_close"}
 
 
 def test_filter_by_category_dissolve_includes_two_presets() -> None:
@@ -422,7 +399,9 @@ def test_filter_by_search_finds_each_new_preset() -> None:
     for needle_id in new_ids:
         matches = filter_transition_presets(library, search=needle_id)
         ids = {p.id for p in matches}
-        assert needle_id in ids, f"Recherche « {needle_id} » : prereg found = {ids}"
+        assert needle_id in ids, (
+            f"Recherche « {needle_id} » : prereg found = {ids}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +450,9 @@ def test_remove_transition_after_addition() -> None:
     "ttype",
     list(TransitionType),
 )
-def test_transition_roundtrip_through_kut(tmp_path, ttype: TransitionType) -> None:
+def test_transition_roundtrip_through_kut(
+    tmp_path, ttype: TransitionType
+) -> None:
     """Chaque type de transition survit à un aller-retour sérialisation."""
     project = _project_with_two_clips()
     add_transition(project, "clip-a", "clip-b", ttype, 0.8)
@@ -499,8 +480,12 @@ def test_transition_roundtrip_multiple_types(tmp_path) -> None:
     # Caler les clips de project2 sur la timeline après ceux de project1.
     project2.tracks[0].clips[0].timeline_start = 6.0
     project2.tracks[0].clips[1].timeline_start = 8.5
-    add_transition(project, "clip-a", "clip-b", TransitionType.WIPE_UP, 0.5)
-    add_transition(project2, "clip-c", "clip-d", TransitionType.DISSOLVE, 0.5)
+    add_transition(
+        project, "clip-a", "clip-b", TransitionType.WIPE_UP, 0.5
+    )
+    add_transition(
+        project2, "clip-c", "clip-d", TransitionType.DISSOLVE, 0.5
+    )
     # On vérifie que les deux types sont bien distincts dans chaque projet.
     assert project.transitions[0].type is TransitionType.WIPE_UP
     assert project2.transitions[0].type is TransitionType.DISSOLVE
@@ -524,7 +509,9 @@ def test_undo_redo_for_add_transition_of_new_type() -> None:
     history = ProjectHistory()
     history.reset(project)
 
-    add_transition(project, "clip-a", "clip-b", TransitionType.SMOOTH_LEFT, 0.7)
+    add_transition(
+        project, "clip-a", "clip-b", TransitionType.SMOOTH_LEFT, 0.7
+    )
     history.record(project, "Ajouter un glissement fluide gauche")
     assert len(project.transitions) == 1
 
@@ -537,7 +524,9 @@ def test_undo_redo_for_add_transition_of_new_type() -> None:
     restored_redo = history.redo()
     assert restored_redo is not None
     assert len(restored_redo.transitions) == 1
-    assert restored_redo.transitions[0].type is TransitionType.SMOOTH_LEFT
+    assert (
+        restored_redo.transitions[0].type is TransitionType.SMOOTH_LEFT
+    )
 
 
 def test_undo_redo_for_update_transition() -> None:
@@ -598,7 +587,9 @@ def test_legacy_kut_without_new_transition_types_loads(tmp_path) -> None:
 def test_legacy_kut_with_historical_transition_loads(tmp_path) -> None:
     """Une transition ``fade_black`` (v10) survit à un aller-retour."""
     project = _project_with_two_clips()
-    add_transition(project, "clip-a", "clip-b", TransitionType.FADE_BLACK, 0.5)
+    add_transition(
+        project, "clip-a", "clip-b", TransitionType.FADE_BLACK, 0.5
+    )
     target = tmp_path / "v10.kut"
     save_project(project, str(target))
     loaded = load_project(str(target))
@@ -649,7 +640,11 @@ def test_audio_fade_in_out_preserved_for_new_transitions(tmp_path) -> None:
 def test_every_type_has_a_preset_with_matching_metadata(ttype) -> None:
     """Chaque type est représenté par un preset avec une catégorie valide."""
     preset = next(
-        (p for p in builtin_transition_presets() if p.transition_type is ttype),
+        (
+            p
+            for p in builtin_transition_presets()
+            if p.transition_type is ttype
+        ),
         None,
     )
     assert preset is not None, f"Aucun preset pour {ttype}"

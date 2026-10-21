@@ -272,20 +272,12 @@ def test_pure_functions_do_not_mutate_the_input_list() -> None:
 def test_new_clips_do_not_share_the_default_effects_list() -> None:
     """Deux clips neufs ne partagent pas la même liste d'effets."""
     a = Clip(
-        id="a",
-        asset_id="x",
-        track_id="V1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=1.0,
+        id="a", asset_id="x", track_id="V1", timeline_start=0.0,
+        source_in=0.0, source_out=1.0,
     )
     b = Clip(
-        id="b",
-        asset_id="x",
-        track_id="V1",
-        timeline_start=0.0,
-        source_in=0.0,
-        source_out=1.0,
+        id="b", asset_id="x", track_id="V1", timeline_start=0.0,
+        source_in=0.0, source_out=1.0,
     )
     a.effects = add_effect(a.effects, _effect(EffectType.SEPIA))
 
@@ -436,7 +428,9 @@ def test_add_duplicate_single_effect_to_clip_is_refused() -> None:
     project = _project()
     add_effect_to_clip(project, "clip-video", EffectType.SEPIA, effect_id="fx-1")
     with pytest.raises(ValueError):
-        add_effect_to_clip(project, "clip-video", EffectType.SEPIA, effect_id="fx-2")
+        add_effect_to_clip(
+            project, "clip-video", EffectType.SEPIA, effect_id="fx-2"
+        )
 
 
 def test_operations_reject_audio_clip() -> None:
@@ -469,7 +463,9 @@ def test_operations_reject_locked_track() -> None:
 def test_project_level_toggle_remove_and_reorder() -> None:
     project = _project()
     add_effect_to_clip(project, "clip-video", EffectType.BLUR, effect_id="fx-1")
-    add_effect_to_clip(project, "clip-video", EffectType.SHARPEN, effect_id="fx-2")
+    add_effect_to_clip(
+        project, "clip-video", EffectType.SHARPEN, effect_id="fx-2"
+    )
 
     set_clip_effect_enabled(project, "clip-video", "fx-1", False)
     assert clip_effects(project, "clip-video")[0].enabled is False

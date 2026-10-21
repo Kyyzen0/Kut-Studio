@@ -28,7 +28,7 @@ _FUNCTIONS = {
 def evaluate(expression: str, **variables: float) -> float:
     """Valeur de ``expression`` (syntaxe FFmpeg) pour les variables données."""
     text = expression.replace("\\,", ",")
-    for pixel_variable in "XY":  # coordonnées de ``geq`` : 0 sauf si le test les donne
+    for pixel_variable in "XY":                      # coordonnées de ``geq`` : 0 sauf si le test les donne
         if pixel_variable not in variables:
             text = re.sub(rf"\b{pixel_variable}\b", "0", text)
     if not re.fullmatch(r"[\w\s.+\-*/(),]*", text):

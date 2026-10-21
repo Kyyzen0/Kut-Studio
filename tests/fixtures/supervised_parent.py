@@ -37,21 +37,8 @@ def _ffmpeg_command() -> list[str]:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise SystemExit(3)
-    return [
-        ffmpeg,
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-re",
-        "-f",
-        "lavfi",
-        "-i",
-        "testsrc=size=64x64:rate=10",
-        "-f",
-        "null",
-        "-",
-    ]
+    return [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-re",
+            "-f", "lavfi", "-i", "testsrc=size=64x64:rate=10", "-f", "null", "-"]
 
 
 def _wait_for(condition, timeout: float = 30.0) -> None:
@@ -65,33 +52,23 @@ def _wait_for(condition, timeout: float = 30.0) -> None:
 def main(arguments: list[str]) -> int:
     root, output = Path(arguments[0]), Path(arguments[1])
     options = arguments[2:]
-    count = (
-        int(options[options.index("--children") + 1]) if "--children" in options else 1
-    )
+    count = int(options[options.index("--children") + 1]) if "--children" in options else 1
     unguarded = "--unguarded" in options
-    guard = (
-        False if unguarded else None
-    )  # None : protection de la plateforme (gardien ou objet Job)
+    guard = False if unguarded else None  # None : protection de la plateforme (gardien ou objet Job)
     supervisor = ProcessSupervisor(root, use_reaper=guard, use_job=guard)
-    process_supervisor._default = (
-        supervisor  # les modules de l'application (aperçu, export) l'utilisent
-    )
+    process_supervisor._default = supervisor  # les modules de l'application (aperçu, export) l'utilisent
     command = _ffmpeg_command() if "--ffmpeg" in options else SLEEP
     expected = count
     children = [supervisor.popen(command) for _ in range(count)]
     if "--run" in options:
         expected += 1
-        threading.Thread(
-            target=lambda: supervisor.run(SLEEP, timeout=600), daemon=True
-        ).start()
+        threading.Thread(target=lambda: supervisor.run(SLEEP, timeout=600), daemon=True).start()
     if "--preview" in options:
         expected += 1
         # Le vrai chemin de l'aperçu fidèle (segment FFmpeg, échéance 120 s dans l'application).
         from core.preview_engine import _run_cancellable
 
-        threading.Thread(
-            target=lambda: _run_cancellable(SLEEP, None, timeout=600), daemon=True
-        ).start()
+        threading.Thread(target=lambda: _run_cancellable(SLEEP, None, timeout=600), daemon=True).start()
     application = engine = None
     if "--qprocess" in options:
         expected += 1
@@ -104,30 +81,17 @@ def main(arguments: list[str]) -> int:
         engine = ExportEngine()
         engine._launch(list(SLEEP))
         deadline = time.monotonic() + 30.0
-        while (
-            len(supervisor.live_registrations()) < expected
-            and time.monotonic() < deadline
-        ):
+        while len(supervisor.live_registrations()) < expected and time.monotonic() < deadline:
             application.processEvents()
             time.sleep(0.01)
     _wait_for(lambda: len(supervisor.live_registrations()) >= expected)
-    reaper = (
-        supervisor.ops.probe(supervisor.reaper_pid).identity
-        if supervisor.reaper_pid
-        else None
-    )
+    reaper = supervisor.ops.probe(supervisor.reaper_pid).identity if supervisor.reaper_pid else None
     report = {
         "parent": os.getpid(),
-        "reaper": {"pid": reaper.pid, "token": reaper.token, "name": reaper.name}
-        if reaper
-        else None,
+        "reaper": {"pid": reaper.pid, "token": reaper.token, "name": reaper.name} if reaper else None,
         "registry": str(supervisor.registry_directory),
         "children": [
-            {
-                "pid": item.identity.pid,
-                "token": item.identity.token,
-                "name": item.identity.name,
-            }
+            {"pid": item.identity.pid, "token": item.identity.token, "name": item.identity.name}
             for item in supervisor.live_registrations()
         ],
         "popen": [child.pid for child in children],

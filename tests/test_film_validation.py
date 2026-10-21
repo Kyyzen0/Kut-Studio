@@ -18,47 +18,26 @@ SIZE = (16, 16)
 
 
 def tiny_scene():
-    return scene(
-        quad_model(flat((1.0, 0.0, 0.0, 1.0)), half=0.4),
-        [WHITE_AMBIENT],
-        front_camera(),
-    )
+    return scene(quad_model(flat((1.0, 0.0, 0.0, 1.0)), half=0.4), [WHITE_AMBIENT], front_camera())
 
 
 @pytest.fixture
 def fake_ffmpeg(monkeypatch):
     """Un « ffmpeg » résolu mais jamais lancé : les tests de validation et de nettoyage ne dépendent pas de la machine."""
-    monkeypatch.setattr(
-        "core.tool_paths.find_media_tool", lambda name, **_: f"/fake/{name}"
-    )
+    monkeypatch.setattr("core.tool_paths.find_media_tool", lambda name, **_: f"/fake/{name}")
 
 
 def leftovers(folder: Path) -> list[str]:
-    return sorted(
-        str(p.relative_to(folder))
-        for p in folder.rglob("*")
-        if p.is_file() or p.is_dir()
-    )
+    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_file() or p.is_dir())
 
 
 def make_film(tmp_path: Path, **kwargs) -> Film:
-    return Film(
-        tmp_path / "out" / "film.kut",
-        size=kwargs.pop("size", SIZE),
-        fps=kwargs.pop("fps", 4.0),
-        **kwargs,
-    )
+    return Film(tmp_path / "out" / "film.kut", size=kwargs.pop("size", SIZE), fps=kwargs.pop("fps", 4.0), **kwargs)
 
 
 def test_import_core_film_loads_neither_kut3d_nor_the_export_engine():
     code = "import sys, core.film; bad = [m for m in ('kut3d', 'core.export_engine', 'core.export_runner') if m in sys.modules]; print(bad)"
-    out = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        cwd=ROOT,
-        check=True,
-    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
     assert out.stdout.strip() == "[]"
 
 
@@ -77,28 +56,13 @@ def test_project_path_must_be_a_kut_file(path):
         Film(path)
 
 
-@pytest.mark.parametrize(
-    "size",
-    [
-        (1920,),
-        (0, 10),
-        (-2, 10),
-        (101, 100),
-        (100, 8194),
-        (1.5, 2),
-        "ab",
-        (True, 4),
-        None,
-    ],
-)
+@pytest.mark.parametrize("size", [(1920,), (0, 10), (-2, 10), (101, 100), (100, 8194), (1.5, 2), "ab", (True, 4), None])
 def test_size_is_validated_without_silent_rounding(tmp_path, size):
     with pytest.raises(FilmError):
         Film(tmp_path / "f.kut", size=size)
 
 
-@pytest.mark.parametrize(
-    "fps", [0, -1, 241, float("nan"), float("inf"), "24", True, None]
-)
+@pytest.mark.parametrize("fps", [0, -1, 241, float("nan"), float("inf"), "24", True, None])
 def test_fps_is_validated(tmp_path, fps):
     with pytest.raises(FilmError):
         Film(tmp_path / "f.kut", fps=fps)
@@ -110,23 +74,7 @@ def test_output_folder_is_created(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "name",
-    [
-        "",
-        "a/b",
-        "a\\b",
-        "..",
-        "a.b",
-        "a b",
-        "é",
-        "x" * 49,
-        "CON",
-        "nul",
-        "Com1",
-        None,
-        3,
-        "a\0",
-    ],
+    "name", ["", "a/b", "a\\b", "..", "a.b", "a b", "é", "x" * 49, "CON", "nul", "Com1", None, 3, "a\0"],
 )
 def test_shot_names_are_refused_without_creating_anything(tmp_path, fake_ffmpeg, name):
     film = make_film(tmp_path)
@@ -138,25 +86,13 @@ def test_shot_names_are_refused_without_creating_anything(tmp_path, fake_ffmpeg,
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"duration": 0},
-        {"duration": -1.0},
-        {"duration": float("nan")},
-        {"duration": float("inf")},
-        {"duration": True},
-        {"duration": "3"},
-        {"duration": 3601},
-        {
-            "duration": 3600
-        },  # 3600 s à 4 i/s : 14 400 images, mais borne de durée ci-dessous
-        {"duration": 1.0, "samples": 3},
-        {"duration": 1.0, "samples": True},
-        {"duration": 1.0, "samples": "2"},
+        {"duration": 0}, {"duration": -1.0}, {"duration": float("nan")}, {"duration": float("inf")}, {"duration": True},
+        {"duration": "3"}, {"duration": 3601}, {"duration": 3600},                   # 3600 s à 4 i/s : 14 400 images, mais borne de durée ci-dessous
+        {"duration": 1.0, "samples": 3}, {"duration": 1.0, "samples": True}, {"duration": 1.0, "samples": "2"},
     ],
 )
 def test_bounds_are_checked_before_any_frame_is_rendered(tmp_path, fake_ffmpeg, kwargs):
-    film = make_film(
-        tmp_path, fps=240.0
-    )  # 3600 s x 240 i/s dépasse la borne d'images, avant tout rendu
+    film = make_film(tmp_path, fps=240.0)                # 3600 s x 240 i/s dépasse la borne d'images, avant tout rendu
     called: list[float] = []
 
     def never(t):
@@ -195,20 +131,12 @@ def test_missing_ffmpeg_is_reported_before_rendering(tmp_path, monkeypatch):
     called: list[float] = []
     film = make_film(tmp_path)
     with pytest.raises(FilmError, match="FFmpeg est introuvable"):
-        film.render_shot(
-            lambda t: called.append(t) or tiny_scene(),
-            duration=1.0,
-            name="plan",
-            backend="numpy",
-        )
+        film.render_shot(lambda t: called.append(t) or tiny_scene(), duration=1.0, name="plan", backend="numpy")
     assert called == [] and not film.assets_dir.exists()
 
 
 def test_scene_at_is_called_with_the_frame_instants(tmp_path, fake_ffmpeg, monkeypatch):
-    monkeypatch.setattr(
-        "core.film.encode_alpha_video",
-        lambda folder, count, fps, output: output.write_bytes(b"x"),
-    )
+    monkeypatch.setattr("core.film.encode_alpha_video", lambda folder, count, fps, output: output.write_bytes(b"x"))
     times: list[float] = []
 
     def scene_at(t):
@@ -219,14 +147,10 @@ def test_scene_at_is_called_with_the_frame_instants(tmp_path, fake_ffmpeg, monke
     shot = film.render_shot(scene_at, duration=1.0, name="plan", backend="numpy")
     assert times == [0.0, 0.25, 0.5, 0.75]
     assert (shot.frames, shot.duration, shot.size, shot.fps) == (4, 1.0, SIZE, 4.0)
-    assert not (
-        film.assets_dir / "plan"
-    ).exists()  # les PNG sont supprimés après l'encodage
+    assert not (film.assets_dir / "plan").exists()            # les PNG sont supprimés après l'encodage
 
 
-def test_encoder_failure_leaves_nothing_and_truncates_stderr(
-    tmp_path, fake_ffmpeg, monkeypatch
-):
+def test_encoder_failure_leaves_nothing_and_truncates_stderr(tmp_path, fake_ffmpeg, monkeypatch):
     noise = "erreur ffmpeg " * 5000
     monkeypatch.setattr(
         "core.process_supervisor.supervised_run",
@@ -265,9 +189,7 @@ def test_interruption_while_rendering_leaves_no_file(tmp_path, fake_ffmpeg):
 
 def test_interruption_while_encoding_leaves_no_file(tmp_path, fake_ffmpeg, monkeypatch):
     def interrupted(command, **options):
-        Path(command[-1]).write_bytes(
-            b"x"
-        )  # FFmpeg avait commencé à écrire le fichier partiel
+        Path(command[-1]).write_bytes(b"x")      # FFmpeg avait commencé à écrire le fichier partiel
         raise KeyboardInterrupt
 
     monkeypatch.setattr("core.process_supervisor.supervised_run", interrupted)
@@ -277,39 +199,25 @@ def test_interruption_while_encoding_leaves_no_file(tmp_path, fake_ffmpeg, monke
     assert leftovers(film.assets_dir) == []
 
 
-def test_user_files_next_to_the_frames_are_never_deleted(
-    tmp_path, fake_ffmpeg, monkeypatch
-):
+def test_user_files_next_to_the_frames_are_never_deleted(tmp_path, fake_ffmpeg, monkeypatch):
     film = make_film(tmp_path)
     (film.assets_dir / "plan").mkdir(parents=True)
     (film.assets_dir / "plan" / "notes.txt").write_text("à moi", encoding="utf-8")
     (film.assets_dir / "plan" / "frame_000099.png").write_bytes(b"ancienne image")
-    monkeypatch.setattr(
-        "core.film.encode_alpha_video",
-        lambda folder, count, fps, output: output.write_bytes(b"x"),
-    )
+    monkeypatch.setattr("core.film.encode_alpha_video", lambda folder, count, fps, output: output.write_bytes(b"x"))
     film.render_shot(tiny_scene(), duration=1.0, name="plan", backend="numpy")
-    assert (film.assets_dir / "plan" / "notes.txt").read_text(
-        encoding="utf-8"
-    ) == "à moi"
+    assert (film.assets_dir / "plan" / "notes.txt").read_text(encoding="utf-8") == "à moi"
     assert not (film.assets_dir / "plan" / "frame_000099.png").exists()
 
 
 def test_name_collision_is_refused_unless_overwrite(tmp_path, fake_ffmpeg, monkeypatch):
-    monkeypatch.setattr(
-        "core.film.encode_alpha_video",
-        lambda folder, count, fps, output: output.write_bytes(b"x"),
-    )
+    monkeypatch.setattr("core.film.encode_alpha_video", lambda folder, count, fps, output: output.write_bytes(b"x"))
     film = make_film(tmp_path)
     film.render_shot(tiny_scene(), duration=1.0, name="Plan", backend="numpy")
     with pytest.raises(FilmError, match="existe déjà"):
-        film.render_shot(
-            tiny_scene(), duration=1.0, name="plan", backend="numpy"
-        )  # même fichier sous macOS et Windows
-    film.render_shot(
-        tiny_scene(), duration=1.0, name="plan", backend="numpy", overwrite=True
-    )
-    again = make_film(tmp_path)  # un nouveau script, le fichier est resté
+        film.render_shot(tiny_scene(), duration=1.0, name="plan", backend="numpy")      # même fichier sous macOS et Windows
+    film.render_shot(tiny_scene(), duration=1.0, name="plan", backend="numpy", overwrite=True)
+    again = make_film(tmp_path)                                                         # un nouveau script, le fichier est resté
     with pytest.raises(FilmError, match="existe déjà"):
         again.render_shot(tiny_scene(), duration=1.0, name="Plan", backend="numpy")
 
@@ -323,15 +231,7 @@ def fake_shot(tmp_path: Path, name="plan", size=SIZE, fps=4.0, frames=4) -> Shot
 def test_place_refuses_bad_arguments(tmp_path):
     film = make_film(tmp_path)
     shot = fake_shot(tmp_path)
-    for kwargs in (
-        {"start": -1},
-        {"start": float("nan")},
-        {"start": 2e6},
-        {"track": 0},
-        {"track": 17},
-        {"track": True},
-        {"track": 2.0},
-    ):
+    for kwargs in ({"start": -1}, {"start": float("nan")}, {"start": 2e6}, {"track": 0}, {"track": 17}, {"track": True}, {"track": 2.0}):
         with pytest.raises(FilmError):
             film.place(shot, **kwargs)
     with pytest.raises(FilmError):
@@ -347,27 +247,18 @@ def test_place_refuses_bad_arguments(tmp_path):
 
 def test_place_refuses_overlap_but_accepts_touching_and_other_tracks(tmp_path):
     film = make_film(tmp_path)
-    shot = fake_shot(tmp_path)  # 1 s
+    shot = fake_shot(tmp_path)                                  # 1 s
     film.place(shot, start=0.0)
     with pytest.raises(FilmError, match="chevauche"):
         film.place(shot, start=0.5)
-    film.place(shot, start=1.0)  # bout à bout : permis
+    film.place(shot, start=1.0)                                 # bout à bout : permis
     film.place(shot, start=0.5, track=3)
     assert film.duration == 2.0
 
 
 def test_background_validation_and_track_one(tmp_path):
     film = make_film(tmp_path)
-    for bad in (
-        (1, 2),
-        (0, 0, 0, 0.5),
-        (1.2, 0, 0),
-        (-0.1, 0, 0),
-        (float("nan"), 0, 0),
-        ("a", 0, 0),
-        tmp_path / "absent.png",
-        5,
-    ):
+    for bad in ((1, 2), (0, 0, 0, 0.5), (1.2, 0, 0), (-0.1, 0, 0), (float("nan"), 0, 0), ("a", 0, 0), tmp_path / "absent.png", 5):
         with pytest.raises(FilmError):
             film.background(bad)
     film.place(fake_shot(tmp_path), track=1)
@@ -397,14 +288,7 @@ def test_audio_refuses_missing_file_and_bad_arguments(tmp_path):
         film.audio(tmp_path / "absent.wav")
     existing = tmp_path / "x.wav"
     existing.write_bytes(b"x")
-    for kwargs in (
-        {"gain_db": 13},
-        {"gain_db": -61},
-        {"gain_db": float("nan")},
-        {"start": -1},
-        {"track": 0},
-        {"track": 17},
-    ):
+    for kwargs in ({"gain_db": 13}, {"gain_db": -61}, {"gain_db": float("nan")}, {"start": -1}, {"track": 0}, {"track": 17}):
         with pytest.raises(FilmError):
             film.audio(existing, **kwargs)
 

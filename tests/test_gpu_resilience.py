@@ -32,39 +32,27 @@ def _frame():
     return gpu_harness.make_frame(gpu_harness.test_pattern(64, 36), "nv12")
 
 
-def test_an_unmappable_frame_is_converted_by_qt_instead_of_failing_the_gpu(
-    executor, monkeypatch
-):
+def test_an_unmappable_frame_is_converted_by_qt_instead_of_failing_the_gpu(executor, monkeypatch):
     frame = _frame()
-    monkeypatch.setattr(
-        QVideoFrame, "map", lambda self, mode: False
-    )  # surface non mappable
+    monkeypatch.setattr(QVideoFrame, "map", lambda self, mode: False)        # surface non mappable
     unmapped = []
     monkeypatch.setattr(QVideoFrame, "unmap", lambda self: unmapped.append(1))
 
-    sent, source = executor.upload_source(
-        executor.rhi.nextResourceUpdateBatch(), "main", frame
-    )
+    sent, source = executor.upload_source(executor.rhi.nextResourceUpdateBatch(), "main", frame)
 
     assert source.layout == "rgba" and (source.width, source.height) == (64, 36)
     assert sent > 0
     assert executor.unmappable_frames == 1
-    assert unmapped == []  # rien n'a été mappé, rien à rendre
+    assert unmapped == []                                                      # rien n'a été mappé, rien à rendre
 
 
-def test_a_mappable_frame_still_goes_through_the_native_planes_and_is_unmapped(
-    executor, monkeypatch
-):
+def test_a_mappable_frame_still_goes_through_the_native_planes_and_is_unmapped(executor, monkeypatch):
     frame = _frame()
     calls = []
     real_unmap = QVideoFrame.unmap
-    monkeypatch.setattr(
-        QVideoFrame, "unmap", lambda self: (calls.append(1), real_unmap(self))[1]
-    )
+    monkeypatch.setattr(QVideoFrame, "unmap", lambda self: (calls.append(1), real_unmap(self))[1])
 
-    _sent, source = executor.upload_source(
-        executor.rhi.nextResourceUpdateBatch(), "main", frame
-    )
+    _sent, source = executor.upload_source(executor.rhi.nextResourceUpdateBatch(), "main", frame)
 
     assert source.layout == "nv12" and executor.unmappable_frames == 0
     assert calls == [1]
@@ -81,22 +69,19 @@ def test_qt_releasing_its_resources_keeps_the_last_frame_of_each_source(widget):
     first, second = _frame(), _frame()
     widget.set_video_frame("a", first)
     widget.set_video_frame("b", second)
-    widget._pending.clear()  # rendu fait : les images ont été envoyées au GPU
-    widget._sources["a"] = object()  # type: ignore[assignment] - ressource GPU « vivante »
+    widget._pending.clear()                         # rendu fait : les images ont été envoyées au GPU
+    widget._sources["a"] = object()                 # type: ignore[assignment] - ressource GPU « vivante »
 
-    widget.releaseResources()  # Qt masque / détache le widget
+    widget.releaseResources()                       # Qt masque / détache le widget
 
     assert widget.executor is None and widget._sources == {}
-    assert set(widget._pending) == {
-        "a",
-        "b",
-    }  # elles repartiront au prochain rendu, même en pause
+    assert set(widget._pending) == {"a", "b"}       # elles repartiront au prochain rendu, même en pause
     assert widget._pending["a"].frame is first
 
 
 def test_an_explicit_release_drops_the_decoded_frames_too(widget):
     widget.set_video_frame("a", _frame())
-    widget.release_gpu()  # changement de projet, pression mémoire
+    widget.release_gpu()                            # changement de projet, pression mémoire
     assert widget._pending == {} and widget._latest == {}
 
 
@@ -125,26 +110,20 @@ def _failure_of(widget, qtbot, error: Exception):
 
 
 @pytest.mark.parametrize("language", ["fr", "en", "es"])
-def test_a_gpu_memory_failure_is_classified_out_of_memory_in_every_language(
-    widget, qtbot, language
-):
+def test_a_gpu_memory_failure_is_classified_out_of_memory_in_every_language(widget, qtbot, language):
     """Le classement ne dépend plus du mot « mémoire » du message : traduit, il restait classé « render »."""
     i18n.reset_for_tests()
     try:
         i18n.set_language(language)
         message = i18n.translate("gpu.error.video_texture")
-        kind, detail = _failure_of(
-            widget, qtbot, GpuUnavailable(message, out_of_memory=True)
-        )
+        kind, detail = _failure_of(widget, qtbot, GpuUnavailable(message, out_of_memory=True))
     finally:
         i18n.reset_for_tests()
     assert (kind, detail) == ("out_of_memory", message)
 
 
 def test_a_failure_that_only_mentions_memory_is_not_an_out_of_memory(widget, qtbot):
-    kind, _detail = _failure_of(
-        widget, qtbot, GpuUnavailable("mémoire insuffisante pour la bibliothèque")
-    )
+    kind, _detail = _failure_of(widget, qtbot, GpuUnavailable("mémoire insuffisante pour la bibliothèque"))
     assert kind == "render"
 
 
@@ -153,13 +132,9 @@ def test_the_gpu_failure_causes_are_translated():
     try:
         i18n.set_language("en")
         with i18n.strict_translations():
-            assert str(
-                GpuUnavailable(i18n.translate("gpu.error.texture", width=64, height=36))
-            ) == ("cannot create a 64×36 texture (GPU memory?)")
+            assert str(GpuUnavailable(i18n.translate("gpu.error.texture", width=64, height=36))) == (
+                "cannot create a 64×36 texture (GPU memory?)")
         i18n.set_language("fr")
-        assert (
-            i18n.translate("gpu.error.texture", width=64, height=36)
-            == "texture 64×36 impossible (mémoire GPU ?)"
-        )
+        assert i18n.translate("gpu.error.texture", width=64, height=36) == "texture 64×36 impossible (mémoire GPU ?)"
     finally:
         i18n.reset_for_tests()

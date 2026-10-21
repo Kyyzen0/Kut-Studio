@@ -18,18 +18,11 @@ HEADERS = (ROOT / "website" / "_headers").read_text(encoding="utf-8")
 
 
 def _hash(text: str) -> str:
-    return (
-        "sha256-"
-        + base64.b64encode(hashlib.sha256(text.encode("utf-8")).digest()).decode()
-    )
+    return "sha256-" + base64.b64encode(hashlib.sha256(text.encode("utf-8")).digest()).decode()
 
 
 def _csp() -> dict[str, list[str]]:
-    line = next(
-        line
-        for line in HEADERS.splitlines()
-        if line.strip().startswith("Content-Security-Policy:")
-    )
+    line = next(line for line in HEADERS.splitlines() if line.strip().startswith("Content-Security-Policy:"))
     directives = line.split(":", 1)[1].split(";")
     parsed: dict[str, list[str]] = {}
     for directive in directives:
@@ -58,21 +51,14 @@ def test_the_policy_allows_nothing_the_page_does_not_use():
     assert csp["frame-ancestors"] == ["'none'"] and csp["base-uri"] == ["'none'"]
     # Le site ne charge rien d'extérieur, et n'a pas de gestionnaire d'événement ni d'attribut style en ligne
     # (la CSP les bloquerait) : si cela change, la politique doit changer en même temps.
-    assert not re.search(
-        r'<(?:script|link|img|iframe)[^>]+(?:src|href)="https?:',
-        HTML.replace("<a ", ""),
-    ), "ressource externe : à autoriser explicitement dans la CSP"
+    assert not re.search(r'<(?:script|link|img|iframe)[^>]+(?:src|href)="https?:', HTML.replace('<a ', '')), \
+        "ressource externe : à autoriser explicitement dans la CSP"
     assert not re.search(r'\son[a-z]+="', HTML) and not re.search(r'\sstyle="', HTML)
 
 
 def test_the_other_security_headers_are_present():
-    for header in (
-        "X-Content-Type-Options: nosniff",
-        "X-Frame-Options: DENY",
-        "Referrer-Policy:",
-        "Permissions-Policy:",
-        "Cross-Origin-Opener-Policy: same-origin",
-    ):
+    for header in ("X-Content-Type-Options: nosniff", "X-Frame-Options: DENY", "Referrer-Policy:",
+                   "Permissions-Policy:", "Cross-Origin-Opener-Policy: same-origin"):
         assert header in HEADERS, f"en-tête manquant : {header}"
 
 
@@ -82,9 +68,5 @@ def test_the_script_only_writes_text_never_markup():
     external = (ROOT / "website" / "script.js").read_text(encoding="utf-8")
     for script in (inline, external):
         assert "textContent" in script
-        assert (
-            "innerHTML" not in script
-            and "outerHTML" not in script
-            and "insertAdjacentHTML" not in script
-        )
+        assert "innerHTML" not in script and "outerHTML" not in script and "insertAdjacentHTML" not in script
         assert "eval(" not in script and "document.write" not in script

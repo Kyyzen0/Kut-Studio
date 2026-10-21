@@ -21,33 +21,18 @@ W, H = 64, 36
 
 def _rendered(tmp_path, color: str, grade: ColorGrade | None) -> np.ndarray:
     """Couleur moyenne (RVB 0..255) du centre d'un plan uni ``color``, étalonné par ``grade``, rendu par l'export."""
-    media = lavfi_video(
-        tmp_path / f"{color}.mp4", f"color=c={color}", size=(W, H), seconds=1.0
-    )
-    project = Project(
-        "p",
-        width=W,
-        height=H,
-        fps=25.0,
-        media_assets=[MediaAsset("v", str(media), "v", 1.0, W, H, 25.0, "video")],
-        tracks=[
-            Track("V1", "V1", "video", clips=[Clip("c", "v", "V1", 0.0, 0.0, 1.0)])
-        ],
-    )
+    media = lavfi_video(tmp_path / f"{color}.mp4", f"color=c={color}", size=(W, H), seconds=1.0)
+    project = Project("p", width=W, height=H, fps=25.0,
+                      media_assets=[MediaAsset("v", str(media), "v", 1.0, W, H, 25.0, "video")],
+                      tracks=[Track("V1", "V1", "video", clips=[Clip("c", "v", "V1", 0.0, 0.0, 1.0)])])
     project.tracks[0].clips[0].color_grade = grade
     frame = render_frame(build_render_plan(project), W, H, 0.3).astype(float)
-    return (
-        frame[H // 2 - 4 : H // 2 + 4, W // 2 - 4 : W // 2 + 4]
-        .reshape(-1, 3)
-        .mean(axis=0)
-    )
+    return frame[H // 2 - 4:H // 2 + 4, W // 2 - 4:W // 2 + 4].reshape(-1, 3).mean(axis=0)
 
 
 def test_colorbalance_no_longer_asks_to_preserve_lightness():
     chain = _build_color_grade_filters(ColorGrade(temperature=25.0, shadows=0.2))
-    balance = next(
-        part for part in chain.split(",") if part.startswith("colorbalance=")
-    )
+    balance = next(part for part in chain.split(",") if part.startswith("colorbalance="))
     assert "pl=" not in balance
 
 
@@ -75,9 +60,7 @@ def test_the_shadows_and_highlights_sliders_change_the_picture(tmp_path):
 
 
 @needs_ffmpeg
-@pytest.mark.parametrize(
-    "color", ["0x5A4632", "0x808080", "0xC8C0B8"], ids=["sombre", "gris-moyen", "clair"]
-)
+@pytest.mark.parametrize("color", ["0x5A4632", "0x808080", "0xC8C0B8"], ids=["sombre", "gris-moyen", "clair"])
 def test_temperature_warms_every_tone_without_changing_its_luminance(tmp_path, color):
     """Température : une balance des blancs sur toute l'image (rouge plus, bleu moins), la luminance Rec. 709 garde sa
     valeur. Jusqu'au 2026-10-10 elle passait par les tons moyens de ``colorbalance``, nuls dès que max + min dépasse
@@ -97,31 +80,9 @@ def test_hue_rotates_the_colours():
 
     pixels = np.array([[[220, 40, 40], [40, 40, 220]]], dtype=np.uint8)
     chain = _build_color_grade_filters(ColorGrade(hue=40.0))
-    done = subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgb24",
-            "-s",
-            "2x1",
-            "-i",
-            "-",
-            "-vf",
-            chain,
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgb24",
-            "-",
-        ],
-        input=pixels.tobytes(),
-        capture_output=True,
-        check=True,
-    )
+    done = subprocess.run(["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "2x1", "-i", "-",
+                           "-vf", chain, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], input=pixels.tobytes(),
+                          capture_output=True, check=True)
     red, blue = np.frombuffer(done.stdout, np.uint8).reshape(2, 3).astype(int)
     assert red[1] > 60 and red[2] < 60, f"le rouge tourne vers le jaune : {red}"
     assert blue[0] > 60 and blue[1] < 60, f"le bleu tourne vers le magenta : {blue}"
