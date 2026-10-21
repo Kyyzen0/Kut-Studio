@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.release_assets import CHECKSUMS_FILE, OperatingSystem, Target
+from core.update_install import InstallDecision, InstallRefusal
 from core.update_service import DownloadResult
 from core.updates import CheckResult, InstallContext, InstallKind, UpdateError, UpdateErrorKind, UpdateOffer
 from ui import i18n
@@ -44,6 +45,7 @@ class UpdateDialogState(str, Enum):
     OFFER = "offer"
     DOWNLOADING = "downloading"
     READY = "ready"
+    INSTALLING = "installing"
     CHECK_ERROR = "check_error"
     DOWNLOAD_ERROR = "download_error"
 
@@ -59,6 +61,14 @@ class _View:
     error: UpdateError | None = None
     received: int = 0
     total: int = -1
+    auto: InstallDecision | None = None
+    """Installation automatique possible (ou pourquoi non) pour le paquet vérifié."""
+    auto_error: str = ""
+    """Problème de préparation déjà traduit : l'installation automatique n'est plus proposée pour ce paquet."""
+
+
+_SILENT_REFUSALS = {None, InstallRefusal.SOURCE, InstallRefusal.NOT_MACOS, InstallRefusal.NOT_VERIFIED}
+"""Raisons qu'on ne commente pas : hors macOS ou sources, il n'y a rien à dire ; la signature a son propre message."""
 
 
 def _locale() -> QLocale:
@@ -116,6 +126,8 @@ class UpdateDialog(QDialog):
     retry_requested = Signal()
     open_folder_requested = Signal()
     install_requested = Signal()
+    auto_install_requested = Signal()
+    install_cancel_requested = Signal()
 
     def __init__(self, context: InstallContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -191,11 +203,14 @@ class UpdateDialog(QDialog):
         self.open_folder_button = self._button(ButtonVariant.SECONDARY, self.open_folder_requested.emit)
         self.retry_button = self._button(ButtonVariant.PRIMARY, self.retry_requested.emit)
         self.install_button = self._button(ButtonVariant.PRIMARY, self.install_requested.emit)
+        self.auto_install_button = self._button(ButtonVariant.PRIMARY, self.auto_install_requested.emit)
+        self.auto_install_button.setObjectName("updateAutoInstallButton")
         self.download_button = self._button(ButtonVariant.PRIMARY, self.download_requested.emit)
         row.addWidget(self.skip_button)
         row.addStretch(1)
         for button in (self.release_page_button, self.later_button, self.cancel_button, self.close_button,
-                       self.open_folder_button, self.retry_button, self.install_button, self.download_button):
+                       self.open_folder_button, self.retry_button, self.install_button, self.auto_install_button,
+                       self.download_button):
             row.addWidget(button)
         root.addLayout(row)
 
@@ -259,6 +274,30 @@ class UpdateDialog(QDialog):
                                download=result, error=result.error)
         self._render()
 
+    def set_install_decision(self, decision: InstallDecision | None) -> None:
+        """Installation automatique du paquet vérifié affiché : possible, ou refusée avec sa raison."""
+        self._view.auto = decision
+        if self._view.state is UpdateDialogState.READY:
+            self._render()
+
+    def show_installing(self) -> None:
+        """Préparation de la nouvelle application (extraction et vérification) : rien n'est encore remplacé."""
+        self._view = _View(UpdateDialogState.INSTALLING, check=self._view.check, offer=self._view.offer,
+                           download=self._view.download, auto=self._view.auto)
+        self._render()
+
+    def show_auto_failure(self, problem: str) -> None:
+        """La préparation a échoué (rien n'a été modifié) : retour au paquet vérifié, installation assistée."""
+        self._view = _View(UpdateDialogState.READY, check=self._view.check, offer=self._view.offer,
+                           download=self._view.download, auto=self._view.auto, auto_error=problem)
+        self._render()
+
+    def show_ready_again(self) -> None:
+        """Installation automatique annulée : retour au paquet vérifié, prêt à être installé."""
+        self._view = _View(UpdateDialogState.READY, check=self._view.check, offer=self._view.offer,
+                           download=self._view.download, auto=self._view.auto)
+        self._render()
+
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
@@ -274,6 +313,7 @@ class UpdateDialog(QDialog):
             (self.close_button, "update.button.close"),
             (self.open_folder_button, "update.button.open_folder"),
             (self.install_button, "update.button.install"),
+            (self.auto_install_button, "update.button.install_restart"),
         ):
             button.setText(i18n.translate(key))
         visible: set[QPushButton] = set()
@@ -303,6 +343,13 @@ class UpdateDialog(QDialog):
             visible = {self.cancel_button}
         elif state is UpdateDialogState.READY:
             visible, default = self._render_ready()
+        elif state is UpdateDialogState.INSTALLING:
+            offer = self._view.offer
+            self.headline.setText(i18n.translate("update.auto.preparing.title",
+                                                 version=str(offer.version) if offer else ""))
+            self.message.setText(i18n.translate("update.auto.preparing.text"))
+            progress_visible = True
+            visible = {self.cancel_button}
         else:
             visible, default = self._render_error()
 
@@ -316,7 +363,7 @@ class UpdateDialog(QDialog):
             label.setVisible(bool(label.text()))
         for button in (self.download_button, self.later_button, self.skip_button, self.release_page_button,
                        self.cancel_button, self.retry_button, self.close_button, self.open_folder_button,
-                       self.install_button):
+                       self.install_button, self.auto_install_button):
             button.setVisible(button in visible)
         set_single_default(self, default)
 
@@ -381,6 +428,11 @@ class UpdateDialog(QDialog):
                               size=format_size(offer.package.size))
 
     def _render_progress(self) -> None:
+        if self._view.state is UpdateDialogState.INSTALLING:
+            self.progress.setRange(0, 0)   # durée inconnue : barre indéterminée
+            self.progress.setAccessibleName(i18n.translate("update.auto.progress.name"))
+            self.progress_label.setText(i18n.translate("update.auto.preparing.progress"))
+            return
         received, total = self._view.received, self._view.total
         if total > 0:
             self.progress.setRange(0, 1000)
@@ -409,6 +461,13 @@ class UpdateDialog(QDialog):
         if authenticity is not None:
             details.append(i18n.translate(authenticity))
         details.append(i18n.translate("update.ready.file", path=str(download.path)))
+        auto = self._view.auto
+        automatic = auto is not None and auto.available and not self._view.auto_error
+        if self._view.auto_error:
+            details.append(i18n.translate("update.auto.failed", problem=self._view.auto_error))
+        elif auto is not None and auto.refusal not in _SILENT_REFUSALS and not auto.available:
+            details.append(i18n.translate("update.auto.unavailable",
+                                          reason=i18n.translate(f"update.auto.reason.{auto.refusal.value}")))
         self.details.setText("\n\n".join(details))
         location = str(self._context.location) if self._context.location is not None else i18n.translate(
             "update.location.unknown")
@@ -421,6 +480,10 @@ class UpdateDialog(QDialog):
         instructions = [i18n.translate(steps, location=location, name=name)] if steps else []
         if self._context.translocated:
             instructions.append(i18n.translate("update.translocated"))
+        if automatic:
+            self.instructions.setText(i18n.translate("update.auto.description"))
+            self.auto_install_button.setAccessibleDescription(i18n.translate("update.auto.description"))
+            return {self.open_folder_button, self.auto_install_button, self.close_button}, self.auto_install_button
         self.instructions.setText("\n\n".join(instructions))
         return {self.open_folder_button, self.install_button, self.close_button}, self.open_folder_button
 
@@ -463,6 +526,9 @@ class UpdateDialog(QDialog):
 
     def _on_cancel(self) -> None:
         """Annuler une recherche ferme la fenêtre ; annuler un téléchargement affiche « Téléchargement annulé »."""
+        if self._view.state is UpdateDialogState.INSTALLING:
+            self.install_cancel_requested.emit()
+            return
         checking = self._view.state is UpdateDialogState.CHECKING
         self.cancel_requested.emit()
         if checking:
@@ -471,6 +537,9 @@ class UpdateDialog(QDialog):
     def reject(self) -> None:
         """Échap ou fermeture : annule une recherche ou un téléchargement en cours, « Plus tard » sinon."""
         state = self._view.state
+        if state is UpdateDialogState.INSTALLING:
+            self.install_cancel_requested.emit()
+            return
         if state in (UpdateDialogState.CHECKING, UpdateDialogState.DOWNLOADING):
             self.cancel_requested.emit()
         elif state is UpdateDialogState.OFFER:

@@ -19,7 +19,7 @@ non numérotées et sans empreinte : l'application ne les lit jamais.
 | Ignorer cette version | Mémorisée (`skipped_update_version`) : la recherche automatique la tait ; une version plus récente est de nouveau annoncée ; la recherche manuelle la montre toujours (« Ne plus ignorer cette version »). |
 | Plus tard | Rien n'est mémorisé ; elle sera rappelée à la prochaine recherche automatique. |
 | Téléchargement | Barre de progression, « Annuler » ; le dialogue est non modal (on continue à monter). Fermer le dialogue ou l'application annule et supprime le fichier partiel. |
-| Paquet vérifié | Ce que garantit la vérification, l'authenticité selon le système, les étapes d'installation du système, **Ouvrir le dossier**, **Quitter et installer…**. |
+| Paquet vérifié | Ce que garantit la vérification, l'authenticité selon le système, les étapes d'installation du système, **Ouvrir le dossier**, **Quitter et installer…**. Sous macOS, signature Ed25519 vérifiée et application remplaçable : **Installer et redémarrer** à la place (section 3 bis). |
 | Exécution depuis les sources | La version disponible et ses notes sont présentées, avec le commit courant ; **rien n'est téléchargé ni remplacé** (« mettez à jour avec git pull »). |
 
 Préférences › Général › **Mises à jour** : recherche au démarrage (par défaut : oui), préversions (par défaut : non ; une
@@ -71,14 +71,92 @@ dialogue a déjà donné les étapes du système (glisser `Kut-Studio.app` dans 
 `Kut-Studio` sous Windows et Linux — les projets et préférences sont ailleurs et sont conservés). Une copie macOS lancée
 depuis un emplacement de translocation est signalée.
 
-Une installation **automatique** n'est pas faite dans cette version, volontairement. Avec le packaging actuel
-(PyInstaller *onedir*, archives sans installeur), une installation fiable demanderait : un processus distinct lancé
-après la fermeture (un exécutable Windows et ses DLL sont verrouillés tant qu'ils tournent), la vérification de la
-signature du **nouveau** bundle avant de toucher à l'ancien (`codesign`/`spctl`, `WinVerifyTrust`), la gestion des
-droits (Applications, Program Files, dossiers système Linux), une sauvegarde et un retour arrière si l'échange échoue
-ou si la nouvelle version ne démarre pas, et la relance. Rien de cela ne peut être vérifié ici pour Windows et Linux ;
-le livrer sans vérification serait une auto-installation fragile. La base est prête (paquet vérifié, contexte
-d'installation `core.updates.install_context`, fermeture propre) pour l'ajouter ensuite.
+Sous **Windows et Linux**, l'installation reste assistée, volontairement : avec le packaging actuel (PyInstaller *onedir*,
+archives sans installeur), une installation fiable demanderait un processus distinct lancé après la fermeture (un
+exécutable Windows et ses DLL sont verrouillés tant qu'ils tournent), la vérification de la signature du nouveau
+bundle (`WinVerifyTrust`), la gestion des droits (Program Files, dossiers système Linux), une sauvegarde et un retour
+arrière, et la relance. Rien de cela ne peut être vérifié ici pour ces deux systèmes. **Sous macOS**, c'est fait, dans les
+conditions strictes de la section suivante ; partout ailleurs, et chaque fois qu'une condition manque, c'est ce parcours
+assisté, inchangé, qui s'applique.
+
+## 3 bis. Installation automatique (macOS)
+
+« **Installer et redémarrer** » remplace `Kut-Studio.app` par la nouvelle version, la rouvre, et remet l'ancienne si la
+nouvelle ne démarre pas. Elle n'est proposée que si **toutes** les conditions suivantes sont réunies ; sinon le dialogue
+garde « Quitter et installer… » (parcours assisté de la section 3) et dit pourquoi quand la raison aide l'utilisateur.
+
+| Condition | Raison dite si elle manque |
+| --- | --- |
+| La **signature Ed25519** de la release est `VERIFIED` (lot 1, ADR-0012 : `core/update_signature.py`). Interface : `core.update_install.InstallPolicy` ; la vraie valeur lit `package.signature_status`, une valeur imposée sert aux tests. Tant que le paquet n'expose pas ce statut, la condition est fausse. | (silence : la signature a son propre message) |
+| Application gelée, `Kut-Studio.app` macOS | exécution depuis les sources / autre système (silence) |
+| Pas de translocation (`/AppTranslocation/`) | « macOS exécute cette copie depuis un emplacement temporaire » |
+| Bundle présent, volume non en lecture seule (`statvfs`) | volume en lecture seule |
+| `os.access(W_OK \| X_OK)` sur le dossier parent **et** sur le bundle | pas le droit d'écrire / de remplacer |
+
+**Rien n'est installé sans accord explicite** : le bouton demande confirmation (défaut : non). Aucune mise à jour
+silencieuse : la recherche automatique garde son comportement (un bouton dans la barre, jamais de fenêtre ni
+d'installation sans clic).
+
+### Déroulé
+
+1. **Accord**, puis **staging** (dans un fil, annulable, barre indéterminée) : après la vérification existante (taille +
+   empreinte + signature), l'archive est contrôlée (`zipfile` : au plus 200 000 entrées, 8 Gio décompressés, aucun chemin
+   absolu ni `..`, tout sous `Kut-Studio.app/`, espace libre suffisant) puis extraite avec `ditto -x -k --noqtn` dans
+   `.Kut-Studio-update-<pid>`, un dossier caché **frère** de l'application : même volume, donc des renommages atomiques.
+2. **Quarantaine.** `com.apple.quarantine` est retirée du bundle de staging (`xattr -dr`) **uniquement** parce que la
+   signature Ed25519 est vérifiée : c'est notre garantie d'authenticité, et une quarantaine posée par Kut-Studio
+   lui-même ne prouverait rien de plus que ce que nous avons déjà prouvé ; la laisser ferait afficher à Gatekeeper un
+   avertissement sur une application que l'utilisateur vient d'autoriser. `stage_update` refuse de tourner sans
+   `signature_verified=True`. Le **paquet** téléchargé garde sa quarantaine (la section 2 est inchangée).
+3. **Validation du nouveau bundle avant de toucher à l'ancien** (`validate_bundle`) : `CFBundleIdentifier` identique
+   (`com.kutstudio.app`), `CFBundleShortVersionString` égale à la version annoncée **et** strictement supérieure à
+   l'installée, `CFBundleExecutable` présent, `lipo -archs` contient l'architecture du paquet (`arm64`),
+   `codesign --verify --deep --strict` correct, **même équipe** de signature que l'application installée (une application
+   signée ne devient pas ad hoc, ni signée par un autre éditeur, en silence) ; si le bundle porte une signature Developer
+   ID, `spctl --assess --type execute` doit aussi l'accepter (notarisation comprise) ; **ad hoc** : `codesign` seul (la
+   garantie est alors la signature Ed25519, documentée ici). Tout échec supprime le staging : l'application n'a pas été
+   modifiée, le dialogue dit pourquoi et retombe sur l'installation assistée.
+4. **Fermeture par le chemin normal** (`close`) : projet non enregistré proposé à l'enregistrement, rendu en cours confirmé.
+   **Annuler arrête tout** : le staging est supprimé, rien n'est lancé.
+5. **Assistant** (`core/update_helper.py`). Un script `/bin/sh` **généré à l'exécution** dans `<cache>/updates/helper-<pid>/`
+   (droits 0700), plutôt qu'un fichier des ressources : il ne peut pas vivre dans le bundle qu'il remplace, et un fichier de
+   plus dans le bundle changerait sa signature. Son texte est constant ; les chemins arrivent par des variables
+   `KUT_UPD_*` (espaces, accents, guillemets, `$` : de simples valeurs). Lancé détaché (`start_new_session`, entrée
+   `/dev/null`, sorties vers `install.log`, environnement minimal sans `DYLD_*`) **après** la fermeture. Il :
+   * attend la fin du processus de l'application, **120 s au plus** ; au-delà il abandonne **sans rien modifier** (statut
+     `wait_timeout`) ;
+   * renomme `Kut-Studio.app` en `.Kut-Studio.app.previous-<version>`, puis le staging en `Kut-Studio.app` (renommages
+     atomiques ; si le second échoue, la précédente est remise aussitôt) ;
+   * lance `open` sur la nouvelle application, puis attend le fichier **« démarré »** (`<cache>/updates/started.json`,
+     `{"version":…,"pid":…}`) que la nouvelle application écrit au démarrage, **90 s au plus** (premier lancement d'un
+     gros bundle compris) ; la nouvelle application doit encore vivre **3 s** plus tard ;
+   * **succès** : statut `ok`, sauvegarde supprimée. **Échec** (délai, application morte, `open` en erreur, signal
+     reçu) : **retour arrière** — processus issus du nouveau bundle arrêtés, nouvelle application écartée puis supprimée,
+     précédente remise et relancée, statut `rolled_back` ;
+   * journalise chaque étape dans `<cache>/updates/install.log` (recréé à chaque installation) ; tout `rm -rf` passe par
+     `safe_rm`, qui refuse un nom qui n'est pas un staging ou une sauvegarde de Kut-Studio.
+6. **Idempotence et interruption.** Le script lit l'état des dossiers (neuf / à moitié échangé / échangé) au lieu de
+   supposer où il en était : relancé après un arrêt brutal à n'importe quelle étape, il termine ou remet l'ancienne.
+   Il écrit un verrou (`install.lock`, son pid). Au démarrage suivant, `recover_leftovers` : verrou vivant → ne touche à
+   rien ; `Kut-Studio.app` absent ou invalide et sauvegarde valide → **restaurée** ; application valide et sauvegarde d'une
+   autre version (assistant mort après l'échange) → l'application qui tourne prouve que la nouvelle version démarre, la
+   sauvegarde est supprimée ; stagings et dossiers d'assistant orphelins supprimés.
+   *Limite honnête* : un arrêt brutal (SIGKILL de l'assistant, coupure de courant) **entre** les deux renommages laisse un
+   court instant sans `Kut-Studio.app` ; l'application ne peut alors pas se lancer pour se réparer elle-même. La sauvegarde
+   est intacte dans le dossier caché `.Kut-Studio.app.previous-<version>` : la renommer en `Kut-Studio.app` suffit
+   (le message de `rollback_failed` l'explique). macOS n'offre pas d'échange atomique de deux dossiers depuis le shell
+   (`renamex_np` demande un programme C ou Python) ; la fenêtre est de l'ordre de la milliseconde.
+7. **Suivi.** Au démarrage, l'application écrit le fichier « démarré » (version et pid), répare ce qu'une installation
+   interrompue a laissé, puis lit `install-status.json` : « **Mise à jour installée : X.Y.Z** » (avec « Notes de version »)
+   ou « **La mise à jour a échoué** » avec ce qui s'est passé (version précédente restaurée / version actuelle conservée /
+   restauration manuelle) et « Ouvrir le journal ». Le message ne s'affiche **qu'une fois** (le statut est consommé) ; la
+   nouvelle application attend jusqu'à 40 s que l'assistant, encore vivant, écrive le statut.
+
+### Ce qui n'est vérifié que sur un vrai Mac
+
+Les tests exécutent l'assistant sur de **vrais dossiers temporaires** avec un faux `Kut-Studio.app` et un `open` remplacé par
+un stub (jamais le vrai), et les outils système sont simulés ; `ditto` n'est lancé pour de vrai que sur macOS. Restent à
+vérifier à la main : voir [recette/mise-a-jour-automatique.md](recette/mise-a-jour-automatique.md).
 
 ## 4. Architecture
 
@@ -90,6 +168,7 @@ d'installation `core.updates.install_context`, fermeture propre) pour l'ajouter 
 | Que proposer, que refuser | `core/updates.py` (pur : ni réseau ni Qt) | `core.update_service`, interface | `test_updates_core` |
 | Transport HTTPS, délais, annulation, vérification | `core/update_service.py` (`QNetworkAccessManager`) | `UpdatesMixin` | `test_update_transport` (faux GitHub local) |
 | Parcours et textes | `ui/main_window_mixins/updates.py`, `ui/update_dialog.py`, `ui/i18n_updates.py` | — | `test_update_ui` |
+| Installation automatique macOS | `core/update_install.py` (décision, staging, validation, reprise), `core/update_helper.py` (script `/bin/sh`), `ui/update_auto_install.py` (parcours), `ui/i18n_update_install.py` | `UpdatesMixin` | `test_update_install`, `test_update_install_ui` |
 
 Le réseau passe par Qt plutôt que par `urllib` : Qt utilise le magasin de certificats du système (un `urllib` figé par
 PyInstaller cherche les certificats là où ils étaient sur la machine de construction et échoue chez l'utilisateur), et
