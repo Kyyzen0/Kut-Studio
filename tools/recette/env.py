@@ -169,7 +169,25 @@ def _linux_cpu_name() -> str:
     return platform.processor()
 
 
+def _cgroup_limit_gb() -> float | None:
+    """Limite de mémoire du conteneur (cgroup v2 ``memory.max``, v1 ``memory.limit_in_bytes``), ``None`` si illimitée ou absente."""
+    for name in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            text = Path(name).read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text.isdigit() and int(text) < 2**60:
+            return round(int(text) / 2**30, 1)
+    return None
+
+
 def _linux_ram_gb() -> float | None:
+    host = _linux_host_ram_gb()
+    limit = _cgroup_limit_gb()
+    return min(host, limit) if host is not None and limit is not None else (limit if host is None else host)
+
+
+def _linux_host_ram_gb() -> float | None:
     try:
         for line in Path("/proc/meminfo").read_text(encoding="utf-8", errors="replace").splitlines():
             if line.startswith("MemTotal:"):

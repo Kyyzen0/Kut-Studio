@@ -90,18 +90,42 @@ def _tail(path: Path) -> str:
     return data.decode("utf-8", errors="replace")[-TAIL_CHARS:]
 
 
+def _ps_table() -> str | None:
+    """``ps -A -o pid=,ppid=,rss=`` ; ``None`` sans ``ps`` (images Debian minimales, Windows)."""
+    if sys.platform.startswith("win") or shutil.which("ps") is None:
+        return None
+    try:
+        done = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,rss="], capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _proc_table(root: Path = Path("/proc")) -> str | None:
+    """Même table lue dans ``/proc`` (Linux sans ``ps`` : conteneurs Debian) ; ``None`` si ``/proc`` n'existe pas."""
+    if not root.is_dir():
+        return None
+    page_kb = (os.sysconf("SC_PAGE_SIZE") // 1024) if hasattr(os, "sysconf") else 4
+    lines = []
+    for entry in root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+            resident = int((entry / "statm").read_text().split()[1])
+            parent = int(stat[stat.rindex(")") + 2:].split()[1])      # le nom (entre parenthèses) peut contenir des espaces
+        except (OSError, ValueError, IndexError):
+            continue
+        lines.append(f"{entry.name} {parent} {resident * page_kb}")
+    return "\n".join(lines)
+
+
 def process_tree_rss_mb(root_pid: int, table: str | None = None) -> float | None:
     """Somme des RSS (Mo) de ``root_pid`` et de ses descendants d'après ``ps -A -o pid=,ppid=,rss=`` (ou ``table``)."""
     if table is None:
-        if sys.platform.startswith("win"):
+        table = _ps_table() or _proc_table()
+        if table is None:
             return None
-        try:
-            done = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,rss="], capture_output=True, text=True, timeout=5, check=False)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if done.returncode != 0:
-            return None
-        table = done.stdout
     children: dict[int, list[int]] = {}
     rss: dict[int, int] = {}
     for line in table.splitlines():

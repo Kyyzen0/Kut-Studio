@@ -278,6 +278,26 @@ def test_runner_stops_a_child_cleanly_when_a_guard_trips(tmp_path):
     assert calm.ok and calm.aborted is None
 
 
+@pytest.mark.skipif(not Path("/proc/self/statm").exists(), reason="/proc absent")
+def test_memory_guard_works_without_ps(tmp_path, monkeypatch):
+    """Images Debian minimales : pas de ``ps``. Le lanceur lit ``/proc`` ; le garde-fou mémoire doit agir (et la mesure exister)."""
+    monkeypatch.setattr(runner, "_ps_table", lambda: None)
+    assert runner.process_tree_rss_mb(os.getpid()) > 1.0
+    result = runner.run_measured([sys.executable, "-c", "import time; time.sleep(120)"], log_prefix=tmp_path / "noPS", max_rss_mb=1.0)
+    assert result.aborted and "mémoire" in result.aborted and result.peak_rss_mb is not None and not result.crashed
+
+
+def test_proc_table_parses_names_with_spaces(tmp_path):
+    for pid, name, parent, pages in ((10, "a b) c", 1, 100), (11, "x", 10, 50)):
+        folder = tmp_path / str(pid)
+        folder.mkdir()
+        (folder / "stat").write_text(f"{pid} ({name}) S {parent} 0 0\n", encoding="utf-8")
+        (folder / "statm").write_text(f"999 {pages} 0\n", encoding="utf-8")
+    (tmp_path / "self").mkdir()
+    table = runner._proc_table(tmp_path)
+    assert table is not None and runner.process_tree_rss_mb(10, table) == pytest.approx(150 * (os.sysconf("SC_PAGE_SIZE") // 1024) / 1024.0)
+
+
 def test_exit_classification():
     assert runner.classify_exit(0) == (False, None)
     assert runner.classify_exit(1) == (False, None)
