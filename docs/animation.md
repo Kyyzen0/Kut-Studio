@@ -408,6 +408,7 @@ chaîne de l'export **pour les valeurs évaluées à cet instant**.
 - **Invalidation** : la clé de LUT suit le contenu de la chaîne d'export (pas le clip, pas le temps) : modifier une clé `color.*` ou déplacer
   le curseur change la clé ; revenir à la valeur d'avant retrouve la LUT déjà cuite ; deux clips de même courbe au même instant partagent la
   LUT ; rien ne fuit d'un clip à l'autre. Le cache garde 48 LUT (≈ 20 Mo) et 256 emplacements.
+- **Avant / après (page Couleur)** : la branche `Compare` de `_build_color_grade_filters` transmet les images clés et le contexte `sendcmd` au réglage montré à droite ; le segment fidèle suit donc `effective_grade(t)` à chaque instant au lieu de se figer sur le réglage de base (testé en FFmpeg réel). Les autres enveloppes (`Highlight`, graphe de nœuds, `FilterChain`, vues de composition) ne portent que des étalonnages à nœuds, qui n'ont pas de cible `color.*` : rien à animer.
 - **Non touché** : l'aperçu rapide et le moniteur sans GPU montrent le média sans étalonnage animé (comme avant) ; l'aperçu fidèle suit la
   courbe (export). Les calques d'effets (graphiques) ne portent pas de cible `color.*`. Un clip étalonné par un graphe de nœuds n'est pas animé.
 
