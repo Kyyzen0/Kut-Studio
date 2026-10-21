@@ -409,12 +409,12 @@ class CommandPalette(QWidget):
         c = COLORS
         self.setStyleSheet(
             f"QFrame#paletteBox {{ background: {c['panel']}; border: 1px solid {c['border_strong']}; border-radius: 12px; }}"
-            f" QLineEdit#paletteField {{ background: transparent; border: none; color: {c['text']}; font-size: 16px;"
+            f" QLineEdit#paletteField {{ background: transparent; border: none; color: {c['text']}; font-size: 17px;"
             f" padding: 6px 2px; }}"
             f" QToolButton#paletteClose {{ background: {c['surface_hover']}; color: {c['text']}; border: 1px solid {c['border']};"
             f" border-radius: 6px; padding: 4px 10px; }}"
             f" QPushButton#paletteChip {{ background: {c['panel_alt']}; color: {c['text']}; border: 1px solid {c['border']};"
-            f" border-radius: 11px; padding: 2px 10px; }}"
+            f" border-radius: 12px; padding: 2px 10px; }}"
             f" QPushButton#paletteChip:hover, QPushButton#paletteChip:focus {{ border-color: {c['accent']}; }}"
             f" QFrame#paletteSeparator {{ background: {c['border']}; }}"
             f" QListWidget#paletteResults {{ background: transparent; outline: none; }}"
