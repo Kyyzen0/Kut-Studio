@@ -61,6 +61,8 @@ def moved_roots(panel) -> list[QWidget]:
     # ADR-0008, étape 4 : les rangées ‹ ◆ › sous les réglages d'effets animables (elles n'existent que pour l'effet affiché ;
     # le golden d'origin/main n'en sélectionne aucun, donc ne les connaît pas : ce sont des ajouts, pas un ordre déplacé).
     roots.extend(row.gate for row in getattr(panel, "_effect_keyframe_rows", {}).values())
+    # ADR-0008, étape 8 : les rangées ‹ ◆ › sous les sept réglages de couleur (ajouts, absents du golden d'origin/main).
+    roots.extend(row.gate for row in getattr(panel, "_color_keyframe_rows", {}).values() if row.gate is not None)
     return roots
 
 

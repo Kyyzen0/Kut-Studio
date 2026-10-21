@@ -20,6 +20,8 @@ from PySide6.QtWidgets import QGridLayout, QSizePolicy, QWidget
 
 from core.color_grading import WHEELS, Wheel
 from core.color_wheels import puck_from_wheel, wheel_from_puck
+from core.grade_keyframing import GradeAnimationInfo
+from ui.color_page.wheel_keys import WheelCell
 from ui.design_system import Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.theme import COLORS
@@ -227,11 +229,16 @@ class ColorWheels(QWidget):
     :attr:`wheel_changed` (nom de la roue, :class:`~core.color_grading.Wheel`)."""
 
     wheel_changed = Signal(str, object)
+    keys_toggled = Signal(str)                 # losange d'une roue (ADR-0008, étape 8)
+    keys_navigated = Signal(str, int)
+    graph_requested = Signal(str)
+    animation_cleared = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("color_wheels")
         self.wheels: dict[str, ColorWheel] = {}
+        self.cells: dict[str, WheelCell] = {}
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
         self._grid.setSpacing(Spacing.sm)
@@ -239,6 +246,12 @@ class ColorWheels(QWidget):
             wheel = ColorWheel(name)
             wheel.changed.connect(lambda value, wheel_name=name: self.wheel_changed.emit(wheel_name, value))
             self.wheels[name] = wheel
+            cell = WheelCell(wheel)                   # la roue et son losange, construits ensemble
+            cell.keys_toggled.connect(self.keys_toggled)
+            cell.navigated.connect(self.keys_navigated)
+            cell.graph_requested.connect(self.graph_requested)
+            cell.cleared.connect(self.animation_cleared)
+            self.cells[name] = cell
         self._columns = 0
         self._arrange(4)
 
@@ -246,9 +259,19 @@ class ColorWheels(QWidget):
         for name, widget in self.wheels.items():
             widget.set_wheel(wheels.get(name, Wheel()))
 
+    def set_animation(self, info: GradeAnimationInfo | None) -> None:
+        """Losanges des roues et valeurs évaluées à la tête de lecture (``None`` : pas de clip, rien d'animé)."""
+        animatable = info is None or info.animatable
+        for name, cell in self.cells.items():
+            cell.set_state(info.wheels.get(name) if info is not None else None, animatable=animatable)
+        if info is not None and info.shown:
+            self.set_wheels({**{name: widget.wheel for name, widget in self.wheels.items()}, **info.shown})
+
     def retranslate(self) -> None:
         for wheel in self.wheels.values():
             wheel.retranslate()
+        for cell in self.cells.values():
+            cell.retranslate()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)
@@ -260,7 +283,7 @@ class ColorWheels(QWidget):
         if columns == self._columns:
             return
         self._columns = columns
-        for wheel in self.wheels.values():
-            self._grid.removeWidget(wheel)
-        for index, wheel in enumerate(self.wheels.values()):
-            self._grid.addWidget(wheel, index // columns, index % columns)
+        for cell in self.cells.values():
+            self._grid.removeWidget(cell)
+        for index, cell in enumerate(self.cells.values()):
+            self._grid.addWidget(cell, index // columns, index % columns)

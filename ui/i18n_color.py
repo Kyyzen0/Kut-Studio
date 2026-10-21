@@ -247,6 +247,58 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
                                     "Cuentagotas: el clic está fuera de la imagen del clip."),
     "status.color.pick_failed": _t("Pipette : couleur illisible ({error}).", "Eyedropper: color unreadable ({error}).",
                                    "Cuentagotas: color ilegible ({error})."),
+    # --- Images clés de l'étalonnage (ADR-0008, étape 8) ---------------------------------------------------------------
+    "color.animation.nodes": _t(
+        "Étalonnage découpé en nœuds : les images-clés d'étalonnage ne s'y appliquent pas. Revenez à un seul nœud, sans nom, "
+        "qualifieur, fenêtre, flou ni netteté, pour animer.",
+        "Grade split into nodes: color keyframes do not apply to it. Go back to a single node, without a name, qualifier, "
+        "window, blur or sharpen, to animate.",
+        "Corrección dividida en nodos: los fotogramas clave de color no se aplican. Vuelva a un solo nodo, sin nombre, "
+        "calificador, ventana, desenfoque ni nitidez, para animar.",
+    ),
+    "color.animation.ignored": _t(
+        "Ce clip garde {count} images-clés d'étalonnage, ignorées au rendu (export et aperçu) tant que l'étalonnage est "
+        "découpé en nœuds.",
+        "This clip keeps {count} color keyframes, ignored when rendering (export and preview) while the grade is split "
+        "into nodes.",
+        "Este clip conserva {count} fotogramas clave de color, ignorados al renderizar (exportación y vista previa) mientras "
+        "la corrección esté dividida en nodos.",
+    ),
+    "color.animation.clear": _t("Supprimer les images-clés", "Remove the keyframes", "Quitar los fotogramas clave"),
+    "color.animation.clear.tip": _t(
+        "Retire toutes les images-clés d'étalonnage du clip (Annuler les rétablit).",
+        "Removes every color keyframe from the clip (Undo restores them).",
+        "Quita todos los fotogramas clave de color del clip (Deshacer los restaura).",
+    ),
+    "color.animation.wheel_tip": _t(
+        "Image-clé de la roue {wheel} (palet et molette) à la tête de lecture : clic pour l'ajouter ou la retirer.",
+        "Keyframe for the {wheel} wheel (puck and dial) at the playhead: click to add or remove it.",
+        "Fotograma clave de la rueda {wheel} (disco y rueda) en el cabezal: clic para añadirlo o quitarlo.",
+    ),
+    "color.animation.disabled_tip": _t(
+        "Animation impossible : l'étalonnage de ce clip est découpé en nœuds.",
+        "Cannot animate: this clip's grade is split into nodes.",
+        "No se puede animar: la corrección de este clip está dividida en nodos.",
+    ),
+    "animation.menu.clear_grade": _t(
+        "Supprimer l'animation de l'étalonnage", "Remove the color grading animation",
+        "Quitar la animación de la corrección de color",
+    ),
+    "history.color.keyframe": _t("Image-clé d'étalonnage", "Color keyframe", "Fotograma clave de color"),
+    "history.color.clear_animation": _t(
+        "Supprimer l'animation de l'étalonnage", "Remove the color grading animation",
+        "Quitar la animación de la corrección de color",
+    ),
+    "status.color.reset_keys": _t(
+        "Étalonnage réinitialisé : {count} réglage(s) animé(s) retiré(s) (Annuler les rétablit).",
+        "Color grading reset: {count} animated setting(s) removed (Undo restores them).",
+        "Corrección restablecida: {count} ajuste(s) animado(s) quitado(s) (Deshacer los restaura).",
+    ),
+    "status.color.preset_keeps_keys": _t(
+        "Les réglages animés gardent leurs images-clés : le preset s'applique aux autres.",
+        "Animated settings keep their keyframes: the preset applies to the others.",
+        "Los ajustes animados conservan sus fotogramas clave: el preset se aplica a los demás.",
+    ),
     # --- Raccourcis et panneau -------------------------------------------------------------------------------------
     "shortcuts.command.page_edit": _t("Page Montage", "Edit page", "Página Edición"),
     "shortcuts.command.page_color": _t("Page Couleur", "Color page", "Página Color"),

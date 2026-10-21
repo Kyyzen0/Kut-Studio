@@ -13,6 +13,8 @@ from core.color_grading import (
     LUTResource,
     make_user_color_preset,
 )
+from core.grade_keyframing import live_grade_ids
+from core.grade_targets import ANIMATABLE_GRADE_PARAMS
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
@@ -116,6 +118,8 @@ class ColorGradingMixin:
     def on_color_grade_field_changed(
         self, clip_id: str, field: str, value: float
     ) -> None:
+        if self._route_grade_field(clip_id, field, value):       # réglage animé : la valeur va dans l'image clé de la tête
+            return
         try:
             current = self._color_grade_of(clip_id)
             updated = current.with_field(field, float(value))
@@ -187,9 +191,11 @@ class ColorGradingMixin:
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return
+        removed = self._reset_grade_keys(clip_id)               # les images clés d'étalonnage partent avec le réglage (ADR-0008)
         self._record_history(translate("history.color.reset"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
+        self._announce_reset_keys(removed)
 
     def on_color_preset_applied(
         self, clip_id: str, preset_id: str
@@ -217,6 +223,8 @@ class ColorGradingMixin:
         self._record_history(translate("history.color.apply_preset"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
+        if live_grade_ids(clip, ANIMATABLE_GRADE_PARAMS):        # un réglage animé garde ses images clés (ADR-0008, étape 8)
+            self.statusBar().showMessage(translate("status.color.preset_keeps_keys"), 6000)
 
     def on_color_preset_save_requested(self, clip_id: str, name: str) -> None:
         self._finalize_color_history()

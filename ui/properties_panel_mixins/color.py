@@ -26,11 +26,12 @@ from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Spacing
 from ui.icons import IconName
 from ui.theme import label_style
+from ui.properties_panel_mixins.color_keyframes import ColorKeyframesMixin
 from ui.properties_widgets.color_curve_editor import ColorCurveEditor
 from ui.properties_widgets.level_gate import LevelGate
 from ui.i18n import translate
 
-class ColorMixin:
+class ColorMixin(ColorKeyframesMixin):
     """Mixin de ``PropertiesPanel`` : groupe Couleur : étalonnage, courbes, presets et LUT."""
 
     def _build_color_group(self) -> QGroupBox:
@@ -46,6 +47,7 @@ class ColorMixin:
         self.color_node_label.setStyleSheet(label_style(11, "accent", 600))
         self.color_node_label.hide()
         root.addWidget(self.color_node_label)
+        self._build_color_animation_notice(root)       # avis « étalonnage découpé en nœuds » (ADR-0008, étape 8)
 
         self.color_enabled_check = QCheckBox(translate("history.color.enable"))
         self.color_enabled_check.setChecked(True)
@@ -57,16 +59,18 @@ class ColorMixin:
         form.setSpacing(Spacing.xs)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         specs = (
-            ("exposure", translate("inspector.color.exposure"), -2.0, 2.0, 0.05, " EV"),
-            ("contrast", translate("field.contrast"), -1.0, 1.0, 0.05, ""),
-            ("saturation", translate("inspector.color.saturation"), 0.0, 2.0, 0.05, "×"),
-            ("temperature", translate("inspector.color.temperature"), -100.0, 100.0, 1.0, ""),
-            ("hue", translate("inspector.color.hue"), -180.0, 180.0, 1.0, "°"),
-            ("shadows", translate("inspector.color.shadows"), -1.0, 1.0, 0.05, ""),
-            ("highlights", translate("inspector.color.highlights"), -1.0, 1.0, 0.05, ""),
+            ("exposure", "inspector.color.exposure", -2.0, 2.0, 0.05, " EV"),
+            ("contrast", "field.contrast", -1.0, 1.0, 0.05, ""),
+            ("saturation", "inspector.color.saturation", 0.0, 2.0, 0.05, "×"),
+            ("temperature", "inspector.color.temperature", -100.0, 100.0, 1.0, ""),
+            ("hue", "inspector.color.hue", -180.0, 180.0, 1.0, "°"),
+            ("shadows", "inspector.color.shadows", -1.0, 1.0, 0.05, ""),
+            ("highlights", "inspector.color.highlights", -1.0, 1.0, 0.05, ""),
         )
         self.color_field_spins: dict[str, QDoubleSpinBox] = {}
-        for name, label, minimum, maximum, step, suffix in specs:
+        self._color_field_keys: dict[str, str] = {}        # champ -> clé i18n du libellé (relu à chaque langue)
+        for name, label_key, minimum, maximum, step, suffix in specs:
+            label = translate(label_key)
             spin = QDoubleSpinBox()
             spin.setRange(minimum, maximum)
             spin.setDecimals(2)
@@ -76,7 +80,10 @@ class ColorMixin:
                 lambda value, field=name: self._on_color_field_changed(field, value)
             )
             self.color_field_spins[name] = spin
+            self._color_field_keys[name] = label_key
             form.addRow(label, spin)
+            self._add_color_keyframe_row(form, name, label)        # ‹ ◆ › sous chaque réglage animable (ADR-0008, étape 8)
+        self._color_form = form
         root.addLayout(form)
 
         # Courbes, préréglages et LUT 3D : réglages avancés (niveau d'usage), réunis dans un conteneur créé ici.
@@ -183,9 +190,13 @@ class ColorMixin:
         self._color_node_id = node_id
         self.update_color_grade_from_clip(self._color_value)
 
-    def update_color_grade_from_clip(self, grade: object) -> None:
-        """Affiche l'étalonnage d'un clip : son ``ColorGrade``, ou le nœud courant de son graphe de nœuds."""
+    def update_color_grade_from_clip(self, grade: object, keyframes: list | None = None) -> None:
+        """Affiche l'étalonnage d'un clip : son ``ColorGrade``, ou le nœud courant de son graphe de nœuds.
+
+        ``keyframes`` : images clés ``color.*`` du clip (ADR-0008, étape 8) ; ``None`` garde celles déjà connues."""
         self._color_value = grade
+        if keyframes is not None:
+            self._current_grade_keyframes = list(keyframes)
         graph = as_graph(grade)
         node = graph.node_or_first(self._color_node_id)
         self._current_color_grade = node.grade
@@ -219,6 +230,7 @@ class ColorMixin:
                 self.color_lut_remove_button.setEnabled(True)
         finally:
             self._allow_color_signals = True
+        self._sync_color_keyframes()          # curseurs animés, losanges et avis de nœuds
 
     def _sync_color_curve_editor(self) -> None:
         channel = str(self.color_curve_channel.currentData() or "master")

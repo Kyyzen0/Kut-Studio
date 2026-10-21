@@ -70,6 +70,7 @@ EDIT_MODULES: dict[str, str] = {
     "tracking_ops": "suivi (tracking), liaisons et stabilisation",
     "composition_ops": "compositions nodales",
     "keyframe_editing": "images clés des propriétés animables",
+    "grade_keyframing": "images clés de l'étalonnage : losange, saisie et suppression de l'animation (gestes de l'interface, ADR-0008 étape 8)",
     "effects_model": "effets visuels de clip",
     "effects_library": "préréglages d'effets",
     "clip_crop": "recadrage d'un clip (ADR-0006)",

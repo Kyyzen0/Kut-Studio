@@ -1,0 +1,91 @@
+"""Rangée ‹ ◆ › d'images clés sous un réglage : construite à neuf par le builder qui la pose (jamais déplacée).
+
+Partagée par les effets (``ui.properties_panel_mixins.effect_keyframes``, ADR-0008 étape 4), l'étalonnage de l'inspecteur
+(``color_keyframes``, étape 8) et les roues de la page Couleur (``ui.color_page.wheel_keys``) : même apparence, mêmes noms
+accessibles, même menu au clic droit.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDoubleSpinBox, QFormLayout, QHBoxLayout, QToolButton, QWidget
+
+from core.usage_level import UsageLevel
+from ui import i18n
+from ui.properties_widgets.diamond_button import KeyframeDiamondButton
+from ui.properties_widgets.level_gate import LevelGate, gated
+
+
+@dataclass
+class KeyframeRow:
+    """Les trois boutons d'un réglage animable et leur conteneur de niveau (``None`` : rangée sans niveau)."""
+
+    gate: LevelGate | None
+    previous: QToolButton
+    diamond: KeyframeDiamondButton
+    next: QToolButton
+    inner: QWidget
+
+
+def build_keyframe_row(
+    property_id: str, label_text: str, *, on_previous: Callable[[], None], on_toggle: Callable[[], None],
+    on_next: Callable[[], None], on_menu: Callable[[object], None] | None = None,
+    form: QFormLayout | None = None, minimum: UsageLevel | None = None,
+) -> KeyframeRow:
+    """Rangée neuve. Avec ``form`` et ``minimum`` : posée dans le formulaire, derrière un conteneur de niveau (le niveau n'écrit
+    que sa visibilité) ; sans : ``row.inner`` est à poser par l'appelant."""
+    inner = QWidget()
+    layout = QHBoxLayout(inner)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    previous = QToolButton()
+    previous.setObjectName("iconOnly")      # padding nul : sinon le thème rogne la flèche
+    previous.setText("‹")
+    previous.setFixedSize(18, 22)
+    previous.clicked.connect(lambda _checked=False: on_previous())
+    diamond = KeyframeDiamondButton(property_id)
+    diamond.clicked.connect(lambda _checked=False: on_toggle())
+    if on_menu is not None:
+        diamond.setContextMenuPolicy(Qt.CustomContextMenu)
+        diamond.customContextMenuRequested.connect(on_menu)
+    next_button = QToolButton()
+    next_button.setObjectName("iconOnly")
+    next_button.setText("›")
+    next_button.setFixedSize(18, 22)
+    next_button.clicked.connect(lambda _checked=False: on_next())
+    previous.setAccessibleName(i18n.translate("a11y.keyframe.previous", property=label_text))
+    diamond.setAccessibleName(i18n.translate("a11y.keyframe.toggle", property=label_text))
+    next_button.setAccessibleName(i18n.translate("a11y.keyframe.next", property=label_text))
+    for widget in (previous, diamond, next_button):
+        layout.addWidget(widget)
+    layout.addStretch(1)
+    gate = None
+    if form is not None and minimum is not None:
+        gate = gated(inner, minimum, form)
+        form.addRow(gate)
+    return KeyframeRow(gate, previous, diamond, next_button, inner)
+
+
+def set_spin_quietly(spin: QDoubleSpinBox, value: float) -> None:
+    """Affiche ``value`` sans émettre ``valueChanged`` (le curseur suit une courbe, il ne l'édite pas)."""
+    if abs(spin.value() - value) < 5e-4:
+        return
+    blocked = spin.blockSignals(True)
+    try:
+        spin.setValue(value)
+    finally:
+        spin.blockSignals(blocked)
+
+
+def set_diamond_quietly(diamond: KeyframeDiamondButton, checked: bool, animated: bool) -> None:
+    """Losange plein / vide et contour « animé » sans émettre de clic."""
+    blocked = diamond.blockSignals(True)
+    diamond.setChecked(checked)
+    diamond.blockSignals(blocked)
+    diamond.set_animated(animated)
+
+
+__all__ = ["KeyframeRow", "build_keyframe_row", "set_diamond_quietly", "set_spin_quietly"]

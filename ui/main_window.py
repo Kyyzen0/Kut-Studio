@@ -89,6 +89,7 @@ from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
+from ui.main_window_mixins.color_animation import ColorAnimationMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.color_page import ColorPageMixin
 from ui.main_window_mixins.composition_cache import CompositionCacheMixin
@@ -165,6 +166,7 @@ class MainWindow(
     ColorPageMixin,
     CompositionPageMixin,
     CompositionCacheMixin,
+    ColorAnimationMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -492,6 +494,8 @@ class MainWindow(
         self.properties_panel.effect_keyframe_set.connect(self.on_effect_keyframe_set)        # paramètres d'effets animables (ADR-0008)
         self.properties_panel.effect_keyframe_removed.connect(self.on_effect_keyframe_removed)
         self.properties_panel.effect_animation_cleared.connect(self.on_effect_animation_cleared)
+        self.properties_panel.color_keys_toggled.connect(self.on_color_keys_toggled)            # étalonnage animable (ADR-0008, étape 8)
+        self.properties_panel.color_animation_cleared.connect(self.on_color_animation_cleared)
         self.timeline_panel.keyframes_selected.connect(self.on_timeline_keyframes_selected)
         self.timeline_panel.keyframes_move_requested.connect(self.on_keyframes_move_requested)
         # Tâche 18 : time remapping
