@@ -17,6 +17,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Added
 
 - Interne : ADR-0011 feuille de route vers la v1 (acceptée le 2026-10-21) : sept phases à portes de sortie mesurables (recette sur machines réelles, moteur, interopérabilité et livraison, noyau de motion design, extensibilité, page signature), backlog d'intelligence, parallélisation, décisions à prendre et tableau croisé des écarts par public. Aucun changement de comportement. Voir [docs/adr/0011-feuille-de-route-v1.md](docs/adr/0011-feuille-de-route-v1.md).
+- Interne : recette : banc de recette scripté (`python -m tools.recette`, ADR-0011 phase 1) : trois parcours (TikTok 60 s, YouTube 20 min multicam, motion design + 3D) construits par script déclaratif et exportés par la ligne de commande, sans fenêtre, sur des médias générés de façon déterministe (aucun média dans le dépôt) ; durées, pic de mémoire, `ffprobe`, image noire ou gelée, plantage par signal, rapport JSON + Markdown avec écarts à une référence par ratios, smoke test CI de 10 s en CPU, relevé thermique et plantages par heure. La procédure en vraie fenêtre (M1 Air, M4 mini) est dans `docs/recette/`.
 
 ## [0.9.0] - 2026-10-21
 
