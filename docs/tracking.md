@@ -299,11 +299,21 @@ bloque rien ; un suiveur supprimé dans la même opération non plus. Choix de s
 cesserait de suivre la moitié droite) ou le détacher. Déverrouillez le suiveur, puis recommencez.
 
 **Supprimer un tracker ne réécrit pas non plus un suiveur verrouillé.** `tracking_ops.remove_tracker` (et `remove_trackers`, la suppression
-de plusieurs trackers du panneau Suivi, tout ou rien) retire le tracker de la liaison des clips de la séquence active qui le suivent, ou la
+de plusieurs trackers du panneau Suivi, tout ou rien) retire le tracker de la liaison des clips de la séquence **du clip porteur** qui le suivent (pas de la séquence active : un appel direct du modèle peut viser une séquence inactive), ou la
 supprime si elle n'en a plus. Si l'un de ces clips est verrouillé (piste ou calque), le **modèle** refuse avant la première écriture
 (`require_tracker_removal_unlocked`, `core/tracking_locks.py`, calculé par la règle d'écriture elle-même) ; le panneau affiche le message
 dans la barre d'état, sans rien changer ni écrire dans l'historique. Une liaison qui n'utilise pas ce tracker, ou qui suit encore l'autre moitié
 d'un clip coupé, ne bloque rien ; la suppression d'un clip porteur reste régie par la règle de coupe / suppression ci-dessus.
+
+**Suiveur dans une autre séquence : volontairement ni réécrit ni refusé.** Une liaison ne vit que dans une séquence : l'identifiant d'un clip est
+unique au projet, `TrackingContext` ne cherche la source d'une liaison que dans la séquence du suiveur, l'interface et les verbes (`add_link`
+ne trouve pas un clip d'une autre séquence) n'en créent pas, et dupliquer une séquence réécrit les sources vers les clips de la copie. Une
+liaison qui désigne un clip d'une autre séquence (elle ne peut venir que d'un appel direct du modèle, d'un fichier retouché à la main ou d'un
+calque copié puis collé dans une autre séquence) est donc **déjà** diagnostiquée `missing_source` avant la suppression du tracker, et le reste
+après : le rendu, `describe`, l'enregistrement et le rechargement la tolèrent sans erreur (caractérisé par `tests/test_tracker_removal_lock.py`).
+Supprimer le tracker ne l'aggrave pas et ne la répare pas : `remove_tracker` et le verrou restent donc limités à la séquence du clip porteur (quelle que soit la séquence active), ce qui
+préserve l'indépendance des séquences (une suppression ne touche pas la copie d'une séquence, dont les liaisons visent ses propres clips). Aucun
+nettoyage à l'ouverture : la liaison inerte est signalée, jamais effacée en silence.
 
 **Déplacer, rogner ou accélérer la source ne touche pas un suiveur verrouillé.** Ces opérations ne modifient que le clip visé : la liaison du
 suiveur (`TrackLink`, en temps source) n'est pas réécrite, seules ses images clés dérivées, recalculées au rendu, suivent la nouvelle place de la

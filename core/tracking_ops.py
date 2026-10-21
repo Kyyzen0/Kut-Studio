@@ -167,11 +167,19 @@ def rewritten_links(project, clip_id: str, tracker_id: str, other) -> tuple[Trac
     return tuple(links)
 
 
+def _sequence_of_clip(project, clip_id: str):
+    """La séquence qui CONTIENT le clip (jamais la séquence active par défaut : un appel direct du modèle peut viser une séquence inactive)."""
+    for sequence in project.sequences:
+        if any(clip.id == clip_id for track in sequence.tracks for clip in track.clips):
+            return sequence
+    raise TrackingError(f"Clip introuvable : {clip_id}")
+
+
 def tracker_removal_rewrites(project, clip_id: str, tracker_id: str) -> list:
-    """Clips (séquence active, hors le porteur) dont les liaisons seraient réécrites par ``remove_tracker`` : ceux dont le résultat diffère."""
+    """Clips (séquence du porteur, hors lui) dont les liaisons seraient réécrites par ``remove_tracker`` : ceux dont le résultat diffère."""
     return [
         other
-        for track in project.active_sequence.tracks
+        for track in _sequence_of_clip(project, clip_id).tracks
         for other in track.clips
         if other.id != clip_id and other.tracking is not None
         and rewritten_links(project, clip_id, tracker_id, other) != other.tracking.links
