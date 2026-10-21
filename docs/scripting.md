@@ -92,6 +92,29 @@ Kut-Studio describe projet.kut --json                    # lire la structure d'u
 | `graphic.light_density` | facteur | 1 | 0.1 | 4 |
 | `graphic.glow_radius` | pixels | 0 | 0 | 400 |
 | `graphic.glow_strength` | facteur | 1 | 0 | 4 |
+| `color.contrast` | réglage du contraste (0 = neutre) | 0 | -1 | 1 |
+| `color.saturation` | facteur (1 = neutre) | 1 | 0 | 2 |
+| `color.hue` | degrés | 0 | -180 | 180 |
+| `color.exposure` | diaphragmes | 0 | -2 | 2 |
+| `color.temperature` | unité du modèle (0 = neutre) | 0 | -100 | 100 |
+| `color.shadows` | réglage (0 = neutre) | 0 | -1 | 1 |
+| `color.highlights` | réglage (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.r` | roue lift, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.g` | roue lift, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.b` | roue lift, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.y` | roue lift, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.r` | roue gamma, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.g` | roue gamma, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.b` | roue gamma, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.y` | roue gamma, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.r` | roue gain, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.g` | roue gain, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.b` | roue gain, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.y` | roue gain, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.r` | roue offset, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.g` | roue offset, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.b` | roue offset, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.y` | roue offset, canal y (0 = neutre) | 0 | -1 | 1 |
 <!-- /units -->
 
 Un masque (`add_mask_keyframe`) :

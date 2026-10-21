@@ -18,6 +18,7 @@ import pytest
 
 from core.animation import ValueKind
 from core.animation_targets import all_targets, get_target
+from core.grade_targets import ANIMATABLE_GRADE_PARAMS, grade_spec
 from core.compositing import MASK_PROPERTY_ORDER, MASK_PROPERTY_SPECS, mask_property_id
 from core.keyframe_editing import add_keyframe as direct_add_keyframe
 from core.keyframe_editing import value_at
@@ -71,7 +72,7 @@ def _animation(project: Project, clip_id: str) -> list:
 
 
 def test_the_properties_of_add_keyframe_are_the_registrys_not_a_copy():
-    expected = tuple(t.id for t in all_targets() if t.spec.kind is not ValueKind.BOOL and not t.id.startswith("time."))
+    expected = (*(t.id for t in all_targets() if t.spec.kind is not ValueKind.BOOL and not t.id.startswith("time.")), *ANIMATABLE_GRADE_PARAMS)
     assert _ANIMATABLE == expected
     assert {"pan_x", "pan_y", "graphic.width", "graphic.font_size"} <= set(_ANIMATABLE)
     assert not {"flip_h", "flip_v", "time.speed", "fill"} & set(_ANIMATABLE)
@@ -266,7 +267,7 @@ def test_the_documented_units_table_matches_the_animation_registry():
     documented = _doc_table("keyframe")
     assert set(documented) == set(_ANIMATABLE), "chaque propriété de add_keyframe a sa ligne, et rien d'autre"
     for name, (default, low, high) in documented.items():
-        spec = get_target(name).spec
+        spec = grade_spec(name) if name.startswith("color.") else get_target(name).spec
         assert (default, low, high) == (spec.default, spec.minimum, spec.maximum), name
     masks = _doc_table("mask")
     assert set(masks) == set(MASK_PROPERTY_ORDER)
@@ -319,7 +320,7 @@ def test_fuzz_the_new_verbs_only_ever_raise_script_invalid_or_a_report():
     rng = random.Random(20261018)
     verbs = [VERBS[name] for name in ["add_keyframe", "remove_keyframe", "add_mask_keyframe", "remove_mask_keyframe", "set_graphic"]]
     decoded = applied = 0
-    for _ in range(1200):
+    for _ in range(2400):                                   # 23 propriétés `color.*` de plus dans les choix de `add_keyframe` : plus de tirages pour la même part de scripts appliqués
         ops = []
         for _step in range(rng.randint(1, 2)):
             verb = rng.choice(verbs)
