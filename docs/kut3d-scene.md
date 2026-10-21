@@ -300,6 +300,8 @@ doc.save()          # atomique ; DocumentConflict si le fichier a changé sur le
 - **Historique :** 100 éditions (`MAX_UNDO`). Une commande à `merge_key` (`SetTransform(..., gesture=True)`, `SetPrimitive`, `SetMaterial`,
   `SetCamera`, `SetLight`) qui suit une commande de même clé tient dans la même entrée jusqu'à `end_gesture()`, `undo`, `redo` ou `save` ;
   jamais de fusion avec l'état initial ni l'état enregistré. `is_dirty` suit l'état enregistré.
+- **Tout état atteignable est enregistrable :** chaque valeur nouvelle (matériau, forme, lumière, caméra, fond, objet, nom) est écrite comme `save_scene` l'écrirait puis relue par les validateurs du lecteur (`kut3d/document_validate.py`, mêmes bornes, sans les recopier) ; ce que le fichier refuserait est refusé à l'édition (`DocumentError`). Seul ce qui dépend de la destination (modèle importé hors du dossier) est refusé à l'écriture. Test de propriété à graine fixe : `tests/test_kut3d_document_savable.py`.
+- **Écrasement :** `save` reconnaît le fichier d'origine sous toute graphie du chemin (relatif, `..`, lien symbolique ou physique, casse) et refuse s'il a changé ; enregistrer sous un AUTRE fichier qui existe déjà est refusé sans `overwrite=True`.
 - **Plafonds :** ceux du fichier, vérifiés à chaque état : 2 048 objets, 16 lumières, 256 modèles distincts, 500 000 triangles de formes de
   base (un modèle **partagé** compte une fois) ; le budget est vérifié **avant** de générer un maillage.
 - **Refusé, jamais réécrit :** un modèle sans fichier source (hors forme de base), un matériau avec texture (les textures de formes de
