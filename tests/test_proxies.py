@@ -212,12 +212,38 @@ def test_a_proxy_goes_through_pending_generating_ready_and_leaves_no_partial_fil
     assert info.proxy_path and Path(info.proxy_path).is_file() and info.created_at
     # La notification relit l'état courant : un worker rapide fait passer PENDING à
     # GENERATING avant qu'elle ne parte, PENDING peut donc ne jamais être observé.
+    # _generate rend la main dès que le disque dit READY ; la notification finale du worker part juste après
+    # (retrait de _active, invalidation, notification) : on l'attend (CI macOS, run 39672036609 : dernier état GENERATING).
+    assert _wait(lambda: ProxyState.READY in states, timeout=30.0)
+    assert _wait(lambda: states[-1] is ProxyState.READY, timeout=30.0)   # livraison sérialisée : le dernier = l'état final
     assert ProxyState.GENERATING in states
     assert set(states) <= {ProxyState.PENDING, ProxyState.GENERATING, ProxyState.READY}
-    assert states[-1] is ProxyState.READY
     files = sorted(p.name for p in (tmp_path / "proxies").iterdir())
     assert len(files) == 2 and any(n.endswith(".json") for n in files)
     assert not any(".partial." in n for n in files)
+    manager.shutdown()
+
+
+def test_a_stale_request_snapshot_is_never_delivered_after_the_final_state(tmp_path, source, monkeypatch):
+    # Fenêtre rendue déterministe : le thread de requête lit l'état puis est désordonnancé avant d'appeler l'abonné.
+    # Sans verrou de livraison, le worker finit et notifie READY, puis l'instantané périmé arrive en dernier.
+    original = ProxyManager.info
+    main = threading.current_thread()
+
+    def info_then_stall(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        if threading.current_thread() is main and sys._getframe(1).f_code.co_name == "_notify":
+            time.sleep(0.3)
+        return result
+
+    monkeypatch.setattr(ProxyManager, "info", info_then_stall)
+    manager = _manager(tmp_path)
+    states = []
+    manager.subscribe(lambda _path, info: states.append(info.state))
+    manager.request(source, duration=2.0)
+    assert _wait(lambda: ProxyState.READY in states, timeout=30.0)
+    time.sleep(0.5)                                   # laisse passer d'éventuelles livraisons tardives
+    assert states[-1] is ProxyState.READY
     manager.shutdown()
 
 

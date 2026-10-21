@@ -255,6 +255,11 @@ class ProxyManager:
         self._disk_ttl = float(disk_ttl)
         self._lock = threading.RLock()
         self._wake = threading.Condition(self._lock)
+        # Livraison des notifications : lecture de l'état + appel des abonnés sous un même verrou, sinon un thread
+        # désordonnancé (requête) livrerait son instantané périmé APRÈS la notification finale du worker et
+        # l'interface resterait sur « en génération ». Réentrant : un abonné peut rappeler le gestionnaire.
+        # Ordre des verrous : _delivery puis _lock ; aucun appel à _notify sous _lock.
+        self._delivery = threading.RLock()
         self._pending: OrderedDict[tuple[str, str], _Job] = OrderedDict()
         self._active: dict[tuple[str, str], _Job] = {}
         self._errors: dict[tuple[str, str], str] = {}
@@ -293,15 +298,16 @@ class ProxyManager:
         self._listeners.append(callback)
 
     def _notify(self, source: str, profile_id: str) -> None:
-        info = self.info(source, profile_id)
-        for callback in list(self._listeners):
-            try:
-                callback(source, info)
-            except Exception:  # un abonné fautif ne doit pas casser la génération
-                LOGGER.debug(
-                    "Abonné aux proxies en échec pour %s : notification ignorée, la génération continue",
-                    source, exc_info=True,
-                )
+        with self._delivery:
+            info = self.info(source, profile_id)
+            for callback in list(self._listeners):
+                try:
+                    callback(source, info)
+                except Exception:  # un abonné fautif ne doit pas casser la génération
+                    LOGGER.debug(
+                        "Abonné aux proxies en échec pour %s : notification ignorée, la génération continue",
+                        source, exc_info=True,
+                    )
 
     # ------------------------------------------------------------------
     # Emplacements
