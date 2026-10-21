@@ -29,7 +29,7 @@ def _project(lock: str | None = None) -> Project:
         media_assets=[MediaAsset("m", "/x/a.mp4", "a", 60.0, 320, 180, 30.0, "video", has_audio=True)],
         tracks=[
             Track("V1", "V1", "video", clips=[Clip("a", "m", "V1", 0.0, 0.0, 4.0)]),
-            Track("V2", "V2", "video", locked=(lock == "track"), clips=[Clip("f", "m", "V2", 0.0, 0.0, 2.0)]),
+            Track("V2", "V2", "video", clips=[Clip("f", "m", "V2", 0.0, 0.0, 2.0)]),
             Track("V3", "V3", "video", clips=[Clip("free", "m", "V3", 0.0, 0.0, 2.0)]),
         ],
     )
@@ -37,6 +37,8 @@ def _project(lock: str | None = None) -> Project:
         tracking_ops.add_tracker(project, "a", timeline_time=0.0, x=x, y=50.0, tracker_id=tracker_id)
         tracking_ops.set_tracker_position(project, "a", tracker_id, 3.0, x + 30.0, 60.0)
     tracking_ops.add_link(project, "f", "a", ["t1", "t2"], timeline_time=0.0, link_id="l1")
+    if lock == "track":                                  # verrouillé APRÈS avoir lié : poser une liaison sur un clip verrouillé est refusé
+        project.tracks[1].locked = True
     if lock == "layer":
         follower = find_clip(project, "f")
         follower.graphic = replace(follower.graphic or GraphicOverlay(type=GraphicType.TEXT), locked=True)
@@ -78,7 +80,9 @@ def test_only_what_the_operation_would_change_is_refused():
     tracking_ops.add_tracker(project, "a", timeline_time=0.0, x=5.0, y=5.0, tracker_id="t3")
     tracking_ops.remove_tracker(project, "a", "t3")                         # le suiveur verrouillé n'utilise pas t3
     assert _links(project, "f")[0].tracker_ids == ("t1", "t2")
+    project.tracks[1].locked = False                                        # (changer la liaison d'un clip verrouillé est refusé)
     tracking_ops.set_link_enabled(project, "f", "l1", False)
+    project.tracks[1].locked = True
     _refused(project, lambda p: tracking_ops.remove_tracker(p, "a", "t1"))   # une liaison désactivée est réécrite aussi
 
 
@@ -91,9 +95,14 @@ def test_only_what_the_operation_would_change_is_refused():
 # reste donc limitée à la séquence active.
 
 
-def _second_sequence(project: Project, *, locked: bool = True) -> Clip:
+def _second_sequence(project: Project, *, locked: bool = True, linked: bool = False) -> Clip:
+    """Séquence « seq-b » avec le clip « g » (piste W1). ``linked`` : « g » suit t1 de « a » (liaison « lx »), posée AVANT de verrouiller
+    (poser une liaison sur un clip verrouillé est refusé depuis que le modèle garde le clip porteur)."""
     project.sequences.append(Sequence("seq-b", "B", width=320, height=180, fps=30.0, tracks=[
-        Track("W1", "W1", "video", locked=locked, clips=[Clip("g", "m", "W1", 0.0, 0.0, 1.0)])]))
+        Track("W1", "W1", "video", locked=locked and not linked, clips=[Clip("g", "m", "W1", 0.0, 0.0, 1.0)])]))
+    if linked:
+        tracking_ops.add_link(project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+        project.sequences[-1].tracks[0].locked = locked
     return project.sequences[-1].tracks[0].clips[0]
 
 
@@ -111,8 +120,7 @@ def test_a_link_to_a_clip_of_another_sequence_is_already_inert_and_removal_leave
     from core.scripting.api import describe
 
     project = _project()
-    other = _second_sequence(project)
-    tracking_ops.add_link(project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    other = _second_sequence(project, linked=True)
     assert _issues(project, other) == ("missing_source",)
     before = copy.deepcopy(other.tracking)
     tracking_ops.remove_tracker(project, "a", "t1")                    # le suiveur d'une autre séquence est verrouillé : ni refus ni écriture
@@ -267,8 +275,7 @@ def test_a_free_follower_lets_the_window_remove_and_undo_redo_restore_it(qtbot, 
 
 def test_a_locked_follower_of_another_sequence_does_not_block_the_window_and_undo_redo_keep_it_intact(qtbot, monkeypatch):
     window = _open(qtbot, monkeypatch, None)
-    other = _second_sequence(window.project)
-    tracking_ops.add_link(window.project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    other = _second_sequence(window.project, linked=True)
     window.history.reset(window.project)
     before = copy.deepcopy(other.tracking)
     window.tracking_panel.remove_trackers_requested.emit(["t1"])
@@ -285,8 +292,7 @@ def test_a_locked_follower_of_another_sequence_does_not_block_the_window_and_und
 
 def _scope_project(*, locked_cross: bool, same_locked: bool) -> Project:
     project = _project("track" if same_locked else None)
-    cross = _second_sequence(project, locked=locked_cross)
-    tracking_ops.add_link(project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    cross = _second_sequence(project, locked=locked_cross, linked=True)
     project.active_sequence_id = "seq-b"                                # « a » est dans la séquence principale, inactive
     assert cross.tracking is not None
     return project

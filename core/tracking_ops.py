@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
+from .tracking_locks import require_clip_editable
 from .tracking_model import (
     SELF_CLIP,
     BorderMode,
@@ -123,6 +124,7 @@ def add_tracker(
 
     ``tracker_id`` : identifiant imposé (un script, déjà vérifié par l'appelant) ; ``None`` : généré, comme l'interface."""
     clip, asset = trackable_clip(project, clip_id)
+    require_clip_editable(project, clip_id)
     rate = media_rate(asset)
     tracking = tracking_of(clip)
     index = source_index_at(clip, rate, timeline_time)
@@ -202,6 +204,7 @@ def remove_trackers(project, clip_id: str, tracker_ids) -> None:
     clip, _tracker = get_tracker(project, clip_id, ids[0])
     for tracker_id in ids[1:]:
         get_tracker(project, clip_id, tracker_id)
+    require_clip_editable(project, clip_id)
     require_tracker_removal_unlocked(project, clip_id, ids)
     for tracker_id in ids:
         _store(clip, tracking_of(clip).without_tracker(tracker_id))
@@ -235,6 +238,8 @@ def update_tracker(project, clip_id: str, tracker_id: str, **changes) -> Tracker
     if unknown:
         raise TrackingError(f"Champ de tracker inconnu : {', '.join(sorted(unknown))}")
     updated = replace(tracker, **changes)
+    if updated != tracker:
+        require_clip_editable(project, clip_id)
     _put_tracker(clip, updated)
     return updated
 
@@ -247,6 +252,8 @@ def set_tracker_settings(project, clip_id: str, tracker_id: str, **changes) -> T
     except TypeError as exc:
         raise TrackingError(str(exc)) from exc
     updated = replace(tracker, settings=settings)
+    if updated != tracker:
+        require_clip_editable(project, clip_id)
     _put_tracker(clip, updated)
     return updated
 
@@ -269,7 +276,10 @@ def set_tracker_position(project, clip_id: str, tracker_id: str, timeline_time: 
         max(-asset.height, min(2.0 * asset.height, float(y))) / fy,
         1.0, SampleStatus.MANUAL,
     )
-    _put_tracker(clip, replace(tracker, data=tracker.data.with_samples({index: sample}, rate=rate)))
+    data = tracker.data.with_samples({index: sample}, rate=rate)
+    if data != tracker.data:
+        require_clip_editable(project, clip_id)         # le même point à la même image : rien ne change
+    _put_tracker(clip, replace(tracker, data=data))
     return index
 
 
@@ -282,6 +292,7 @@ def remove_correction(project, clip_id: str, tracker_id: str, timeline_time: flo
         return False
     if len(tracker.data.valid_indices()) <= 1:
         raise TrackingError("Le dernier point d'un tracker ne peut pas être retiré.")
+    require_clip_editable(project, clip_id)
     data = tracker.data.cleared(index, index, keep_manual=False)
     _put_tracker(clip, replace(tracker, data=data))
     return True
@@ -310,6 +321,9 @@ def reset_tracker(
     cleared = data.cleared(low, high, keep_manual=True)
     if cleared.is_empty:
         raise TrackingError("Le tracker doit garder au moins un point.")
+    if cleared == data:
+        return 0                                        # que des corrections manuelles dans la plage : rien ne change, même sur un clip verrouillé
+    require_clip_editable(project, clip_id)
     after = sum(1 for _i, s in cleared.samples() if s.status is not SampleStatus.EMPTY)
     _put_tracker(clip, replace(tracker, data=cleared))
     return before - after
@@ -339,6 +353,7 @@ def analysis_request(
     from .tracking_engine import TrackingRequest
 
     clip, asset = trackable_clip(project, clip_id)
+    require_clip_editable(project, clip_id)        # une analyse écrirait ses résultats dans ce clip
     tracking = tracking_of(clip)
     candidates = [tracking.tracker(t) for t in tracker_ids]
     trackers = [t for t in candidates if t is not None and t.visible]
@@ -386,6 +401,7 @@ def apply_tracking_result(project, result) -> dict[str, int]:
         }
         if not updates:
             continue
+        require_clip_editable(project, clip.id)        # le clip a pu être verrouillé pendant l'analyse : rien n'est écrit
         data = tracker.data.with_samples(updates, rate=result.request.rate)
         _put_tracker(clip, replace(tracker, data=data))
         written[tracker_id] = len(updates)
@@ -545,6 +561,7 @@ def add_link(
     target_clip, target_track = find_clip_and_track(project, target_clip_id)
     if target_track.type not in ("video", "graphics") or target_clip.sequence_id:
         raise TrackingError("Seuls les clips vidéo et les calques peuvent suivre un tracker.")
+    require_clip_editable(project, target_clip_id)        # la cible est le clip écrit ; la source ne l'est pas
     tracking = tracking_of(source)
     ids = tuple(dict.fromkeys(tracker_ids))
     found = [tracking.tracker(t) for t in ids]
@@ -597,11 +614,14 @@ def find_link(project, clip_id: str, link_id: str):
 
 def remove_link(project, clip_id: str, link_id: str) -> None:
     clip, _link = find_link(project, clip_id, link_id)
+    require_clip_editable(project, clip_id)
     _store(clip, tracking_of(clip).without_link(link_id))
 
 
 def set_link_enabled(project, clip_id: str, link_id: str, enabled: bool) -> None:
     clip, link = find_link(project, clip_id, link_id)
+    if link.enabled != bool(enabled):
+        require_clip_editable(project, clip_id)
     _store(clip, tracking_of(clip).with_link(replace(link, enabled=bool(enabled))))
 
 
@@ -617,6 +637,7 @@ def bake_link(project, clip_id: str, link_id: str) -> int:
     changed = _changed_properties(clip, transform_frames, animation)
     if not changed:
         raise TrackingError("Aucune donnée de tracking à convertir sur la durée du clip.")
+    require_clip_editable(project, clip_id)
     clip.transform_keyframes = transform_frames
     clip.animation = animation
     _store(clip, tracking_of(clip).without_link(link.id))
@@ -654,13 +675,16 @@ def set_stabilization(project, clip_id: str, **fields) -> Stabilization:
         raise TrackingError("Choisissez au moins un tracker analysé pour stabiliser.")
     if updated.mode != StabilizationMode.POSITION and len(updated.tracker_ids) < 2:
         raise TrackingError("Rotation et échelle demandent deux trackers.")
+    if updated != tracking.stabilization:
+        require_clip_editable(project, clip_id)
     _store(clip, replace(tracking, stabilization=updated))
     return updated
 
 
 def remove_stabilization(project, clip_id: str) -> None:
     clip, _track = find_clip_and_track(project, clip_id)
-    if clip.tracking is not None:
+    if clip.tracking is not None and clip.tracking.stabilization is not None:
+        require_clip_editable(project, clip_id)
         _store(clip, replace(clip.tracking, stabilization=None))
 
 
