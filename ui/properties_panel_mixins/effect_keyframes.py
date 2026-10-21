@@ -11,28 +11,18 @@ le niveau n'écrit que la visibilité de ce conteneur. Le menu du clic droit sui
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QFormLayout, QHBoxLayout, QToolButton, QWidget
+from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QFormLayout
 
 from core.effect_targets import ANIMATABLE_EFFECT_PARAMS, evaluated_effects
 from core.effects_model import ClipEffect, fx_property_id, is_effect_property
 from core.usage_level import UsageLevel
 from ui import i18n
-from ui.properties_widgets.diamond_button import KeyframeDiamondButton
-from ui.properties_widgets.level_gate import LevelGate, gated
+from ui.properties_widgets.keyframe_row import KeyframeRow, build_keyframe_row
 
-
-@dataclass
-class EffectKeyframeRow:
-    """Les trois boutons d'un paramètre animable et leur conteneur de niveau."""
-
-    gate: LevelGate
-    previous: QToolButton
-    diamond: KeyframeDiamondButton
-    next: QToolButton
+EffectKeyframeRow = KeyframeRow
+"""Les trois boutons d'un paramètre animable et leur conteneur de niveau (rangée partagée avec l'étalonnage)."""
 
 
 class EffectKeyframesMixin:
@@ -48,35 +38,15 @@ class EffectKeyframesMixin:
     def _add_effect_keyframe_row(self, form: QFormLayout, effect: ClipEffect, name: str, label_text: str) -> None:
         """Rangée ‹ ◆ › sous le curseur de ``name`` : nouveaux widgets, conteneur Studio créé avec eux."""
         property_id = fx_property_id(effect.id, name)
-        inner = QWidget()
-        layout = QHBoxLayout(inner)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        previous = QToolButton()
-        previous.setObjectName("iconOnly")      # padding nul : sinon le thème rogne la flèche
-        previous.setText("‹")
-        previous.setFixedSize(18, 22)
-        previous.clicked.connect(lambda _checked=False, pid=property_id: self._on_keyframe_navigation(pid, -1))
-        diamond = KeyframeDiamondButton(property_id)
-        diamond.clicked.connect(lambda _checked=False, eid=effect.id, n=name: self._on_effect_diamond_clicked(eid, n))
-        diamond.setContextMenuPolicy(Qt.CustomContextMenu)
-        diamond.customContextMenuRequested.connect(
-            lambda position, eid=effect.id, n=name: self._open_effect_animation_menu(eid, n, position)
+        effect_id = effect.id
+        self._effect_keyframe_rows[name] = build_keyframe_row(
+            property_id, label_text,
+            on_previous=lambda: self._on_keyframe_navigation(property_id, -1),
+            on_toggle=lambda: self._on_effect_diamond_clicked(effect_id, name),
+            on_next=lambda: self._on_keyframe_navigation(property_id, 1),
+            on_menu=lambda position: self._open_effect_animation_menu(effect_id, name, position),
+            form=form, minimum=UsageLevel.STUDIO,
         )
-        next_button = QToolButton()
-        next_button.setObjectName("iconOnly")
-        next_button.setText("›")
-        next_button.setFixedSize(18, 22)
-        next_button.clicked.connect(lambda _checked=False, pid=property_id: self._on_keyframe_navigation(pid, 1))
-        previous.setAccessibleName(i18n.translate("a11y.keyframe.previous", property=label_text))
-        diamond.setAccessibleName(i18n.translate("a11y.keyframe.toggle", property=label_text))
-        next_button.setAccessibleName(i18n.translate("a11y.keyframe.next", property=label_text))
-        for widget in (previous, diamond, next_button):
-            layout.addWidget(widget)
-        layout.addStretch(1)
-        gate = gated(inner, UsageLevel.STUDIO, form)
-        form.addRow(gate)
-        self._effect_keyframe_rows[name] = EffectKeyframeRow(gate, previous, diamond, next_button)
 
     def _apply_effect_keyframe_levels(self) -> None:
         """Visibilité des rangées selon le niveau (Studio) : le niveau ne fait que montrer ou cacher.
@@ -85,7 +55,8 @@ class EffectKeyframesMixin:
         losanges, sinon ils seraient inaccessibles depuis Simple (les pliants « Avancé » du groupe ne portent que le palier Avancé)."""
         shown = self._level_allows(UsageLevel.STUDIO, self.effects_group) or self._more_groups_shown
         for row in self._effect_keyframe_rows.values():
-            row.gate.set_shown(shown)
+            if row.gate is not None:
+                row.gate.set_shown(shown)
 
     # ------------------------------------------------------------------
     # Lecture de l'état

@@ -65,7 +65,7 @@ class ClipContextMixin:
                 self.compositing_group.set_value(None, crop_editable=False)
                 self.compositing_group.set_editable(True)
                 self.color_group.setEnabled(False)
-                self.update_color_grade_from_clip(None)
+                self.update_color_grade_from_clip(None, [])
                 self.movement_group.setEnabled(False)
                 for name, spin in self._spin_boxes.items():
                     spin.setEnabled(False)
@@ -123,7 +123,9 @@ class ClipContextMixin:
             self.graphics_group.setEnabled(is_graphic_clip and clip_editable)
             color_editable = is_video_clip and not bool(getattr(view, "locked", False))
             self.color_group.setEnabled(color_editable)
-            self.update_color_grade_from_clip(getattr(view, "color_grade", None))
+            self.update_color_grade_from_clip(
+                getattr(view, "color_grade", None), list(getattr(view, "grade_keyframes", ()) or ()),
+            )
             self.movement_group.setEnabled(is_visual_clip and clip_editable)
             for spin in self._spin_boxes.values():
                 spin.setEnabled(is_visual_clip)

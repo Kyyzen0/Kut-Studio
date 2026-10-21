@@ -107,6 +107,7 @@ class ConstructionMixin:
             label.setText(translate(key))
         for widget in self._monitor_volume_tooltip_targets:
             widget.setToolTip(translate("tooltip.monitor_volume"))
+        self._retranslate_color_keyframes()
 
     def _build_header(self, outer_layout):
         """En-tête : titre et barre d'onglets de l'inspecteur."""
