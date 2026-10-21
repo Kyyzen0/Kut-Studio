@@ -7,6 +7,8 @@ paresseux, dans `kut3d/render/images.py` (textures non PNG) ; `import kut3d` ne 
 from __future__ import annotations
 
 from kut3d.animation import Pose, evaluate_pose
+from kut3d.document import DocumentConflict, SceneDocument
+from kut3d.document_state import DocumentError, pose_matrix
 from kut3d.errors import (
     ImageDecodeError,
     ModelImportError,
@@ -56,6 +58,8 @@ __all__ = [
     "Cube",
     "Cylinder",
     "DirectionalLight",
+    "DocumentConflict",
+    "DocumentError",
     "Frame",
     "ImageDecodeError",
     "Instance",
@@ -68,6 +72,7 @@ __all__ = [
     "RenderBackendUnavailable",
     "RenderError",
     "Scene",
+    "SceneDocument",
     "SceneFileError",
     "SceneVersionError",
     "Sphere",
@@ -80,6 +85,7 @@ __all__ = [
     "evaluate_pose",
     "load_model",
     "load_scene",
+    "pose_matrix",
     "primitive_instance",
     "primitive_model",
     "probe_qrhi",
