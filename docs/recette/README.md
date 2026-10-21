@@ -40,7 +40,13 @@ laisse l'export utiliser l'encodeur matériel (VideoToolbox) ; le défaut, `cpu`
   `~/Kut-Studio-Recette`. Il reçoit `<parcours>-<échelle>/` (médias, `manifest.json`, `script.json`, `project.kut`, `out/`) et `runs/<date>/`
   (rapport, journaux, dossiers isolés). **Il ne peut pas être dans le dépôt** (le banc refuse) : aucun média n'est commité. Pas non plus un
   dossier temporaire qui disparaît au redémarrage : les médias se régénèrent en quelques minutes, mais autant les garder.
-- **Place** (échelle `full`) : prévoir **3 à 4 Go** (trois angles de 20 min, les sorties) ; le banc prévient sous 20 Go libres.
+- **Place** (échelle `full`) : prévoir **3 à 4 Go** (trois angles de 20 min, les sorties) ; le banc prévient sous 20 Go libres. Les fichiers temporaires de l'export
+  (`TMPDIR`) sont eux aussi sous `runs/<date>/env/tmp`.
+- **Garde-fous (obligatoires)** : un export qui grossit sans fin remplirait le disque de la machine de recette (le swap du système, hors des dossiers du banc, y compris). Le lanceur
+  mesure toutes les ~0,4 s la mémoire de l'arbre de processus et toutes les ~2 s le disque libre ; si le disque libre passe sous `--min-free-gb` (défaut **4 Go**) ou si la
+  mémoire dépasse `--max-rss-fraction` de la RAM (défaut **0,85**), il arrête l'enfant **proprement** (`SIGINT`, comme un Ctrl-C : le CLI annule l'export et nettoie) et le parcours est marqué
+  « arrêt par le garde-fou ». C'est ce qui est arrivé à l'export de 20 min multicam (D-002 de [defauts-connus.md](defauts-connus.md)). Le rapport note aussi le **pic d'espace disque** de chaque export
+  (dossiers isolés + sortie, hors swap).
 - **La configuration réelle de l'utilisateur n'est jamais touchée.** Chaque exécution crée ses propres dossiers
   (`runs/<date>/env/{config,cache,data,log,proxy}`) et les donne à **chaque** processus par `KUT_STUDIO_CONFIG_DIR`, `_CACHE_DIR`, `_DATA_DIR`,
   `_LOG_DIR`, `_PROXY_DIR` ; `QT_QPA_PLATFORM=offscreen` ; recherche de mise à jour coupée. `assert_isolated` refuse un environnement qui désigne

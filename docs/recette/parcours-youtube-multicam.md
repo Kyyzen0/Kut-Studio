@@ -19,7 +19,7 @@ Vérité fabriquée : décalages des départs `cam_a` = 0, `cam_b` = **2,4 s**, 
 | M8 | **Étalonnage** : calque d'effets au-dessus de tout le montage (exposition +0,15, contraste, saturation, température) ; **page Couleur** : voir l'étalonnage animé du parcours c | Le moniteur reflète le réglage ; pas de pompage | |
 | M9 | Bandeau « Lower third » à 4 s ; 10 repères de chapitres | Bandeau lisible, repères posés | |
 | M10 | **Lecture** continue de 5 min au milieu du montage (angles qui changent) | Pas de gel, pas d'accumulation d'images perdues ; mémoire stable (Moniteur d'activité : RSS de l'application) | |
-| M11 | **Exporter** en 1080p (préréglage YouTube) ; chronométrer ; surveiller la mémoire | Fichier ≈ 20 min ; **durée d'export ______ min** (le banc donne la référence CPU) ; mémoire stable ; ventilateur / chaleur notés | |
+| M11 | **Exporter** en 1080p (préréglage YouTube) ; chronométrer ; **surveiller la mémoire et le disque libre** (Moniteur d'activité, onglets Mémoire et Disque) ; **annuler l'export** si la pression mémoire passe au rouge ou si le disque libre descend sous 5 Go (voir D-002 : le swap peut remplir le disque) | Fichier ≈ 20 min ; **durée d'export ______ min** (le banc donne la référence CPU) ; mémoire stable ; ventilateur / chaleur notés | |
 | M12 | Ouvrir le MP4 dans QuickTime, sauter à 5 points au hasard (début, chaque chapitre, fin) | Image et son synchrones ; aucun noir ; claps (8 s, 600 s) alignés image / son | |
 | M13 | Enregistrer, fermer, rouvrir | Projet à l'identique, angles en ligne | |
 
