@@ -29,6 +29,30 @@ def is_locked(track: Track, clip: Clip) -> bool:
     return bool(track.locked) or bool(getattr(getattr(clip, "graphic", None), "locked", False))
 
 
+def clip_lock_refusal(track: Track, clip: Clip) -> str | None:
+    """Message (français, nomme le clip) si le suivi de ``clip`` ne peut pas être modifié parce que sa piste ou son calque est verrouillé."""
+    if track.locked:
+        return f"Le clip '{clip.id}' est sur la piste '{track.id}', verrouillée : son suivi ne peut pas être modifié. Déverrouillez-la d'abord."
+    if is_locked(track, clip):
+        return f"Le calque '{clip.id}' est verrouillé : son suivi ne peut pas être modifié. Déverrouillez-le d'abord."
+    return None
+
+
+def require_clip_editable(project: Project, clip_id: str) -> None:
+    """Refuse (``ValueError``), AVANT d'écrire, de modifier le suivi d'un clip verrouillé (piste ou calque graphique).
+
+    Le clip PORTEUR est celui qu'une écriture remplace : le propriétaire d'un tracker (ajout, déplacement, effacement, réglage, analyse,
+    stabilisation) ou la cible d'une liaison (pose, retrait, activation, conversion). La SOURCE d'une liaison n'est pas écrite : elle n'est
+    pas vérifiée. Règle unique du modèle : l'interface, les verbes de script et les menus l'appellent via ``core.tracking_ops``.
+    """
+    from .tracking_ops import find_clip_and_track
+
+    clip, track = find_clip_and_track(project, clip_id)
+    message = clip_lock_refusal(track, clip)
+    if message is not None:
+        raise ValueError(message)
+
+
 def _locked_followers(project: Project, source_ids: Collection[str], rewrites, spared: Collection[str]) -> list[str]:
     found: list[str] = []
     for track in project.all_tracks():
@@ -99,6 +123,6 @@ def require_tracker_removal_unlocked(project: Project, clip_id: str, tracker_ids
 
 
 __all__ = [
-    "cut_locked_followers", "is_locked", "release_locked_followers", "require_cut_followers_unlocked", "require_release_followers_unlocked",
+    "clip_lock_refusal", "require_clip_editable", "cut_locked_followers", "is_locked", "release_locked_followers", "require_cut_followers_unlocked", "require_release_followers_unlocked",
     "require_tracker_removal_unlocked", "tracker_removal_locked_followers",
 ]

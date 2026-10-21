@@ -666,7 +666,11 @@ def test_set_stabilization_refuses_a_locked_clip():
     project = _tracked()
     project.tracks[0].locked = True
     _refused(project, _op("set_stabilization", clip="v", trackers=["t1"]), match="verrouillée")
-    _refused(_tracked(), _op("set_stabilization", clip="lk", trackers=["t1"]), match="verrouillée")
+    other = _project()
+    other.tracks[2].locked = False
+    _tracked(other, "lk")                                        # poser des trackers sur un clip verrouillé est refusé : on verrouille après
+    other.tracks[2].locked = True
+    _refused(other, _op("set_stabilization", clip="lk", trackers=["t1"]), match="verrouillée")
 
 
 def test_remove_stabilization_matches_the_model_and_refuses_without_one():

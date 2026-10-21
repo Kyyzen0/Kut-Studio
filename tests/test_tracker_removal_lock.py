@@ -29,7 +29,7 @@ def _project(lock: str | None = None) -> Project:
         media_assets=[MediaAsset("m", "/x/a.mp4", "a", 60.0, 320, 180, 30.0, "video", has_audio=True)],
         tracks=[
             Track("V1", "V1", "video", clips=[Clip("a", "m", "V1", 0.0, 0.0, 4.0)]),
-            Track("V2", "V2", "video", locked=(lock == "track"), clips=[Clip("f", "m", "V2", 0.0, 0.0, 2.0)]),
+            Track("V2", "V2", "video", clips=[Clip("f", "m", "V2", 0.0, 0.0, 2.0)]),
             Track("V3", "V3", "video", clips=[Clip("free", "m", "V3", 0.0, 0.0, 2.0)]),
         ],
     )
@@ -37,6 +37,8 @@ def _project(lock: str | None = None) -> Project:
         tracking_ops.add_tracker(project, "a", timeline_time=0.0, x=x, y=50.0, tracker_id=tracker_id)
         tracking_ops.set_tracker_position(project, "a", tracker_id, 3.0, x + 30.0, 60.0)
     tracking_ops.add_link(project, "f", "a", ["t1", "t2"], timeline_time=0.0, link_id="l1")
+    if lock == "track":                                  # verrouillé APRÈS avoir lié : poser une liaison sur un clip verrouillé est refusé
+        project.tracks[1].locked = True
     if lock == "layer":
         follower = find_clip(project, "f")
         follower.graphic = replace(follower.graphic or GraphicOverlay(type=GraphicType.TEXT), locked=True)
@@ -78,7 +80,9 @@ def test_only_what_the_operation_would_change_is_refused():
     tracking_ops.add_tracker(project, "a", timeline_time=0.0, x=5.0, y=5.0, tracker_id="t3")
     tracking_ops.remove_tracker(project, "a", "t3")                         # le suiveur verrouillé n'utilise pas t3
     assert _links(project, "f")[0].tracker_ids == ("t1", "t2")
+    project.tracks[1].locked = False                                        # (changer la liaison d'un clip verrouillé est refusé)
     tracking_ops.set_link_enabled(project, "f", "l1", False)
+    project.tracks[1].locked = True
     _refused(project, lambda p: tracking_ops.remove_tracker(p, "a", "t1"))   # une liaison désactivée est réécrite aussi
 
 

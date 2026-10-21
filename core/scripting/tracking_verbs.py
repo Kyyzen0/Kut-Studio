@@ -44,7 +44,7 @@ from .tracking_rules import (
     require_tracker_room, require_within,
 )
 from .resource_limits import require_keyframes_after
-from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip, _pick
+from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip, _owner_track, _pick
 
 _VIDEO = ("video",)
 _VISUAL = ("video", "graphics")
@@ -65,9 +65,19 @@ _SETTING_FIELDS = {item.name for item in dataclass_fields(TrackerSettings)}
 # --- Aides ---------------------------------------------------------------------------------------------------------------------
 
 
+def _clip_on(project: Project, selector: str, track_types: tuple[str, ...]) -> str:
+    """L'identifiant du clip désigné, sur une piste d'un des genres permis. Le VERROU n'est pas vérifié ici : c'est le modèle qui le refuse,
+    avant d'écrire (``core.tracking_locks.require_clip_editable``, appelé par ``core.tracking_ops``), comme pour l'interface."""
+    clip_id = _clip_id(project, selector)
+    owner = _owner_track(project, clip_id)
+    if owner.type not in track_types:
+        raise ValueError(f"Le clip '{clip_id}' est sur une piste '{owner.type}' : cette opération vise {' ou '.join(track_types)}.")
+    return clip_id
+
+
 def _video_clip(project: Project, selector: str) -> tuple[str, Clip]:
-    """Le clip vidéo éditable (piste et calque déverrouillés) qui peut porter des trackers."""
-    clip_id = _editable_clip(project, selector, track_types=_VIDEO)
+    """Le clip vidéo qui peut porter des trackers (verrou : voir :func:`_clip_on`)."""
+    clip_id = _clip_on(project, selector, _VIDEO)
     return clip_id, find_clip(project, clip_id)
 
 
@@ -217,7 +227,7 @@ def _remove_tracker(a: Mapping[str, Any]) -> Operation:
 
 def _add_link(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        target_id = _editable_clip(project, a["clip"], track_types=_VISUAL)
+        target_id = _clip_on(project, a["clip"], _VISUAL)
         source_id = _clip_id(project, a["source"])
         source, _asset = trackable_clip(project, source_id)
         trackers = _trackers_of(source, list(a["trackers"]))
@@ -252,7 +262,7 @@ def _add_link(a: Mapping[str, Any]) -> Operation:
 
 
 def _link_of(project: Project, a: Mapping[str, Any]) -> tuple[str, str]:
-    clip_id = _editable_clip(project, a["clip"], track_types=_VISUAL)
+    clip_id = _clip_on(project, a["clip"], _VISUAL)
     link = _pick(tracking_of(find_clip(project, clip_id)).links, str(a["link"]), "Liaison", names=False)
     return clip_id, str(link.id)
 
@@ -332,7 +342,9 @@ def _remove_stabilization(a: Mapping[str, Any]) -> Operation:
 
 def _follow_reframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        clip_id, clip = _video_clip(project, a["clip"])
+        # ``apply_follow_reframe`` ne reçoit qu'un clip : le verrou est celui de l'interface (``social.py`` : ``_social_clips_refused``).
+        clip_id = _editable_clip(project, a["clip"], track_types=_VIDEO)
+        clip = find_clip(project, clip_id)
         if clip.sequence_id or clip.composition is not None:                 # la règle de la sélection de l'interface (social.py)
             raise ValueError(f"Le clip '{clip_id}' est une séquence imbriquée ou une composition : il n'a pas de média à recadrer.")
         asset = media_of(project, clip)

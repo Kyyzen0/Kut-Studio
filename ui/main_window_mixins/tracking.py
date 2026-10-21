@@ -491,10 +491,12 @@ class TrackingMixin:
         clip, _kind = self._tracking_selected_clip()
         if clip is None or clip.id in self._tracking_jobs:
             return
+        if not self._tracking_clip_editable(clip.id, 4000):
+            return                                              # clip verrouillé : le point reste où le projet le met, aucune entrée d'historique
         self._begin_tracking_drag()
         try:
             set_tracker_position(self.project, clip.id, tracker_id, float(self.playhead_seconds), x, y)
-        except TrackingError as exc:
+        except (TrackingError, ValueError) as exc:
             self.statusBar().showMessage(str(exc), 4000)
             return
         self._after_tracking_live_change(clip.id)
@@ -503,15 +505,26 @@ class TrackingMixin:
         from core.tracking_ops import TrackingError, set_tracker_settings
 
         clip, _kind = self._tracking_selected_clip()
-        if clip is None:
+        if clip is None or not self._tracking_clip_editable(clip.id, 4000):
             return
         self._begin_tracking_drag()
         changes = {f"{kind}_width": width, f"{kind}_height": height}
         try:
             set_tracker_settings(self.project, clip.id, tracker_id, **changes)
-        except TrackingError:
+        except (TrackingError, ValueError):
             return
         self._refresh_tracking_overlay()
+
+    def _tracking_clip_editable(self, clip_id: str, duration: int = 6000) -> bool:
+        """Faux (message dans la barre d'état) si le clip est verrouillé : la règle du modèle, avant de commencer un geste."""
+        from core.tracking_locks import require_clip_editable
+
+        try:
+            require_clip_editable(self.project, clip_id)
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc), duration)
+            return False
+        return True
 
     def _after_tracking_live_change(self, clip_id: str) -> None:
         """Retour immédiat d'un glisser (cibles liées comprises), sans historique."""
@@ -527,6 +540,8 @@ class TrackingMixin:
         self._schedule_viewer_graphics()
 
     def _on_overlay_drag_finished(self, _tracker_id: str, kind: str) -> None:
+        if not self._tracking_dragging:
+            return                                              # geste refusé (clip verrouillé) : rien n'a été écrit, aucune entrée d'historique
         self._tracking_dragging = False
         self._commit_layer_edit(_tr("tracking.history.move" if kind == "point" else "tracking.history.zone"))
         self._refresh_tracking_ui()
@@ -566,7 +581,7 @@ class TrackingMixin:
                 self.project, clip.id, ids, timeline_time=float(self.playhead_seconds),
                 direction=1 if direction >= 0 else -1, proxy_path=proxy_path,
             )
-        except TrackingError as exc:
+        except (TrackingError, ValueError) as exc:               # y compris un clip verrouillé : l'analyse écrirait dedans
             self.statusBar().showMessage(str(exc), 6000)
             self._tracking_status[clip.id] = str(exc)
             self._refresh_tracking_ui()
@@ -620,7 +635,12 @@ class TrackingMixin:
         result = snapshot.result
         status = self._describe_result(result)
         self._tracking_status[clip_id] = status
-        written = apply_tracking_result(self.project, result) if result is not None else {}
+        try:
+            written = apply_tracking_result(self.project, result) if result is not None else {}
+        except ValueError as exc:                                # le clip a été verrouillé pendant l'analyse : rien n'est écrit
+            written = {}
+            status = str(exc)
+            self._tracking_status[clip_id] = status
         if written:
             names = ", ".join(t.name for t in job.request.trackers if t.id in written)
             direction = _tr("tracking.direction.forward" if job.request.direction > 0 else "tracking.direction.backward")
@@ -744,7 +764,7 @@ class TrackingMixin:
         if clip is None or kind != "video" or clip.id in self._tracking_jobs or not self._tracking_available:
             return
         asset = media_of(self.project, clip)
-        if asset is None:
+        if asset is None or not self._tracking_clip_editable(clip.id):
             return
         index = source_index_at(clip, media_rate(asset), float(self.playhead_seconds))
         geometry = analysis_geometry(asset.width, asset.height)
@@ -825,7 +845,7 @@ class TrackingMixin:
                     self.project, clip_id, enabled=True, tracker_ids=ids, mode=mode,
                     borders=BorderMode.ZOOM, reference_index=reference,
                 )
-            except TrackingError as exc:
+            except (TrackingError, ValueError) as exc:
                 self.statusBar().showMessage(str(exc), 6000)
                 return
             self._commit_layer_edit(_tr("tracking.history.stabilization"))
