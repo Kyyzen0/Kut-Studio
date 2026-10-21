@@ -76,9 +76,9 @@ def require_release_followers_unlocked(project: Project, doomed: Collection[str]
 
 def tracker_removal_locked_followers(project: Project, clip_id: str, tracker_ids: Collection[str]) -> list[str]:
     """Clips verrouillés dont la liaison serait réécrite par la suppression des trackers ``tracker_ids`` de ``clip_id`` (même règle que l'écriture)."""
-    from .tracking_ops import sequence_of_clip, tracker_removal_rewrites
+    from .tracking_ops import _sequence_of_clip, tracker_removal_rewrites
 
-    tracks = sequence_of_clip(project, clip_id).tracks
+    tracks = _sequence_of_clip(project, clip_id).tracks
     found: list[str] = []
     for tracker_id in dict.fromkeys(tracker_ids):
         for other in tracker_removal_rewrites(project, clip_id, tracker_id):
