@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- Interne : recette : banc de recette scripté (`python -m tools.recette`, ADR-0011 phase 1) : trois parcours (TikTok 60 s, YouTube 20 min multicam, motion design + 3D) construits par script déclaratif et exportés par la ligne de commande, sans fenêtre, sur des médias générés de façon déterministe (aucun média dans le dépôt) ; durées, pic de mémoire, `ffprobe`, image noire ou gelée, plantage par signal, rapport JSON + Markdown avec écarts à une référence par ratios, smoke test CI de 10 s en CPU, relevé thermique et plantages par heure. La procédure en vraie fenêtre (M1 Air, M4 mini) est dans `docs/recette/`.
+
 ## [0.9.0] - 2026-10-21
 
 Version qui **anime l'étalonnage et les effets** : le réglage de couleur d'un clip (exposition, contraste, saturation, température, teinte, ombres, hautes lumières et roues Lift / Gamma / Gain / Offset) se pilote maintenant par images clés, dans l'inspecteur, la page Couleur, l'éditeur de courbes et les scripts, avec un moniteur et un export qui suivent la même courbe ; le flou, l'aberration chromatique et le rayon du Bloom s'animent aussi. L'onglet Suivi et les scripts appliquent la même règle sur les clips verrouillés, et « Coller les attributs » remplace proprement l'ancien étalonnage animé.
