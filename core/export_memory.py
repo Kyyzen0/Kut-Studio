@@ -1,19 +1,16 @@
 """Mémoire d'un export : estimation de ce que FFmpeg retient, et refus avant de le lancer (défaut D-002 de la recette).
 
-**Le mécanisme (mesuré).** Les clips d'un même média partagent une seule entrée FFmpeg (``_build_input_list``), et les
-instances d'une même séquence imbriquée (les segments d'un montage multicam) partagent un seul rendu (``split``). Chaque clip
-est une fenêtre ``trim`` de ce flux, empilée dans la chaîne d'``overlay`` du plan. Or ``overlay`` ne produit pas son
-premier cadre tant que **chaque** étage n'a pas reçu la première image de son calque : FFmpeg doit donc décoder le flux
-partagé jusqu'au début du clip qui commence le plus tard dans la source (``M``), et tout ce que les autres clips de la
-famille lisent avant ``M`` attend, en RGBA pleine trame, dans les files d'attente des étages. Mesuré sur FFmpeg 6.1, 7.1 et 9.0 :
-la sortie reste à 0 s pendant que la mémoire monte, puis le montage s'exporte. Un seul clip n'a pas cette file d'attente
-(1 Go pour 20 min) ; deux morceaux d'un même fichier la créent (une coupe à 20 s : 4 Go ; à 60 s : plus de 7 Go).
+**Le mécanisme (mesuré).** Les clips d'un même média partageaient une seule entrée FFmpeg (``_build_input_list``), et les
+instances d'une même séquence imbriquée (les segments d'un montage multicam) un seul rendu (``split``). Chaque clip est une
+fenêtre ``trim`` de ce flux, empilée dans la chaîne d'``overlay`` du plan. Or ``overlay`` ne produit pas son premier cadre tant
+que **chaque** étage n'a pas reçu la première image de son calque : FFmpeg devait donc décoder le flux partagé jusqu'au début du
+clip qui commence le plus tard dans la source (``M``), et tout ce que les autres clips de la famille lisent avant ``M`` attendait,
+en RGBA pleine trame, dans les files d'attente des étages. Mesuré sur FFmpeg 6.1, 7.1 et 9.0 : un clip de 130 s coupé à 12 s
+retenait 3,3 Go, à 60 s plus de 5,8 Go, 20 min de multicam plus de 200 Go.
 
     mémoire retenue  ≈  Σ  max(0, min(fin_k, M) − début_k) / (fin_k − début_k) × durée_k × cadence × largeur × hauteur × 4
 
-(somme sur les clips ``k`` d'une famille, ``début``/``fin`` dans la source ; le cadre est celui de la composition). Mesuré :
-exact pour un média coupé (tests/test_export_memory.py), de −20 % à +40 % pour un multicam. Cette file ne dépend pas du nombre de segments mais de la **durée de média décodée
-avant le clip qui commence le plus tard** : 20 min de multicam à trois angles retiennent environ 200 Go.
+(somme sur les clips ``k`` d'une famille, ``début``/``fin`` dans la source ; le cadre est celui de la composition).
 
 **Taille des images en file (mesurée).** C'est l'image **conformée au cadre de la composition**, ``largeur × hauteur × 4`` octets,
 quelle que soit la transformation du clip : la file se forme avant ``scale`` / ``rotate`` de la transformation. Mesuré
@@ -21,20 +18,26 @@ quelle que soit la transformation du clip : la file se forme avant ``scale`` / `
 199 Mo à 45°, 200 Mo en cadrage « remplir » ; échelle animée 1 → 3 : 240 Mo) et sur FFmpeg 6.1 et 7.1 (une échelle 3, dont
 les images seraient de 1,7 Go à la taille agrandie, tient dans 700 Mo). L'échelle < 1 ne réduit donc PAS la file.
 
-Le correctif de fond (donner à chaque clip son propre décodeur, ou composer par tranches de temps) change la structure du
-graphe, donc le rendu à valider image par image : c'est la phase 2 (moteur). En attendant, :func:`check_export_memory` refuse
-**avant FFmpeg** un export qui ne peut pas tenir, au lieu de remplir le swap puis le disque.
+**Le correctif de fond** (:mod:`core.export_inputs`) donne à chaque clip vidéo d'un média chaud sa propre entrée positionnée, et
+compose chaque instance d'une séquence imbriquée pour sa fenêtre seule : la file ne dépend plus de la durée de média décodée avant
+le clip qui commence le plus tard. L'estimation suit la **nouvelle structure**, calculée sur les mêmes décisions que la commande
+(:func:`core.export_inputs.decide_inputs`) :
+
+* la file des flux qui **restent** partagés (au-delà du plafond d'entrées, :func:`core.export_inputs.max_pipelines`, ou dans un
+  conteneur qui ne se positionne pas) : la formule ci-dessus, sur les seules fenêtres qui n'ont pas leur entrée ;
+* le coût des entrées positionnées et des instances (chacune garde environ ``PIPELINE_FRAMES`` cadres RGBA).
+
+Le **son** n'a pas de file : mesuré avec un média de 20 min coupé à 5, 10 et 15 min, la mémoire de FFmpeg reste à 61 Mo (``amix``
+lit ses entrées au fil de l'eau ; seuls les cadres d'``overlay`` attendent).
+
+Un montage dont aucun média n'est coupé en morceaux éloignés a une estimation nulle et n'est jamais refusé.
+:func:`check_export_memory` refuse **avant FFmpeg** ce qui ne peut pas tenir, au lieu de remplir le swap puis le disque.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .render_plan import RenderLayer
-
 LOGGER = logging.getLogger("kut_studio.export_memory")
 
 MEMORY_SHARE = 0.85
@@ -61,74 +64,71 @@ class QueueEstimate:
     frames: float = 0.0
     families: int = 0
     """Nombre de flux partagés (un fichier, une séquence imbriquée) qui retiennent des images."""
+    pipelines: int = 0
+    """Entrées positionnées et instances de séquences imbriquées (chacune garde ses décodeurs et ses premières images)."""
 
 
-def _countable(layer) -> bool:
-    """Un calque qui lit une fenêtre ``trim`` d'un flux partagé, avec la correspondance simple source = timeline × vitesse."""
-    if getattr(layer, "still", False) or getattr(layer, "time_map", None) is not None:
-        return False
-    if layer.timeline_end <= layer.timeline_start or layer.source_out <= layer.source_in:
-        return False
-    return bool(layer.nested_key or layer.source_path)
+def _geometry_of(owner, plan, root_size: tuple[int, int], fps: float) -> tuple[int, int, float]:
+    """Largeur, hauteur et cadence auxquelles ``owner`` (plan racine ou séquence imbriquée) est composé."""
+    from .export_engine import nested_geometry
+
+    if owner is plan:
+        return root_size[0], root_size[1], fps
+    return nested_geometry(owner, root_size[0], root_size[1], plan)
 
 
-def _estimate(chains) -> QueueEstimate:
-    """File d'attente de plusieurs plans qui composent leur propre chaîne d'``overlay`` : ``chains`` = ``[(plan, largeur,
-    hauteur, cadence), ...]``.
+def _file_queue(decision, plan, root_size: tuple[int, int], fps: float) -> tuple[float, float, int]:
+    """Octets, images et nombre de familles de la file des flux qui gardent une entrée ou un rendu partagé.
 
-    Les familles se forment sur **toute la hiérarchie**, avec la clé de déduplication des entrées (``_build_input_list`` :
-    le chemin du fichier, racine et séquences imbriquées confondues) ou, pour une séquence imbriquée, sa clé (un seul
-    ``split`` pour toutes ses instances, quel que soit le plan qui les porte). Le décodage avance dans le temps du
-    **fichier** : le décalage d'imbrication et la vitesse ne déplacent pas ``M`` ; ils ne changent que le nombre
-    d'images (durée sur la timeline du calque), déjà dans la formule. Chaque image est comptée à la taille de la composition
-    du plan qui porte le calque."""
-    families: dict[tuple[str, str], list[tuple[RenderLayer, float, float]]] = {}
-    for plan, width, height, fps in chains:
-        frame_bytes = float(max(1, int(width)) * max(1, int(height)) * _BYTES_PER_PIXEL)
-        for layer in plan.video_layers:
-            if _countable(layer):
-                key = ("nested", layer.nested_key) if layer.nested_key else ("file", layer.source_path)
-                families.setdefault(key, []).append((layer, frame_bytes, max(1.0, float(fps))))
+    Les familles se forment sur **toute la hiérarchie** (``decision.shared``) : le chemin du fichier, racine et séquences imbriquées
+    confondues (la clé d'entrée de ``_build_input_list``), ou la clé d'une séquence imbriquée (un seul ``split``). Le décodage
+    avance dans le temps du **fichier** : le décalage d'imbrication et la vitesse ne déplacent pas ``M`` ; ils ne changent que la
+    durée sur la timeline du calque (dans la formule). Chaque image est comptée à la taille de la composition du plan qui porte le
+    calque, sans facteur d'échelle (voir plus haut)."""
+    families: dict[str, list] = {}
+    for family, start, end, layer, owner in decision.shared:
+        families.setdefault(family, []).append((start, end, layer, owner))
     total_bytes, total_frames, holding = 0.0, 0.0, 0
     for members in families.values():
         if len(members) < 2:
             continue
-        latest = max(layer.source_in for layer, _bytes, _fps in members)
+        latest = max(start for start, _end, _layer, _owner in members)
         size = frames = 0.0
-        for layer, frame_bytes, fps in members:
-            held = min(layer.source_out, latest) - layer.source_in
-            if held <= 0:
+        for start, end, layer, owner in members:
+            held = min(end, latest) - start
+            if held <= 0 or layer.timeline_end <= layer.timeline_start or end <= start:
                 continue
-            count = held / (layer.source_out - layer.source_in) * (layer.timeline_end - layer.timeline_start) * fps
+            width, height, rate = _geometry_of(owner, plan, root_size, fps)
+            count = held / (end - start) * (layer.timeline_end - layer.timeline_start) * max(1.0, rate)
             frames += count
-            size += count * frame_bytes
+            size += count * float(max(1, width) * max(1, height) * _BYTES_PER_PIXEL)
         if size > 0:
             holding += 1
             total_bytes += size
             total_frames += frames
-    return QueueEstimate(int(total_bytes), total_frames, holding)
+    return total_bytes, total_frames, holding
 
 
 def estimate_plan_queue(plan, width: int, height: int, fps: float) -> QueueEstimate:
     """File d'attente d'**un** plan isolé, composé à ``width × height`` et ``fps`` (pas de partage avec d'autres plans :
     pour un export, :func:`estimate_export_queue`)."""
-    return _estimate([(plan, width, height, fps)])
+    from .export_inputs import PIPELINE_FRAMES, decide_inputs
+
+    decision = decide_inputs(plan, origin=0.0, video=True, frame=(width, height))
+    queue_bytes, frames, holding = _file_queue(decision, plan, (width, height), float(fps))
+    resident = decision.pipelines * PIPELINE_FRAMES * float(max(1, width) * max(1, height) * _BYTES_PER_PIXEL)
+    return QueueEstimate(int(queue_bytes + resident), frames, holding, decision.pipelines)
 
 
 def estimate_export_queue(request) -> QueueEstimate:
-    """File d'attente de tout l'export : plan racine et séquences imbriquées, familles communes à toute la hiérarchie."""
-    from .export_engine import composition_size, nested_geometry
+    """Ce que FFmpeg retiendra pour tout l'export : plan racine et séquences imbriquées (familles communes à toute la hiérarchie),
+    flux qui restent partagés et entrées positionnées."""
+    from .export_engine import composition_size
 
     plan = request.render_plan
     out_width, out_height = request.preset.resolution
     width, height = composition_size(plan.width, plan.height, out_width, out_height)
-    chains = [(plan, width, height, float(request.fps))]
-    for entry in getattr(plan, "nested_sequences", ()) or ():
-        if getattr(entry, "composition", None) is not None:
-            continue
-        inner_width, inner_height, inner_fps = nested_geometry(entry.plan, out_width, out_height, plan)
-        chains.append((entry.plan, inner_width, inner_height, inner_fps))
-    return _estimate(chains)
+    return estimate_plan_queue(plan, width, height, float(request.fps))
 
 
 def memory_snapshot() -> tuple[int | None, int | None]:
@@ -197,7 +197,7 @@ def check_export_memory(request, *, total_bytes: int | None = None, available_by
         machine = f", mémoire de cette machine : {total / _GIB:.0f} Go (disponible non mesurée)"
     raise ValueError(
         f"Ce montage est trop complexe pour être exporté d'un seul tenant : mémoire estimée {estimate.bytes / _GIB:.0f} Go"
-        f"{machine}. Plusieurs morceaux d'un même média (ou d'un même angle multicam) sont séparés par un long passage, "
-        "et FFmpeg devrait garder en mémoire tout ce qui les sépare. Réduisez le nombre de coupes d'un même fichier, ou "
-        "exportez le montage en plusieurs parties plus courtes."
+        f"{machine}. Trop de morceaux d'un même média (ou d'un même angle multicam) sont ouverts à la fois, ou restent séparés "
+        "par un long passage : FFmpeg devrait garder en mémoire tout ce qui les sépare. Réduisez le nombre de coupes d'un même "
+        "fichier, ou exportez le montage en plusieurs parties plus courtes."
     )

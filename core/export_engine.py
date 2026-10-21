@@ -264,12 +264,18 @@ def input_arguments(path: str, *, threads: int = 0) -> list[str]:
 
     ``threads`` : fils de décodage d'un média (:func:`decoder_threads`) ; 0 laisse le choix à FFmpeg.
     """
-    path = require_local_ffmpeg_path(path)
+    seek_start = getattr(path, "seek_start", None)             # entrée positionnée (core.export_inputs.SeekedPath)
+    seek_duration = getattr(path, "seek_duration", 0.0)
+    path = require_local_ffmpeg_path(str(path))
     if path.endswith(".ffconcat"):
         return [*_INPUT_PROTOCOL_WHITELIST, "-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
+    window = ["-ss", str(int(seek_start)), "-t", f"{seek_duration:.3f}"] if seek_start is not None else []
+    if seek_start is not None:
+        threads = 1       # un fil par entrée positionnée : chaque fil de décodage garde ses images (140 -> 70 Mo en 1080p, mesuré)
     return [
         *_INPUT_PROTOCOL_WHITELIST,
         *(["-threads", str(threads)] if threads > 0 else []),
+        *window,
         "-i",
         path,
     ]
@@ -282,7 +288,7 @@ def decoder_threads(paths: Sequence[str]) -> int:
     quelques plans à la fois : 19 plans H.264 1080×1920 gardaient ainsi 1,5 Go de plus, sans aucun gain de vitesse
     (mesuré). Plusieurs médias se partagent donc les cœurs, deux fils au moins chacun ; un média seul garde le
     réglage de FFmpeg."""
-    media = [path for path in paths if not path.endswith(".ffconcat")]
+    media = [path for path in paths if not path.endswith(".ffconcat") and getattr(path, "seek_start", None) is None]
     if len(media) <= 1:
         return 0
     return max(2, (os.cpu_count() or 2) // len(media))
@@ -1310,7 +1316,11 @@ class ExportEngine(QObject):
 
         # Inputs dédupliqués : on assigne un index à chaque chemin unique
         # (séquences imbriquées comprises).
-        input_paths, path_to_index = _build_input_list(plan)
+        from .export_inputs import plan_inputs
+
+        input_paths, path_to_index, seeks = plan_inputs(
+            plan, origin=origin, video=not audio_only, frame=(width, height)
+        )
 
         def add_input(path: str) -> int:
             """Entrée supplémentaire (flux de calques, matte) ; dédupliquée."""
@@ -1329,12 +1339,12 @@ class ExportEngine(QObject):
         with command_files(temporary_files):
             sources = _build_nested_sources(
                 parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
-                video=not audio_only,
+                video=not audio_only, seeks=seeks,
             )
             video_label, audio_label = _compose_plan_graph(
                 parts, plan, width, height, fps, path_to_index, sources,
                 add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
-                horizon=horizon, audio_origin=audio_origin, track_taps=track_taps,
+                horizon=horizon, audio_origin=audio_origin, track_taps=track_taps, seeks=seeks,
             )
         if audio_only:
             return ";".join(parts), "", audio_label, input_paths
@@ -1516,12 +1526,16 @@ class _NestedSources:
     chaque couche consomme l'un des labels.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, readers: Mapping[int, int] | None = None) -> None:
         self.video: dict[str, list[str]] = {}
         self.audio: dict[str, list[str]] = {}
+        # Séquences dont la vidéo est composée par instance (:class:`core.export_inputs.NestedInstance`) : un rendu par fenêtre.
+        self.readers = readers or {}
+        self.slot_video: dict[tuple[str, int], list[str]] = {}
 
-    def take_video(self, key: str) -> str:
-        labels = self.video.get(key)
+    def take_video(self, key: str, layer=None) -> str:
+        slot = self.readers.get(id(layer)) if layer is not None else None
+        labels = self.slot_video.get((key, slot)) if slot is not None else self.video.get(key)
         if not labels:
             raise ValueError(f"Rendu de séquence imbriquée introuvable : {key}.")
         return labels.pop(0)
@@ -1591,6 +1605,7 @@ def _build_nested_sources(
     quality: str = "export",
     prepared: Mapping[str, PreparedStream] | None = None,
     video: bool = True,
+    seeks=None,
 ) -> _NestedSources:
     """Compose chaque séquence imbriquée et prépare ses labels de sortie.
 
@@ -1602,7 +1617,7 @@ def _build_nested_sources(
     (cadrage, transform, effets, opacité, fusion du clip imbriqué) :
     rendu interne → composite → effets du clip → timeline parente.
     """
-    sources = _NestedSources()
+    sources = _NestedSources(seeks.readers if seeks else None)
     entries = tuple(getattr(plan, "nested_sequences", ()) or ())
     if not entries:
         return sources
@@ -1615,6 +1630,14 @@ def _build_nested_sources(
         inner = entry.plan
         prefix = f"n{index}_"
         width, height, fps = nested_geometry(inner, output_width, output_height, plan)
+        instances = seeks.splits.get(entry.key) if seeks else None
+        if instances and want_video:
+            # La vidéo est composée par instance ; le son garde son rendu partagé (voir :mod:`core.export_inputs`).
+            _compose_instances(parts, plan, entry, instances, index, sources, path_to_index, width, height, fps,
+                               add_input=add_input, quality=quality, prepared=prepared, seeks=seeks)
+            want_video = 0
+            if not want_audio:
+                continue
         if getattr(entry, "composition", None) is not None:
             # Composition nodale : son graphe compilé lit le rendu de ses sources (entrées placées avant elle).
             from .composition_render import compile_composition
@@ -1630,13 +1653,40 @@ def _build_nested_sources(
             parts, inner, width, height, fps, path_to_index, sources,
             prefix=prefix, nested=True,
             want_video=bool(want_video), want_audio=bool(want_audio),
-            add_input=add_input, quality=quality, prepared=prepared,
+            add_input=add_input, quality=quality, prepared=prepared, seeks=seeks,
         )
         if want_video:
             sources.video[entry.key] = _fan_out(parts, video_label, want_video, "split")
         if want_audio:
             sources.audio[entry.key] = _fan_out(parts, audio_label, want_audio, "asplit")
     return sources
+
+
+def _compose_instances(parts, plan, entry, instances, index, sources, path_to_index, width, height, fps, *,
+                       add_input, quality, prepared, seeks) -> None:
+    """Compose la vidéo d'une séquence imbriquée **une fois par fenêtre de lecture** (:class:`core.export_inputs.NestedInstance`).
+
+    Chaque rendu ne commence qu'à son début (``origin``) et finit avec sa fenêtre : la mémoire de FFmpeg ne dépend plus de
+    ce qui sépare deux fenêtres. Les images gardent leurs horodatages (le lecteur coupe la même plage qu'avant)."""
+    from .export_inputs import INSTANCE_LEAD, INSTANCE_TAIL
+
+    key = entry.key
+    readers: dict[int, int] = {}
+    for layer in plan.video_layers:
+        if layer.nested_key == key:
+            slot = seeks.readers[id(layer)]
+            readers[slot] = readers.get(slot, 0) + 1
+    for slot, instance in enumerate(instances):
+        count = readers.get(slot, 0)
+        if not count:
+            continue
+        video_label, _audio = _compose_plan_graph(
+            parts, entry.plan, width, height, fps, path_to_index, sources,
+            prefix=f"n{index}w{slot}_", nested=True, want_video=True, want_audio=False,
+            add_input=add_input, quality=quality, prepared=prepared, seeks=seeks, tag=instance.tag,
+            origin=instance.start, window=(instance.start, instance.end + INSTANCE_TAIL), lead=INSTANCE_LEAD,
+        )
+        sources.slot_video[(key, slot)] = _fan_out(parts, video_label, count, "split")
 
 
 def _fan_out(parts: list[str], label: str, count: int, filter_name: str) -> list[str]:
@@ -1670,6 +1720,10 @@ def _compose_plan_graph(
     horizon: float | None = None,
     audio_origin: float = 0.0,
     track_taps: dict[str, str] | None = None,
+    seeks=None,
+    tag: str = "",
+    window: tuple[float, float] | None = None,
+    lead: float | None = None,
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1693,17 +1747,24 @@ def _compose_plan_graph(
     ``track_taps`` (racine seulement) : rempli de ``{piste: label}``, le sous-mixage de chaque piste qui a des couches,
     pris juste avant le mixage final (gain, pan, automation et ducking compris : ce qu'on entend de la piste).
 
+    ``window`` (vidéo d'une séquence imbriquée composée par instance, :class:`core.export_inputs.NestedInstance`) :
+    ``(début, fin)`` de la plage lue ; ``origin`` vaut alors le début, comme pour un segment d'aperçu de la racine, et le plan
+    s'arrête à la fin. ``lead`` : secondes gardées avant le début (temps absolu des clips). ``tag`` : la composition, pour
+    retrouver les entrées positionnées de ses clips.
+
     Returns:
         ``(label vidéo, label audio)`` finaux du plan (chaîne vide pour un
         flux non demandé).
     """
     duration = plan.duration
-    origin = float(origin) if not nested and origin and origin > 0 else 0.0
+    origin = float(origin) if (not nested or window is not None) and origin and origin > 0 else 0.0
     # Coupe du fond : rien ne se compose avant ``origin``. Absente pour l'export (graphe inchangé).
     head_trim = f",trim=start={_format_seconds(origin)}" if origin > 0 else ""
     if nested:
         # Au moins une image : une séquence vide reste un flux fini.
         duration = max(duration, 1.0 / float(fps or 30.0))
+        if window is not None:
+            duration = max(min(duration, float(window[1])), origin + 1.0 / float(fps or 30.0))
     p = prefix
     video_label = ""
     audio_label = ""
@@ -1719,7 +1780,7 @@ def _compose_plan_graph(
         bg_duration = f":d={_format_seconds(duration)}" if duration > 0 else ""
         if nested:
             parts.append(
-                f"color=c=black@0:s={width}x{height}:r={fps_text}{bg_duration},"
+                f"color=c=black@0:s={width}x{height}:r={fps_text}{bg_duration}{head_trim},"
                 f"format=rgba[{p}bg]"
             )
         else:
@@ -1732,7 +1793,7 @@ def _compose_plan_graph(
                 parts.append(
                     _build_layer_filter(
                         layer_index, layer, None, width, height, fps,
-                        source=sources.take_video(layer.nested_key),
+                        source=sources.take_video(layer.nested_key, layer),
                         label=f"{p}v{layer_index}",
                         pad_color="black@0",
                         add_input=add_input, pixel_scale=pixel_scale,
@@ -1740,13 +1801,15 @@ def _compose_plan_graph(
                     )
                 )
             else:
-                input_index = path_to_index[layer.source_path]
+                seek_index, input_shift = seeks.video(layer, tag) if seeks else (None, 0.0)
+                input_index = path_to_index[layer.source_path] if seek_index is None else seek_index
                 parts.append(
                     _build_layer_filter(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
                         add_input=add_input, prepared=prepared, pixel_scale=pixel_scale,
-                        origin=origin,
+                        origin=origin, input_shift=input_shift, lead=lead,
+                        first_frame=seeks.bases.get(id(layer)) if seeks and lead is not None else None,
                     )
                 )
 
@@ -2102,6 +2165,13 @@ def _format_seconds(value: float) -> str:
     return f"{float(text):.1f}" if "." not in text else text
 
 
+def _format_signed(value: float) -> str:
+    """``-x`` (``x`` à neuf décimales : une base de temps fine, 1/90000, ne perd pas un tick à la troncature de ``setpts``) ou
+    ``+x`` pour un décalage négatif : l'expression ne contient jamais ``--``."""
+    text = f"{abs(value):.9f}".rstrip("0").rstrip(".") or "0"
+    return f"+{text}" if value < 0 else f"-{text}"
+
+
 OFFSET_GUARD_TICKS = 1e-3
 """Garde ajoutée (en unités de la base de temps) au décalage d'une couche : plus que toute erreur d'arrondi flottante."""
 
@@ -2429,6 +2499,9 @@ def _build_layer_filter(
     prepared: Mapping[str, PreparedStream] | None = None,
     pixel_scale: float = 1.0,
     origin: float = 0.0,
+    input_shift: float = 0.0,
+    lead: float | None = None,
+    first_frame: float | None = None,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -2476,7 +2549,14 @@ def _build_layer_filter(
         if origin > 0.0 and time_map is None and layer.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
         else 0.0
     )
-    source_in = _format_seconds(layer.source_in + skip)
+    # ``lead`` (instance d'une séquence imbriquée, :mod:`core.export_inputs`) : le rendu ne part pas du début du clip, mais le
+    # temps du clip reste celui du graphe historique (0 sur sa première image) ; on garde ``lead`` secondes avant l'image voulue.
+    instance = lead is not None
+    source_in = _format_seconds(
+        layer.source_in + skip - (min(float(lead or 0.0), skip) if skip > 0.0 else 0.0) - input_shift
+    )
+    # Entrée positionnée (:mod:`core.export_inputs`) : son temps part de ``input_shift`` secondes (entières) de la source.
+    trim_out = _format_seconds(layer.source_out - input_shift)
 
     # ``scale`` et ``rotate`` attendent la variable temporelle
     # minuscule ``t``. ``T`` n'est définie que par certains filtres,
@@ -2629,15 +2709,28 @@ def _build_layer_filter(
         # image : ``loop`` la répète, horodatée, pour que ``trim`` puis ``fps`` en tirent toute la durée du clip.
         # Avec ``origin``, ``trim`` commence à ``source_in + skip`` : effets et conformation ne traitent plus
         # ce qui précède le segment (le décodage source peut encore remonter à une image clé antérieure).
-        parts = [
-            f"[{source_label}]",
-            *(["loop=loop=-1:size=1:start=0,"] if getattr(layer, "still", False) else []),
-            f"trim=start={source_in}:end={source_out},",
-            f"{local_pts},",
-            f"{frame_fit},",
-            f"fps={ffmpeg_rate(fps)},",
-            f"{local_pts},",
-        ]
+        if instance:
+            # Temps absolu : ``PTS`` moins l'horodatage de la première image du clip (``first_frame``, sondé : le graphe
+            # historique remet le temps à 0 sur cette image), avec la garde d'un millième de tick de ``_format_offset`` contre
+            # la troncature de ``setpts``.
+            parts = [
+                f"[{source_label}]",
+                f"trim=start={source_in}:end={trim_out},",
+                f"setpts=PTS{_format_signed((first_frame if first_frame is not None else layer.source_in) - input_shift)}"
+                f"/TB+{OFFSET_GUARD_TICKS:g},",
+                f"{frame_fit},",
+                f"fps={ffmpeg_rate(fps)},",
+            ]
+        else:
+            parts = [
+                f"[{source_label}]",
+                *(["loop=loop=-1:size=1:start=0,"] if getattr(layer, "still", False) else []),
+                f"trim=start={source_in}:end={trim_out},",
+                f"{local_pts},",
+                f"{frame_fit},",
+                f"fps={ffmpeg_rate(fps)},",
+                f"{local_pts},",
+            ]
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
     # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).

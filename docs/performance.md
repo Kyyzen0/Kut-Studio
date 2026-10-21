@@ -357,41 +357,128 @@ Segments d'aperçu fidèle (2 s, qualité standard) : −19 à −44 % sur le ba
 remplir le disque par le swap, alors que la sortie pèse 0,66 Go. Le processus Python n'y est pour rien (133 Mo mesurés) :
 **c'est FFmpeg**.
 
-**Cause (mesurée).** Les clips d'un même média partagent une seule entrée FFmpeg, et les segments d'un même angle multicam
-partagent un seul rendu (`split`). Chaque clip est une fenêtre `trim` de ce flux, posée dans la chaîne d'`overlay` du plan.
-`overlay` n'émet son premier cadre qu'une fois la première image de **chaque** étage reçue : FFmpeg décode donc le flux
-partagé jusqu'au clip qui commence le plus tard dans la source, et garde en RGBA pleine trame tout ce que les autres clips
-lisent avant. La sortie reste à 0 s pendant que la mémoire monte, puis l'export avance (trace `out_time` / RSS dans
-`core/export_memory.py`). Ni le nombre de segments, ni les calques graphiques, ni la durée seule n'y changent rien :
+### La cause (mesurée)
 
-| Montage (1080p, 25 i/s, FFmpeg 9.0) | Pic FFmpeg | Estimation de la file |
+Les clips d'un même média partageaient une seule entrée FFmpeg, et les segments d'un même angle multicam un seul rendu
+(`split`). Chaque clip est une fenêtre `trim` de ce flux, posée dans la chaîne d'`overlay` du plan. `overlay` n'émet son premier
+cadre qu'une fois la première image de **chaque** étage reçue : FFmpeg décode donc le flux partagé jusqu'au clip qui commence le
+plus tard dans la source, et garde en RGBA pleine trame tout ce que les autres clips lisent avant. La sortie reste à 0 s pendant
+que la mémoire monte, puis l'export avance.
+
+**La loi, avant le correctif** (`M` : plus grand point d'entrée source de la famille, même fichier ou même angle) :
+
+    file  ≈  Σ_k  max(0, min(fin_k, M) − début_k) / (fin_k − début_k) × durée_k × cadence × largeur × hauteur × 4
+
+| Montage (1080p, 25 i/s, FFmpeg 9.0) | Pic FFmpeg avant | Pic FFmpeg après |
 | --- | ---: | ---: |
-| 1 clip de 130 s (référence) | 0,9 Go | 0 |
-| 1 clip coupé en deux à 12 s | 3,3 Go | 2,5 Go |
-| 1 clip coupé en deux à 20 s | 4,9 Go | 4,1 Go |
-| 1 clip coupé en deux à 60 s | > 7,3 Go (arrêté) | 12,4 Go |
-| multicam 30 s, 3 angles, 5 / 13 / 30 segments | 3,8 / 4,6 / 5,0 Go | 2,5 / 4,8 / 5,6 Go |
-| multicam 20 min, 3 angles, ≈ 30 changements | 9,9 Go à t = 696 s, sans fin | > 200 Go |
+| 1 clip de 130 s (référence) | 0,85 Go | 0,85 Go |
+| 1 clip coupé en deux à 12 s | 3,3 Go | 0,88 Go |
+| 1 clip coupé en deux à 20 s | 4,9 Go | 0,86 Go |
+| 1 clip coupé en deux à 60 s | 5,8 Go | 0,88 Go |
+| multicam 58 s, 3 angles, 6 segments (raw) | 4,5 Go | 1,2 Go |
+| multicam 20 min, 3 angles, ≈ 30 changements | > 200 Go (estimé ; 9,9 Go à t = 696 s, sans fin) | voir « Mesures » |
 
-La file vaut `Σ max(0, min(fin, M) − début) / (fin − début) × durée × cadence × largeur × hauteur × 4`, `M` étant le plus
-grand point d'entrée source de la famille (même fichier, ou même angle). Les mêmes valeurs sortent de FFmpeg 6.1 et 7.1
-(Docker : ils dépassent 5 Go sur la même commande). Sur le vrai FFmpeg, 480×270 : surcoût mesuré 195 / 384 / 572 Mo pour des
-coupes à 15 / 30 / 45 s, estimé 194 / 389 / 583 Mo (`tests/test_export_memory.py`).
+Même mécanisme sous FFmpeg 6.1 et 7.1 (Docker amd64), avec une pente plus faible sous 6.1 (voir « Précisions de l'estimation ») : la structure du graphe, pas la version.
 
-**Ce qui a été fait (phase 1).** `core/export_memory.py` calcule cette file **avant** de lancer FFmpeg, sur le plan seul, et
-`check_export_request` (donc le script, l'interface et la file de rendu) refuse l'export quand elle dépasse 85 % de la mémoire
-**disponible** : « ce montage est trop complexe pour être exporté d'un seul tenant, mémoire estimée … Go, mémoire disponible
-sur cette machine ≈ … Go ». Un clip seul, des clips de
-médias différents ou des morceaux pris au même endroit de la source ont une estimation nulle et ne sont jamais refusés. Le
-rendu des exports qui passent est inchangé (`RENDER_ENGINE_VERSION` aussi : le graphe n'est pas touché).
+### Le correctif : une entrée par clip, un rendu par fenêtre (`core/export_inputs.py`)
 
-**Ce qui reste (phase 2, moteur).** Le refus ne fait pas passer le montage : il évite de remplir le disque. Le correctif de
-fond change la structure du graphe, donc le rendu à valider image par image sur FFmpeg 6.1, 7.1 et 9 : donner à chaque clip son
-propre décodeur positionné (`-ss` en entrée, une entrée par segment), ou composer par tranches de temps (concat de tranches),
-ou remplacer la chaîne d'`overlay` par un `concat` quand les clips d'une piste se suivent. Le même mécanisme contribue sans
-doute à D-003 (90 clips de quelques médias) : à mesurer une fois le montage reproduit.
+* **Une entrée positionnée par clip vidéo simple d'un média chaud.** Un média est *chaud* quand les clips qui le lisent en
+  retiennent plus de 0,5 s de média avant le clip qui commence le plus tard (la loi ci-dessus). Chaque clip a alors sa propre
+  entrée FFmpeg : `-ss <secondes entières> -t <durée> -i`, **un seul fil de décodage**, et sa chaîne de filtres est celle d'avant,
+  `trim` décalé de la position de l'entrée. L'entrée démarre une seconde avant le clip (convergence du décodeur) ; le décalage est
+  un **nombre entier de secondes**, donc un multiple exact de toute base de temps `1/N` : les comparaisons d'horodatages du `trim`
+  donnent les mêmes images. Un média *froid* garde l'entrée partagée : le graphe est celui d'avant, au caractère près.
+* **Une composition par fenêtre pour les séquences imbriquées chaudes.** Chaque instance (chaque segment d'un angle multicam) est
+  composée **pour sa fenêtre seule**, comme un segment d'aperçu de la racine : le fond ne part qu'à son début (`origin`) et
+  s'arrête avec elle (+ 0,5 s : FFmpeg 6.1 perd la dernière image d'un rendu imbriqué). Son clip garde son **temps absolu** :
+  `setpts=PTS-<horodatage de la première image du clip>`, sondé par `ffprobe`. Remettre le temps à 0 sur la première image
+  gardée, comme le fait le graphe d'avant, ne donne le même temps que si l'instance commence au début du clip ; et le point
+  d'entrée ne suffit pas : **FFmpeg 6.1 et 7.1 décalent de +21 ms toutes les images d'un conteneur dont l'audio commence avant la
+  vidéo** (amorce AAC à −21 ms, Matroska produit par FFmpeg 9), pas FFmpeg 9. Faute de sonde, l'instance n'est pas créée.
+* **Le son n'est jamais positionné.** Le décodeur AAC tire son bruit de substitution (PNS) d'un état aléatoire qui dépend de tous
+  les paquets déjà décodés : un décodage qui part du milieu d'un fichier diffère de quelques échantillons du décodage continu
+  (mesuré : jusqu'à 0,012 sur un signal de 0,3, sur un fichier de bruit). Le correctif ne touche donc pas le son, et il n'en a pas
+  besoin : l'audio ne forme pas la file des images (`amix` lit ses entrées au fil de l'eau). Mesuré, un média de 20 min coupé à 5,
+  10 ou 15 min garde 61 Mo de FFmpeg, comme sans coupe ; le multicam de 590 s garde la même mémoire que celui de 60 s.
+* **Un plafond d'entrées par la mémoire** (`max_pipelines`, 6 Go de budget, 8 à 96 entrées selon la taille du cadre : 86 en 1080p,
+  21 en 4K, 8 en 8K) : une entrée ouverte garde de 70 à 140 Mo en 1080p (un seul fil : 70 ; deux fils : 140), une instance en garde
+  deux fois autant (entrée + chaîne imbriquée). Au-delà, les clips qui retiennent le plus gardent leur entrée, les autres restent
+  sur l'entrée partagée.
+* **Restent partagés** : images fixes, clips remappés ou figés (leur étage de temps lit la source entière), listes `.ffconcat`,
+  séquences imbriquées qui contiennent autre chose que des clips de fichier simples (calques, transitions, masques, fenêtres de
+  nœud de couleur, paramètres animés par `sendcmd`, autre séquence imbriquée), fichiers sans sonde, et **les conteneurs dont l'index
+  des images clés n'est pas fiable** : seuls MP4 / MOV et Matroska / WebM sont positionnés. MPEG-TS (`.ts`, `.mts`, `.m2ts` des
+  caméscopes) déduit ses points d'accès du flux : positionné, FFmpeg 6.1 et 7.1 reprennent le décodage sur une image qui n'est pas de
+  rafraîchissement (« co located POCs unavailable ») et les images diffèrent (mesuré) ; AVI, MPEG-PS, FLV et les flux bruts n'ont pas
+  été mesurés. Leur file reste estimée par `core/export_memory.py`.
 
-### Précisions de la revue (taille des images, plans imbriqués, mémoire disponible)
+### Parité de rendu
+
+Zéro différence mesurée : `RENDER_ENGINE_VERSION` reste à 13 (les empreintes de segments d'aperçu portent sur le plan, pas sur le
+graphe). `tests/test_export_inputs_real.py` rend chaque montage avec le graphe d'avant (`max_pipelines` ramené à 0) et le nouveau,
+avant tout encodeur, et compare le `framemd5` de chaque image et le `md5` du mixage flottant : coupe simple, coupes entre deux images,
+ordre inversé avec trou et calque réduit au-dessus, Matroska, MPEG-TS (début à 1,4 s), cadence variable, cadence du projet différente
+de celle des médias, clip accéléré, images clés d'échelle et de rotation, effet animé par `sendcmd`, segment d'aperçu, multicam
+(trois angles, huit segments hors grille), séquence imbriquée générique relue plus loin (avec échelle, rotation et opacité animées).
+Vérifié sur FFmpeg 6.1.1, 7.1.5 (Docker amd64) et 9.0.2. Chaque correctif a sa mutation : sans le décalage, sans la marge de fin
+(FFmpeg 6.1), sans la marge de tête, sans l'horodatage sondé (FFmpeg 6.1 : multicam) ou sans le plafond, un test échoue.
+
+### Mesures
+
+FFmpeg 9.0.2 (macOS arm64), export complet vers H.264 sauf mention ; pic de mémoire du seul processus FFmpeg (`ps`), jamais plus
+de 6 Go (un essai qui les dépasse est arrêté), un seul FFmpeg à la fois, médias hors dépôt supprimés à la fin.
+
+**Un média coupé** (130 s en 1080p, tableau plus haut) : le surcoût de la coupe passe de 2,4 / 4,1 / 4,9 Go à **0,03 / 0,01 / 0,03 Go**,
+quelle que soit sa position. En 480 × 270 (60 s), une coupe à 15 s et à 45 s coûtaient 195 et 572 Mo de plus qu'un clip seul ; la
+même coupe ne coûte plus rien d'une position à l'autre (`tests/test_export_memory.py`, par rapport entre deux positions).
+
+**Un multicam à trois angles et 29 changements d'angle** (640 × 360, 25 i/s, son compris) : la mémoire ne dépend plus de la durée.
+
+| Durée du montage | Avant | Après (33 entrées ouvertes, 61 descripteurs) |
+| ---: | ---: | ---: |
+| 60 s | 1,76 Go (11 s) | 1,05 Go (9 s) |
+| 120 s | 1,85 Go (23 s) | 1,05 Go (13 s) |
+| 300 s | > 6,0 Go, arrêté à 46 s | 1,04 Go (27 s) |
+| 590 s | non lancé (> 6 Go) | 1,03 Go (47 s) |
+
+À 1080p, 58 s, six segments : 3,1 à 4,5 Go avant (selon l'essai) → 1,2 Go ; onze segments : 2,1 Go (avant : 4,3 Go à plus de 6 Go).
+**Loi mesurée après** : mémoire ≈ base (0,25 Go) + nombre d'entrées ouvertes × coût d'une entrée, **indépendante de la durée** ; le coût
+d'une entrée suit la taille du cadre : 70 Mo en 1080p avec un seul fil de décodage (140 Mo avec deux : d'où `-threads 1` sur les
+entrées positionnées), 90 à 175 Mo pour une instance de séquence imbriquée (entrée + chaîne imbriquée + `overlay` du plan),
+environ 10 Mo en 480 × 270. Un banc isolé (16 entrées 1080p, `overlay` en chaîne) donne 140 Mo avec deux fils, 72 avec un, et 50 Mo
+pour des entrées lues par un `concat`, soit le même ordre : la mémoire d'une entrée ouverte ne se réduit pas en changeant la
+structure du graphe.
+
+**Beaucoup de clips** (une seconde chacun, deux fichiers, une piste, 480 × 270) :
+
+| Clips | Avant | Après |
+| ---: | ---: | ---: |
+| 50 | 1,19 Go, 80 s | 0,62 Go, 9 s (52 entrées, 80 descripteurs) |
+| 100 | — | 1,57 Go, 111 s (98 entrées, 126 descripteurs) |
+| 150 | — | 0,60 Go, > 4 min (98 entrées) : au-delà du plafond, le reste garde l'entrée partagée |
+| 200 | 0,22 Go, > 15 min | 0,46 Go, > 15 min (98 entrées) |
+
+À 1080p (sans encodeur) : 10 / 20 / 40 clips ouvrent 12 / 22 / 37 entrées et gardent 0,94 / 1,85 / 2,57 Go, de 70 à 90 Mo chacune. Le
+nombre de descripteurs suit les entrées (30 + 1 par entrée) : le plafond de 96 reste sous les 256 de macOS.
+
+**Le son** : un média de 20 min (160 × 90) coupé à 5, 10 ou 15 min : 61 Mo, comme sans coupe (58 Mo). Aucune file de son.
+
+### Ce qui reste coûteux
+
+* **Le nombre de morceaux ouverts à la fois**, pas leur durée : 70 à 140 Mo chacun en 1080p. Au-delà du plafond les clips restent sur
+  l'entrée partagée, avec la file d'avant (et un export très long : voir D-003 ci-dessous).
+* **Les clips remappés, les images fixes et les séquences imbriquées non simples** gardent l'entrée ou le rendu partagé.
+* **Le temps** : la chaîne d'`overlay` reste longue d'un étage par clip, chaque cadre la traverse. Un montage de 50 clips d'une
+  seconde de deux fichiers (480 × 270) passe de 80 s à 9 s ; 100 clips : 111 s pour 100 s de montage ; 150 clips ou plus, au-delà du
+  plafond, ne finissent plus en 4 min (la file qui reste partagée). Cela rejoint D-003 (90 clips de quelques médias) : à remesurer
+  sur le montage reproduit.
+* **Le refus avant FFmpeg** (`core/export_memory.py`) suit la nouvelle structure : estimation nulle pour un clip seul, des médias
+  différents ou des morceaux pris au même endroit ; sinon le coût des entrées ouvertes, plus la file des flux restés partagés.
+
+### Précisions de l'estimation (taille des images, plans imbriqués, mémoire disponible)
+
+Ces précisions valent pour la file des flux qui **restent** partagés (au-delà du plafond d'entrées, conteneurs non positionnés) et pour
+le graphe d'avant le correctif, que `tests/test_export_memory.py` rejoue en ramenant le plafond à 0 (fixture `legacy`).
 
 - **Taille des images en file : celle du cadre, pas celle après transformation.** Mesuré (480×270, coupe à 15 s, surcoût de
   FFmpeg 9.0) : 196 Mo sans transformation, 191 Mo à l'échelle 0,5, 209 Mo à l'échelle 3, 199 Mo à 45°, 200 Mo en cadrage
@@ -424,12 +511,12 @@ doute à D-003 (90 clips de quelques médias) : à mesurer une fois le montage r
 - **Clips remappés dans le temps** (vitesse, courbe, sens inverse, flux optique) : leur chaîne passe par un `TimeMap` ; ils sont
   ignorés (file supposée nulle), alors que leur flux partagé met aussi des images en file.
 - **Images fixes** (photos) : `loop` ne met qu'une image en file ; ignorées.
-- **Compositions nodales** et leurs sources : ignorées.
+- **Compositions nodales** et leurs sources : ignorées (elles restent sur le rendu partagé, jamais composées par instance).
 - **Transitions** (`xfade`) : leurs branches peuvent retenir des images en plus ; non comptées.
 - **Effets qui changent la taille de l'image** (cadres de flou, pavés, stabilisation / suivi avec marge) : l'image est supposée de la taille
   du cadre ; une échelle animée ajoute quelques images de la taille du cadre agrandi (≈ +25 % mesuré à 1 → 3).
 - **Calques graphiques (listes `.ffconcat`) et mattes** : sources indépendantes, jamais comptées ; ils ne partagent pas de décodeur,
   mais peuvent retenir des images si leur étage attend.
 - **Plan imbriqué utilisé seulement en partie** : tous ses calques sont comptés (surestimation possible).
-- **Multicam** : de −20 % à +40 % mesurés ; l'audio (`amix`, `adelay`) n'est pas compté (petit : 23 Mo par minute en stéréo flottant).
+- **Multicam** : de −20 % à +40 % mesurés sur le graphe d'avant ; le son (`amix`, `adelay`) ne forme pas de file (mesuré : 61 Mo pour un média de 20 min coupé à 5, 10 ou 15 min).
 - **Mémoire de FFmpeg hors file** (décodeurs, encodeur, ~1 Go) : non ajoutée.
