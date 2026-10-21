@@ -152,25 +152,53 @@ def _default_settings(asset) -> TrackerSettings:
     return TrackerSettings(pattern_width=pattern, pattern_height=pattern, search_width=search, search_height=search)
 
 
-def remove_tracker(project, clip_id: str, tracker_id: str) -> None:
-    """Supprime le tracker, ses usages par la stabilisation et les liaisons qui en dépendent."""
-    clip, _tracker = get_tracker(project, clip_id, tracker_id)
-    _store(clip, tracking_of(clip).without_tracker(tracker_id))
-    for track in project.active_sequence.tracks:
-        for other in track.clips:
-            if other is clip or other.tracking is None:
+def rewritten_links(project, clip_id: str, tracker_id: str, other) -> tuple[TrackLink, ...]:
+    """Liaisons de ``other`` après la suppression du tracker ``tracker_id`` de ``clip_id`` (la même règle pour l'écriture et pour le verrou)."""
+    links = []
+    for link in tracking_of(other).links:
+        if link.follows(clip_id) and tracker_id in link.tracker_ids and not _still_tracked_elsewhere(project, link, clip_id, tracker_id):
+            remaining = tuple(t for t in link.tracker_ids if t != tracker_id)
+            if not remaining:
                 continue
-            links = []
-            for link in other.tracking.links:
-                if link.follows(clip_id) and tracker_id in link.tracker_ids and not _still_tracked_elsewhere(
-                    project, link, clip_id, tracker_id
-                ):
-                    remaining = tuple(t for t in link.tracker_ids if t != tracker_id)
-                    if not remaining:
-                        continue
-                    link = replace(link, tracker_ids=remaining)
-                links.append(link)
-            _store(other, replace(other.tracking, links=tuple(links)))
+            link = replace(link, tracker_ids=remaining)
+        links.append(link)
+    return tuple(links)
+
+
+def tracker_removal_rewrites(project, clip_id: str, tracker_id: str) -> list:
+    """Clips (séquence active, hors le porteur) dont les liaisons seraient réécrites par ``remove_tracker`` : ceux dont le résultat diffère."""
+    return [
+        other
+        for track in project.active_sequence.tracks
+        for other in track.clips
+        if other.id != clip_id and other.tracking is not None
+        and rewritten_links(project, clip_id, tracker_id, other) != other.tracking.links
+    ]
+
+
+def remove_tracker(project, clip_id: str, tracker_id: str) -> None:
+    """Supprime le tracker, ses usages par la stabilisation et les liaisons qui en dépendent.
+
+    Refuse (``ValueError``), AVANT d'écrire, si un clip verrouillé verrait sa liaison réécrite (:mod:`core.tracking_locks`).
+    """
+    remove_trackers(project, clip_id, [tracker_id])
+
+
+def remove_trackers(project, clip_id: str, tracker_ids) -> None:
+    """Supprime plusieurs trackers d'un clip : tout ou rien (le verrou est vérifié pour tous AVANT la première écriture)."""
+    from .tracking_locks import require_tracker_removal_unlocked
+
+    ids = list(dict.fromkeys(tracker_ids))
+    if not ids:
+        return
+    clip, _tracker = get_tracker(project, clip_id, ids[0])
+    for tracker_id in ids[1:]:
+        get_tracker(project, clip_id, tracker_id)
+    require_tracker_removal_unlocked(project, clip_id, ids)
+    for tracker_id in ids:
+        _store(clip, tracking_of(clip).without_tracker(tracker_id))
+        for other in tracker_removal_rewrites(project, clip_id, tracker_id):
+            _store(other, replace(other.tracking, links=rewritten_links(project, clip_id, tracker_id, other)))
 
 
 def _still_tracked_elsewhere(project, link: TrackLink, removed_clip_id: str, tracker_id: str) -> bool:
@@ -647,7 +675,7 @@ def stabilization_report(project, clip_id: str) -> dict:
 __all__ = [
     "TrackingError", "add_link", "add_tracker", "analysis_request", "apply_tracking_result",
     "bake_link", "find_clip_and_track", "find_link", "get_tracker", "link_targets", "media_of",
-    "media_rate", "remove_correction", "remove_link", "remove_stabilization", "remove_tracker",
+    "media_rate", "remove_correction", "remove_link", "remove_stabilization", "remove_tracker", "remove_trackers", "rewritten_links",
     "reset_tracker", "set_link_enabled", "set_stabilization", "set_tracker_position",
     "set_tracker_settings", "source_index_at", "stabilization_reference", "stabilization_report",
     "trackable_clip", "tracking_of", "update_tracker",

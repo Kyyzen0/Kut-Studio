@@ -13,7 +13,7 @@ reste un geste de l'interface. Un script fournit en revanche ses points **explic
 Règles communes (celles des autres verbes) :
 
 - **verrous** : le clip modifié (piste et calque) est vérifié ; les clips qui **suivent** un tracker dont les données (ou la
-  stabilisation de la source) changent le sont aussi, et ``remove_tracker`` vérifie ceux dont il réécrit la liaison, AVANT d'écrire ;
+  stabilisation de la source) changent le sont aussi, et ``remove_tracker`` (règle du modèle, ``core.tracking_locks``) refuse si l'un des clips dont il réécrit la liaison est verrouillé, AVANT d'écrire ;
 - **rien n'est ramené en silence** : instant hors du clip, point hors de l'image, réglage que le modèle écrêterait, remplacement d'une
   liaison existante, réglage ignoré (``smoothing_frames`` hors du lissage « custom ») sont refusés ;
 - **identifiants créés** : ``add_tracker`` et ``add_link`` acceptent ``id`` / ``as`` (uniques dans tout le projet).
@@ -39,7 +39,7 @@ from ..tracking_ops import (
 )
 from .tracking_rules import (
     MAX_TRACKERS_PER_CLIP, known_link_ids, known_tracker_ids, require_derived_size, require_followers_editable,
-    require_link_owners_editable, require_span, require_tracker_room, require_within,
+    require_span, require_tracker_room, require_within,
 )
 from .resource_limits import require_keyframes_after
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip, _pick
@@ -208,7 +208,6 @@ def _remove_tracker(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id, clip = _video_clip(project, a["clip"])
         tracker = _tracker_of(clip, a["tracker"])
-        require_link_owners_editable(project, clip_id, tracker.id)
         return remove_tracker(project, clip_id, tracker.id)
 
     return operation
