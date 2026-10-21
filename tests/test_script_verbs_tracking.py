@@ -381,7 +381,6 @@ def test_remove_correction_refuses_an_image_that_is_not_a_correction_and_the_las
 
 
 def test_remove_correction_refuses_an_instant_outside_the_clip():
-    project = _link_project()
     _refused(_tracked(), _op("remove_correction", clip="v", tracker="t1", at=7.0))
     edge = _tracked()
     tracking_ops.set_tracker_position(edge, "v", "t1", 6.0, 5.0, 5.0)           # le modèle ramènerait 7 s à la dernière image du clip
