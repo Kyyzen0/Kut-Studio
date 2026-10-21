@@ -48,7 +48,8 @@ Kut-Studio describe projet.kut --json                    # lire la structure d'u
   source d'un suivi dont un clip suiveur est verrouillé (calque, piste, ou piste d'une autre séquence, liaison active ou non), car la coupe réécrit sa liaison
   (ce refus est celui du **modèle** : l'interface le partage, voir `docs/tracking.md`) ;
   `delete_clip`, `ripple_delete_clip` et `update_leaderboard` refusent de supprimer un clip dont un calque verrouillé est l'enfant, le groupe ou un suiveur
-  prolongé ; `move_clip`, `move_clip_to_track` et `move_clips` refusent de déplacer la source d'un suivi actif suivi par un clip verrouillé ;
+  prolongé ; déplacer la source d'un suivi (`move_clip`, `move_clip_to_track`, `move_clips`) n'est **pas** refusé quand un clip verrouillé la suit : seul le rendu
+  du suiveur change (images clés dérivées), sa liaison n'est pas réécrite, comme dans l'interface ;
   `switch_multicam_angle` et `set_multicam_angle_offset` refusent un segment ou un clip d'angle dont le calque est verrouillé.
 - **Pas d'écriture par défaut.** `apply` écrit dans un autre fichier (`-o`). Écrire dans le projet lui-même demande `--in-place`, et
   un `-o` qui désigne le projet (lien symbolique compris) est refusé. `--dry-run` travaille sur une copie.

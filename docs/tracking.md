@@ -298,6 +298,11 @@ ce qui serait réellement modifié : une liaison qui suit une autre source, ou q
 bloque rien ; un suiveur supprimé dans la même opération non plus. Choix de sécurité : refuser plutôt qu'ignorer le suiveur (il
 cesserait de suivre la moitié droite) ou le détacher. Déverrouillez le suiveur, puis recommencez.
 
+**Déplacer, rogner ou accélérer la source ne touche pas un suiveur verrouillé.** Ces opérations ne modifient que le clip visé : la liaison du
+suiveur (`TrackLink`, en temps source) n'est pas réécrite, seules ses images clés dérivées, recalculées au rendu, suivent la nouvelle place de la
+source. Elles ne sont donc refusées ni par l'interface ni par les scripts (`move_clip`, `move_clip_to_track`, `move_clips` appliquent la même
+règle que la souris) ; seuls la coupe et la suppression, qui réécrivent des liaisons, le sont.
+
 ## Undo / redo
 
 Snapshots du projet (`core.edit_history`) : `TrackData` est immuable et ses

@@ -199,21 +199,19 @@ def test_deleting_a_parent_or_group_refuses_when_a_child_layer_is_locked(op, key
 # --- Les suiveurs d'un suivi : déplacement ---------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("kind", ["layer", "track"])
+@pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("op", [
     _op("move_clip", clip="a", at=20.0), _op("move_clip_to_track", clip="a", track="V3", at=20.0),
     _op("move_clips", placements=[{"clip": "a", "track": "V3", "at": 20.0}]),
 ], ids=lambda op: op["op"])
-def test_moving_a_source_refuses_when_an_active_follower_is_locked(op, kind):
-    _refuse_both_ways(_locked_follower(kind), op, "le clip verrouillé 'f'")
-
-
-def test_moving_a_source_in_another_sequence_is_also_refused_but_an_inactive_link_or_a_free_follower_does_not_block():
-    _refuse_both_ways(_locked_follower("other"), _op("move_clip", clip="a", at=20.0), "le clip verrouillé 'g'")
-    assert _applies(_locked_follower("layer", enabled=False), _op("move_clip", clip="a", at=20.0))
-    free = _project()
-    _follow(free)
-    assert find_clip(_applies(free, _op("move_clip", clip="a", at=20.0)), "a").timeline_start == 20.0
+def test_moving_a_source_is_not_refused_for_a_locked_follower_like_the_window(op, kind):
+    """Déplacer la source ne réécrit pas la liaison du suiveur (tests/test_follower_move_parity.py) : pas de refus, liaison inchangée."""
+    project = _locked_follower(kind)
+    follower = next(c for t in project.all_tracks() for c in t.clips if c.id in ("f", "g"))
+    links = follower.tracking
+    moved = _applies(project, op)
+    assert find_clip(moved, "a").timeline_start == 20.0
+    assert next(c for t in moved.all_tracks() for c in t.clips if c.id == follower.id).tracking == links
 
 
 # --- Multicam : calque verrouillé d'un segment, d'un clip d'angle -------------------------------------------------------------

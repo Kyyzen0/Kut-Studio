@@ -7,6 +7,9 @@ le refus est donc dans le **modèle** (``cut_clip``, ``delete_clip``, ``ripple_d
 script et les menus le partagent. Il passe AVANT la première écriture, et ne vise que les suiveurs que l'opération modifierait réellement
 (``TrackLink.after_cut`` / ``TrackLink.without_source`` donnent un résultat différent) : une liaison qui suit une autre source, ou qu'une
 suppression laisse telle quelle (aucune prolongation), ne bloque rien. Aucun Qt.
+
+Déplacer, rogner, ripple-trimmer, changer la vitesse ou dupliquer la source ne réécrit aucun suiveur (seul le rendu, qui dérive les images clés du
+suiveur de sa source, change) : aucune garde ici pour ces opérations, ni dans l'interface, ni dans les verbes (tests/test_follower_move_parity.py).
 """
 
 from __future__ import annotations
