@@ -291,7 +291,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_mask_keyframe` | Pose ou remplace une image clé d'une propriété d'un masque de compositing (`clip`, `mask`, `property` = `position_x`…`opacity`, `at` relatif au clip, `value`, `interpolation`) ; refusé pour le recadrage, une fenêtre d'étalonnage, et la position d'un masque suivi |
 | `remove_mask_keyframe` | Retire l'image clé d'une propriété d'un masque à un instant (`clip`, `mask`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
-| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) |
+| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) ; retire aussi les images clés `color.*` du clip (comme l'interface), sauf s'il reste étalonné par un graphe de nœuds |
 | `apply_effect_preset` | Applique un preset d'effets **intégré** à un clip vidéo (`clip`, `preset`) |
 | `apply_color_preset` | Applique un preset d'étalonnage **intégré** à un clip (`clip`, `preset`, `node` optionnel) |
 | `set_color_curve` | Règle la sortie d'un point de courbe (`channel`, `index`, `output`) |
