@@ -437,3 +437,10 @@ def test_import_kut3d_does_not_load_qt() -> None:
     code = "import sys, kut3d; kut3d.SceneDocument(); assert not any(m.startswith('PySide6') for m in sys.modules)"
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert done.returncode == 0, done.stderr
+
+
+def test_a_scene_over_the_file_budget_is_refused_when_opened_as_a_document() -> None:
+    big = [primitive_instance(Sphere(0.5, 256, 128)) for _ in range(8)]  # 522 240 triangles : un fichier ne les contiendrait pas
+    scene = kut3d.Scene(instances=big, lights=[], camera=Camera(position=(0, 0, 5), target=(0, 0, 0)))
+    with pytest.raises(DocumentError, match="trop de triangles"):
+        SceneDocument(scene)
