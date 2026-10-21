@@ -359,40 +359,6 @@ def test_the_total_of_tracked_frames_of_the_project_is_bounded(monkeypatch):
     assert report.ok
 
 
-def test_set_tracker_position_refuses_while_a_follower_is_locked():
-    """Un clip qui suit ce tracker changerait d'apparence : verrouillé, il bloque l'écriture."""
-    project = _link_project()
-    _lock_layer(project, "g")
-    _refused(project, _op("set_tracker_position", clip="v", tracker="t1", at=2.0, x=10.0, y=10.0), match="verrouillé")
-    project = _link_project()
-    session, report = _apply(project, _op("set_tracker_position", clip="v", tracker="t1", at=2.0, x=10.0, y=10.0))
-    assert report.ok
-    project = _link_project()
-    project.tracks[4].locked = True                   # un suiveur sur une piste verrouillée
-    follower = project.tracks[4].clips[0]
-    tracking_ops.add_link(project, "z", "v", ["t1", "t2"], timeline_time=0.0, link_id="lz")
-    _refused(project, _op("set_tracker_position", clip="v", tracker="t2", at=2.0, x=10.0, y=10.0), match="verrouillée")
-    assert follower is not None
-
-
-def test_a_disabled_link_does_not_block_the_tracker_data():
-    project = _link_project()
-    tracking_ops.set_link_enabled(project, "g", "lnk", False)
-    _lock_layer(project, "g")
-    session, report = _apply(project, _op("set_tracker_position", clip="v", tracker="t1", at=2.0, x=10.0, y=10.0))
-    assert report.ok
-
-
-def test_a_follower_of_another_tracker_does_not_block():
-    project = _tracked()
-    tracking_ops.add_tracker(project, "v", timeline_time=0.0, tracker_id="t3")
-    tracking_ops.set_tracker_position(project, "v", "t3", 3.0, 5.0, 5.0)
-    tracking_ops.add_link(project, "g", "v", ["t3"], timeline_time=0.0, link_id="l3")
-    _lock_layer(project, "g")
-    session, report = _apply(project, _op("set_tracker_position", clip="v", tracker="t1", at=2.0, x=10.0, y=10.0))
-    assert report.ok
-
-
 # --- remove_correction -------------------------------------------------------------------------------------------------------
 
 
@@ -414,10 +380,7 @@ def test_remove_correction_refuses_an_image_that_is_not_a_correction_and_the_las
     _refused(solo, _op("remove_correction", clip="v", tracker="t1", at=0.0), match="dernier point")
 
 
-def test_remove_correction_refuses_a_locked_follower_and_an_instant_outside_the_clip():
-    project = _link_project()
-    _lock_layer(project, "g")
-    _refused(project, _op("remove_correction", clip="v", tracker="t1", at=3.0), match="verrouillé")
+def test_remove_correction_refuses_an_instant_outside_the_clip():
     _refused(_tracked(), _op("remove_correction", clip="v", tracker="t1", at=7.0))
     edge = _tracked()
     tracking_ops.set_tracker_position(edge, "v", "t1", 6.0, 5.0, 5.0)           # le modèle ramènerait 7 s à la dernière image du clip
@@ -452,13 +415,10 @@ def test_reset_tracker_keeps_the_manual_points_and_defaults_to_all():
     assert report.ok and {s for _i, s in data.samples() if s.status is not SampleStatus.EMPTY} and data.counts()[SampleStatus.TRACKED] == 0
 
 
-def test_reset_tracker_refuses_inconsistent_instants_and_a_locked_follower():
+def test_reset_tracker_refuses_inconsistent_instants():
     _refused(_analysed(), _op("reset_tracker", clip="v", tracker="t1", direction="all", at=1.0), match="« at »")
     _refused(_analysed(), _op("reset_tracker", clip="v", tracker="t1", direction="after"), match="demande")
     _refused(_analysed(), _op("reset_tracker", clip="v", tracker="t1", direction="after", at=9.0))
-    project = _link_project()
-    _lock_layer(project, "g")
-    _refused(project, _op("reset_tracker", clip="v", tracker="t1"), match="verrouillé")
 
 
 # --- remove_tracker ----------------------------------------------------------------------------------------------------------
@@ -702,13 +662,10 @@ def test_set_stabilization_refuses_an_unanalysed_tracker():
     _refused(project, _op("set_stabilization", clip="v", trackers=["t3"]), match="au moins deux images")
 
 
-def test_set_stabilization_refuses_a_locked_clip_and_a_locked_follower():
+def test_set_stabilization_refuses_a_locked_clip():
     project = _tracked()
     project.tracks[0].locked = True
     _refused(project, _op("set_stabilization", clip="v", trackers=["t1"]), match="verrouillée")
-    project = _link_project()
-    _lock_layer(project, "g")
-    _refused(project, _op("set_stabilization", clip="v", trackers=["t1"]), match="verrouillé")
     _refused(_tracked(), _op("set_stabilization", clip="lk", trackers=["t1"]), match="verrouillée")
 
 
@@ -723,10 +680,6 @@ def test_remove_stabilization_matches_the_model_and_refuses_without_one():
     project = factory()
     project.tracks[0].locked = True
     _refused(project, _op("remove_stabilization", clip="v"), match="verrouillée")
-    project = factory()
-    tracking_ops.add_link(project, "g", "v", ["t1"], timeline_time=0.0, link_id="lnk")
-    _lock_layer(project, "g")
-    _refused(project, _op("remove_stabilization", clip="v"), match="verrouillé")
 
 
 # --- follow_reframe ----------------------------------------------------------------------------------------------------------

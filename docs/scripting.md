@@ -506,9 +506,11 @@ stabilisation ne stockent aucune image clé : elles sont dérivées dans le plan
 - **Refusé plutôt que ramené.** Instant hors du clip, point hors de l'image (de −1 à 2 fois la taille pour `set_tracker_position`), réglage que le modèle
   écrêterait ou qui en changerait un autre, stabilisation sans `trackers` à la création, `smoothing_frames` hors du lissage `custom`, liaison qui
   remplacerait une liaison existante (`remove_link` d'abord).
-- **Verrous.** Le clip modifié (piste et calque) est vérifié. Les clips qui **suivent** un tracker dont les données changent (ou la stabilisation de la source)
-  le sont aussi, et `remove_tracker` vérifie ceux dont il réécrit la liaison : un seul clip verrouillé fait refuser le verbe, sans rien écrire. C'est
-  plus strict que l'interface. La source d'une liaison n'est que lue : elle peut être verrouillée.
+- **Verrous.** Le clip modifié (piste et calque) est vérifié. Un clip qui **suit** un tracker dont les données changent (`set_tracker_position`,
+  `remove_correction`, `reset_tracker`, `set_stabilization`, `remove_stabilization`) n'est **pas** refusé, verrouillé (calque, piste, piste d'une autre
+  séquence) ou non : ces verbes n'écrivent que le suivi du clip visé, la liaison du suiveur (en temps source) n'est pas réécrite, seul son rendu suit,
+  comme dans l'interface. Seul `remove_tracker` réécrit des liaisons : il refuse, sans rien écrire, si l'un des clips dont il réécrirait la liaison est
+  verrouillé. La source d'une liaison n'est que lue : elle peut être verrouillée.
 - Valeurs par défaut de `set_stabilization` à la création : mode `position`, lissage `medium`, bords `zoom`, image de référence au début du clip.
 - `describe` ne lit pas encore le suivi (« Pas encore là ») : un script cite les trackers et les liaisons qu'il a créés (`id` / `as`).
 
