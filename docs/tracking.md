@@ -298,6 +298,13 @@ ce qui serait réellement modifié : une liaison qui suit une autre source, ou q
 bloque rien ; un suiveur supprimé dans la même opération non plus. Choix de sécurité : refuser plutôt qu'ignorer le suiveur (il
 cesserait de suivre la moitié droite) ou le détacher. Déverrouillez le suiveur, puis recommencez.
 
+**Supprimer un tracker ne réécrit pas non plus un suiveur verrouillé.** `tracking_ops.remove_tracker` (et `remove_trackers`, la suppression
+de plusieurs trackers du panneau Suivi, tout ou rien) retire le tracker de la liaison des clips de la séquence active qui le suivent, ou la
+supprime si elle n'en a plus. Si l'un de ces clips est verrouillé (piste ou calque), le **modèle** refuse avant la première écriture
+(`require_tracker_removal_unlocked`, `core/tracking_locks.py`, calculé par la règle d'écriture elle-même) ; le panneau affiche le message
+dans la barre d'état, sans rien changer ni écrire dans l'historique. Une liaison qui n'utilise pas ce tracker, ou qui suit encore l'autre moitié
+d'un clip coupé, ne bloque rien ; la suppression d'un clip porteur reste régie par la règle de coupe / suppression ci-dessus.
+
 **Déplacer, rogner ou accélérer la source ne touche pas un suiveur verrouillé.** Ces opérations ne modifient que le clip visé : la liaison du
 suiveur (`TrackLink`, en temps source) n'est pas réécrite, seules ses images clés dérivées, recalculées au rendu, suivent la nouvelle place de la
 source. Elles ne sont donc refusées ni par l'interface ni par les scripts (`move_clip`, `move_clip_to_track`, `move_clips` appliquent la même
