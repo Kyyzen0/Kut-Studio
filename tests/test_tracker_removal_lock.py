@@ -278,3 +278,47 @@ def test_a_locked_follower_of_another_sequence_does_not_block_the_window_and_und
     assert _links(window.project, "f")[0].tracker_ids == ("t1", "t2") and window.project.sequences[-1].tracks[0].clips[0].tracking == before
     window.redo_last()
     assert _links(window.project, "f")[0].tracker_ids == ("t2",) and window.project.sequences[-1].tracks[0].clips[0].tracking == before
+
+
+# --- La portée suit la séquence du clip porteur, pas la séquence active (Codex, #251) ------------------------------------------------
+
+
+def _scope_project(*, locked_cross: bool, same_locked: bool) -> Project:
+    project = _project("track" if same_locked else None)
+    cross = _second_sequence(project, locked=locked_cross)
+    tracking_ops.add_link(project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    project.active_sequence_id = "seq-b"                                # « a » est dans la séquence principale, inactive
+    assert cross.tracking is not None
+    return project
+
+
+def test_removal_scope_is_the_sequence_of_the_source_not_the_active_one():
+    project = _scope_project(locked_cross=True, same_locked=False)
+    cross = project.sequences[-1].tracks[0].clips[0]
+    before = copy.deepcopy(cross.tracking)
+    tracking_ops.remove_tracker(project, "a", "t1")                    # le suiveur inter-séquences, verrouillé, ne refuse pas
+    assert cross.tracking == before
+    assert _links_in(project, "f")[0].tracker_ids == ("t2",)            # le suiveur libre de la séquence de « a » est réécrit
+
+
+def test_a_locked_follower_of_the_source_sequence_still_refuses_when_another_is_active():
+    project = _scope_project(locked_cross=False, same_locked=True)
+    before = copy.deepcopy(project)
+    with pytest.raises(ValueError, match="verrouillé"):
+        tracking_ops.remove_tracker(project, "a", "t1")
+    with pytest.raises(ValueError, match="verrouillé"):
+        tracking_ops.remove_trackers(project, "a", ["t2", "t1"])
+    assert project == before
+
+
+def test_the_script_verb_agrees_with_the_model_for_an_inactive_source_sequence():
+    scripted, direct = _scope_project(locked_cross=True, same_locked=False), _scope_project(locked_cross=True, same_locked=False)
+    tracking_ops.remove_tracker(direct, "a", "t1")
+    session = Session(scripted)
+    report = apply_script(session, parse_script({"kut_script": 1, "ops": [{"op": "remove_tracker", "clip": "a", "tracker": "t1"}]}))
+    assert not report.ok                                               # le verbe ne voit que la séquence active : « a » y est introuvable
+    assert session.project == _scope_project(locked_cross=True, same_locked=False)
+
+
+def _links_in(project: Project, clip_id: str):
+    return tracking_ops.tracking_of(next(c for s in project.sequences for t in s.tracks for c in t.clips if c.id == clip_id)).links
