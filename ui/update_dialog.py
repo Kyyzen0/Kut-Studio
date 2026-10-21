@@ -406,6 +406,11 @@ class UpdateDialog(QDialog):
             OperatingSystem.LINUX: "update.authenticity.linux",
         }.get(system) if system is not None else None
         details = [i18n.translate("update.ready.integrity")]
+        signature = download.signature
+        if signature is not None and signature.verified:
+            details.append(i18n.translate("update.ready.signature_verified", key=signature.key_id))
+        else:
+            details.append(i18n.translate("update.ready.signature_absent"))
         if authenticity is not None:
             details.append(i18n.translate(authenticity))
         details.append(i18n.translate("update.ready.file", path=str(download.path)))

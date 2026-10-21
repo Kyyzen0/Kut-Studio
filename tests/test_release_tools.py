@@ -224,7 +224,7 @@ def test_release_notes_state_the_real_macos_signature(status, phrase):
 def test_release_notes_refuse_an_unknown_signing_status(tmp_path):
     with pytest.raises(ReleaseError):
         release_notes("1.2.3", "probably-fine")
-    assert cli.main(["notes", "--signing", "adhoc", "--version", "1.2.3", "--out", str(tmp_path / "n.md")]) == 0
+    assert cli.main(["notes", "--signing", "adhoc", "--update-signature", "unsigned", "--version", "1.2.3", "--out", str(tmp_path / "n.md")]) == 0
     assert "Kut-Studio 1.2.3" in (tmp_path / "n.md").read_text(encoding="utf-8")
 
 

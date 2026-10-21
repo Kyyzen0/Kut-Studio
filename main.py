@@ -100,6 +100,13 @@ def main():
         if problem:
             print(f"Smoke test : HTTPS indisponible — {problem}", file=sys.stderr)
             return 1
+        # Signature des mises à jour (Ed25519 en Python pur, ADR-0012) : l'application construite doit savoir vérifier.
+        from core.update_signature import self_check as update_signature_check
+
+        problem = update_signature_check()
+        if problem:
+            print(f"Smoke test : vérification des signatures de mise à jour indisponible — {problem}", file=sys.stderr)
+            return 1
         # Supervision des FFmpeg : gardien (macOS, Linux) ou objet Job (Windows) réellement déclenché.
         from core.process_supervisor import supervision_self_check
 

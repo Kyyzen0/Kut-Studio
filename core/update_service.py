@@ -21,7 +21,7 @@ import hashlib
 import json
 import logging
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -30,7 +30,14 @@ from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest, QSslSocket
 
 from .app_version import APP_VERSION, GITHUB_REPOSITORY
-from .release_assets import CHECKSUMS_FILE, MAX_CHECKSUMS_BYTES, Target, detect_target, parse_asset_name
+from .release_assets import (
+    CHECKSUMS_FILE,
+    MAX_CHECKSUMS_BYTES,
+    SIGNATURE_FILE,
+    Target,
+    detect_target,
+    parse_asset_name,
+)
 from .updates import (
     GITHUB_API,
     MAX_RELEASES_BYTES,
@@ -50,6 +57,8 @@ from .updates import (
     user_agent,
     verify_package,
 )
+from .update_keys import UPDATE_PUBLIC_KEYS, PublicKey
+from .update_signature import MAX_SIGNATURE_BYTES, SignatureResult, SignatureStatus, verify_release_signature
 from .versioning import Version
 
 LOGGER = logging.getLogger(__name__)
@@ -465,6 +474,14 @@ class DownloadResult:
     marked: bool = False
     """La marque « téléchargé d'Internet » du système a été posée (quarantaine macOS, Zone.Identifier Windows)."""
     error: UpdateError | None = None
+    signature: SignatureResult | None = None
+    """Résultat de la vérification de ``SHA256SUMS.txt.sig`` (ADR-0012) ; ``None`` si le téléchargement a échoué."""
+
+    @property
+    def signature_status(self) -> SignatureStatus:
+        """``VERIFIED`` : la release est authentifiée (condition de l'installation automatique) ; ``ABSENT`` :
+        installation assistée seulement ; ``INVALID`` n'arrive jamais avec un paquet disponible (il est refusé)."""
+        return self.signature.status if self.signature is not None else SignatureStatus.ABSENT
 
 
 class UpdateDownloader(QObject):
@@ -474,15 +491,35 @@ class UpdateDownloader(QObject):
     ``<nom>.part`` avec empreinte au fil de l'eau → taille et SHA-256 → marque « téléchargé d'Internet » (refus si
     macOS ou Windows ne l'acceptent pas) → renommage atomique. ``progress(reçus, total)`` pendant le paquet, puis
     ``finished(DownloadResult)``.
+
+    Signature (ADR-0012) : si la release publie ``SHA256SUMS.txt.sig``, elle est vérifiée sur les octets reçus de
+    ``SHA256SUMS.txt`` **avant** de télécharger le paquet (une signature fausse refuse tout, sans rien écrire) ; le
+    résultat accompagne le paquet vérifié (``DownloadResult.signature_status``). Sans fichier de signature, le statut
+    est ``ABSENT`` et le comportement reste celui d'avant, sauf si ``require_signature`` (installation automatique).
+    Une version égale ou plus ancienne que ``current`` n'est jamais téléchargée.
     """
 
     progress = Signal(object, object)
     finished = Signal(object)
 
-    def __init__(self, client: HttpClient, *, directory: Path | None = None, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        client: HttpClient,
+        *,
+        directory: Path | None = None,
+        current: Version | None = None,
+        keys: Sequence[PublicKey] | None = None,
+        require_signature: bool = False,
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self._client = client
         self._directory = directory
+        self._current = current or Version.parse(APP_VERSION)
+        self._keys = keys
+        self._require_signature = require_signature
+        self._sums = b""
+        self._signature: SignatureResult | None = None
         self._transfer: Transfer | None = None
         self._offer: UpdateOffer | None = None
         self._expected = ""
@@ -501,6 +538,11 @@ class UpdateDownloader(QObject):
         if self._offer is not None:
             return False
         self._offer, self._cancelled, self._expected = offer, False, ""
+        self._sums, self._signature = b"", None
+        if offer.version <= self._current:
+            self._fail(UpdateError(UpdateErrorKind.NOT_NEWER, f"{offer.version} n'est pas plus récente que {self._current}"),
+                       later=True)
+            return True
         if offer.package is None:
             self._fail(UpdateError(UpdateErrorKind.NO_PACKAGE, str(offer.target)), later=True)
             return True
@@ -555,6 +597,44 @@ class UpdateDownloader(QObject):
         except UpdateError as error:
             self._fail(error)
             return
+        self._sums = transfer.body
+        signature = offer.signature
+        if signature is None:
+            self._check_signature(None)
+        elif signature.size > MAX_SIGNATURE_BYTES:
+            self._check_signature(b"x" * (MAX_SIGNATURE_BYTES + 1))     # refusé comme illisible, sans le télécharger
+        else:
+            self._transfer = self._client.get(signature.url, max_bytes=MAX_SIGNATURE_BYTES)
+            self._transfer.finished.connect(self._on_signature)
+
+    def _on_signature(self, transfer: TransferResult) -> None:
+        self._transfer = None
+        if self._offer is None:  # pragma: no cover - garde de cohérence
+            return
+        if self._cancelled:
+            self._fail(UpdateError(UpdateErrorKind.CANCELLED))
+            return
+        if transfer.error is not None:
+            self._fail(transfer.error)       # fichier annoncé mais illisible : pas de repli silencieux sur « absente »
+            return
+        self._check_signature(transfer.body)
+
+    def _check_signature(self, content: bytes | None) -> None:
+        offer = self._offer
+        if offer is None or offer.package is None:  # pragma: no cover - garde de cohérence
+            return
+        keys = UPDATE_PUBLIC_KEYS if self._keys is None else self._keys
+        result = verify_release_signature(self._sums, content, keys)
+        self._signature = result
+        if result.status is SignatureStatus.INVALID:
+            kind = UpdateErrorKind.SIGNATURE_UNKNOWN_KEY if result.unknown_key else UpdateErrorKind.SIGNATURE_INVALID
+            self._fail(UpdateError(kind, f"{SIGNATURE_FILE} : {result.detail}"))
+            return
+        if result.status is SignatureStatus.ABSENT and self._require_signature:
+            self._fail(UpdateError(UpdateErrorKind.SIGNATURE_MISSING, f"{SIGNATURE_FILE} non publiée"))
+            return
+        LOGGER.info("Mise à jour %s : signature %s%s", offer.version, result.status.value,
+                    f" (clé {result.key_id})" if result.key_id else "")
         partial = self.directory / f"{offer.package.name}.part"
         self._transfer = self._client.download(offer.package.url, partial, expected_size=offer.package.size)
         self._transfer.progress.connect(self.progress)
@@ -590,7 +670,8 @@ class UpdateDownloader(QObject):
         LOGGER.info("Mise à jour %s téléchargée et vérifiée : %s (sha256 %s, marque système : %s)",
                     offer.version, final, transfer.sha256, marked)
         self._offer = None
-        self.finished.emit(DownloadResult(offer, path=final, sha256=transfer.sha256, marked=marked))
+        self.finished.emit(DownloadResult(offer, path=final, sha256=transfer.sha256, marked=marked,
+                                          signature=self._signature))
 
     def _fail(self, error: UpdateError, *, later: bool = False) -> None:
         offer = self._offer
@@ -600,7 +681,7 @@ class UpdateDownloader(QObject):
             error = UpdateError(UpdateErrorKind.CANCELLED, error.detail)
         LOGGER.info("Mise à jour %s : téléchargement refusé — %s", offer.version, error)
         self._offer = None
-        result = DownloadResult(offer, error=error)
+        result = DownloadResult(offer, error=error, signature=self._signature)
         if later:   # le contrat reste asynchrone : ``finished`` n'arrive jamais pendant ``start``
             QTimer.singleShot(0, lambda: self.finished.emit(result))
         else:
