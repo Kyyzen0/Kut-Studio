@@ -2727,8 +2727,11 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
 
     if isinstance(grade, Compare):
         # Avant / après de l'aperçu fidèle : l'étalonnage montré, l'image d'origine à gauche du partage.
+        # Les images clés ``color.*`` du clip suivent l'étalonnage montré à droite : le segment couvre un intervalle, il ne se
+        # fige pas sur le réglage de base (ADR-0008, étape 7).
         return compare_filters(_build_color_grade_filters(grade.value, tag=f"{tag}k", windows=windows,
-                                                          pixel_scale=pixel_scale), grade.split, tag)
+                                                          pixel_scale=pixel_scale, animation=animation,
+                                                          sendcmd=sendcmd), grade.split, tag)
     if isinstance(grade, (ColorNodeGraph, Highlight)):
         # Nœuds : en série, la chaîne de chaque nœud actif (un graphe d'un
         # seul nœud rend les pixels de son ColorGrade) ; mélangeurs et

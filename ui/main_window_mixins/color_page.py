@@ -256,10 +256,18 @@ class ColorPageMixin:
             shown = Compare(shown, self.preview_panel.compare_split_in_layer(self._color_compare))
         return None if shown is getattr(clip, "color_grade", None) else {clip_id: shown}
 
-    def _monitor_color_grade(self, clip):
+    def _monitor_color_grade(self, clip, local_time: float | None = None):
         """Ce que le moniteur montre pour ``clip`` : son étalonnage, ou la sélection du nœud courant quand *Afficher
-        la sélection* est coché pour le clip de la page Couleur (jamais à l'export)."""
+        la sélection* est coché pour le clip de la page Couleur (jamais à l'export).
+
+        ``local_time`` (temps local du clip, secondes) : l'étalonnage est celui que **l'export** applique à cet instant
+        (:func:`core.grade_targets.effective_grade`, images clés ``color.*``, ADR-0008 étape 7). ``None`` (défaut) : le réglage de base,
+        comme avant ; sans image clé, la valeur rendue est **le même objet** que ``clip.color_grade`` dans les deux cas."""
         value = getattr(clip, "color_grade", None)
+        if local_time is not None:
+            from core.grade_targets import effective_grade
+
+            value = effective_grade(clip, local_time)
         panel = getattr(self, "color_panel", None)
         if not self._color_highlight or panel is None or not panel.isVisible():
             return value
@@ -269,6 +277,23 @@ class ColorPageMixin:
         node = graph.node_or_first(self._color_node_id)
         selects = (node.qualifier is not None and node.qualifier.enabled) or bool(node.windows)
         return Highlight(graph, node.id) if selects else value
+
+    def _settle_animated_grade(self) -> None:
+        """À la pause : si un clip visible a un étalonnage animé, le moniteur est resynchronisé **une fois** sur l'instant d'arrêt
+        (la LUT du dernier tic de lecture date d'une image au plus ; à l'arrêt elle est cuite exactement à l'instant courant,
+        ADR-0008 étape 7). Sans étalonnage animé : rien, le chemin est celui d'avant."""
+        from core.grade_targets import has_live_grade_animation
+
+        index = self._ensure_timeline_index()
+        try:
+            active = index.active_at(self.project, float(self.playhead_seconds))
+        except ValueError:
+            return
+        animated = any(
+            has_live_grade_animation(index.clip(item.owner_clip_id)) for item in active if item.track_type == "video"
+        )
+        if animated:
+            self._sync_preview_to_timeline()
 
     def _refresh_clip_strip(self, *_args) -> None:
         """Les plans vidéo de la séquence affichée, dans l'ordre du montage, et le plan de l'inspecteur."""

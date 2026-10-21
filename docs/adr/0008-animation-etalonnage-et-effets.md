@@ -175,7 +175,7 @@ clés » ferait pointer les courbes vers les effets d'origine. La décision :
 4. **Interface des effets (faite, résultats ci-dessous)** : branche « image clé » dans le panneau Effets, losanges, menu, éditeur de courbes, niveau d'usage, manifeste d'énumération.
 5. **Effets hors expression** via `sendcmd` (fait le 2026-10-20, résultats ci-dessous) : **flou** (`gblur`, `sigma` + `sigmaV`), **aberration chromatique** (`rgbashift`, `rh` / `bh`) et **rayon de la lueur** (`gblur` du bloom) sont rendus et enregistrés ; le **gain et le seuil de la lueur** (`lutrgb`, coût) et la **netteté** (`unsharp`, ignore les commandes) restent statiques.
 6. **Cibles et rendu de l'étalonnage (fait le 2026-10-20, résultats ci-dessous)** : `color.*` (23 propriétés), `effective_grade`, export par expression (`eq`, `hue`) puis `sendcmd` pour le reste (`colorbalance`, `colorchannelmixer`, et `curves` à 256 points pour l'exposition et les roues, **pas** `lutrgb` : la mesure demandée par le plan a tranché), format 24, moteur de rendu inchangé. Le moniteur n'est pas touché (étape 7).
-7. **Moniteur fidèle d'abord** pour l'étalonnage animé, LUT cuite à l'arrêt avec les valeurs évaluées.
+7. **Moniteur fidèle d'abord** pour l'étalonnage animé, LUT cuite à l'arrêt avec les valeurs évaluées (fait le 2026-10-21, résultats ci-dessous).
 8. **Interface de l'étalonnage** : losanges dans le panneau Couleur.
 9. **Mode script** : verbes `fx` avec sélecteur `effect`, `color.*` dans la liste dérivée, documentation, tableau des unités.
 
@@ -403,6 +403,57 @@ Le plan de l'ADR le disait : l'exposition et les roues sont écrites par `lutrgb
 **Décision (option 1 de l'analyse).** On garde la factorisation (les deux mécanismes partagent le code, sans doublon) et on **borne** le défaut au lieu de le prétendre résolu : `MAX_EFFECT_COMMANDS = 40 000` commandes par effet (≈ 1 Go de pic sur 6.1 / 7.1 ; ≈ 20 000 images pour un flou à deux commandes par valeur, plus de onze minutes à 30 i/s si la valeur change à chaque image ; une courbe qui se maintient en écrit bien moins), plus le plafond d'octets `MAX_COMMAND_BYTES` (32 Mo) en second garde-fou. Le plan est calculé en entier **avant** d'écrire un fichier ; au-delà, `ValueError` « Animation d'effet trop longue pour l'export : raccourcissez-la, gardez une valeur fixe sur une partie du clip ou découpez le clip. (Moins d'images clés ne serait pas un remède : la boucle écrit une commande à chaque image où la valeur interpolée change.) » (message sans donnée de l'utilisateur) : un refus, jamais un rendu faux. En dessous, le rendu est inchangé : sur 300 cas tirés au hasard (effet, images clés, cadence, origine, échelle), les chaînes et les fichiers de commandes sont identiques octet pour octet à ceux de `origin/main`, sauf deux plans de plus de 192 Ko dont le texte est simplement coupé en plusieurs fichiers (même contenu concaténé) ; `RENDER_ENGINE_VERSION` (13) et la version du format `.kut` ne bougent pas (les empreintes de cache se calculent sans fichier de commandes). Parité de rendu avec le statique, y compris plans coupés en plusieurs fenêtres (frontières comprises) : écart 0 sur FFmpeg 6.1.1, 7.1.5 et 9.0.2 (`tools/validate_fx_render.py`, cas `sendcmd_*_windows`).
 
 **Piste non confirmée.** Une partie du coût ressemble à de la fragmentation de `malloc` : `MALLOC_ARENA_MAX=1 MALLOC_MMAP_THRESHOLD_=4096 MALLOC_TRIM_THRESHOLD_=0` ramène le cas de 3 000 lignes de 220 à 142 Mo sur 7.1.5 (glibc seulement ; non essayé sur 6.1.1 ; sans équivalent sur Windows et macOS, et ce serait une variable d'environnement posée au FFmpeg de l'utilisateur). **Évolution possible, non faite** : découper le rendu d'un clip en tranches de temps (plusieurs invocations de FFmpeg), seule voie qui borne vraiment la mémoire d'une animation arbitrairement longue ; c'est un changement d'architecture de l'export.
+
+## Résultats de l'étape 7 (2026-10-21) : le moniteur montre l'étalonnage animé
+
+**Livré.** `MainWindow._monitor_color_grade(clip, temps local)` rend `effective_grade(clip, t)` (même temps local que les effets) pour le clip
+du dessus et pour chaque piste vidéo en dessous ; la LUT cuite par `core/gpu_grade.py` l'est donc pour les valeurs de l'instant affiché. À la
+pause, une resynchronisation unique pose le moniteur sur l'instant d'arrêt si un clip visible est animé. Rien n'est réécrit côté export ni
+dans le format `.kut` (pas de bump). `GradeLutCache` gagne trois choses (paramètres optionnels, défaut inchangé) : un ordre de service **équitable**
+entre emplacements (le moins récemment servi, à égalité le plus récent), `latest(slot)` (dernière LUT cuite avec succès) et `workers`
+(fils de cuisson, 1 par défaut ; le moniteur en prend 2).
+
+**Mesures (M-series, 10 cœurs, FFmpeg 9.0.2 ; rien de comparable en CI).**
+
+| | valeur |
+|---|---|
+| Cuisson d'une LUT 52³ (médiane de 20) | **104 ms** (réglage simple, RVB ou YUV ; +température +ombres : 105 ms) ; la docstring annonçait ≈ 30 ms |
+| Démarrage de FFmpeg seul | ≈ 24 ms ; `-threads 1` ne change rien (99 ms) |
+| `lut_key` | < 0,1 ms |
+| Évaluation par tic, clip sans image clé `color.*` | 0,09 µs avant, 2,0 µs après |
+| Évaluation par tic, clip animé (six réglages) | ≈ 410 µs |
+| Lecture 6 s à 25 i/s, 1 fil : LUT cuites / retard de l'étalonnage affiché | 7,7 /s ; 1 clip 209 ms (p95 281) ; 2 clips 281 (403) ; 4 clips 405 (645) |
+| id., 2 fils (retenu) | ≈ 15 /s ; 1 clip 200 (246) ; 2 clips 230 (283) ; 4 clips 283 (406) |
+| id., 3 fils | ≈ 22 /s ; 1 clip 170 (240) ; 2 clips 200 (278) ; 4 clips 242 (368) |
+
+**Décision de repli (la mesure a tranché).** Une cuisson dure ≈ trois images à 30 i/s : « une LUT par image » est impossible, comme l'ADR le
+disait, et l'écart est plus grand que prévu (104 ms, pas 30). À l'arrêt : exact. En lecture : jamais d'approximation de la **valeur** (ni
+arrondi, ni interpolation entre LUT) ; on montre la LUT exacte du dernier instant cuit, qui retarde l'image de ≈ 0,2 s (un clip) à ≈ 0,3 s (quatre
+clips). Une variation d'étalonnage plus lente que cela est fidèle, une plus rapide est montrée en retard ; la LUT exacte arrive dès l'arrêt.
+Pistes non retenues : cuire à l'avance un instant futur (anticiper de la durée d'une cuisson) : plausible, mais invérifiable sans écran ;
+quantifier les valeurs (moins de LUT distinctes, cache réutilisé en boucle) : sacrifie la valeur, refusé tant que le retard est acceptable ;
+un FFmpeg persistant par LUT : ne gagne que les 24 ms de démarrage.
+
+**Deux défauts trouvés en chemin** (corrigés, avec test qui échoue sans le correctif) : (1) le repli « dernière LUT » ne retenait que les LUT
+**obtenues sur demande** : avec un étalonnage qui change à chaque image, la LUT demandée n'est jamais prête à l'image où on la demande, et le
+moniteur n'aurait **jamais** montré l'étalonnage en lecture ; (2) tous les calques étalonnés partageaient l'emplacement de cuisson `""` (le
+chemin simple ne passait pas `slot`), et le cache servait toujours la dernière demande : avec deux clips animés, l'un restait figé.
+
+**Oracle (critère 1).** `tests/test_monitor_animated_grade.py`, FFmpeg réel : six réglages animés ensemble (contraste, teinte par expression ;
+exposition, température, ombres, roue Lift rouge par `sendcmd`), à 0,4 s, 1,0 s et 1,6 s. L'étalonnage évalué est cuit en LUT par la chaîne de
+l'export, lu par `reference_frame` (le chemin CPU du moniteur) et comparé à l'image de l'export au même instant : écart moyen **0,46 à 0,74
+niveau**, 99ᵉ centile **2,7 à 2,9**. C'est l'écart **déjà présent** entre moniteur et export pour un étalonnage statique de cette force
+(l'image animée de l'export égale celle d'un étalonnage statique aux mêmes valeurs : écart maximal mesuré 0 ; le test d'étalonnage plus léger
+de l'étape précédente donnait 0,1 à 0,4) : chroma 4:2:0 convertie à la manière de la plateforme par l'export, en 4:4:4 par la référence, et
+lissage de la LUT au bord du gamut. Le réglage de base (avant l'étape 7) s'écarte de 12,7 à 27,2 niveaux, un mauvais instant (+0,4 s) de 8,8
+à 9,8 : le test distingue donc l'instant juste (marge ×15 à ×50).
+
+**Non fait / non vérifié.** Rien n'a été vu sur un écran réel : le viewer QtMultimedia est noir en capture hors écran, la preuve est numérique
+(référence CPU contre export), et les temps ci-dessus sont ceux d'une cuisson réelle simulée à 25 i/s, pas ceux de la fenêtre. Le shader GPU
+(Metal, D3D11, OpenGL) n'est pas exécuté en CI ; il lit l'atlas comme pour un étalonnage statique. FFmpeg 6.1 et 7.1 (Docker) n'ont pas été
+essayés pour ce test. Pré-existant, inchangé : à la coupure entre deux clips étalonnés sur la même piste, l'emplacement (`<source>:<domaine>`)
+est partagé et la LUT du clip précédent peut rester une cuisson (≈ 0,1 s) sur le premier clip du suivant. Les 2 fils de cuisson ne sont
+pas mesurés avec le décodage de la lecture en parallèle.
 
 ## Décisions prises (2026-10-18, avec l'utilisateur)
 

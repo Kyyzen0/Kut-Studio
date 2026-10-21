@@ -341,8 +341,11 @@ def test_the_lut_of_a_displayed_layer_is_baked_with_the_matrix_the_monitor_reads
     asked = []
 
     class Grades:
-        def lookup(self, grade, **options):
+        def lookup(self, grade, *, slot="", **options):
             asked.append(options)
+            return None
+
+        def latest(self, slot=""):
             return None
 
         def failed(self, grade, **options):
