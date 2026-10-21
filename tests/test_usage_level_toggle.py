@@ -36,7 +36,7 @@ def _checked(window) -> list[str]:
 def _assert_all_show(window, level: str, dialog=None) -> None:
     assert window.usage_level.value == level
     assert _checked(window) == [level]
-    assert window.usage_level_chip.text() == i18n.translate(f"prefs.usage.{level}")
+    assert window.usage_level_chip.text().endswith(i18n.translate(f"prefs.usage.{level}"))
     if dialog is not None:
         assert dialog.current_usage_level == level
         assert [c for c, r in dialog._usage_radios.items() if r.isChecked()] == [level]

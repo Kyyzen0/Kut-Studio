@@ -18,6 +18,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - Interne : ADR-0011 feuille de route vers la v1 (acceptée le 2026-10-21) : sept phases à portes de sortie mesurables (recette sur machines réelles, moteur, interopérabilité et livraison, noyau de motion design, extensibilité, page signature), backlog d'intelligence, parallélisation, décisions à prendre et tableau croisé des écarts par public. Aucun changement de comportement. Voir [docs/adr/0011-feuille-de-route-v1.md](docs/adr/0011-feuille-de-route-v1.md).
 
+### Changed
+
+- **Navigation plus lisible** (partie B du chantier « trouver facilement »). La barre d'icônes de gauche écrit maintenant **le nom de chaque section sous son icône** (Médias, Séquences, Éditer, Effets, Couleur, Texte, Transitions, Audio, Graphiques, Modèles) : la barre est plus large (84 px) ; raccourcis et infobulles inchangés. Les onglets de l'inspecteur montrent **tous** leurs sept boutons : Graphiques, Compositing et **Suivi** ne sont plus cachés derrière un menu « ••• » (ils passent sur une deuxième ligne quand l'inspecteur est étroit). Dans la barre du haut, le sélecteur de niveau dit « Niveau : Avancé » (le nom du niveau seul quand la place manque). Les niveaux d'usage (Simple, Studio, Avancé) ne changent pas.
+
+### Fixed
+
+- Les losanges d'images clés ‹ ◆ › de l'inspecteur (étalonnage et effets) flottaient entre deux champs, ce qui faisait croire qu'ils appartenaient au réglage suivant : ils sont maintenant **à droite du champ qu'ils animent, sur la même ligne**. Dans l'étalonnage, les libellés passent tous ensemble au-dessus de leur champ quand l'inspecteur est étroit (au lieu de seulement « Exposition »).
+
 ## [0.9.0] - 2026-10-21
 
 Version qui **anime l'étalonnage et les effets** : le réglage de couleur d'un clip (exposition, contraste, saturation, température, teinte, ombres, hautes lumières et roues Lift / Gamma / Gain / Offset) se pilote maintenant par images clés, dans l'inspecteur, la page Couleur, l'éditeur de courbes et les scripts, avec un moniteur et un export qui suivent la même courbe ; le flou, l'aberration chromatique et le rayon du Bloom s'animent aussi. L'onglet Suivi et les scripts appliquent la même règle sur les clips verrouillés, et « Coller les attributs » remplace proprement l'ancien étalonnage animé.

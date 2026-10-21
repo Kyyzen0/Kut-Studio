@@ -3,8 +3,9 @@
 Rail compact inspiré de DaVinci Resolve et Final Cut Pro. Il
 donne accès aux sections globales (Médias, Éditer, Effets, Texte,
 Transitions, Audio, Graphiques, Modèles) sans alourdir la barre
-supérieure. Les boutons sont icon-only ; leur nom reste disponible dans
-une infobulle et comme nom accessible. L'état actif utilise un fond vert
+supérieure. Chaque bouton porte son nom écrit sous l'icône, en permanence
+(on ne devine pas une icône) ; l'infobulle et le nom accessible reprennent ce
+même nom. L'état actif utilise un fond vert
 foncé arrondi et une icône turquoise.
 
 Aucune logique métier ici : le rail expose un signal ``section_changed``
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
@@ -65,6 +66,12 @@ SECTION_LEVELS: dict[str, UsageLevel] = {
 }
 
 
+RAIL_BUTTON_WIDTH = Sizes.side_rail_width - 2 * Spacing.sm
+RAIL_BUTTON_HEIGHT = 54
+RAIL_FONT_PX = 10
+RAIL_ICON_PX = 20
+
+
 class SideRail(QWidget):
     """Colonne verticale d'icônes (rail principal)."""
 
@@ -90,8 +97,8 @@ class SideRail(QWidget):
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Spacing.sm, Spacing.md, Spacing.sm, Spacing.md)
-        layout.setSpacing(Spacing.xs)
+        layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
+        layout.setSpacing(2)
 
         for index, section in enumerate(sections):
             # Petit séparateur invisible entre les groupes de travail
@@ -108,11 +115,12 @@ class SideRail(QWidget):
             )
             button.setIcon(make_icon(
                 section.icon,
-                size=Iconography.lg,
+                size=RAIL_ICON_PX,
                 color=QColor(COLORS["muted_strong"]),
             ))
-            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
-            button.setFixedSize(Sizes.icon_button_lg, Sizes.icon_button_lg)
+            button.setIconSize(QSize(RAIL_ICON_PX, RAIL_ICON_PX))
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)      # le nom est TOUJOURS visible
+            button.setFixedSize(RAIL_BUTTON_WIDTH, RAIL_BUTTON_HEIGHT)
             button.setCheckable(True)
             button.setObjectName("railButton")
             button.setToolTip(section.label)
@@ -169,7 +177,8 @@ class SideRail(QWidget):
         for section in self._sections:
             button = self._buttons[section.id]
             button.setText(section.label)
-            button.setToolButtonStyle(Qt.ToolButtonIconOnly)      # ``IconButton.setText`` le repasse en « texte à côté de l'icône »
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)      # ``IconButton.setText`` le repasse en « texte à côté de l'icône »
+            button.setFixedSize(RAIL_BUTTON_WIDTH, RAIL_BUTTON_HEIGHT)  # … et libère la taille fixe (largeur minimale de 96 px)
             button.setToolTip(section.label)
             button.setAccessibleName(section.label)
 
@@ -204,24 +213,24 @@ class SideRail(QWidget):
         for sid, button in self._buttons.items():
             if sid == self._active:
                 button.setIcon(make_icon(
-                    self._icons[sid], size=Iconography.lg,
+                    self._icons[sid], size=RAIL_ICON_PX,
                     color=QColor(accent),
                 ))
                 button.setStyleSheet(
                     f"QToolButton {{ background: {accent_dark};"
                     f" color: {accent}; border: 1px solid {accent};"
-                    f" border-radius: 8px; padding: 0; }}"
+                    f" border-radius: 8px; padding: 2px; font-size: {RAIL_FONT_PX}px; font-weight: 600; }}"
                 )
             else:
                 button.setIcon(make_icon(
-                    self._icons[sid], size=Iconography.lg,
+                    self._icons[sid], size=RAIL_ICON_PX,
                     color=QColor(COLORS["muted_strong"]),
                 ))
                 button.setStyleSheet(
                     f"QToolButton {{ background: transparent;"
                     f" color: {COLORS['muted_strong']};"
                     f" border: 1px solid transparent; border-radius: 8px;"
-                    f" padding: 0; }}"
+                    f" padding: 2px; font-size: {RAIL_FONT_PX}px; font-weight: 600; }}"
                     f"QToolButton:hover {{ background: {surface_hover};"
                     f" color: {text}; }}"
                 )

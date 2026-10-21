@@ -397,18 +397,18 @@ def _form_labels(panel, group) -> list[str]:
             if item is not None and isinstance(item.widget(), QLabel)]
 
 
-@pytest.mark.parametrize(("language", "tabs", "more", "group", "rows"), [
-    ("fr", ["Clip", "Couleur", "Audio", "Effets"], "Outils spécialisés", "Clip sélectionné", ["Nom", "Durée", "Position"]),
-    ("en", ["Clip", "Color", "Audio", "Effects"], "Specialized tools", "Selected clip", ["Name", "Duration", "Position"]),
-    ("es", ["Clip", "Color", "Audio", "Efectos"], "Herramientas especializadas", "Clip seleccionado",
+@pytest.mark.parametrize(("language", "tabs", "group", "rows"), [
+    ("fr", ["Clip", "Couleur", "Audio", "Effets", "Graphiques", "Compositing", "Suivi"], "Clip sélectionné", ["Nom", "Durée", "Position"]),
+    ("en", ["Clip", "Color", "Audio", "Effects", "Graphics", "Compositing", "Tracking"], "Selected clip", ["Name", "Duration", "Position"]),
+    ("es", ["Clip", "Color", "Audio", "Efectos", "Gráficos", "Composición", "Seguimiento"], "Clip seleccionado",
      ["Nombre", "Duración", "Posición"]),
 ])
-def test_the_inspector_follows_the_language_while_open(language_reset, qtbot, language, tabs, more, group, rows):
+def test_the_inspector_follows_the_language_while_open(language_reset, qtbot, language, tabs, group, rows):
     panel = _inspector(qtbot)
     i18n.set_language(language)                                  # abonné : aucun appel explicite
-    visible_tabs = [panel.inspector_tab_buttons[i].text() for i in (0, 1, 3, 2)]
+    visible_tabs = [panel.inspector_tab_buttons[i].text() for i in (0, 1, 3, 2, 4, 5, 6)]
     assert visible_tabs == tabs
-    assert panel.inspector_more_button.toolTip() == more == panel.inspector_more_button.accessibleName()
+    assert [panel.inspector_tab_buttons[i].accessibleName() for i in (0, 1, 3, 2, 4, 5, 6)] == tabs
     clip_group = next(g for g, key in panel._group_titles if key == "inspector.clip.title")
     assert clip_group.title() == group
     assert _form_labels(panel, clip_group) == rows
@@ -435,16 +435,6 @@ def test_the_inspector_volume_says_it_only_drives_the_monitor(language_reset, qt
         assert widget.toolTip().startswith(tooltip_start)
     assert "export" in panel._monitor_volume_tooltip_targets[0].toolTip().lower()
     assert (panel.volume_slider.minimum(), panel.volume_slider.maximum()) == (0, 100)
-
-
-def test_the_inspector_specialized_tool_shown_in_the_more_button_is_retranslated(language_reset, qtbot):
-    panel = _inspector(qtbot)
-    panel._select_inspector_tab(4)
-    assert panel.inspector_more_button.text() == "Graphiques"
-    i18n.set_language("en")
-    assert panel.inspector_more_button.text() == "Graphics"
-    assert [action.text() for action in panel.inspector_more_button.menu().actions()] == [
-        "Graphics", "Compositing", "Tracking"]
 
 
 @pytest.mark.parametrize("language", ["en", "es"])

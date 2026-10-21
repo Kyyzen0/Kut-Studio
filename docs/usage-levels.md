@@ -108,6 +108,15 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Rail de la bibliothèque | médias, montage, texte, audio, graphiques | + effets, transitions, couleur, séquences, modèles | tout |
 | Barre de la timeline | sélection, lame, aimantation, ripple, marqueur | + roll, slip, slide, enregistrement | tout |
 
+### Lisibilité de la navigation (aucun changement de niveau)
+
+La politique de niveaux ci-dessus ne change pas ; seule la façon de montrer ce qu'elle autorise est plus lisible :
+
+- **Rail de gauche** : le nom de chaque section est écrit **en permanence** sous son icône (`Qt.ToolButtonTextUnderIcon`, rail large de 84 px, boutons de 76 × 54 px, police de 10 px). Le texte visible est le nom accessible et l'infobulle. Un test (`tests/test_navigation_discoverability.py`) vérifie, dans les trois langues, que le nom tient dans le bouton sans être élidé.
+- **Onglets de l'inspecteur** : les sept onglets (Clip, Couleur, Audio, Effets, Graphiques, Compositing, Suivi) sont des boutons visibles à **tous** les niveaux ; ils passent sur une deuxième ligne quand l'inspecteur est étroit (`FlowLayout`). Le menu « ••• » n'existe plus.
+- **Losanges d'images clés** : les boutons ‹ ◆ › sont posés **à droite du champ**, dans la même ligne de formulaire que lui (`field_with_keyframes` + `build_keyframe_row(beside=…)`), et non plus dans une ligne à eux. Le niveau (Studio) ne cache que ces boutons. Dans l'étalonnage, tous les libellés ont la même largeur : quand l'inspecteur est étroit, ils passent tous au-dessus de leur champ, jamais un seul.
+- **Barre du haut** : la puce du niveau dit « Niveau : Avancé » (forme complète), « Avancé » (forme abrégée quand la place manque), puis disparaît ; « Réglages » garde son icône et son texte.
+
 ### Menus contextuels
 
 | Menu | Simple | Studio | Avancé |
