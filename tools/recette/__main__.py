@@ -62,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--force-media", action="store_true", help="régénère les médias même s'ils sont à jour")
     run.add_argument("--whisper", default=None, help="chemin de whisper-cli")
     run.add_argument("--whisper-model", default=None, help="chemin d'un modèle ggml-*.bin")
+    run.add_argument("--min-free-gb", type=float, default=4.0, help="garde-fou : arrête l'export si le disque libre tombe sous ce seuil (Go)")
+    run.add_argument("--max-rss-fraction", type=float, default=0.85, help="garde-fou : arrête l'export si sa mémoire dépasse cette part de la RAM")
     run.add_argument("--timeout", type=float, default=4 * 3600.0, help="délai par commande, en secondes (dernier recours)")
     smoke = commands.add_parser("smoke", help="smoke test : 10 s exportées en CPU")
     smoke.add_argument("--workdir", default=None)
@@ -105,7 +107,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     run_dir = workdir / "runs" / datetime.now().strftime("%Y%m%d-%H%M%S")
     environment = isolated_environment(run_dir / "env")
     options = pipeline.Options(app=args.app, hardware=args.hardware, timeout=args.timeout, analyse_frames=not args.no_frames,
-                               force_media=args.force_media, whisper=args.whisper, whisper_model=args.whisper_model, environment=environment)
+                               force_media=args.force_media, whisper=args.whisper, whisper_model=args.whisper_model, environment=environment,
+                               min_free_gb=args.min_free_gb, max_rss_fraction=args.max_rss_fraction)
     if args.scale == "full" and free_disk_gb(workdir) < FULL_DISK_WARNING_GB:
         _say(f"Attention : moins de {FULL_DISK_WARNING_GB:.0f} Go libres sur le volume du dossier de travail.")
     results = {}

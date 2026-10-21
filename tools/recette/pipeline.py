@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import media as media_module
-from .env import ROOT, app_command, ffmpeg_has, find_tool
+from .env import ISOLATED_VARIABLES, ROOT, app_command, ffmpeg_has, find_tool, machine_info
 from .journeys import Capabilities, Journey, check_scale
 from .probe import analyse_frames, check_output, ffprobe, warnings_for
 from .runner import RunResult, run_measured
@@ -36,6 +36,8 @@ class Options:
     whisper: str | None = None
     whisper_model: str | None = None
     environment: Mapping[str, str] = field(default_factory=dict)   # environnement isolé (obligatoire)
+    min_free_gb: float = 4.0               # garde-fou : un export est arrêté (proprement) si le disque libre tombe sous cette valeur
+    max_rss_fraction: float = 0.85         # garde-fou : … ou si la mémoire de l'arbre dépasse cette part de la RAM
 
 
 def capabilities(ffmpeg: str | None, whisper: str | None) -> Capabilities:
@@ -57,9 +59,15 @@ def cli(options: Options, *arguments: str) -> list[str]:
     return [*app_command(options.app), *arguments]
 
 
-def _run(options: Options, logs: Path, label: str, *arguments: str) -> RunResult:
+def _run(options: Options, logs: Path, label: str, *arguments: str, watch: tuple[Path, ...] = ()) -> RunResult:
+    """Lance une commande du CLI ; ``watch`` : dossiers dont la taille cumulée (pic) est relevée (dossiers isolés, sorties)."""
+    isolated = tuple(Path(options.environment[name]) for name in ISOLATED_VARIABLES if name in options.environment)
+    temporary = options.environment.get("TMPDIR")
+    folders = (*isolated, *((Path(temporary),) if temporary else ()), *watch)
+    ram_gb = machine_info().get("ram_gb")
     return run_measured(cli(options, *arguments), env=options.environment, cwd=ROOT, log_prefix=logs / label,
-                        timeout=options.timeout)
+                        timeout=options.timeout, watch_dirs=folders, min_free_gb=options.min_free_gb, guard_path=logs,
+                        max_rss_mb=float(ram_gb) * 1024.0 * options.max_rss_fraction if ram_gb else None)
 
 
 def _json_stdout(result: RunResult) -> dict[str, Any]:
@@ -191,7 +199,7 @@ def run_journey(journey: Journey, scale: str, workdir: Path, run_dir: Path, opti
                      "--overwrite", "--quiet", "--json"]
         if spec.sequence:
             arguments += ["--sequence", spec.sequence]
-        result = _run(options, logs, f"export-{spec.name}", *arguments)
+        result = _run(options, logs, f"export-{spec.name}", *arguments, watch=(folder / "out",))
         entry = _stage(result, preset=spec.preset, sequence=spec.sequence)
         data = _json_stdout(result)
         entry["encoder"], entry["fallback_reason"] = data.get("encoder"), data.get("fallback_reason")
@@ -219,7 +227,8 @@ def run_journey(journey: Journey, scale: str, workdir: Path, run_dir: Path, opti
 def _first_message(result: RunResult) -> str:
     """Une ligne lisible de l'échec (code, signal, fin de la sortie d'erreur) : jamais la sortie entière."""
     tail = [line for line in result.stderr_tail.strip().splitlines() if line.strip()][-4:]
-    cause = f"signal {result.signal_name}" if result.crashed else ("délai dépassé" if result.timed_out else f"code {result.returncode}")
+    cause = (f"arrêt par le garde-fou ({result.aborted})" if result.aborted else f"signal {result.signal_name}" if result.crashed
+             else "délai dépassé" if result.timed_out else f"code {result.returncode}")
     return (f"{cause} : " + " | ".join(tail))[:500]
 
 

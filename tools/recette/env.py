@@ -71,6 +71,10 @@ def isolated_environment(root: Path, base: Mapping[str, str] | None = None) -> d
         folder = root / name.removeprefix("KUT_STUDIO_").removesuffix("_DIR").lower()
         folder.mkdir(parents=True, exist_ok=True)
         env[name] = str(folder)
+    temporary = root / "tmp"
+    temporary.mkdir(parents=True, exist_ok=True)
+    for name in ("TMPDIR", "TEMP", "TMP"):               # les fichiers temporaires de l'export restent sous le dossier de la recette
+        env[name] = str(temporary)
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["KUT_STUDIO_UPDATE_CHECK"] = "off"
     env["KUT_STUDIO_MACHINE_BENCH"] = "off"

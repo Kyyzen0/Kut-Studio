@@ -76,6 +76,7 @@ def metrics_of(report: Mapping[str, Any]) -> dict[str, float]:
         for export, entry in (stages.get("exports") or {}).items():
             put(f"{name}.export.{export}.s", entry.get("elapsed_s"))
             put(f"{name}.export.{export}.rss_mb", entry.get("peak_rss_mb"))
+            put(f"{name}.export.{export}.temp_mb", entry.get("peak_disk_mb"))
             put(f"{name}.export.{export}.bytes", entry.get("output_bytes"))
     return found
 
@@ -182,7 +183,8 @@ def _journey_markdown(name: str, journey: Mapping[str, Any]) -> list[str]:
         detail = f"écart {item.get('relative_error')}" if item.get("kind") == "tempo" else f"écart max {item.get('max_error_ms')} ms"
         out.append(f"| analyse {item.get('kind')} ({detail}) | {_fmt(item.get('seconds'), digits=2)} | {_fmt(item.get('peak_rss_mb'))} | {item.get('returncode')} |")
     for export, entry in (stages.get("exports") or {}).items():
-        out.append(f"| export {export} | {_fmt(entry.get('elapsed_s'))} | {_fmt(entry.get('peak_rss_mb'))} | {entry.get('returncode')} |")
+        temp = f" (temp {_fmt(entry.get('peak_disk_mb'), ' Mo', 0)})" if entry.get("peak_disk_mb") is not None else ""
+        out.append(f"| export {export}{temp} | {_fmt(entry.get('elapsed_s'))} | {_fmt(entry.get('peak_rss_mb'))} | {entry.get('returncode')} |")
     out.append("")
     for export, entry in (stages.get("exports") or {}).items():
         probe = entry.get("probe") or {}

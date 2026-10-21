@@ -40,6 +40,8 @@ def test_isolated_environment_puts_every_app_directory_under_the_root(tmp_path):
     for name in ("KUT_STUDIO_CONFIG_DIR", "KUT_STUDIO_CACHE_DIR", "KUT_STUDIO_DATA_DIR", "KUT_STUDIO_LOG_DIR", "KUT_STUDIO_PROXY_DIR"):
         assert Path(env[name]).is_dir() and (tmp_path / "run") in Path(env[name]).parents
     assert env["QT_QPA_PLATFORM"] == "offscreen" and env["KUT_STUDIO_UPDATE_CHECK"] == "off"
+    for name in ("TMPDIR", "TEMP", "TMP"):                                  # les temporaires de l'export restent sous la recette
+        assert (tmp_path / "run") in Path(env[name]).parents
 
 
 def test_an_environment_pointing_at_the_real_configuration_is_refused(tmp_path):
@@ -240,6 +242,18 @@ def test_runner_measures_exit_code_output_and_memory(tmp_path):
     assert missing.returncode is None and not missing.ok and "Lancement impossible" in missing.stderr_tail
 
 
+def test_runner_reports_the_peak_disk_use_of_watched_folders(tmp_path):
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    (watched / "ancien.bin").write_bytes(b"\0" * 2**20)
+    assert runner.directory_size_mb(watched) == pytest.approx(1.0)
+    assert runner.directory_size_mb(tmp_path / "absent") == 0.0
+    code = f"import time; open({str(watched / 'neuf.bin')!r}, 'wb').write(bytes(3 * 2**20)); time.sleep(2.6)"
+    result = runner.run_measured([sys.executable, "-c", code], log_prefix=tmp_path / "disk", watch_dirs=(watched,))
+    assert result.ok and result.peak_disk_mb is not None and result.peak_disk_mb >= 3.5
+    assert runner.run_measured([sys.executable, "-c", "pass"], log_prefix=tmp_path / "nodisk").peak_disk_mb is None
+
+
 def test_runner_environment_is_exactly_the_one_given(tmp_path):
     result = runner.run_measured([sys.executable, "-c", "import os; print(os.environ.get('KUT_STUDIO_PROBE'), os.environ.get('HOME'))"],
                                  env={"KUT_STUDIO_PROBE": "oui", "PATH": os.environ.get("PATH", "")}, log_prefix=tmp_path / "env")
@@ -250,6 +264,18 @@ def test_runner_environment_is_exactly_the_one_given(tmp_path):
 def test_runner_stops_a_child_after_the_timeout_without_calling_it_a_crash(tmp_path):
     result = runner.run_measured([sys.executable, "-c", "import time; time.sleep(120)"], log_prefix=tmp_path / "slow", timeout=1.0)
     assert result.timed_out and not result.ok and not result.crashed
+
+
+@pytest.mark.skipif(os.name == "nt", reason="signaux POSIX")
+def test_runner_stops_a_child_cleanly_when_a_guard_trips(tmp_path):
+    """Garde-fou disque / mémoire : le lanceur arrête l'enfant par ``SIGINT`` (Ctrl-C) et le dit ; ce n'est pas un plantage."""
+    sleeper = [sys.executable, "-c", "import time; time.sleep(120)"]
+    disk = runner.run_measured(sleeper, log_prefix=tmp_path / "disk", min_free_gb=1e9, guard_path=tmp_path)
+    assert disk.aborted and "disque libre" in disk.aborted and not disk.ok and not disk.crashed and not disk.timed_out
+    memory = runner.run_measured(sleeper, log_prefix=tmp_path / "mem", max_rss_mb=1.0)
+    assert memory.aborted and "mémoire" in memory.aborted and not memory.ok and not memory.crashed
+    calm = runner.run_measured([sys.executable, "-c", "pass"], log_prefix=tmp_path / "calm", min_free_gb=0.0001, guard_path=tmp_path, max_rss_mb=1e9)
+    assert calm.ok and calm.aborted is None
 
 
 def test_exit_classification():
