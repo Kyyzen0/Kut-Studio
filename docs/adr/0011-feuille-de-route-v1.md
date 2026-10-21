@@ -76,11 +76,11 @@ Tailles : **S** = 1 à 3 PR, **M** = 4 à 10, **L** = 11 à 25 PR de ≈ 500 lig
 **Objectif :** savoir enfin ce qui marche, sur le matériel des utilisateurs, avant de construire dessus.
 **Périmètre :**
 - **Trois parcours scénarisés**, rejoués à chaque candidate de version : (a) un TikTok de 60 s (import, coupe sur le rythme, sous-titres animés, multi-format, export 9:16) ; (b) une vidéo YouTube de 20 min en multicam (vraies caméras, synchronisation audio, coupes, étalonnage, export long) ; (c) un motion design avec 3D (calques animés, scène Kut-3D, étalonnage animé, export).
-- **Machines :** macOS Apple Silicon (référence), Windows avec GPU NVIDIA, et au moins un Windows sans GPU dédié ; Linux en simple vérification de démarrage (le public est macOS / Windows, § « Décisions »).
+- **Machines :** macOS Apple Silicon (référence), Windows avec GPU NVIDIA, et au moins un Windows sans GPU dédié ; Linux : **smoke test scripté** sur le paquet publié (démarrage puis export CPU d'un montage de 10 s, vérifié par `ffprobe`), sans recette GPU ni parcours complet (le public est macOS / Windows, § « Décisions »).
 - **Installation propre**, **mise à jour** depuis la version précédente, **signature et notarisation macOS** vérifiées de bout en bout ; **signature Authenticode Windows** décidée (certificat : coût et délai hors du dépôt).
 - **Mesure des plantages** : journal local déjà présent (`core/diagnostics_log.py`) ; indicateur « plantages par heure de session » sur séances de 2 h.
 - Les trois tests déjà repérés instables en CI sont revérifiés en boucle (le CHANGELOG `[Unreleased]` en note la correction).
-**Portes de sortie :** (1) les trois parcours passent sur macOS et sur Windows, chaque écart est soit corrigé, soit inscrit comme défaut connu avec sa PR ; (2) **0 plantage** sur trois séances de 2 h par plate-forme ; (3) installation propre et mise à jour réussies sur chaque plate-forme, paquet macOS notarisé accepté par Gatekeeper ; (4) les fonctions « jamais vues à l'écran » (étalonnage animé, moniteur 3D, multicam) sont vues et capturées.
+**Portes de sortie :** (1) les trois parcours passent sur macOS et sur Windows, chaque écart est soit corrigé, soit inscrit comme défaut connu avec sa PR ; (2) **0 plantage** sur trois séances de 2 h par plate-forme ; (3) installation propre et mise à jour réussies sur chaque plate-forme, paquet macOS notarisé accepté par Gatekeeper ; (4) les fonctions « jamais vues à l'écran » (étalonnage animé, moniteur 3D, multicam) sont vues et capturées ; (5) le smoke test Linux (démarrage + export CPU) passe sur le paquet publié ; (6) **mesure de référence de lecture** (4K et 1080p, gigue, images perdues sur 60 s) relevée sur le Mac de référence, le Windows avec GPU NVIDIA et le Windows sans GPU dédié : ce sont les bases des objectifs de la phase 2.
 **Taille :** M (≈ 8 PR de correctifs + banc de recette scripté, mais le travail est surtout humain sur les machines). **Dépendances :** machines Windows accessibles (décision 3). **Risques :** la recette révèle de gros défauts qui repoussent les phases suivantes, c'est son rôle ; le certificat Windows peut tarder.
 **Hors v1 :** recette Linux complète sur GPU ; tests de charge multi-heures sur 8K.
 
@@ -90,7 +90,7 @@ Tailles : **S** = 1 à 3 PR, **M** = 4 à 10, **L** = 11 à 25 PR de ≈ 500 lig
 **Périmètre :** trancher l'ADR-0001 (aperçu fidèle sans attente de segment) et l'ADR-0003 / 0004 (moteur natif) **sur des mesures**, puis exécuter le chemin retenu. Le fil conducteur est la mesure de référence de la phase 1 : trois montages types figés (un court social, un long multicam, un motion design) avec leurs temps d'export et de lecture.
 Pistes déjà chiffrées dans le dépôt, à départager : calques en textures GPU (ADR-0001, étape « calques en textures », `docs/performance.md:350`) ; remplacer Qt → PNG → ffconcat par un flux plus direct (`docs/motion-graphics.md`, « Performances ») ; historique par parties partagées au lieu d'une copie profonde ; autosave incrémental (**[INCERTAIN]** le coût de 424 ms à 10 000 clips n'est écrit dans aucune doc du dépôt : à remesurer avant de s'en servir, le banc est `docs/performance.md:44`) ; virtualisation des `ClipWidget` ; moteur natif C++ (branche locale `engine/native-cpp`, **jamais poussée** : `git branch -a` n'en montre aucune copie sous `origin/`, et la mesure « lecture 4K hors fenêtre » vient de cette branche, **[INCERTAIN]** : non reproductible depuis `origin/main`).
 **Portes de sortie :**
-1. **Lecture 4K fluide en vraie fenêtre** (pas hors fenêtre) sur macOS Apple Silicon : image par image sans perte pendant 60 s sur un montage type, mesure de gigue publiée.
+1. **Lecture fluide en vraie fenêtre** (pas hors fenêtre), mesure de gigue publiée, sans image perdue pendant 60 s sur un montage type : **4K sur macOS Apple Silicon** ; **4K sur Windows avec GPU NVIDIA** ; **1080p sur Windows sans GPU dédié** (4K sans GPU dédié : « au mieux », sans promesse). Les objectifs Windows sont figés après la mesure de référence de la phase 1 (décision 3).
 2. **Export ≥ 2× plus rapide** que la référence de la phase 1, **mesuré sur médias réels** (pas sur `testsrc2`).
 3. **Aperçu fidèle sans attente de segment** sur les trois montages types : l'image fidèle s'affiche en moins de 300 ms après un arrêt de lecture (valeur à confirmer par la mesure, décision 2).
 4. Parité aperçu / export inchangée (les tests de parité existants passent) et empreinte du rendu (`RENDER_ENGINE_VERSION`) incrémentée à chaque changement de pixel.
@@ -127,7 +127,7 @@ Pistes déjà chiffrées dans le dépôt, à départager : calques en textures G
 ### Phase 6 — Page signature
 
 **Objectif :** une page qui montre ce que Kut-Studio fait que les autres ne font pas.
-**Périmètre :** deux candidats, à choisir (décision 5) : **la page « 3D »** (ADR-0010, lots 1 à 9, soit ≈ 9 lots : une page, un viewport, un outliner, des propriétés, le picking, les gizmos, le lien avec le clip, l'import, la parité de script) **ou le moteur d'intentions** (ADR-0007 : un texte qui suit un sujet, première intention). Le reste du plan ne dépend d'aucun des deux.
+**Périmètre (recommandation révisée, décision 5) :** d'abord le **suivi automatique de sujet** (extrait du backlog : sert deux publics, courts et longs), puis l'un des deux candidats suivants, à choisir : **la page « 3D »** (ADR-0010, lots 1 à 9, soit ≈ 9 lots : une page, un viewport, un outliner, des propriétés, le picking, les gizmos, le lien avec le clip, l'import, la parité de script) **ou le moteur d'intentions** (ADR-0007 : un texte qui suit un sujet, première intention). Le reste du plan ne dépend d'aucun des deux.
 **Portes de sortie :** page 3D : un parcours « créer une scène, l'appliquer, la voir dans la timeline, l'exporter » passé sans script ; chaque lot respecte ses critères propres (ADR-0010, § « Plan de livraison »). Intentions : une intention se crée, se dérive en lecture seule et se détache (critères d'ADR-0007).
 **Taille :** **L** pour la page 3D (≈ 12 à 18 PR, dont deux lots L pour le viewport et les gizmos) ; M pour la première intention. **Dépendances :** phase 1 (le moniteur 3D n'a jamais été vu à l'écran), phase 4 pour la caméra 2.5D. **Risques :** le viewport QRhi n'est pas testable hors fenêtre ; sélection par rayon et gizmos demandent une vraie recette.
 **Hors v1 :** animation de personnages, FBX, ombres et IBL (backlog), édition de maillage.
@@ -174,10 +174,10 @@ Liste courte, avec ma recommandation chiffrée.
 
 1. **Ordre des phases : recette (1) avant le moteur (2) ?** *Recommandation : oui.* La recette coûte ≈ 8 PR et deux semaines de machines ; elle donne la référence de la phase 2 et évite de reconstruire sur un socle fragile.
 2. **Moteur natif C++ : le tenter ou rester Python + GPU + FFmpeg ?** *Recommandation : mesurer d'abord (≈ 4 PR de bancs sur les trois montages types), puis trancher. Prior : natif seulement si l'export ne dépasse pas ×1,5 sans lui* (le spike GPU a donné ×1,5, ADR-0001), *car la cible de la porte est ×2 et le natif coûte 20 à 30 PR et une dépendance LGPL.*
-3. **Plates-formes de la recette : macOS + Windows seulement ?** *Recommandation : oui pour la v1 ; Linux = « démarre et exporte » (non garanti sur GPU).* Il faut un accès à un Windows avec GPU NVIDIA (l'utilisateur ou un prêt) et décider d'un **certificat Authenticode** (≈ 200 à 400 €/an, à confirmer).
+3. **Plates-formes de la recette : macOS + Windows seulement ?** *Recommandation : oui pour la v1 ; Linux = smoke test scripté « démarre et exporte en CPU » dans la phase 1 (aucune garantie GPU ni de lecture).* Il faut un accès à un Windows avec GPU NVIDIA (l'utilisateur ou un prêt) et décider d'un **certificat Authenticode** (≈ 200 à 400 €/an, à confirmer).
 4. **Intelligence : lesquelles entrent dans la v1 ?** *Recommandation : suivi automatique de sujet (taille S-M, 3 à 6 PR, modèle léger) et transcription fournie ; détourage seulement si l'utilisateur accepte un modèle de plusieurs centaines de Mo ; TTS et IA générative hors v1.*
-5. **Page signature : la page 3D (ADR-0010) ou le moteur d'intentions (ADR-0007) ?** *Recommandation : la page 3D*, car deux des trois publics (motion, 3D) s'en servent et son plan est déjà chiffré (9 lots) ; les intentions n'ont servi qu'à leur premier cas (texte qui suit un sujet), qui est déjà couvert par le suivi.
-6. **Poids de l'application et contenus livrés :** *Recommandation : plafond de 150 Mo de contenus embarqués (LUT, transitions, polices, quelques stickers libres), le reste en téléchargement à la demande, sans compte.* Le paquet macOS pèse aujourd'hui ≈ 53 Mo (ADR-0003).
+5. **Page signature : la page 3D (ADR-0010) ou le moteur d'intentions (ADR-0007) ?** *Recommandation révisée avec la règle de priorité par public (principe 2).* Ni la page 3D ni les intentions ne touchent trois publics : la page 3D sert **un** public (motion design + 3D ; aucune preuve dans l'audit ni le dépôt qu'un autre public l'utilise), la première intention (texte qui suit un sujet) sert surtout le public formats courts. À égalité de portée, le critère de départage est la préparation : la page 3D a un plan chiffré (9 lots, ≈ 12 à 18 PR) et son document est livré (ADR-0010 lot 0). **Mais** la règle plaide d'abord pour le **suivi automatique de sujet** (backlog, S-M, 3 à 6 PR), qui sert **deux** publics (courts et longs, via le reframe 9:16 et la mise au point d'un titre) et rend la première intention bien plus utile. Recommandation chiffrée : phase 6 = (a) suivi automatique de sujet (3 à 6 PR), puis (b) la page 3D (12 à 18 PR). Alternative : page 3D seule, si l'utilisateur place le motion design 3D avant le gain pour les deux autres publics.
+6. **Poids de l'application et contenus livrés :** *Recommandation : plafond de 150 Mo de contenus embarqués (LUT, transitions, polices, quelques stickers libres), le reste en téléchargement à la demande, sans compte.* Base mesurée : assets publiés de la v0.8.0 (publiée le 2026-10-20, `gh release view v0.8.0`) : macOS arm64 57 012 059 octets (≈ 54,4 Mo), Windows x64 76 583 879 (≈ 73,0 Mo), Linux x64 111 668 466 (≈ 106,5 Mo). Le plafond de 150 Mo de contenus s'ajouterait à ces paquets (≈ +200 à +260 % sur macOS) : à reconfirmer à 100 Mo si l'utilisateur veut que le paquet macOS reste sous 160 Mo. (Le 53 Mo d'ADR-0003 est l'historique de la v0.4.0.)
 7. **Publication directe (TikTok / Reels / YouTube) :** *Recommandation : hors v1.* Elle dépend d'API tierces, de comptes et d'une revue des plateformes que l'application ne contrôle pas ; en échange, la phase 3 ajoute les chapitres et la sortie multi-format, qui couvrent 80 % du besoin sans compte.
 
 ## Comment on mesure le bond en avant
@@ -199,7 +199,8 @@ Trois familles d'indicateurs, relevées à la fin de chaque phase et publiées d
 - Publication directe sur les plateformes (décision 7), planificateur de publication, éditeur de miniature (sauf si la phase 3 laisse du temps ; la catégorie de repère `cover` existe).
 - Enregistrement écran / webcam (public court : utile, mais un chantier de capture par système ; à décider après la phase 3).
 - 8K, rendu distribué ou dans le nuage.
-- Support Linux garanti sur GPU (démarrage et export CPU seulement).
+- Support Linux au-delà du smoke test de la phase 1 (démarrage et export CPU d'un montage court) : aucune garantie GPU, de lecture ni de parcours complet.
+- Lecture 4K fluide sans GPU dédié sous Windows, et toute promesse de performance sous Linux : la performance de la v1 est promise sur macOS Apple Silicon et Windows (4K avec GPU NVIDIA, 1080p sans GPU dédié).
 
 ---
 
@@ -243,7 +244,7 @@ Publics : **C** = formats courts, **L** = YouTube / montage long, **M** = motion
 
 | # | Manque (vérifié) | C | L | M | Phase |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Recette sur machines réelles (Windows, Linux GPU, multicam réel, sessions longues) | ● | ● | ● | 1 |
+| 1 | Recette sur machines réelles (Windows, Linux GPU, multicam réel, sessions longues ; Linux = smoke test seulement) | ● | ● | ● | 1 |
 | 2 | Fonctions « jamais vues à l'écran » (étalonnage animé, moniteur 3D) | | | ● | 1 |
 | 3 | Signature Authenticode Windows, notarisation / mise à jour à valider | ● | ● | ● | 1 |
 | 4 | Plantages non mesurés par heure de session | ● | ● | ● | 1 |
@@ -281,7 +282,7 @@ Publics : **C** = formats courts, **L** = YouTube / montage long, **M** = motion
 | 36 | Page « 3D » d'édition (ADR-0010 lots 1 à 9) | | | ● | 6 |
 | 37 | Ombres, IBL, mipmaps, caméra 3D animée, animation d'objets de scène | | | ● | — (jalon possible) |
 | 38 | Moteur d'intentions (ADR-0007) | ● | | | 6 (au choix) |
-| 39 | Suivi automatique de sujet / visage | ● | ● | | BL |
+| 39 | Suivi automatique de sujet / visage | ● | ● | | 6 (a), modèle en BL |
 | 40 | Détourage / rotoscopie | ● | | ● | BL |
 | 41 | Synthèse vocale | ● | ● | | BL |
 | 42 | Moteur de particules | | | ● | BL |
