@@ -506,7 +506,9 @@ stabilisation ne stockent aucune image clé : elles sont dérivées dans le plan
 - **Refusé plutôt que ramené.** Instant hors du clip, point hors de l'image (de −1 à 2 fois la taille pour `set_tracker_position`), réglage que le modèle
   écrêterait ou qui en changerait un autre, stabilisation sans `trackers` à la création, `smoothing_frames` hors du lissage `custom`, liaison qui
   remplacerait une liaison existante (`remove_link` d'abord).
-- **Verrous.** Le clip modifié (piste et calque) est vérifié. Un clip qui **suit** un tracker dont les données changent (`set_tracker_position`,
+- **Verrous.** Le clip modifié (piste et calque) est vérifié **par le modèle** (`core.tracking_locks.require_clip_editable`, appelée par `core/tracking_ops.py`
+  avant la première écriture : le propriétaire des trackers, ou la cible d'une liaison ; la même règle que l'interface, les verbes n'en ont pas de copie ; `follow_reframe`
+  garde celle de `social.py`). Un clip qui **suit** un tracker dont les données changent (`set_tracker_position`,
   `remove_correction`, `reset_tracker`, `set_stabilization`, `remove_stabilization`) n'est **pas** refusé, verrouillé (calque, piste, piste d'une autre
   séquence) ou non : ces verbes n'écrivent que le suivi du clip visé, la liaison du suiveur (en temps source) n'est pas réécrite, seul son rendu suit,
   comme dans l'interface. Seul `remove_tracker` réécrit des liaisons : il refuse, sans rien écrire, si l'un des clips dont il réécrirait la liaison est

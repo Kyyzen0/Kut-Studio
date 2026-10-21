@@ -316,6 +316,17 @@ visé : aucune liaison de suiveur n'est écrite. Un suiveur verrouillé dont l'a
 attendu d'un suivi : le verrou interdit de le **réécrire**, pas de le **redessiner**. Ni l'interface ni les verbes de script ne refusent donc ces
 opérations (`tests/test_tracker_verbs_lock_parity.py`) ; seul `remove_tracker`, qui réécrit les liaisons, garde son refus.
 
+**Un clip verrouillé n'est jamais modifié par une opération de suivi.** C'est le **clip porteur** qui est vérifié : le propriétaire des trackers
+(poser, déplacer ou effacer un point, renommer, régler, supprimer, appliquer le résultat d'une analyse, stabiliser) ou la cible d'une liaison (la poser,
+la retirer, l'activer ou la désactiver, la convertir en images clés). Sa piste verrouillée, ou son calque graphique verrouillé, est refusé par le
+**modèle** (`core.tracking_locks.require_clip_editable`, appelée par les fonctions de `core/tracking_ops.py` avant la première écriture, sur
+toutes les séquences). L'interface attrape le refus : message dans la barre d'état, aucune écriture, aucune entrée d'historique ; le glisser d'un
+point ou d'une zone dans le viewer est refusé **avant** de commencer le geste (rien à annuler), et une analyse qui se termine sur un clip verrouillé
+entre-temps n'écrit rien. La **source** d'une liaison n'est que lue : elle peut être verrouillée. Une opération sans effet (même nom, même valeur, rien
+à retirer) n'est pas refusée. Les verbes de script n'ont plus de copie de la règle ; `follow_reframe` garde celle de l'interface (le recadrage
+suivi réécrit les images clés du clip). Une liaison retirée par un autre geste (suppression d'une fenêtre d'étalonnage, de séquence) n'est pas couverte
+par cette règle. Tests : `tests/test_tracker_locked_clip.py`, `tests/test_tracker_locked_clip_ui.py`.
+
 ## Undo / redo
 
 Snapshots du projet (`core.edit_history`) : `TrackData` est immuable et ses
