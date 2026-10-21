@@ -212,9 +212,11 @@ def test_a_proxy_goes_through_pending_generating_ready_and_leaves_no_partial_fil
     assert info.proxy_path and Path(info.proxy_path).is_file() and info.created_at
     # La notification relit l'état courant : un worker rapide fait passer PENDING à
     # GENERATING avant qu'elle ne parte, PENDING peut donc ne jamais être observé.
+    # _generate rend la main dès que le disque dit READY ; la notification finale du worker part juste après
+    # (retrait de _active, invalidation, notification) : on l'attend (CI macOS, run 39672036609 : dernier état GENERATING).
+    assert _wait(lambda: bool(states) and states[-1] is ProxyState.READY, timeout=30.0)
     assert ProxyState.GENERATING in states
     assert set(states) <= {ProxyState.PENDING, ProxyState.GENERATING, ProxyState.READY}
-    assert states[-1] is ProxyState.READY
     files = sorted(p.name for p in (tmp_path / "proxies").iterdir())
     assert len(files) == 2 and any(n.endswith(".json") for n in files)
     assert not any(".partial." in n for n in files)
