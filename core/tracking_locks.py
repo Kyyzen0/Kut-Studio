@@ -9,7 +9,7 @@ script et les menus le partagent. Il passe AVANT la première écriture, et ne v
 suppression laisse telle quelle (aucune prolongation), ne bloque rien. Aucun Qt.
 
 Supprimer un tracker (:func:`core.tracking_ops.remove_tracker` / ``remove_trackers``) réécrit de même les liaisons qui l'utilisent (séquence
-active, comme l'écriture) : même refus, calculé par la règle d'écriture elle-même (``tracker_removal_rewrites``).
+active, comme l'écriture : une liaison ne vit que dans une séquence, voir docs/tracking.md) : même refus, calculé par la règle d'écriture elle-même (``tracker_removal_rewrites``).
 
 Déplacer, rogner, ripple-trimmer, changer la vitesse ou dupliquer la source ne réécrit aucun suiveur (seul le rendu, qui dérive les images clés du
 suiveur de sa source, change) : aucune garde ici pour ces opérations, ni dans l'interface, ni dans les verbes (tests/test_follower_move_parity.py).
