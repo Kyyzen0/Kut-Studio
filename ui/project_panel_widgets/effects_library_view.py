@@ -25,10 +25,10 @@ from core.effects_library import (
     builtin_presets,
     filter_presets,
 )
-from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
+from ui.adaptive_layout import ElidedLabel, FlowLayout
 from ui.design_system import DIALOG_MARGINS, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
-from ui.icons import IconName, make_icon
+from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
 from ui.project_panel_widgets.wide_button import make_wide_button
@@ -267,7 +267,7 @@ class EffectsLibraryView(QWidget):
             cat_layout.addWidget(button)
             self._category_buttons_data.append(category)
         header_layout.addWidget(self.category_row)
-        layout.addWidget(ShrinkableScrollArea(header, Sizes.library_header_min_height))
+        layout.addWidget(header)
 
         # --- Astuce + état sélection clip ------------------------------
         self.clip_hint = QLabel(translate("effects.library.apply_hint"))
@@ -282,7 +282,7 @@ class EffectsLibraryView(QWidget):
         clip_hint_layout = QHBoxLayout(clip_hint_container)
         clip_hint_layout.setContentsMargins(Spacing.sm, 0, Spacing.sm, 0)
         clip_hint_layout.addWidget(self.clip_hint)
-        layout.addWidget(clip_hint_container)
+        # La bannière est la première ligne de la zone défilante : elle ne chevauche jamais la liste (voir transitions).
 
         # --- Zone défilante : cartes preset ----------------------------
         self.scroll_area = QScrollArea()
@@ -296,31 +296,41 @@ class EffectsLibraryView(QWidget):
         )
         self.cards_host = QWidget()
         self.cards_host.setObjectName("effectsCardsHost")
-        self.cards_layout = QVBoxLayout(self.cards_host)
+        host_layout = QVBoxLayout(self.cards_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(Spacing.xs)
+        host_layout.addWidget(clip_hint_container)
+        self.cards_layout = QVBoxLayout()
+        host_layout.addLayout(self.cards_layout, 1)
         self.cards_layout.setContentsMargins(Spacing.sm, 0, Spacing.sm, 0)
         self.cards_layout.setSpacing(Spacing.xs)
         self.cards_layout.addStretch(1)
         self.scroll_area.setWidget(self.cards_host)
+        self.scroll_area.setMinimumHeight(Sizes.library_list_min_height)
         layout.addWidget(self.scroll_area, 1)
 
         # --- Actions principales ---------------------------------------
         actions = QWidget()
         actions_layout = QVBoxLayout(actions)
-        actions_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
+        actions_layout.setContentsMargins(Spacing.sm, Spacing.xs, Spacing.sm, Spacing.xs)
         actions_layout.setSpacing(Spacing.xs)
         self.apply_button = make_wide_button(
             IconName.PLUS, translate("effects.library.apply"), accent=True,
             tooltip=translate("effects.library.apply"),
         )
         self.apply_button.clicked.connect(self._emit_apply_requested)
-        actions_layout.addWidget(self.apply_button)
-
-        self.save_button = make_wide_button(
-            IconName.SAVE, translate("effects.library.save"), accent=False,
-            tooltip=translate("effects.library.save"),
-        )
+        # « Enregistrer comme preset » : bouton-icône à droite de « Appliquer » (une rangée de ~40 px en moins) ; le
+        # libellé reste dans l'infobulle et le nom accessible.
+        save_label = translate("effects.library.save")
+        self.save_button = IconButton(icon=IconName.SAVE, tooltip=save_label, size=Sizes.icon_button, accent=False)
+        self.save_button.setAccessibleName(save_label)
         self.save_button.clicked.connect(self._emit_save_requested)
-        actions_layout.addWidget(self.save_button)
+        buttons_row = QHBoxLayout()
+        buttons_row.setContentsMargins(0, 0, 0, 0)
+        buttons_row.setSpacing(Spacing.xs)
+        buttons_row.addWidget(self.apply_button, 1)
+        buttons_row.addWidget(self.save_button)
+        actions_layout.addLayout(buttons_row)
         layout.addWidget(actions)
 
         self._refresh_buttons()

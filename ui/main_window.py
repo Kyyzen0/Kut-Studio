@@ -56,6 +56,7 @@ from ui.design_system import Radius, Typography, Weights
 from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
 from ui.preview_panel import PreviewPanel
+from ui.screen_fit import apply_fitted_geometry
 from ui.project_panel import ProjectPanel
 from ui.shortcut_manager import ShortcutManager
 from ui.scene3d_actions import handle_scene3d_drop
@@ -198,8 +199,11 @@ class MainWindow(
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kut-Studio")
-        self.setMinimumSize(1180, 720)
-        self.resize(1480, 920)
+        # Minimum de base : la hauteur réelle est relevée par le gestionnaire de panneaux selon la page (voir
+        # ``WorkspaceManager._sync_window_minimum_height``). Taille d'origine bornée à la zone utilisable de l'écran :
+        # 1480 x 920 dépassait un MacBook Air 13" (le Dock passait par-dessus la timeline).
+        self.setMinimumSize(1100, 560)
+        apply_fitted_geometry(self, (0, 0, 1480, 920), center=True)
         self.subtitle_file: str | None = None
         self.active_subtitle_clip = None
         # ``Project`` est désormais l'unique source de vérité de la timeline.

@@ -48,7 +48,7 @@ _PAN_MAX = 100
 
 #: Hauteur minimale du panneau : une tranche complète (nom, fader,
 #: panoramique, boutons) doit tenir sans être rognée.
-MIN_PANEL_HEIGHT = 320
+MIN_PANEL_HEIGHT = 140      # les tranches défilent verticalement (voir ``core.workspace_state.MIN_HEIGHT``)
 
 
 def _panel_stylesheet() -> str:

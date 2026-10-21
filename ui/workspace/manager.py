@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 
 from core.workspace_state import (
     DEFAULT_SIZE,
+    MIN_HEIGHT,
     MIN_SIZE,
     PAGE_EDIT,
     PAGES,
@@ -58,6 +59,7 @@ from core.workspace_state import (
     save_page_state,
 )
 from ui.icons import IconName
+from ui.screen_fit import apply_fitted_geometry
 from ui.i18n import translate
 from ui.workspace.panel_host import PanelHost, PanelWindow
 
@@ -464,7 +466,7 @@ class WorkspaceManager(QObject):
         # que son minimum déclaré).
         handles = zone._splitter.handleWidth() * (len(panels) - 1)
         if area is DockArea.BOTTOM:
-            zone.setMinimumHeight(sum(MIN_SIZE.get(p, 200) for p in panels) + handles)
+            zone.setMinimumHeight(sum(MIN_HEIGHT.get(p, 200) for p in panels) + handles)
             zone.setMinimumWidth(0)
         else:
             zone.setMinimumWidth(sum(MIN_SIZE.get(p, 200) for p in panels) + handles)
@@ -593,7 +595,7 @@ class WorkspaceManager(QObject):
         self._normalize_area(self._state.area_of(panel))
 
         geom = self._state.floating_geometry(panel)
-        window.setGeometry(geom.x, geom.y, geom.width, geom.height)
+        apply_fitted_geometry(window, (geom.x, geom.y, geom.width, geom.height))
         window.show()
         window.refresh_actions()
 
@@ -763,7 +765,7 @@ class WorkspaceManager(QObject):
                 self._state.area_of(panel) is DockArea.BOTTOM
                 and self._state.is_visible(panel)
             ):
-                extras += MIN_SIZE.get(panel, 200) + self._zones[DockArea.BOTTOM]._splitter.handleWidth()
+                extras += MIN_HEIGHT.get(panel, 200) + self._zones[DockArea.BOTTOM]._splitter.handleWidth()
         needed = timeline_needed + extras
         bottom = max(needed, int(total * 0.40))
         bottom = min(bottom, int(total * 0.80))
@@ -938,7 +940,7 @@ class WorkspaceManager(QObject):
                     self._windows[panel] = window
                 window = self._windows[panel]
                 geom = self._state.floating_geometry(panel)
-                window.setGeometry(geom.x, geom.y, geom.width, geom.height)
+                apply_fitted_geometry(window, (geom.x, geom.y, geom.width, geom.height))
                 window.setVisible(entry.visible)
                 window.refresh_actions()
             else:
