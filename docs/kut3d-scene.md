@@ -4,7 +4,7 @@ Un `.kut3d` est une scène 3D sérialisée (caméra, lumières, fond, modèles, 
 **référence** vers un fichier OBJ, glTF/GLB, PLY ou STL (voir [kut3d-import.md](kut3d-import.md)) **ou une forme de base
 paramétrique** (cube, sphère, plan, cylindre, cône, tore : [voir plus bas](#formes-de-base-format-2) ; **texte 3D extrudé** :
 [voir plus bas](#texte-3d-extrude-format-3)), sans aucun fichier ;
-le rendu est décrit dans [kut3d-render.md](kut3d-render.md). API : `kut3d.load_scene`, `save_scene`, `dependency_files`.
+le rendu est décrit dans [kut3d-render.md](kut3d-render.md). API : `kut3d.load_scene`, `save_scene`, `dependency_files` ; édition : [`kut3d.SceneDocument`](#document-editable-adr-0010).
 
 ## Format (version 1, 2 avec des formes de base, 3 avec un texte 3D)
 
@@ -271,3 +271,40 @@ texte, de police, de contour, de remplissage, de forme, de lueur, de lumière ni
 remappage sont **grisés avec une infobulle** (le modèle les refuse : `ensure_fixed_speed`).
 
 **Pas encore** : éditer la scène (caméra, lumières, modèles) dans l'application, créer une scène depuis un modèle `.obj` / `.glb`. Le fichier se modifie dans un autre outil puis se recharge.
+
+## Document éditable (ADR-0010)
+
+`kut3d.SceneDocument` est la couche d'**édition** au-dessus de la `Scene` immuable : des états immuables reliés par des commandes
+(`kut3d.document_commands`), un historique annulable, et l'aller-retour avec le fichier. **Aucun changement de format** : un document
+écrit exactement ce qu'écrit `save_scene` (version 1, 2 ou 3 selon le contenu). Sans Qt (`import kut3d` n'en charge toujours pas).
+Conception, mesures et plan de la page « 3D » : [ADR-0010](adr/0010-page-3d-edition-scene.md).
+
+```python
+import kut3d
+from kut3d import document_commands as cmd
+
+doc = kut3d.SceneDocument.load("scene.kut3d")               # ou SceneDocument() : caméra, deux lumières, aucun objet
+(oid,) = doc.execute(cmd.AddPrimitive(kut3d.Sphere(0.5), name="boule"))   # retourne les identifiants créés
+doc.execute(cmd.SetTransform(oid, kut3d.pose_matrix(position=(1, 0, 0))))
+doc.execute(cmd.SetPrimitive(oid, kut3d.Sphere(0.9, 48, 24)))              # garde matériau et pose
+doc.undo(); doc.redo()
+doc.save()          # atomique ; DocumentConflict si le fichier a changé sur le disque depuis la lecture (overwrite=True pour passer outre)
+```
+
+- **Commandes :** `AddPrimitive`, `AddModel`, `DuplicateObject`, `RemoveObject`, `SetTransform`, `Rename`, `SetAnimation`, `SetPrimitive`,
+  `SetMaterial`, `SetCamera`, `SetBackground`, `AddLight`, `SetLight`, `RemoveLight`, `Batch` (plusieurs commandes en une entrée, tout ou rien).
+  Un refus (`DocumentError`) ne change **rien** : ni l'état, ni l'historique, ni `revision`.
+- **Identifiants :** `o<N>` (objet), `l<N>` (lumière), jamais réutilisés dans une session, **non écrits dans le fichier** (redonnés dans
+  l'ordre du fichier à la lecture). Le nom (`Instance.name`, 200 caractères au plus) est libre et **non unique** ; le nom par défaut d'une
+  forme est son genre (`sphere`), sans suffixe.
+- **Historique :** 100 éditions (`MAX_UNDO`). Une commande à `merge_key` (`SetTransform(..., gesture=True)`, `SetPrimitive`, `SetMaterial`,
+  `SetCamera`, `SetLight`) qui suit une commande de même clé tient dans la même entrée jusqu'à `end_gesture()`, `undo`, `redo` ou `save` ;
+  jamais de fusion avec l'état initial ni l'état enregistré. `is_dirty` suit l'état enregistré.
+- **Plafonds :** ceux du fichier, vérifiés à chaque état : 2 048 objets, 16 lumières, 256 modèles distincts, 500 000 triangles de formes de
+  base (un modèle **partagé** compte une fois) ; le budget est vérifié **avant** de générer un maillage.
+- **Refusé, jamais réécrit :** un modèle sans fichier source (hors forme de base), un matériau avec texture (les textures de formes de
+  base ne s'enregistrent pas encore), l'édition par paramètres d'un modèle importé ou d'une forme dont le maillage a été modifié après coup.
+- **Copie à l'écriture :** `DuplicateObject` partage le modèle ; changer la forme ou le matériau d'une copie ne touche pas l'autre.
+- `SceneDocument.canonical_on_disk` est faux si le fichier lu n'est pas ce que `save` écrirait (écrit à la main : identifiants de modèles,
+  `normalize`, JSON compact) : l'enregistrer le **réécrit** sous sa forme canonique.
+- `kut3d.pose_matrix(position, rotation_deg, scale)` : la matrice d'une pose (mêmes conventions que `primitive_instance`).
