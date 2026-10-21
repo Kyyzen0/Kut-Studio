@@ -231,8 +231,8 @@ def command_plan(
         size += len(line) + 1
         commands += per_value
         if commands > MAX_EFFECT_COMMANDS or size > MAX_COMMAND_BYTES:      # le plan complet est vérifié avant d'écrire le moindre fichier
-            raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la, posez moins d'images clés "
-                             "ou découpez le clip.")
+            raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la, gardez une valeur fixe sur une "
+                             "partie du clip ou découpez le clip.")
         lines.append(line)
     return CommandPlan(tuple(lines), initial, peak)
 

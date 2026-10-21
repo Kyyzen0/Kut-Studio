@@ -238,7 +238,8 @@ def test_a_plan_over_the_command_ceiling_is_refused_before_any_file_with_a_clear
             _build_clip_effect_filters((effect,), 1.0, "v0fx", animation=tuple(animation), sendcmd=context_for(30, 0.0, duration))
     assert written == []
     message = str(raised.value)
-    assert "raccourcissez" in message and "découpez" in message and len(message) < 200
+    assert "raccourcissez" in message and "valeur fixe" in message and "découpez" in message and len(message) < 200
+    assert "images clés" not in message, "moins d'images clés ne réduit pas les commandes : ce n'est pas un remède"
 
 
 def test_a_plan_under_the_ceiling_is_accepted():
