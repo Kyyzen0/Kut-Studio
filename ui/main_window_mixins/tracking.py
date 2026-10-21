@@ -641,6 +641,10 @@ class TrackingMixin:
             written = {}
             status = str(exc)
             self._tracking_status[clip_id] = status
+            self._tracking_followups.pop(clip_id, None)          # toute la file (suivi arrière, stabilisation) : ses trackers n'ont jamais été analysés
+        except Exception:
+            self._tracking_followups.pop(clip_id, None)
+            raise
         if written:
             names = ", ".join(t.name for t in job.request.trackers if t.id in written)
             direction = _tr("tracking.direction.forward" if job.request.direction > 0 else "tracking.direction.backward")
@@ -821,7 +825,8 @@ class TrackingMixin:
         ids = [tracker.id for tracker in trackers]
         self._tracking_selection[clip_id] = ids
         self._tracking_followups[clip_id] = [("track", -1, ids), ("stabilize", ids)]
-        self.track_selected(1, tracker_ids=ids, clip_id=clip_id)
+        if not self.track_selected(1, tracker_ids=ids, clip_id=clip_id):
+            self._tracking_followups.pop(clip_id, None)         # l'analyse n'a pas démarré : aucune suite ne doit rester en file
 
     def _run_tracking_followup(self, clip_id: str) -> None:
         from core.tracking_model import BorderMode, StabilizationMode
@@ -834,7 +839,8 @@ class TrackingMixin:
         if not queue:
             self._tracking_followups.pop(clip_id, None)
         if step[0] == "track":
-            self.track_selected(step[1], tracker_ids=step[2], clip_id=clip_id)
+            if not self.track_selected(step[1], tracker_ids=step[2], clip_id=clip_id):
+                self._tracking_followups.pop(clip_id, None)     # refusée (clip verrouillé, supprimé…) : on n'enchaîne pas la stabilisation
             return
         if step[0] == "stabilize":
             ids = tuple(step[1])

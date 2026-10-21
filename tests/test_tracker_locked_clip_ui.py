@@ -49,7 +49,7 @@ def _gestures(window):
         "rename": lambda: window._rename_tracker("t1", "Autre"),
         "visible": lambda: window._set_tracker_visible("t1", False),
         "reset_all": lambda: window._reset_trackers("all"),
-        "reset_after": lambda: window._reset_trackers("after"),
+        "reset_after": lambda: (setattr(window, "playhead_seconds", 1.0), window._reset_trackers("after")),     # des images analysées après : un vrai effacement
         "settings": lambda: window._on_tracker_settings({"min_confidence": 0.6}),
         "stab_off": lambda: window._toggle_stabilization(False),
         "stab_change": lambda: window._on_stabilization_changed({"smoothing": "high"}),
@@ -143,3 +143,37 @@ def test_a_refused_drag_leaves_the_overlay_on_the_stored_point_and_a_later_free_
     window._on_overlay_point_dragged("t1", 40.0, 50.0)
     window._on_overlay_drag_finished("t1", "point")
     assert window.history.can_undo and tracking_ops.tracking_of(find_clip(window.project, "v")).tracker("t1").data != stored
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_lock_refusal_clears_every_follow_up_of_an_auto_stabilization(qtbot, monkeypatch, kind):
+    window = _open(qtbot, monkeypatch, "v", None)
+    monkeypatch.setattr(window.runtime, "schedule_analysis", lambda *_a, **_k: None)      # l'analyse reste en file : on la termine à la main
+    window._auto_stabilize_with("v", [(10.0, 10.0), (50.0, 50.0)], "")
+    job = window._tracking_jobs.pop("v")
+    ids = [t.id for t in job.request.trackers]
+    assert len(window._tracking_followups["v"]) == 2
+    lock(window.project, "v", kind)                                                       # verrouillé avant la fin de l'analyse
+    outcomes = {i: SimpleNamespace(samples={70: Sample(5.0, 5.0, 0.9, SampleStatus.TRACKED)}, stop_index=None, last_index=70, reason="end") for i in ids}
+    result = SimpleNamespace(state="finished", message="", request=job.request, outcomes=outcomes)
+    before = copy.deepcopy(window.project.tracks)
+    window._finish_tracking_job("v", job, SimpleNamespace(result=result))
+    assert "verrouillé" in window.statusBar().currentMessage()
+    assert "v" not in window._tracking_followups and not window._tracking_jobs
+    assert window.project.tracks == before
+    window.project.tracks[0].locked = False                                               # déverrouillé : une analyse manuelle ne rejoue rien
+    window.project.tracks[0].clips[0].graphic = None
+    manual = SimpleNamespace(state="finished", message="", request=job.request, outcomes=outcomes)
+    window._finish_tracking_job("v", SimpleNamespace(request=job.request), SimpleNamespace(result=manual))
+    assert find_clip(window.project, "v").tracking.stabilization.tracker_ids == ("t1", "t2")   # la stabilisation périmée n'a pas été posée sur les nouveaux trackers
+    assert not window._tracking_jobs
+
+
+def test_a_follow_up_whose_analysis_does_not_start_leaves_nothing_queued(qtbot, monkeypatch):
+    window = _open(qtbot, monkeypatch, "v", None)
+    monkeypatch.setattr(window, "track_selected", lambda *a, **k: False)
+    window._auto_stabilize_with("v", [(10.0, 10.0)], "")
+    assert "v" not in window._tracking_followups
+    window._tracking_followups["v"] = [("track", -1, ["t1"]), ("stabilize", ["t1"])]
+    window._run_tracking_followup("v")
+    assert "v" not in window._tracking_followups

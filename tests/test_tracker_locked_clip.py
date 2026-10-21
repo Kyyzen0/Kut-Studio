@@ -165,3 +165,42 @@ def test_a_multiple_removal_is_all_or_nothing_on_a_locked_clip():
     with pytest.raises(ValueError, match="verrouillé"):
         tracking_ops.remove_trackers(project, "v", ["t2", "t1"])
     assert project == before
+
+
+# --- Opérations sans effet : jamais refusées, même sur un clip verrouillé ----------------------------------------------------------
+
+
+def _fresh_tracker_project() -> Project:
+    """« v » porte t9, tout juste créé : son seul point est manuel (cas courant)."""
+    project = build()
+    tracking_ops.add_tracker(project, "v", timeline_time=1.0, x=10.0, y=10.0, tracker_id="t9")
+    return project
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_noop_is_not_refused_on_a_locked_clip(kind):
+    project = _fresh_tracker_project()
+    lock(project, "v", kind)
+    before = copy.deepcopy(project)
+    assert tracking_ops.reset_tracker(project, "v", "t9") == 0                                     # que des points manuels : rien à effacer
+    assert tracking_ops.reset_tracker(project, "v", "t9", timeline_time=0.0, direction=1) == 0
+    assert tracking_ops.remove_correction(project, "v", "t9", 3.0) is False                       # pas de correction à cet instant
+    assert tracking_ops.set_tracker_position(project, "v", "t9", 1.0, 10.0, 10.0) is not None     # le même point à la même image
+    result = SimpleNamespace(request=SimpleNamespace(clip_id="v", rate=30.0), outcomes={"t9": SimpleNamespace(samples={})})
+    assert tracking_ops.apply_tracking_result(project, result) == {}                               # résultat vide
+    assert project == before
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_real_reset_is_still_refused_and_the_script_verb_follows_the_model(kind):
+    project = build()
+    lock(project, "v", kind)
+    before = copy.deepcopy(project)
+    with pytest.raises(ValueError, match="verrouillé"):
+        tracking_ops.reset_tracker(project, "v", "t1")
+    assert project == before
+    noop = _fresh_tracker_project()
+    lock(noop, "v", kind)
+    session = Session(copy.deepcopy(noop))
+    report = apply_script(session, parse_script({"kut_script": 1, "ops": [_op("reset_tracker", clip="v", tracker="t9")]}))
+    assert report.ok and session.project == noop                                                  # le verbe se comporte comme le modèle

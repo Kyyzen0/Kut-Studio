@@ -260,7 +260,6 @@ def set_tracker_position(project, clip_id: str, tracker_id: str, timeline_time: 
     _clip, tracker = get_tracker(project, clip_id, tracker_id)
     if not (math.isfinite(x) and math.isfinite(y)):
         raise TrackingError("Position invalide.")
-    require_clip_editable(project, clip_id)
     rate = tracker.data.rate or media_rate(asset)
     index = source_index_at(clip, rate, timeline_time)
     fx, fy = tracker.data.scaled_to(asset.width, asset.height)
@@ -269,7 +268,10 @@ def set_tracker_position(project, clip_id: str, tracker_id: str, timeline_time: 
         max(-asset.height, min(2.0 * asset.height, float(y))) / fy,
         1.0, SampleStatus.MANUAL,
     )
-    _put_tracker(clip, replace(tracker, data=tracker.data.with_samples({index: sample}, rate=rate)))
+    data = tracker.data.with_samples({index: sample}, rate=rate)
+    if data != tracker.data:
+        require_clip_editable(project, clip_id)         # le même point à la même image : rien ne change
+    _put_tracker(clip, replace(tracker, data=data))
     return index
 
 
@@ -311,6 +313,8 @@ def reset_tracker(
     cleared = data.cleared(low, high, keep_manual=True)
     if cleared.is_empty:
         raise TrackingError("Le tracker doit garder au moins un point.")
+    if cleared == data:
+        return 0                                        # que des corrections manuelles dans la plage : rien ne change, même sur un clip verrouillé
     require_clip_editable(project, clip_id)
     after = sum(1 for _i, s in cleared.samples() if s.status is not SampleStatus.EMPTY)
     _put_tracker(clip, replace(tracker, data=cleared))
