@@ -27,7 +27,6 @@ from ..timeline_editing import (
 from ..timeline_operations import cut_clip, duplicate_clip, find_clip, ripple_delete_clip, trim_clip_left, trim_clip_right
 from ..track_operations import move_track, remove_track, rename_track
 from .layer_rules import require_room
-from .lock_rules import require_followers_unlocked
 from .selection_rules import require_dependants_editable
 from .resource_limits import require_clip_room
 from .tracking_rules import require_tracker_copies_room
@@ -168,8 +167,6 @@ def _roll_edit(a: Mapping[str, Any]) -> Operation:
 def _move_clip_to_track(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
-        if float(a["at"]) != find_clip(project, clip_id).timeline_start:      # seul un changement d'instant déplace le mouvement des suiveurs
-            require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
         return relocate_clip(project, clip_id, _track_id(project, a["track"]), float(a["at"]))
 
     return operation

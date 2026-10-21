@@ -74,7 +74,7 @@ from ..sequences import (
     insert_sequence_clip, rename_sequence, set_sequence_format,
 )
 from ..timeline_editing import add_marker
-from .lock_rules import is_locked, require_followers_unlocked
+from ..tracking_locks import is_locked
 from .selection_rules import require_dependants_editable
 from .sequence_rules import clips_in, require_sequence_room
 from .path_nodes import ANCHOR_FIELDS, NODE_FIELDS, nodes_to_arrays
@@ -317,8 +317,6 @@ def _delete_clip(a: Mapping[str, Any]) -> Operation:
 def _move_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
-        if float(a["at"]) != find_clip(project, clip_id).timeline_start:     # seul un changement d'instant déplace le mouvement des suiveurs
-            require_followers_unlocked(project, clip_id, "déplacer", active_only=True)
         return move_clip(project, clip_id, float(a["at"]))
 
     return operation
