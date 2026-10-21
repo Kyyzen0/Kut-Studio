@@ -37,6 +37,7 @@ from .graphics import (
     next_z_order,
 )
 from .mograph_scene import GraphicsScene, mat_close, stack_key, transform_from_world
+from .grade_targets import is_grade_property
 from .project_model import Clip, MediaAsset, Project, Track
 from .visual_effects import TRANSFORM_PROPERTIES, ClipTransform, copy_keyframe
 
@@ -824,6 +825,29 @@ def _window_ids(grade) -> set[str]:
     return window_ids(grade)
 
 
+def _drop_replaced_grade_keys(project: Project, clip: Clip) -> bool:
+    """Coller « effets » remplace l'étalonnage : les images clés ``color.*`` de la destination animaient l'ancien réglage, elles
+    partent avec lui (``clear_grade_animation``, comme la réinitialisation ; même étape d'annulation que le collage). ``False`` si le
+    clip n'est pas modifiable (le collage le saute alors, comme un clip verrouillé : rien n'est écrit)."""
+    from .compositing_guard import ClipEditRefused
+    from .grade_keyframing import clear_grade_animation
+
+    try:
+        clear_grade_animation(project, clip.id)
+    except ClipEditRefused:
+        return False
+    return True
+
+
+def _grade_keys_travel(clipboard: AttributeClipboard, clip: Clip) -> bool:
+    """Les images clés ``color.*`` du presse-papiers ne sont collées (avec « images clés ») que si elles s'appliqueraient : la source
+    ET l'étalonnage final de la destination sont des réglages simples. Sinon (source ou destination en graphe de nœuds) le rendu les
+    ignorerait : les copier animerait un clip que la source n'animait pas, ou laisserait des courbes inertes."""
+    from .grade_targets import is_animatable_grade
+
+    return is_animatable_grade(clipboard.color_grade) and is_animatable_grade(clip.color_grade)
+
+
 def paste_attributes(project: Project, clip_ids: list[str], clipboard: AttributeClipboard, kinds) -> int:
     """Colle les attributs choisis (``transform``, ``effects``, ``masks``, ``keyframes``)."""
     from .effects_model import ClipEffect, effect_by_id, remap_fx_animation, set_clip_effects
@@ -835,6 +859,8 @@ def paste_attributes(project: Project, clip_ids: list[str], clipboard: Attribute
         if track.locked or (isinstance(clip.graphic, GraphicOverlay) and clip.graphic.locked):
             continue
         if track.type not in ("video", "graphics"):
+            continue
+        if "effects" in kinds and not _drop_replaced_grade_keys(project, clip):
             continue
         if "transform" in kinds and clipboard.transform is not None:
             clip.transform = clipboard.transform
@@ -882,7 +908,9 @@ def paste_attributes(project: Project, clip_ids: list[str], clipboard: Attribute
                     if (own := effect_by_id(clip.effects, e.id)) is not None and own.type == e.type
                 }
             kept = [kf for kf in clip.animation if kf.property_name.startswith("mask.")]
-            kept.extend(replace(kf, id="") for kf in remap_fx_animation(clipboard.animation, effect_ids))
+            pasted_animation = clipboard.animation if _grade_keys_travel(clipboard, clip) else \
+                tuple(kf for kf in clipboard.animation if not is_grade_property(kf.property_name))
+            kept.extend(replace(kf, id="") for kf in remap_fx_animation(pasted_animation, effect_ids))
             clip.animation = sorted(kept, key=lambda k: (k.property_name, k.time_seconds))
         count += 1
     return count
