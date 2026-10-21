@@ -34,6 +34,12 @@ MAX_QUERY_CHARS = 200
 MAX_TOKENS = 8
 """Nombre maximal de mots pris en compte dans une saisie."""
 
+LOCKED_FACTOR = 0.85
+"""Pondération du score d'une entrée d'un niveau d'usage supérieur (elle reste affichée, avec « Passer en … »)."""
+
+DISABLED_FACTOR = 0.6
+"""Pondération du score d'une entrée grisée dans le contexte courant."""
+
 MAX_ENTRIES = 5000
 """Nombre maximal d'entrées examinées (le registre d'un menu en compte quelques centaines)."""
 
@@ -132,6 +138,9 @@ class SearchEntry:
     shortcut: str = ""
     icon: str = ""
     kind: str = "command"
+    context: str = ""
+    """Sous-menu parent, affiché devant le titre (« Panneaux › Couleur ») ; il n'entre pas dans le score du titre (le chemin
+    complet est dans l'indication)."""
 
 
 @dataclass(frozen=True)
@@ -226,8 +235,8 @@ def search(
 ) -> list[SearchResult]:
     """Entrées qui répondent à ``query``, les mieux classées d'abord, au plus ``limit``.
 
-    À score égal : les entrées disponibles avant les verrouillées (niveau supérieur), puis les actives avant les grisées,
-    puis l'ordre d'origine. Une saisie vide ne renvoie rien.
+    Le score d'une entrée verrouillée (niveau supérieur) ou grisée est pondéré à la baisse ; à score égal : les entrées
+    disponibles avant les verrouillées, puis les actives avant les grisées, puis l'ordre d'origine. Une saisie vide ne renvoie rien.
     """
     query_tokens = tokens(query)
     if not query_tokens or limit <= 0:
@@ -240,6 +249,8 @@ def search(
         if score <= 0:
             continue
         available = level.at_least(entry.level)
+        # Une fonction grisée ou d'un niveau supérieur reste trouvable, mais à correspondance égale elle passe après.
+        score = int(score * (1.0 if available else LOCKED_FACTOR) * (1.0 if entry.enabled else DISABLED_FACTOR))
         result = SearchResult(entry, score, available)
         scored.append((-score, 0 if available else 1, 0 if entry.enabled else 1, index, result))
     scored.sort(key=lambda item: item[:4])
@@ -262,6 +273,6 @@ def recent_results(
 
 
 __all__ = [
-    "MAX_ENTRIES", "MAX_QUERY_CHARS", "MAX_RESULTS", "MAX_TOKENS", "SYNONYMS", "SearchEntry", "SearchResult",
+    "DISABLED_FACTOR", "LOCKED_FACTOR", "MAX_ENTRIES", "MAX_QUERY_CHARS", "MAX_RESULTS", "MAX_TOKENS", "SYNONYMS", "SearchEntry", "SearchResult",
     "clean_label", "normalize", "recent_results", "score_entry", "search", "tokens",
 ]

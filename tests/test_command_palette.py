@@ -385,3 +385,13 @@ def test_event_filter_resizes_the_veil_with_the_window(window):
     QApplication.sendPostedEvents(None, int(QEvent.Resize))
     assert window.command_palette.size() == window.size()
     assert window.command_palette.box.width() == 620
+
+
+def test_the_obvious_command_comes_first_and_a_greyed_placeholder_does_not_outrank_it(window):
+    entries = window.command_palette_entries()
+    first = search(entries, "couper", SIMPLE)[0]
+    assert first.entry.id == "menu:menu.item.trim", first.entry
+    greyed = next(r for r in search(entries, "couper", SIMPLE, limit=50) if r.entry.id == "menu:action.cut")
+    assert not greyed.entry.enabled and greyed.score < first.score
+    submenu_entry = next(e for e in entries if e.id == "menu:workspace.panel.color")
+    assert submenu_entry.context == "Panneaux" and submenu_entry.title == "Couleur"

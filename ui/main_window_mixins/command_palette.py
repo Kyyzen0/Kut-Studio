@@ -182,11 +182,9 @@ class CommandPaletteMixin:
                 if not action.isEnabled():
                     tip = action.toolTip().strip()
                     reason = tip if tip and tip not in (title, action.text(), action.text().replace("&", "")) else ""
-                name_en = title_en or title
-                if len(path) > 1:                                 # « Panneaux › Couleur » : le titre seul serait ambigu
-                    title, title_en = f"{path[-1]} › {title}", f"{path_en[-1]} › {name_en}"
                 entries.append(SearchEntry(
                     id=entry_id, title=title, title_en=title_en, hint=sep.join(path), hint_en=sep.join(path_en),
+                    context=path[-1] if len(path) > 1 else "",       # « Panneaux › Couleur » : le titre seul serait ambigu
                     level=level, enabled=action.isEnabled(), reason=reason, kind="command",
                     shortcut=action.shortcut().toString(QKeySequence.PortableText), icon=icon.value,
                 ))

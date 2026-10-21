@@ -77,7 +77,7 @@ class _ResultRow(QWidget):
         layout.addWidget(icon)
         texts = QVBoxLayout()
         texts.setSpacing(1)
-        self.title = QLabel(entry.title)
+        self.title = QLabel(f"{entry.context} › {entry.title}" if entry.context else entry.title)
         self.title.setObjectName("paletteTitle")
         self.title.setProperty("faded", faded)
         self.hint = QLabel(self._hint_text(result))
@@ -99,12 +99,12 @@ class _ResultRow(QWidget):
             self.button.setObjectName("paletteSwitch" if result.locked else "paletteOpen")
             self.button.setCursor(Qt.PointingHandCursor)
             self.button.setFocusPolicy(Qt.NoFocus)             # Entrée agit sur la ligne choisie ; Tab reste sur les contrôles
-            self.button.setAccessibleName(f"{self._button_text(result)} : {entry.title}")
+            self.button.setAccessibleName(f"{self._button_text(result)} : {self.title.text()}")
             if result.locked:
                 self.button.setToolTip(i18n.translate("palette.switch.tooltip", level=level_name(entry.level)))
             self.button.clicked.connect(lambda _checked=False: on_press())
             layout.addWidget(self.button)
-        self.setAccessibleName(entry.title)
+        self.setAccessibleName(self.title.text())
         self.setAccessibleDescription(self.hint.text())
 
     @staticmethod
