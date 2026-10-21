@@ -697,6 +697,8 @@ class MainWindow(
         # Page Composition : nœuds du clip de composition choisi.
         self._init_composition_page()
         self.workspace = WorkspaceManager(self)
+        # Un niveau d'usage montre ou cache des boutons du rail : son minimum change, celui de la fenêtre le suit.
+        self.usage_level_changed.connect(lambda _level: QTimer.singleShot(0, self.workspace._sync_window_minimum_height))
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         # Le dock « viewer » contient le viewer **et** le panneau de
         # scopes dans un splitter vertical (tâche 31) : c'est ce

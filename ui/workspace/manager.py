@@ -739,6 +739,7 @@ class WorkspaceManager(QObject):
         root = getattr(self, "_root_splitter", None)
         if root is None:
             return
+        self._sync_window_minimum_height()       # le rail et les panneaux sont affichés : le minimum de la fenêtre est exact
         total = root.height()
         if total <= 0:
             QTimer.singleShot(0, self.balance_vertical_split)
