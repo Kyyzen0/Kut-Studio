@@ -243,6 +243,12 @@ DERIVED: dict[str, str] = {
     "sequences[].tracks[].clips[].duration": "Durée sur la timeline, dérivée du remappage (jamais stockée à part).",
     "sequences[].tracks[].clips[].timeline_end": "``timeline_start`` + ``duration``.",
     "sequences[].tracks[].clips[].has_speed_curve": "La vitesse est animée : ``time_remapping.speed`` n'est alors que la valeur statique.",
+    "sequences[].tracks[].clips[].color_grade_simple": (
+        "``true`` si l'étalonnage du clip est un réglage simple (ou absent) : le seul cas où les images clés ``color.*`` s'animent ; ``false`` pour un "
+        "graphe de nœuds (plusieurs nœuds, ou un nœud nommé, qualifié, fenêtré, flou ou net), qui ne s'anime pas."),
+    "sequences[].tracks[].clips[].color_animation_live": (
+        "``true`` si une image clé ``color.*`` du clip est appliquée au rendu (réglage simple et au moins une image clé d'étalonnage) ; "
+        "``false`` pour une image clé restée dans un clip devenu graphe : ``remove_keyframe`` la retire."),
     "sequences[].tracks[].clips[].has_keyframes": "Le clip porte des images clés (leur contenu : ``transform_keyframes`` et ``animation``).",
     "sequences[].tracks[].clips[].color_grade.nodes[].type": (
         "``corrector`` (un réglage) ou ``mixer`` (un mélangeur) ; un réglage seul de clip est décrit comme le nœud ``n1`` d'un graphe."),

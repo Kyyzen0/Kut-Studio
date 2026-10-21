@@ -548,51 +548,39 @@ def test_the_tangents_and_interpolations_of_the_description_are_rewritten_by_the
     assert view(rebuilt) == view(original)
 
 
-# --- ADR-0008, étape 6 : l'étalonnage animé (`color.*`) n'est atteignable par AUCUN verbe de script ------------------------------------
+# --- ADR-0008, étape 9 : l'étalonnage animé (`color.*`) est atteignable par les verbes génériques ---------------------------------------
+# (le refus de l'étape 6, volontaire tant que les verbes n'existaient pas, est levé ; ses contreparties, cas par cas :
+# `tests/test_script_verbs_grade_keyframes.py`)
 
 _COLOR_OPS = [
     _op("add_keyframe", clip="a", property="color.exposure", at=1.0, value=0.5),
-    _op("remove_keyframe", clip="a", property="color.exposure", at=1.0),
     _op("set_keyframe_value", clip="a", property="color.exposure", at=1.0, value=0.2),
     _op("set_keyframe_time", clip="a", property="color.exposure", at=1.0, to=2.0),
     _op("move_keyframes", clip="a", delta=0.5, keyframes=[{"property": "color.exposure", "at": 1.0}]),
     _op("set_keyframe_interpolation", clip="a", property="color.exposure", at=1.0, interpolation="hold"),
-    _op("set_keyframe_tangents", clip="a", property="color.exposure", at=1.0, out_slope=0.1),
-    _op("set_animation_enabled", clip="a", property="color.exposure", enabled=True, at=1.0),
-    _op("set_animation_enabled", clip="a", property="color.lift.r", enabled=False, at=1.0),
+    _op("set_animation_enabled", clip="a", property="color.exposure", enabled=False, at=1.0),
+    _op("remove_keyframe", clip="a", property="color.exposure", at=1.0),
 ]
 
 
-@pytest.mark.parametrize("with_existing", [False, True], ids=["sans clé", "clé déjà dans le projet"])
-@pytest.mark.parametrize("operation", _COLOR_OPS, ids=lambda o: f"{o['op']}-{o.get('property', 'bloc')}")
-def test_no_generic_verb_creates_or_changes_a_color_keyframe(operation, with_existing):
-    """Une clé `color.*` serait rendue à l'export sans que rien ne permette de l'inspecter ou de la retirer (ni interface ni verbe avant les étapes 8 et 9) :
-    refus AVANT écriture, message français, projet strictement inchangé ; un projet chargé qui en contient déjà reste intact."""
+@pytest.mark.parametrize("operation", _COLOR_OPS, ids=lambda o: o["op"])
+def test_the_generic_verbs_now_reach_a_color_keyframe(operation):
+    """Un clip qui porte une clé `color.exposure` à 1 s : chaque verbe générique l'atteint (plus de refus « pas encore disponible »)."""
     project = _project()
-    if with_existing:
-        find_clip(project, "a").animation = [Keyframe("color.exposure", 1.0, 0.3, id="kc")]
-    before = _snapshot(project)
-    try:
-        _session, report = _apply(project, operation)
-    except ScriptInvalid:                      # `add_keyframe` / `remove_keyframe` : la liste de choix du schéma refuse déjà le nom, avant toute exécution
-        assert operation["op"] in ("add_keyframe", "remove_keyframe")
-    else:
-        assert not report.ok and "n'est pas encore disponible dans les scripts" in report.error, report.error
-    assert _snapshot(project) == before
+    find_clip(project, "a").animation = [Keyframe("color.exposure", 1.0, 0.3, id="kc")]
+    _session, report = _apply(project, operation)
+    assert report.ok, report.error
 
 
-@pytest.mark.parametrize("verb, fields", [("add_keyframe", dict(value=0.5, at=1.0)), ("remove_keyframe", dict(at=1.0))])
-def test_the_direct_operation_of_add_and_remove_keyframe_refuses_a_color_property_too(verb, fields):
-    """Défense en profondeur : même si le schéma laissait passer le nom, l'opération elle-même refuse avant d'écrire."""
+def test_the_direct_operation_of_add_and_remove_keyframe_accepts_a_color_property_too():
     project = _project()
-    before = _snapshot(project)
-    operation = VERBS[verb].build({"clip": "a", "property": "color.exposure", **fields})
-    with pytest.raises(ValueError, match="n'est pas encore disponible dans les scripts"):
-        operation(project)
-    assert _snapshot(project) == before
+    VERBS["add_keyframe"].build({"clip": "a", "property": "color.exposure", "at": 1.0, "value": 0.5})(project)
+    assert [k.property_name for k in find_clip(project, "a").animation] == ["color.exposure"]
+    VERBS["remove_keyframe"].build({"clip": "a", "property": "color.exposure", "at": 1.0})(project)
+    assert not find_clip(project, "a").animation
 
 
-def test_the_grade_guard_does_not_touch_other_properties():
+def test_the_grade_support_does_not_touch_other_properties():
     project = _project()
     _session, report = _apply(project, _op("add_keyframe", clip="a", property="position_x", at=1.0, value=1.0))
     assert report.ok

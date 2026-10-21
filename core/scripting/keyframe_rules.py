@@ -22,7 +22,7 @@ from ..animation_targets import PropertyTarget, get_target
 from ..compositing import Compositing
 from ..project_model import Clip, Project
 from ..timeline_operations import find_clip
-from .verbs import _editable_clip, _owner_track, refuse_grade_property
+from .verbs import _editable_clip, _owner_track, require_animatable_grade
 
 MAX_BLOCK = 64
 """Images clés ou points de vitesse cités par une seule opération."""
@@ -34,10 +34,10 @@ _TRACKED = ("position_x", "position_y")
 
 
 def resolve_keyframe_target(project: Project, selector: str, property_name: str, verb: str) -> tuple[str, Clip, PropertyTarget]:
-    """``(identifiant du clip, clip, cible)`` pour une propriété animable d'un clip éditable (piste et calque déverrouillés)."""
-    refuse_grade_property(property_name, verb)
+    """``(identifiant du clip, clip, cible)`` pour une propriété animable d'un clip éditable (piste et calque déverrouillés). Les propriétés d'étalonnage ``color.*`` sont résolues comme les paramètres d'effet : avec le clip."""
     clip_id = _editable_clip(project, selector)
     clip = find_clip(project, clip_id)
+    require_animatable_grade(clip, property_name, verb)      # ``color.*`` : seul le réglage simple du clip s'anime (ADR-0008, étape 9)
     if property_name.startswith("time."):
         raise ValueError(f"{verb} : la vitesse a ses propres verbes (add_speed_point, set_speed_point_value, set_speed_tangents…).")
     try:
@@ -86,6 +86,8 @@ def require_value(target: PropertyTarget, value: Any, property_name: str) -> flo
 def require_within(clip: Clip, at: float, what: str) -> None:
     """``at`` tombe dans le clip (les images clés sont relatives au clip)."""
     duration = normalize_time(float(clip.duration))
+    if not math.isfinite(at):                                                  # NaN passerait les deux comparaisons ci-dessous
+        raise ValueError(f"{what} : l'instant doit être un nombre fini.")
     if at < -TIME_EPSILON or at > duration + TIME_EPSILON:
         raise ValueError(f"{what} : l'instant {at:g} s est hors du clip (de 0 à {duration:g} s), les images clés sont relatives au clip.")
 
@@ -138,6 +140,6 @@ def require_effective_tangents(
 
 __all__ = [
     "MAX_BLOCK", "MAX_SLOPE", "keyframe_at", "require_effective_tangents", "require_free_arrivals", "require_value", "require_within",
-    "refuse_grade_property",
+    "require_animatable_grade",
     "resolve_keyframe_target",
 ]

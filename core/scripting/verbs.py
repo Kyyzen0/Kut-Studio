@@ -25,6 +25,7 @@ from ..audio_buses import (
 )
 from ..animation import InterpolationType, ValueKind
 from ..animation_targets import all_targets, get_target
+from ..grade_targets import ANIMATABLE_GRADE_PARAMS, is_animatable_grade, is_grade_property
 from ..audio_effects_model import (
     AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
 )
@@ -54,7 +55,7 @@ from .resource_limits import (
     require_keyframe_slot, require_marker_room, require_media_room, require_track_room,
 )
 from .image_layer import fitted_size, read_image_size
-from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
+from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at, remove_orphan_keyframe_at
 from ..media_color_ops import set_media_color_matrix
 from ..media_probe import MediaProbeError, probe_media
 from ..multicam import is_multicam_clip
@@ -64,7 +65,7 @@ from ..multicam_ops import (
     replace_angle, set_angle_offset, set_audio_policy, switch_angle,
 )
 from ..object_ids import InvalidObjectId, resolve_object_id
-from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Sequence
+from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Clip, Project, Sequence
 from ..sequences import (
     MAX_SEQUENCE_SIDE, check_sequence_format, create_sequence, delete_sequence, duplicate_sequence, find_sequence,
     insert_sequence_clip, rename_sequence, set_sequence_format,
@@ -567,32 +568,44 @@ def _remove_transition(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
-# Les propriétés que ``add_keyframe`` accepte : celles du registre d'animation (transform, ``graphic.*``), jamais recopiées ici. Exclues :
-# les booléens (``flip_h`` / ``flip_v`` : le verbe pose un nombre), la vitesse (``time.speed`` : la durée du clip en dépend, donc le
-# sens de « relatif au clip »), et les familles par masque (``mask.<id>.*`` : verbes ``add_mask_keyframe`` / ``remove_mask_keyframe``).
-_ANIMATABLE = tuple(
-    target.id for target in all_targets() if target.spec.kind is not ValueKind.BOOL and not target.id.startswith("time.")
+# Les propriétés que ``add_keyframe`` accepte : celles du registre d'animation (transform, ``graphic.*``) et l'étalonnage du clip
+# (``color.*``, ADR-0008 étape 9 : ``ANIMATABLE_GRADE_PARAMS``, la liste du registre de l'étalonnage, jamais recopiée), pas les paramètres d'effet
+# (``add_effect_keyframe``). Exclues : les booléens (``flip_h`` / ``flip_v`` : le verbe pose un nombre), la vitesse (``time.speed`` : la durée du
+# clip en dépend, donc le sens de « relatif au clip »), et les familles par masque (``mask.<id>.*`` : verbes ``add_mask_keyframe`` /
+# ``remove_mask_keyframe``).
+_ANIMATABLE = (
+    *(target.id for target in all_targets() if target.spec.kind is not ValueKind.BOOL and not target.id.startswith("time.")),
+    *ANIMATABLE_GRADE_PARAMS,
 )
 
 
-def refuse_grade_property(property_name: object, verb: str) -> None:
-    """Refuse la famille ``color.*`` (étalonnage animé, ADR-0008) pour tout verbe qui reçoit un nom de propriété, **avant** toute écriture.
+def require_animatable_grade(clip: Clip, property_name: object, verb: str) -> None:
+    """Refuse une propriété ``color.*`` sur un clip étalonné par un **graphe de nœuds**, **avant** toute écriture (ADR-0008, étape 9).
 
-    Tant que l'étape 9 n'a pas écrit ses verbes (ni l'étape 8 son interface), un script ne doit ni créer, ni modifier, ni déplacer, ni
-    retirer, ni activer une image clé d'étalonnage : elle serait rendue à l'export sans que rien ne permette de l'inspecter ou de la retirer.
-    Le modèle et le rendu (``effective_grade``, un projet chargé qui en contient) ne passent pas par ici."""
-    if isinstance(property_name, str) and property_name.startswith("color."):
-        raise ValueError(f"{verb} : l'animation de l'étalonnage n'est pas encore disponible dans les scripts.")
+    Seul le réglage simple du clip s'anime (:func:`core.grade_targets.is_animatable_grade`) : le rendu ignore les images clés ``color.*`` d'un
+    graphe, un script ne les crée donc pas (un faux succès), comme l'interface ne propose pas d'animer. Les autres propriétés ne sont pas
+    concernées ; un nom ``color.*`` que le registre ne connaît pas est refusé plus loin (propriété inconnue)."""
+    if (
+        isinstance(property_name, str) and is_grade_property(property_name)
+        and not is_animatable_grade(getattr(clip, "color_grade", None))
+    ):
+        raise ValueError(
+            f"{verb} : le clip '{clip.id}' est étalonné par un graphe de nœuds ; seul le réglage simple s'anime "
+            f"({property_name} ne serait pas rendu). Simplifiez l'étalonnage du clip en un seul nœud, sans nom, qualificateur ni fenêtre."
+        )
 
 
 def _add_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        refuse_grade_property(a["property"], "add_keyframe")
         clip_id = _editable_clip(project, a["clip"])
-        target = get_target(a["property"])
+        require_animatable_grade(find_clip(project, clip_id), a["property"], "add_keyframe")
+        try:
+            target = get_target(a["property"], find_clip(project, clip_id))
+        except KeyError:
+            raise ValueError(f"add_keyframe : le clip '{clip_id}' n'a pas de propriété animable {a['property']!r}.") from None
         owner = _owner_track(project, clip_id)
         # Une propriété n'existe que pour certains genres de piste (``skew`` : graphiques seulement ; les transformations : vidéo et
-        # graphiques) : une image clé posée ailleurs serait enregistrée mais ignorée au rendu, un faux succès.
+        # graphiques ; ``color.*`` : vidéo) : une image clé posée ailleurs serait enregistrée mais ignorée au rendu, un faux succès.
         if not target.applies_to(owner.type) or (
             target.applies_to_clip is not None and not target.applies_to_clip(find_clip(project, clip_id))
         ):
@@ -614,8 +627,15 @@ def _add_keyframe(a: Mapping[str, Any]) -> Operation:
 
 def _remove_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        refuse_grade_property(a["property"], "remove_keyframe")
         clip_id = _editable_clip(project, a["clip"])
+        name = str(a["property"])
+        clip = find_clip(project, clip_id)
+        if is_grade_property(name) and not is_animatable_grade(getattr(clip, "color_grade", None)):
+            # Clip devenu graphe : l'image clé ``color.*`` restée est ignorée au rendu et plus aucune cible ne la résout ; elle reste
+            # pourtant retirable (sinon rien ne permettrait de la voir disparaître). Aucune valeur statique n'est écrite.
+            if not remove_orphan_keyframe_at(project, clip_id, name, float(a["at"])):
+                raise KeyError(f"Aucune image clé de {a['property']!r} à {a['at']} s sur ce clip.")
+            return None
         if not remove_keyframe_at(project, clip_id, a["property"], float(a["at"])):
             raise KeyError(f"Aucune image clé de {a['property']!r} à {a['at']} s sur ce clip.")
         return None
