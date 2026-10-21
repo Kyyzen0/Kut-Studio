@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Interne : ADR-0011 feuille de route vers la v1 (acceptée le 2026-10-21) : sept phases à portes de sortie mesurables (recette sur machines réelles, moteur, interopérabilité et livraison, noyau de motion design, extensibilité, page signature), backlog d'intelligence, parallélisation, décisions à prendre et tableau croisé des écarts par public. Aucun changement de comportement. Voir [docs/adr/0011-feuille-de-route-v1.md](docs/adr/0011-feuille-de-route-v1.md).
+
 ## [0.9.0] - 2026-10-21
 
 Version qui **anime l'étalonnage et les effets** : le réglage de couleur d'un clip (exposition, contraste, saturation, température, teinte, ombres, hautes lumières et roues Lift / Gamma / Gain / Offset) se pilote maintenant par images clés, dans l'inspecteur, la page Couleur, l'éditeur de courbes et les scripts, avec un moniteur et un export qui suivent la même courbe ; le flou, l'aberration chromatique et le rayon du Bloom s'animent aussi. L'onglet Suivi et les scripts appliquent la même règle sur les clips verrouillés, et « Coller les attributs » remplace proprement l'ancien étalonnage animé.
