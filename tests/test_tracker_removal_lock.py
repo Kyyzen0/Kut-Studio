@@ -1,6 +1,6 @@
 """Supprimer un tracker ne réécrit jamais la liaison d'un suiveur verrouillé : même règle pour le modèle, l'interface et les scripts.
 
-``tracking_ops.remove_tracker`` réécrit les liaisons des clips qui suivent le tracker (séquence active). Le refus est dans le MODÈLE
+``tracking_ops.remove_tracker`` réécrit les liaisons des clips qui suivent le tracker (séquence active : une liaison ne vit que dans une séquence, voir plus bas). Le refus est dans le MODÈLE
 (``core.tracking_locks.require_tracker_removal_unlocked``) : il passe AVANT la première écriture, ne vise que les clips dont la liaison serait
 réellement différente, et vaut tout ou rien pour plusieurs trackers. L'interface l'attrape (message dans la barre d'état, pas de traceback,
 pas d'entrée d'historique) ; le verbe de script n'a plus de copie de la règle.
@@ -82,16 +82,99 @@ def test_only_what_the_operation_would_change_is_refused():
     _refused(project, lambda p: tracking_ops.remove_tracker(p, "a", "t1"))   # une liaison désactivée est réécrite aussi
 
 
-def test_a_follower_in_another_sequence_is_neither_refused_nor_rewritten():
-    """L'écriture ne parcourt que la séquence active : le garde en fait autant (caractérisation, pas une promesse)."""
-    project = _project()
+# --- Autres séquences : les liaisons ne vivent que dans une séquence -------------------------------------------------------------
+#
+# Établi par ces tests (PR « suiveurs d'une autre séquence ») : l'identifiant d'un clip est unique au projet, la résolution d'une liaison
+# (``TrackingContext``) ne cherche sa source que dans la séquence du suiveur, l'interface et les verbes n'en créent pas d'une séquence à
+# l'autre, et dupliquer une séquence réécrit les sources. Une liaison qui désigne un clip d'une AUTRE séquence est donc déjà
+# « source introuvable » (inerte) avant la suppression du tracker : la réécrire ne corrigerait rien. L'écriture (et la garde, qui en dépend)
+# reste donc limitée à la séquence active.
+
+
+def _second_sequence(project: Project, *, locked: bool = True) -> Clip:
     project.sequences.append(Sequence("seq-b", "B", width=320, height=180, fps=30.0, tracks=[
-        Track("W1", "W1", "video", locked=True, clips=[Clip("g", "m", "W1", 0.0, 0.0, 1.0)])]))
-    other = project.sequences[-1].tracks[0].clips[0]
-    other.tracking = ClipTracking(links=(TrackLink(source_clip_id="a", tracker_ids=("t1",)),))
+        Track("W1", "W1", "video", locked=locked, clips=[Clip("g", "m", "W1", 0.0, 0.0, 1.0)])]))
+    return project.sequences[-1].tracks[0].clips[0]
+
+
+def _issues(project: Project, clip: Clip):
+    from core.tracking_bindings import TrackingContext, link_issues
+
+    context = TrackingContext(project, project.sequences[-1])
+    return link_issues(context, clip, tracking_ops.tracking_of(clip).links[0])
+
+
+def test_a_link_to_a_clip_of_another_sequence_is_already_inert_and_removal_leaves_it_alone(tmp_path):
+    """Seul le modèle (``add_link`` direct) ou un calque collé dans une autre séquence en crée un ; il est « source introuvable » avant comme après."""
+    from core.project_io import load_project, save_project
+    from core.render_plan import build_render_plan
+    from core.scripting.api import describe
+
+    project = _project()
+    other = _second_sequence(project)
+    tracking_ops.add_link(project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    assert _issues(project, other) == ("missing_source",)
     before = copy.deepcopy(other.tracking)
+    tracking_ops.remove_tracker(project, "a", "t1")                    # le suiveur d'une autre séquence est verrouillé : ni refus ni écriture
+    assert other.tracking == before and _issues(project, other) == ("missing_source",)
+    assert _links(project, "f")[0].tracker_ids == ("t2",)               # la séquence active, elle, est bien réécrite
+    build_render_plan(project, sequence_id="seq-b")                    # ni exception ni valeur aberrante
+    describe(project)
+    save_project(project, str(tmp_path / "p.kut"))
+    assert load_project(str(tmp_path / "p.kut")).sequences[-1].tracks[0].clips[0].tracking == before
+
+
+def test_a_layer_pasted_into_another_sequence_keeps_an_inert_link_that_removal_does_not_touch():
+    from core import mograph_layers
+
+    project = _project()
+    layer = mograph_layers.add_layer(project, "text", at=0.0, duration=2.0)
+    tracking_ops.add_link(project, layer.id, "a", ["t1"], timeline_time=0.0, link_id="lg")
+    clipboard = mograph_layers.copy_layers(project, [layer.id])
+    project.sequences.append(Sequence("seq-b", "B", width=320, height=180, fps=30.0, tracks=[Track("G", "G", "graphics", locked=True)]))
+    project.active_sequence_id = "seq-b"
+    pasted = mograph_layers.paste_layers(project, clipboard, at=0.0)[0]
+    assert tracking_ops.tracking_of(pasted).links[0].source_clip_id == "a"
+    assert _issues(project, pasted) == ("missing_source",)
+    project.active_sequence_id = "seq-main"
+    before = copy.deepcopy(pasted.tracking)
     tracking_ops.remove_tracker(project, "a", "t1")
-    assert other.tracking == before
+    assert pasted.tracking == before
+
+
+def test_the_verbs_cannot_create_a_link_across_sequences():
+    project = _project()
+    _second_sequence(project)
+    report = apply_script(Session(project), parse_script(
+        {"kut_script": 1, "ops": [{"op": "add_link", "clip": "g", "source": "a", "trackers": ["t1"], "at": 0.0}]}))
+    assert not report.ok and "g" in str(report.error)
+
+
+def test_a_duplicated_sequence_keeps_its_own_links_and_trackers_when_the_original_loses_one():
+    """Indépendance des séquences : la copie a ses propres identifiants ; supprimer un tracker dans l'original ne réécrit pas la copie
+    (même si le suiveur de la copie est verrouillé : aucun refus non plus)."""
+    from core.sequences import duplicate_sequence
+
+    project = _project()
+    clone = duplicate_sequence(project, project.active_sequence_id)
+    holders = [(t, c) for t in clone.tracks for c in t.clips if c.tracking and c.tracking.links]
+    assert len(holders) == 1
+    track, follower = holders[0]
+    track.locked = True
+    assert follower.id != "f" and tracking_ops.tracking_of(follower).links[0].source_clip_id != "a"
+    before = copy.deepcopy(clone)
+    tracking_ops.remove_tracker(project, "a", "t1")
+    assert clone == before
+    assert _links(project, "f")[0].tracker_ids == ("t2",)
+
+
+def test_the_script_verb_and_the_model_agree_with_a_second_sequence():
+    scripted, direct = _project(), _project()
+    for project in (scripted, direct):
+        _second_sequence(project)
+    session, report = _script(scripted, "a", "t1")
+    tracking_ops.remove_tracker(direct, "a", "t1")
+    assert report.ok and session.project == direct
 
 
 def test_a_cut_half_still_carrying_the_tracker_leaves_the_locked_follower_alone():
@@ -180,3 +263,62 @@ def test_a_free_follower_lets_the_window_remove_and_undo_redo_restore_it(qtbot, 
     assert window.project.tracks == before
     window.redo_last()
     assert window.project.tracks == after
+
+
+def test_a_locked_follower_of_another_sequence_does_not_block_the_window_and_undo_redo_keep_it_intact(qtbot, monkeypatch):
+    window = _open(qtbot, monkeypatch, None)
+    other = _second_sequence(window.project)
+    tracking_ops.add_link(window.project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    window.history.reset(window.project)
+    before = copy.deepcopy(other.tracking)
+    window.tracking_panel.remove_trackers_requested.emit(["t1"])
+    assert window.history.can_undo and _links(window.project, "f")[0].tracker_ids == ("t2",)
+    assert window.project.sequences[-1].tracks[0].clips[0].tracking == before
+    window.undo_last()
+    assert _links(window.project, "f")[0].tracker_ids == ("t1", "t2") and window.project.sequences[-1].tracks[0].clips[0].tracking == before
+    window.redo_last()
+    assert _links(window.project, "f")[0].tracker_ids == ("t2",) and window.project.sequences[-1].tracks[0].clips[0].tracking == before
+
+
+# --- La portée suit la séquence du clip porteur, pas la séquence active (Codex, #251) ------------------------------------------------
+
+
+def _scope_project(*, locked_cross: bool, same_locked: bool) -> Project:
+    project = _project("track" if same_locked else None)
+    cross = _second_sequence(project, locked=locked_cross)
+    tracking_ops.add_link(project, "g", "a", ["t1"], timeline_time=0.0, link_id="lx")
+    project.active_sequence_id = "seq-b"                                # « a » est dans la séquence principale, inactive
+    assert cross.tracking is not None
+    return project
+
+
+def test_removal_scope_is_the_sequence_of_the_source_not_the_active_one():
+    project = _scope_project(locked_cross=True, same_locked=False)
+    cross = project.sequences[-1].tracks[0].clips[0]
+    before = copy.deepcopy(cross.tracking)
+    tracking_ops.remove_tracker(project, "a", "t1")                    # le suiveur inter-séquences, verrouillé, ne refuse pas
+    assert cross.tracking == before
+    assert _links_in(project, "f")[0].tracker_ids == ("t2",)            # le suiveur libre de la séquence de « a » est réécrit
+
+
+def test_a_locked_follower_of_the_source_sequence_still_refuses_when_another_is_active():
+    project = _scope_project(locked_cross=False, same_locked=True)
+    before = copy.deepcopy(project)
+    with pytest.raises(ValueError, match="verrouillé"):
+        tracking_ops.remove_tracker(project, "a", "t1")
+    with pytest.raises(ValueError, match="verrouillé"):
+        tracking_ops.remove_trackers(project, "a", ["t2", "t1"])
+    assert project == before
+
+
+def test_the_script_verb_agrees_with_the_model_for_an_inactive_source_sequence():
+    scripted, direct = _scope_project(locked_cross=True, same_locked=False), _scope_project(locked_cross=True, same_locked=False)
+    tracking_ops.remove_tracker(direct, "a", "t1")
+    session = Session(scripted)
+    report = apply_script(session, parse_script({"kut_script": 1, "ops": [{"op": "remove_tracker", "clip": "a", "tracker": "t1"}]}))
+    assert not report.ok                                               # le verbe ne voit que la séquence active : « a » y est introuvable
+    assert session.project == _scope_project(locked_cross=True, same_locked=False)
+
+
+def _links_in(project: Project, clip_id: str):
+    return tracking_ops.tracking_of(next(c for s in project.sequences for t in s.tracks for c in t.clips if c.id == clip_id)).links

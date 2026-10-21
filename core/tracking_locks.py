@@ -9,7 +9,7 @@ script et les menus le partagent. Il passe AVANT la première écriture, et ne v
 suppression laisse telle quelle (aucune prolongation), ne bloque rien. Aucun Qt.
 
 Supprimer un tracker (:func:`core.tracking_ops.remove_tracker` / ``remove_trackers``) réécrit de même les liaisons qui l'utilisent (séquence
-active, comme l'écriture) : même refus, calculé par la règle d'écriture elle-même (``tracker_removal_rewrites``).
+du clip porteur, comme l'écriture : une liaison ne vit que dans une séquence, voir docs/tracking.md) : même refus, calculé par la règle d'écriture elle-même (``tracker_removal_rewrites``).
 
 Déplacer, rogner, ripple-trimmer, changer la vitesse ou dupliquer la source ne réécrit aucun suiveur (seul le rendu, qui dérive les images clés du
 suiveur de sa source, change) : aucune garde ici pour ces opérations, ni dans l'interface, ni dans les verbes (tests/test_follower_move_parity.py).
@@ -76,12 +76,13 @@ def require_release_followers_unlocked(project: Project, doomed: Collection[str]
 
 def tracker_removal_locked_followers(project: Project, clip_id: str, tracker_ids: Collection[str]) -> list[str]:
     """Clips verrouillés dont la liaison serait réécrite par la suppression des trackers ``tracker_ids`` de ``clip_id`` (même règle que l'écriture)."""
-    from .tracking_ops import tracker_removal_rewrites
+    from .tracking_ops import _sequence_of_clip, tracker_removal_rewrites
 
+    tracks = _sequence_of_clip(project, clip_id).tracks
     found: list[str] = []
     for tracker_id in dict.fromkeys(tracker_ids):
         for other in tracker_removal_rewrites(project, clip_id, tracker_id):
-            track = next((t for t in project.active_sequence.tracks if other in t.clips), None)
+            track = next((t for t in tracks if other in t.clips), None)
             if track is not None and is_locked(track, other) and other.id not in found:
                 found.append(other.id)
     return found
