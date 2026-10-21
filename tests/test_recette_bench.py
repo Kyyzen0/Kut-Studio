@@ -294,8 +294,14 @@ def test_proc_table_parses_names_with_spaces(tmp_path):
         (folder / "stat").write_text(f"{pid} ({name}) S {parent} 0 0\n", encoding="utf-8")
         (folder / "statm").write_text(f"999 {pages} 0\n", encoding="utf-8")
     (tmp_path / "self").mkdir()
-    table = runner._proc_table(tmp_path)
-    assert table is not None and runner.process_tree_rss_mb(10, table) == pytest.approx(150 * (os.sysconf("SC_PAGE_SIZE") // 1024) / 1024.0)
+    table = runner._proc_table(tmp_path, page_kb=4)                                   # fausse racine /proc, taille de page imposée
+    assert table is not None and runner.process_tree_rss_mb(10, table) == pytest.approx(150 * 4 / 1024.0)
+    assert runner._proc_table(tmp_path / "absent") is None
+
+
+def test_page_size_is_portable_without_sysconf(monkeypatch):
+    monkeypatch.delattr(os, "sysconf", raising=False)                                   # comme Windows
+    assert runner._page_kb() == 4
 
 
 def test_exit_classification():

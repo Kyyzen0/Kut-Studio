@@ -101,11 +101,20 @@ def _ps_table() -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
-def _proc_table(root: Path = Path("/proc")) -> str | None:
+def _page_kb() -> int:
+    """Taille de page en Ko ; ``os.sysconf`` n'existe pas sous Windows : 4 Ko par défaut (inutilisé là : pas de ``/proc``)."""
+    sysconf = getattr(os, "sysconf", None)
+    try:
+        return max(1, int(sysconf("SC_PAGE_SIZE")) // 1024) if sysconf else 4
+    except (OSError, ValueError):
+        return 4
+
+
+def _proc_table(root: Path = Path("/proc"), page_kb: int | None = None) -> str | None:
     """Même table lue dans ``/proc`` (Linux sans ``ps`` : conteneurs Debian) ; ``None`` si ``/proc`` n'existe pas."""
     if not root.is_dir():
         return None
-    page_kb = (os.sysconf("SC_PAGE_SIZE") // 1024) if hasattr(os, "sysconf") else 4
+    page_kb = page_kb or _page_kb()
     lines = []
     for entry in root.iterdir():
         if not entry.name.isdigit():
