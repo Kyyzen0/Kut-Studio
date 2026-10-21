@@ -25,7 +25,9 @@ def write_wav(path: Path, signal: np.ndarray, rate: int = SAMPLE_RATE) -> Path:
     return path
 
 
-def band_noise(rng: np.random.Generator, count: int, low: float, high: float) -> np.ndarray:
+def band_noise(
+    rng: np.random.Generator, count: int, low: float, high: float
+) -> np.ndarray:
     spectrum = np.fft.rfft(rng.standard_normal(count))
     frequencies = np.fft.rfftfreq(count, 1 / SAMPLE_RATE)
     spectrum[(frequencies < low) | (frequencies > high)] = 0
@@ -41,8 +43,12 @@ def speech(rng: np.random.Generator, seconds: float) -> np.ndarray:
     while position < count:
         length = int(rng.uniform(0.08, 0.25) * SAMPLE_RATE)
         gap = int(rng.uniform(0.04, 0.5) * SAMPLE_RATE)
-        burst = band_noise(rng, length, 250, 3200) * rng.uniform(0.2, 1.0) * np.hanning(length)
-        out[position:position + length] += burst[: count - position]
+        burst = (
+            band_noise(rng, length, 250, 3200)
+            * rng.uniform(0.2, 1.0)
+            * np.hanning(length)
+        )
+        out[position : position + length] += burst[: count - position]
         position += length + gap
     return out * 0.6
 
@@ -62,10 +68,14 @@ def music_loop(seconds: float, period: float = 2.0) -> np.ndarray:
     cell = int(period * SAMPLE_RATE)
     t = np.arange(cell) / SAMPLE_RATE
     quarter = period / 4
-    pattern = sum(
-        np.sin(2 * np.pi * freq * t) * np.exp(-3 * ((t - start * quarter) % quarter))
-        for freq, start in [(220, 0), (330, 1), (440, 2), (294, 3)]
-    ) * 0.3
+    pattern = (
+        sum(
+            np.sin(2 * np.pi * freq * t)
+            * np.exp(-3 * ((t - start * quarter) % quarter))
+            for freq, start in [(220, 0), (330, 1), (440, 2), (294, 3)]
+        )
+        * 0.3
+    )
     count = int(seconds * SAMPLE_RATE)
     return np.tile(pattern, count // cell + 1)[:count]
 
@@ -80,8 +90,12 @@ def music_varied(rng: np.random.Generator, seconds: float) -> np.ndarray:
         length = int(rng.choice([0.25, 0.5, 0.75]) * SAMPLE_RATE)
         freq = rng.choice(notes) * rng.choice([1, 2])
         t = np.arange(length) / SAMPLE_RATE
-        note = (np.sin(2 * np.pi * freq * t) + 0.4 * np.sin(4 * np.pi * freq * t)) * np.exp(-4 * t) * 0.3
-        out[position:position + length] += note[: count - position]
+        note = (
+            (np.sin(2 * np.pi * freq * t) + 0.4 * np.sin(4 * np.pi * freq * t))
+            * np.exp(-4 * t)
+            * 0.3
+        )
+        out[position : position + length] += note[: count - position]
         position += length
     return out
 
@@ -94,4 +108,4 @@ def delayed(signal: np.ndarray, seconds: float) -> np.ndarray:
 
 def window(signal: np.ndarray, start: float, seconds: float) -> np.ndarray:
     first = int(start * SAMPLE_RATE)
-    return signal[first:first + int(seconds * SAMPLE_RATE)]
+    return signal[first : first + int(seconds * SAMPLE_RATE)]

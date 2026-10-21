@@ -94,7 +94,8 @@ def test_render_layer_keeps_clip_effects_in_application_order():
         create_effect(EffectType.SEPIA, effect_id="fx-sepia", enabled=False),
     ]
     project = Project(
-        name="Effets", media_assets=[_make_asset()],
+        name="Effets",
+        media_assets=[_make_asset()],
         tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
     )
 
@@ -116,7 +117,9 @@ def test_project_with_only_subtitle_track_is_also_empty_for_video():
         name="Sous-titres",
         tracks=[
             Track(
-                id="S1", name="S1", type="subtitle",
+                id="S1",
+                name="S1",
+                type="subtitle",
                 clips=[
                     _make_clip(clip_id="sub-1", track_id="S1", duration=4.0),
                 ],
@@ -141,18 +144,24 @@ def test_plan_duration_matches_timeline_duration():
         name="D",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     _make_clip(clip_id="a", timeline_start=0.0, duration=2.0),
                     _make_clip(clip_id="b", timeline_start=4.0, duration=5.0),
                 ],
             ),
             Track(
-                id="V2", name="V2", type="video",
+                id="V2",
+                name="V2",
+                type="video",
                 clips=[
                     _make_clip(
-                        clip_id="c", track_id="V2",
-                        timeline_start=1.0, duration=3.0,
+                        clip_id="c",
+                        track_id="V2",
+                        timeline_start=1.0,
+                        duration=3.0,
                     ),
                 ],
             ),
@@ -177,11 +186,15 @@ def test_disabled_clips_are_excluded_from_plan():
         name="Disabled",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     _make_clip(clip_id="on", timeline_start=0.0, duration=2.0),
                     _make_clip(
-                        clip_id="off", timeline_start=0.0, duration=10.0,
+                        clip_id="off",
+                        timeline_start=0.0,
+                        duration=10.0,
                         enabled=False,
                     ),
                 ],
@@ -208,11 +221,15 @@ def test_trims_are_preserved_in_layers():
         name="Trim",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     _make_clip(
                         clip_id="trimmed",
-                        timeline_start=5.0, source_in=2.0, duration=3.0,
+                        timeline_start=5.0,
+                        source_in=2.0,
+                        duration=3.0,
                     ),
                 ],
             ),
@@ -241,22 +258,28 @@ def test_layers_are_emitted_in_track_order_v1_then_v2():
         name="Order",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     _make_clip(clip_id="v1-first", timeline_start=0.0, duration=2.0),
                     _make_clip(
                         clip_id="v1-second",
-                        timeline_start=4.0, duration=2.0,
+                        timeline_start=4.0,
+                        duration=2.0,
                     ),
                 ],
             ),
             Track(
-                id="V2", name="V2", type="video",
+                id="V2",
+                name="V2",
+                type="video",
                 clips=[
                     _make_clip(
                         clip_id="v2-only",
                         track_id="V2",
-                        timeline_start=1.0, duration=2.0,
+                        timeline_start=1.0,
+                        duration=2.0,
                     ),
                 ],
             ),
@@ -268,7 +291,9 @@ def test_layers_are_emitted_in_track_order_v1_then_v2():
     track_ids = [layer.track_id for layer in plan.video_layers]
     assert track_ids == ["V1", "V1", "V2"]
     assert [layer.clip_id for layer in plan.video_layers] == [
-        "v1-first", "v1-second", "v2-only",
+        "v1-first",
+        "v1-second",
+        "v2-only",
     ]
     # Les indices de piste reflètent l'ordre dans project.tracks.
     assert [layer.track_index for layer in plan.video_layers] == [0, 0, 1]
@@ -289,12 +314,15 @@ def test_active_clip_with_missing_asset_is_rendered_empty_and_reported():
         name="Orphan",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     _make_clip(
                         clip_id="orphan",
                         asset_id="ghost-asset",
-                        timeline_start=0.0, duration=2.0,
+                        timeline_start=0.0,
+                        duration=2.0,
                     ),
                 ],
             ),
@@ -314,11 +342,7 @@ def test_active_clip_with_missing_asset_is_rendered_empty_and_reported():
 
 def test_render_plan_module_does_not_import_pyside6_or_ffmpeg():
     """``core.render_plan`` ne doit importer ni PySide6 ni FFmpeg."""
-    module_path = (
-        Path(__file__).resolve().parent.parent
-        / "core"
-        / "render_plan.py"
-    )
+    module_path = Path(__file__).resolve().parent.parent / "core" / "render_plan.py"
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
 
     forbidden_top_level = {"PySide6", "PySide2", "PyQt5", "PyQt6", "ffmpeg"}
@@ -349,15 +373,24 @@ def test_render_plan_module_does_not_import_pyside6_or_ffmpeg():
 def test_render_plan_and_layer_are_immutable():
     """``RenderPlan`` et ``RenderLayer`` sont des dataclasses figées."""
     layer = RenderLayer(
-        clip_id="c", asset_id="a", track_id="V1", track_index=0,
-        source_path="/tmp/x.mp4", source_in=0.0, source_out=2.0,
-        timeline_start=0.0, timeline_end=2.0,
+        clip_id="c",
+        asset_id="a",
+        track_id="V1",
+        track_index=0,
+        source_path="/tmp/x.mp4",
+        source_in=0.0,
+        source_out=2.0,
+        timeline_start=0.0,
+        timeline_end=2.0,
     )
     with pytest.raises(Exception):
         layer.clip_id = "mutated"  # type: ignore[misc]
 
     plan = RenderPlan(
-        width=1920, height=1080, fps=30.0, duration=2.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        duration=2.0,
         video_layers=(layer,),
     )
     with pytest.raises(Exception):
@@ -375,26 +408,34 @@ def test_layers_cover_all_active_clips_of_the_project():
         name="Cover",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     _make_clip(clip_id="a", timeline_start=0.0, duration=2.0),
                     _make_clip(
                         clip_id="b",
-                        timeline_start=2.0, duration=3.0,
+                        timeline_start=2.0,
+                        duration=3.0,
                         enabled=False,
                     ),
                     _make_clip(
                         clip_id="c",
-                        timeline_start=5.0, duration=2.0,
+                        timeline_start=5.0,
+                        duration=2.0,
                     ),
                 ],
             ),
             Track(
-                id="V2", name="V2", type="video",
+                id="V2",
+                name="V2",
+                type="video",
                 clips=[
                     _make_clip(
-                        clip_id="d", track_id="V2",
-                        timeline_start=1.0, duration=2.0,
+                        clip_id="d",
+                        track_id="V2",
+                        timeline_start=1.0,
+                        duration=2.0,
                     ),
                 ],
             ),
@@ -416,7 +457,9 @@ def test_layers_cover_all_active_clips_of_the_project():
 # ---------------------------------------------------------------------------
 
 
-def _make_audio_asset(asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", duration: float = 30.0):
+def _make_audio_asset(
+    asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", duration: float = 30.0
+):
     """Construit un ``MediaAsset`` audio conforme à la validation."""
     return MediaAsset(
         id=asset_id,
@@ -460,16 +503,44 @@ def test_audio_layers_include_audio_tracks_and_video_with_sound():
     project = Project(
         name="AudioMix",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="silent-v1", asset_id="silent", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-                Clip(id="vid-with-audio", asset_id="vid-with-audio", track_id="V1",
-                     timeline_start=5.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="A1", name="A1", type="audio", clips=[
-                Clip(id="music", asset_id="asset-audio", track_id="A1",
-                     timeline_start=0.0, source_in=0.0, source_out=10.0),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="silent-v1",
+                        asset_id="silent",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                    Clip(
+                        id="vid-with-audio",
+                        asset_id="vid-with-audio",
+                        track_id="V1",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="music",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=10.0,
+                    ),
+                ],
+            ),
         ],
         media_assets=[audio_asset, silent_video_asset, video_with_audio_asset],
     )
@@ -494,13 +565,30 @@ def test_audio_layers_exclude_disabled_clips():
     project = Project(
         name="Disabled",
         tracks=[
-            Track(id="A1", name="A1", type="audio", clips=[
-                Clip(id="on", asset_id="asset-audio", track_id="A1",
-                     timeline_start=0.0, source_in=0.0, source_out=5.0),
-                Clip(id="off", asset_id="asset-audio", track_id="A1",
-                     timeline_start=5.0, source_in=0.0, source_out=5.0,
-                     enabled=False),
-            ]),
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="on",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=5.0,
+                    ),
+                    Clip(
+                        id="off",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=5.0,
+                        enabled=False,
+                    ),
+                ],
+            ),
         ],
         media_assets=[audio_asset],
     )
@@ -514,14 +602,36 @@ def test_audio_layers_track_order_matches_project_tracks():
     project = Project(
         name="Order",
         tracks=[
-            Track(id="A1", name="A1", type="audio", clips=[
-                Clip(id="first", asset_id="asset-audio", track_id="A1",
-                     timeline_start=0.0, source_in=0.0, source_out=3.0),
-            ]),
-            Track(id="A2", name="A2", type="audio", clips=[
-                Clip(id="second", asset_id="asset-audio", track_id="A2",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0),
-            ]),
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="first",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=3.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="A2",
+                name="A2",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="second",
+                        asset_id="asset-audio",
+                        track_id="A2",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
         ],
         media_assets=[audio_asset],
     )
@@ -534,10 +644,21 @@ def test_audio_layers_skip_a_missing_asset_and_report_it():
     project = Project(
         name="Orphan",
         tracks=[
-            Track(id="A1", name="A1", type="audio", clips=[
-                Clip(id="orphan", asset_id="ghost-audio", track_id="A1",
-                     timeline_start=0.0, source_in=0.0, source_out=3.0),
-            ]),
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="orphan",
+                        asset_id="ghost-audio",
+                        track_id="A1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=3.0,
+                    ),
+                ],
+            ),
         ],
         media_assets=[],
     )
@@ -573,26 +694,68 @@ def test_render_plan_carries_active_subtitle_cues():
     project = Project(
         name="Subs",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=6.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="late", asset_id=asset.id, track_id="S1",
-                     timeline_start=4.0, source_in=0.0, source_out=1.0,
-                     text="Tardif"),
-                Clip(id="early", asset_id=asset.id, track_id="S1",
-                     timeline_start=1.0, source_in=0.0, source_out=1.0,
-                     text="Précoce"),
-                Clip(id="disabled", asset_id=asset.id, track_id="S1",
-                     timeline_start=2.0, source_in=0.0, source_out=1.0,
-                     text="Désactivé", enabled=False),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=6.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="late",
+                        asset_id=asset.id,
+                        track_id="S1",
+                        timeline_start=4.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                        text="Tardif",
+                    ),
+                    Clip(
+                        id="early",
+                        asset_id=asset.id,
+                        track_id="S1",
+                        timeline_start=1.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                        text="Précoce",
+                    ),
+                    Clip(
+                        id="disabled",
+                        asset_id=asset.id,
+                        track_id="S1",
+                        timeline_start=2.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                        text="Désactivé",
+                        enabled=False,
+                    ),
+                ],
+            ),
         ],
         media_assets=[
-            MediaAsset(id="asset-v", path="/tmp/v.mp4", name="V",
-                       duration=6.0, width=1920, height=1080, fps=30.0,
-                       media_type="video"),
+            MediaAsset(
+                id="asset-v",
+                path="/tmp/v.mp4",
+                name="V",
+                duration=6.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            ),
             asset,
         ],
     )
@@ -610,20 +773,50 @@ def test_render_plan_subtitle_cues_empty_by_default():
     project = Project(
         name="NoSubs",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="disabled", asset_id=asset.id, track_id="S1",
-                     timeline_start=0.0, source_in=0.0, source_out=1.0,
-                     text="Désactivé", enabled=False),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="disabled",
+                        asset_id=asset.id,
+                        track_id="S1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                        text="Désactivé",
+                        enabled=False,
+                    ),
+                ],
+            ),
         ],
         media_assets=[
-            MediaAsset(id="asset-v", path="/tmp/v.mp4", name="V",
-                       duration=4.0, width=1920, height=1080, fps=30.0,
-                       media_type="video"),
+            MediaAsset(
+                id="asset-v",
+                path="/tmp/v.mp4",
+                name="V",
+                duration=4.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            ),
             asset,
         ],
     )

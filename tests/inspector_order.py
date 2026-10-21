@@ -11,15 +11,22 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QApplication, QFormLayout, QLayout, QWidget
 
-IGNORED_NAMES = ("level_gate", "advanced_fold", "more_options_button", "fill_frame_quick")
+IGNORED_NAMES = (
+    "level_gate",
+    "advanced_fold",
+    "more_options_button",
+    "fill_frame_quick",
+)
 
 
 def _entries(layout: QLayout) -> list[int]:
     indexes = list(range(layout.count()))
     if isinstance(layout, QFormLayout):
+
         def key(index: int) -> tuple[int, int]:
             row, role = layout.getItemPosition(index)
             return row, int(getattr(role, "value", role))
+
         indexes.sort(key=key)
     return indexes
 
@@ -50,19 +57,33 @@ def display_order(panel) -> list[QWidget]:
 def moved_roots(panel) -> list[QWidget]:
     """Les contrôles que le lot déplace à dessein (leur sous-arbre est écarté de la comparaison d'ordre)."""
     roots: list[QWidget] = [
-        *panel._diamonds.values(), *(b for pair in panel._keyframe_nav_buttons.values() for b in pair),
-        panel.frame_align, panel.advanced_transform, panel.reset_movement_button, panel.time_section,
-        panel._audio_pan_row, panel.color_reset_button, panel.graphics_group, panel.subtitle_group,
-        panel.compositing_group.blend_section, panel.compositing_group.crop_section,
+        *panel._diamonds.values(),
+        *(b for pair in panel._keyframe_nav_buttons.values() for b in pair),
+        panel.frame_align,
+        panel.advanced_transform,
+        panel.reset_movement_button,
+        panel.time_section,
+        panel._audio_pan_row,
+        panel.color_reset_button,
+        panel.graphics_group,
+        panel.subtitle_group,
+        panel.compositing_group.blend_section,
+        panel.compositing_group.crop_section,
     ]
     block = getattr(panel, "keyframe_block", None)
     if block is not None:
         roots.append(block)
     # ADR-0008, étape 4 : les rangées ‹ ◆ › sous les réglages d'effets animables (elles n'existent que pour l'effet affiché ;
     # le golden d'origin/main n'en sélectionne aucun, donc ne les connaît pas : ce sont des ajouts, pas un ordre déplacé).
-    roots.extend(row.gate for row in getattr(panel, "_effect_keyframe_rows", {}).values())
+    roots.extend(
+        row.gate for row in getattr(panel, "_effect_keyframe_rows", {}).values()
+    )
     # ADR-0008, étape 8 : les rangées ‹ ◆ › sous les sept réglages de couleur (ajouts, absents du golden d'origin/main).
-    roots.extend(row.gate for row in getattr(panel, "_color_keyframe_rows", {}).values() if row.gate is not None)
+    roots.extend(
+        row.gate
+        for row in getattr(panel, "_color_keyframe_rows", {}).values()
+        if row.gate is not None
+    )
     return roots
 
 
@@ -70,7 +91,9 @@ def ordered_dump(panel, states: dict) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     for state, view in states.items():
         panel.show_clip(view)
-        excluded: set[QWidget] = set()          # relevé après show_clip : les rangées d'effets sont reconstruites à chaque clip
+        excluded: set[QWidget] = (
+            set()
+        )  # relevé après show_clip : les rangées d'effets sont reconstruites à chaque clip
         for root in moved_roots(panel):
             excluded.add(root)
             excluded.update(root.findChildren(QWidget))
@@ -80,8 +103,12 @@ def ordered_dump(panel, states: dict) -> dict[str, list[str]]:
             names = []
             for widget in display_order(panel):
                 name = widget.objectName()
-                if (widget in excluded or name in IGNORED_NAMES or name.startswith("qt_")
-                        or type(widget).__name__ == "QScrollBar"):
+                if (
+                    widget in excluded
+                    or name in IGNORED_NAMES
+                    or name.startswith("qt_")
+                    or type(widget).__name__ == "QScrollBar"
+                ):
                     continue
                 names.append(f"{type(widget).__name__}|{name}")
             result[f"{state}/{tab}"] = names
@@ -96,8 +123,21 @@ def clip_states() -> dict:
     from core.visual_effects import ClipTransform
 
     def view(**kw):
-        base = dict(id="c", track_id="T", track_index=0, start=0.0, end=4.0, label="Plan", text="", source_path="",
-                    color_key="#fff", track_type="video", enabled=True, keyframes=(), transform=ClipTransform())
+        base = dict(
+            id="c",
+            track_id="T",
+            track_index=0,
+            start=0.0,
+            end=4.0,
+            label="Plan",
+            text="",
+            source_path="",
+            color_key="#fff",
+            track_type="video",
+            enabled=True,
+            keyframes=(),
+            transform=ClipTransform(),
+        )
         base.update(kw)
         return TimelineClipView(**base)
 
@@ -106,6 +146,8 @@ def clip_states() -> dict:
         "video": view(time_remapping=TimeRemapping()),
         "video_locked": view(time_remapping=TimeRemapping(), locked=True),
         "audio": view(track_type="audio", time_remapping=TimeRemapping()),
-        "subtitle": view(track_type="subtitle", text="Salut", text_style=default_text_style()),
+        "subtitle": view(
+            track_type="subtitle", text="Salut", text_style=default_text_style()
+        ),
         "graphics": view(track_type="graphics", graphic=GraphicOverlay()),
     }

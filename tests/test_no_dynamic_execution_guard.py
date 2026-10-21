@@ -32,15 +32,27 @@ RULES = frozenset({"dynamic-code", "dynamic-import", "unsafe-deserialization", "
 DYNAMIC_CODE_CALLS = frozenset({"eval", "exec", "compile"})
 DYNAMIC_IMPORT_MODULES = frozenset({"importlib", "runpy", "imp"})
 CODE_LOADING_ATTRIBUTES = frozenset(
-    {"import_module", "spec_from_file_location", "module_from_spec", "exec_module", "load_module"}
+    {
+        "import_module",
+        "spec_from_file_location",
+        "module_from_spec",
+        "exec_module",
+        "load_module",
+    }
 )
-UNSAFE_MODULES = frozenset({"pickle", "cPickle", "_pickle", "marshal", "shelve", "dill", "cloudpickle"})
-UNSAFE_YAML_CALLS = frozenset({"load", "unsafe_load", "full_load", "load_all", "unsafe_load_all", "full_load_all"})
+UNSAFE_MODULES = frozenset(
+    {"pickle", "cPickle", "_pickle", "marshal", "shelve", "dill", "cloudpickle"}
+)
+UNSAFE_YAML_CALLS = frozenset(
+    {"load", "unsafe_load", "full_load", "load_all", "unsafe_load_all", "full_load_all"}
+)
 SHELL_OS_CALLS = frozenset({"system", "popen"})
 
 
 def _production_files() -> list[Path]:
-    files = sorted(path for package in ("core", "ui") for path in (ROOT / package).rglob("*.py"))
+    files = sorted(
+        path for package in ("core", "ui") for path in (ROOT / package).rglob("*.py")
+    )
     return files + [ROOT / "main.py", ROOT / "build.py"]
 
 
@@ -57,7 +69,9 @@ def _attribute_call(node: ast.Call) -> tuple[str, str] | None:
 
 
 def _keyword(node: ast.Call, name: str) -> ast.expr | None:
-    return next((keyword.value for keyword in node.keywords if keyword.arg == name), None)
+    return next(
+        (keyword.value for keyword in node.keywords if keyword.arg == name), None
+    )
 
 
 def _is_true(node: ast.expr | None) -> bool:
@@ -74,9 +88,13 @@ class _Scanner(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
         self.scope: list[str] = []
-        self.found: list[tuple[str, str, str, int]] = []   # (chemin, règle, portée, ligne)
+        self.found: list[
+            tuple[str, str, str, int]
+        ] = []  # (chemin, règle, portée, ligne)
 
-    def _visit_scoped(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> None:
+    def _visit_scoped(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+    ) -> None:
         self.scope.append(node.name)
         self.generic_visit(node)
         self.scope.pop()
@@ -84,7 +102,9 @@ class _Scanner(ast.NodeVisitor):
     visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _visit_scoped
 
     def _record(self, rule: str, node: ast.AST) -> None:
-        self.found.append((self.path, rule, ".".join(self.scope) or "<module>", node.lineno))
+        self.found.append(
+            (self.path, rule, ".".join(self.scope) or "<module>", node.lineno)
+        )
 
     # --- imports ---------------------------------------------------------------------------------------------------
 
@@ -117,7 +137,11 @@ class _Scanner(ast.NodeVisitor):
             owner, name = attribute
             if owner == "yaml" and name in UNSAFE_YAML_CALLS:
                 self._record("unsafe-deserialization", node)
-            if owner in {"np", "numpy"} and name == "load" and not _is_false(_keyword(node, "allow_pickle")):
+            if (
+                owner in {"np", "numpy"}
+                and name == "load"
+                and not _is_false(_keyword(node, "allow_pickle"))
+            ):
                 self._record("unsafe-deserialization", node)
             if owner == "os" and name in SHELL_OS_CALLS:
                 self._record("shell", node)
@@ -141,7 +165,9 @@ def _scan_source(source: str, path: str = "<test>") -> list[tuple[str, str, str,
 def _violations() -> list[tuple[str, str, str, int]]:
     found: list[tuple[str, str, str, int]] = []
     for path in _production_files():
-        found += _scan_source(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix())
+        found += _scan_source(
+            path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix()
+        )
     return found
 
 
@@ -154,7 +180,9 @@ def _allowed_keys() -> set[tuple[str, str, str]]:
 
 
 def _report(found: list[tuple[str, str, str, int]]) -> str:
-    return "\n".join(f"  {path}:{line} ({rule}, {scope})" for path, rule, scope, line in found)
+    return "\n".join(
+        f"  {path}:{line} ({rule}, {scope})" for path, rule, scope, line in found
+    )
 
 
 def test_no_production_code_executes_dynamic_code_or_loads_unsafe_data():
@@ -177,7 +205,11 @@ def test_every_allowlist_entry_is_still_needed_and_justified():
     for entry in entries:
         assert entry["rule"] in RULES, f"règle inconnue : {entry}"
         assert str(entry.get("reason", "")).strip(), f"raison manquante : {entry}"
-    stale = [entry for entry in entries if (entry["path"], entry["rule"], entry["scope"]) not in present]
+    stale = [
+        entry
+        for entry in entries
+        if (entry["path"], entry["rule"], entry["scope"]) not in present
+    ]
     assert not stale, f"entrées inutiles (le site a disparu) : {stale}"
 
 
@@ -220,9 +252,13 @@ def test_the_scanner_leaves_safe_look_alikes_alone():
     assert _rules("text = 'eval(x) and import pickle'  # exec(y)") == []
     assert _rules("def evaluate(x):\n    return x") == []
     assert _rules("model.exec_()") == [], "``exec_`` (Qt) n'est pas ``exec``"
-    assert _rules("app.exec()") == [], "``QApplication.exec()`` est une méthode, pas le builtin"
+    assert _rules("app.exec()") == [], (
+        "``QApplication.exec()`` est une méthode, pas le builtin"
+    )
 
 
 def test_the_scanner_names_the_scope_of_the_offender():
     source = "class Loader:\n    def read(self, text):\n        return eval(text)\n"
-    assert _scan_source(source, "core/x.py") == [("core/x.py", "dynamic-code", "Loader.read", 3)]
+    assert _scan_source(source, "core/x.py") == [
+        ("core/x.py", "dynamic-code", "Loader.read", 3)
+    ]

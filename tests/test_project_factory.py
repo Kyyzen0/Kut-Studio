@@ -11,7 +11,10 @@ def test_default_project_has_four_tracks_V1_V2_A1_S1():
     track_ids = [track.id for track in project.tracks]
     assert track_ids == ["V1", "V2", "A1", "S1"]
     assert [track.type for track in project.tracks] == [
-        "video", "video", "audio", "subtitle",
+        "video",
+        "video",
+        "audio",
+        "subtitle",
     ]
     # La piste audio A1 est créée vide par défaut.
     a1 = project.tracks[2]

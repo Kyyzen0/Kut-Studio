@@ -33,7 +33,9 @@ def test_an_existing_file_still_reaches_the_real_player(tmp_path, qtbot) -> None
         out.setsampwidth(2)
         out.setframerate(8000)
         out.writeframes(struct.pack("<800h", *([0] * 800)))
-    assert getattr(QMediaPlayer.setSource, GUARD_FLAG, False), "la garde doit être installée"
+    assert getattr(QMediaPlayer.setSource, GUARD_FLAG, False), (
+        "la garde doit être installée"
+    )
     player = QMediaPlayer()
     url = QUrl.fromLocalFile(str(path))
     player.setSource(url)
@@ -59,13 +61,20 @@ def test_a_missing_file_clears_a_previously_opened_real_source(tmp_path, qtbot) 
     assert not player.source().isEmpty()
     player.setSource(QUrl.fromLocalFile("/x/inexistant.mp4"))
     assert player.source().isEmpty()
-    qtbot.waitUntil(lambda: player.mediaStatus() in (QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia),
-                    timeout=10000)
+    qtbot.waitUntil(
+        lambda: (
+            player.mediaStatus()
+            in (QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia)
+        ),
+        timeout=10000,
+    )
     assert player.playbackState() == QMediaPlayer.PlaybackState.StoppedState
     player.deleteLater()
 
 
-def test_a_real_file_opens_after_a_missing_one_and_other_urls_pass_through(tmp_path, qtbot) -> None:
+def test_a_real_file_opens_after_a_missing_one_and_other_urls_pass_through(
+    tmp_path, qtbot
+) -> None:
     player = QMediaPlayer()
     player.setSource(QUrl.fromLocalFile("/x/inexistant.mp4"))
     assert player.source().isEmpty()
@@ -82,5 +91,8 @@ def test_a_real_file_opens_after_a_missing_one_and_other_urls_pass_through(tmp_p
 
 @pytest.mark.real_media_player
 def test_the_marker_turns_the_guard_off(request) -> None:
-    assert any(line.startswith("real_media_player") for line in request.config.getini("markers"))
+    assert any(
+        line.startswith("real_media_player")
+        for line in request.config.getini("markers")
+    )
     assert not getattr(QMediaPlayer.setSource, GUARD_FLAG, False)

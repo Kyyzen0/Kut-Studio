@@ -19,7 +19,9 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
+    )
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
@@ -29,21 +31,29 @@ def window(qtbot, monkeypatch):
 def _resolve_as(monkeypatch, reason: str) -> None:
     monkeypatch.setattr(
         "ui.main_window_mixins.hardware_preview.resolve_preview_backend",
-        lambda *_a, **_k: ResolvedBackend(PreviewBackend.AUTO, "cpu", reason=reason, fallback_reason="détail"),
+        lambda *_a, **_k: ResolvedBackend(
+            PreviewBackend.AUTO, "cpu", reason=reason, fallback_reason="détail"
+        ),
     )
 
 
 def test_a_suspended_gpu_is_announced_with_the_way_back(window, monkeypatch):
     _resolve_as(monkeypatch, "previous_crash")
     window._apply_preview_backend()
-    assert window.statusBar().currentMessage() == i18n.translate("preview.gpu_suspended")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "preview.gpu_suspended"
+    )
 
 
 def test_other_cpu_reasons_stay_quiet(window, monkeypatch):
     window.statusBar().clearMessage()
-    _resolve_as(monkeypatch, "no_window_system")              # CI, plateforme sans fenêtre : rien à corriger
+    _resolve_as(
+        monkeypatch, "no_window_system"
+    )  # CI, plateforme sans fenêtre : rien à corriger
     window._apply_preview_backend()
-    assert window.statusBar().currentMessage() != i18n.translate("preview.gpu_suspended")
+    assert window.statusBar().currentMessage() != i18n.translate(
+        "preview.gpu_suspended"
+    )
 
 
 def test_the_diagnostic_names_the_suspension_in_words(window, monkeypatch):

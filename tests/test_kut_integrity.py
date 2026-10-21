@@ -20,9 +20,22 @@ from rich_project import build_rich_project
 
 
 def _audio_project() -> Project:
-    asset = MediaAsset(id="a", path="/tmp/a.mp3", name="A", duration=10.0, width=0, height=0, fps=0.0,
-                       media_type="audio", has_audio=True)
-    return Project(name="mix", media_assets=[asset], tracks=[Track(id="M1", name="Musique", type="audio")])
+    asset = MediaAsset(
+        id="a",
+        path="/tmp/a.mp3",
+        name="A",
+        duration=10.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+    return Project(
+        name="mix",
+        media_assets=[asset],
+        tracks=[Track(id="M1", name="Musique", type="audio")],
+    )
 
 
 def _points(project: Project) -> list[tuple[float, float]]:
@@ -111,20 +124,22 @@ def test_editing_after_undoing_past_the_saved_state_is_never_reported_saved():
     """Avant : « Enregistré » alors que le contenu différait du fichier (l'index sauvegardé était réutilisé)."""
     history, project = _history()
     _edit(history, project, "v1")
-    history.mark_saved()                       # le fichier contient v1
-    history.undo()                             # retour à v0 : l'état v1 est dans la branche « redo »
+    history.mark_saved()  # le fichier contient v1
+    history.undo()  # retour à v0 : l'état v1 est dans la branche « redo »
     assert history.is_dirty
-    _edit(history, project, "autre")           # la branche redo (donc v1) est jetée
+    _edit(history, project, "autre")  # la branche redo (donc v1) est jetée
     assert history.is_dirty
 
 
 def test_a_saved_state_pushed_out_of_the_history_is_never_reported_saved():
     history, project = _history()
-    for index in range(MAX_HISTORY + 5):       # l'état initial (enregistré) est évincé
+    for index in range(MAX_HISTORY + 5):  # l'état initial (enregistré) est évincé
         _edit(history, project, f"n{index}")
     while history.can_undo:
         history.undo()
-    assert history.is_dirty, "la plus ancienne entrée restante n'est pas l'état du fichier"
+    assert history.is_dirty, (
+        "la plus ancienne entrée restante n'est pas l'état du fichier"
+    )
 
 
 # --- Aller-retour et fichiers abîmés -------------------------------------------------------------------------------
@@ -137,12 +152,18 @@ def test_the_rich_project_round_trips_to_an_identical_payload(tmp_path):
     once = project_payload(load_project(str(path)))
     assert once == project_payload(project)
     save_project(load_project(str(path)), str(path))
-    assert project_payload(load_project(str(path))) == once       # idempotent : rien ne dérive à chaque cycle
+    assert (
+        project_payload(load_project(str(path))) == once
+    )  # idempotent : rien ne dérive à chaque cycle
 
 
 def test_a_project_opens_without_any_cache_or_proxy(tmp_path, monkeypatch):
     """Les caches ne sont jamais nécessaires pour ouvrir un projet."""
-    for name in ("KUT_STUDIO_CACHE_DIR", "KUT_STUDIO_PROXY_DIR", "KUT_STUDIO_CONFIG_DIR"):
+    for name in (
+        "KUT_STUDIO_CACHE_DIR",
+        "KUT_STUDIO_PROXY_DIR",
+        "KUT_STUDIO_CONFIG_DIR",
+    ):
         monkeypatch.setenv(name, str(tmp_path / "absent" / name.lower()))
     path = tmp_path / "rich.kut"
     save_project(build_rich_project(), str(path))
@@ -163,7 +184,9 @@ def _load_text(tmp_path, text: str) -> Project:
 
 
 @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"])
-def test_non_finite_numbers_are_refused_with_a_clear_message(tmp_path, rich_text, token):
+def test_non_finite_numbers_are_refused_with_a_clear_message(
+    tmp_path, rich_text, token
+):
     """Avant : le projet s'ouvrait, puis ne pouvait plus être enregistré (Ctrl+S sans le moindre message)."""
     mutated = rich_text.replace('"duration": 20.0', f'"duration": {token}', 1)
     assert mutated != rich_text
@@ -173,7 +196,13 @@ def test_non_finite_numbers_are_refused_with_a_clear_message(tmp_path, rich_text
 
 def test_a_deeply_nested_file_is_refused_not_crashed(tmp_path):
     with pytest.raises(ValueError):
-        _load_text(tmp_path, '{"format": "kut-studio", "version": 16, "project": ' + "[" * 100_000 + "]" * 100_000 + "}")
+        _load_text(
+            tmp_path,
+            '{"format": "kut-studio", "version": 16, "project": '
+            + "[" * 100_000
+            + "]" * 100_000
+            + "}",
+        )
 
 
 def _dicts(node, path=()):
@@ -192,7 +221,9 @@ def _every_key_deletion(document: dict):
     return [(path, key) for path, node in _dicts(document) for key in node]
 
 
-def test_deleting_any_single_key_never_raises_an_unhandled_exception(tmp_path, rich_text):
+def test_deleting_any_single_key_never_raises_an_unhandled_exception(
+    tmp_path, rich_text
+):
     """Mutation systématique : le chargement réussit ou refuse par ValueError / TypeError, jamais autrement.
 
     Avant : un repère sans ``id``, une keyframe sans ``property_name``, etc. levaient KeyError, que l'interface
@@ -212,7 +243,9 @@ def test_deleting_any_single_key_never_raises_an_unhandled_exception(tmp_path, r
             pass
         except Exception as error:  # noqa: BLE001 - c'est précisément ce qu'on traque
             failures.append((path, key, type(error).__name__, str(error)[:60]))
-    assert not failures, f"{len(failures)} suppressions lèvent une exception interne, ex. {failures[:5]}"
+    assert not failures, (
+        f"{len(failures)} suppressions lèvent une exception interne, ex. {failures[:5]}"
+    )
 
 
 def test_a_project_that_cannot_be_written_says_why(tmp_path):

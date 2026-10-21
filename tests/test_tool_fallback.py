@@ -12,14 +12,20 @@ import pytest
 
 from core import tool_paths
 
-posix_only = pytest.mark.skipif(sys.platform.startswith("win"), reason="faux exécutables POSIX")
+posix_only = pytest.mark.skipif(
+    sys.platform.startswith("win"), reason="faux exécutables POSIX"
+)
 ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
 def bare(monkeypatch, tmp_path):
     """Application « gelée » au PATH minimal : aucun outil embarqué, aucun ffmpeg dans le PATH."""
-    for variable in ("KUT_STUDIO_FFMPEG", "KUT_STUDIO_FFMPEG_DIR", "KUT_STUDIO_FFPROBE"):
+    for variable in (
+        "KUT_STUDIO_FFMPEG",
+        "KUT_STUDIO_FFMPEG_DIR",
+        "KUT_STUDIO_FFPROBE",
+    ):
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", "", raising=False)
@@ -45,12 +51,18 @@ def _fake(directory: Path, name: str = "ffmpeg", mode: int = 0o755) -> Path:
 def test_fallback_finds_a_tool_in_a_conventional_directory(bare, tmp_path) -> None:
     brew = tmp_path / "brew"
     fake = _fake(brew)
-    assert tool_paths.find_media_tool("ffmpeg", fallback_dirs=[str(tmp_path / "absent"), str(brew)]) == str(fake)
-    assert Path(tool_paths.find_media_tool("ffmpeg", fallback_dirs=[str(brew)])).is_absolute()
+    assert tool_paths.find_media_tool(
+        "ffmpeg", fallback_dirs=[str(tmp_path / "absent"), str(brew)]
+    ) == str(fake)
+    assert Path(
+        tool_paths.find_media_tool("ffmpeg", fallback_dirs=[str(brew)])
+    ).is_absolute()
 
 
 @posix_only
-def test_fallback_uses_the_platform_table_by_default(bare, tmp_path, monkeypatch) -> None:
+def test_fallback_uses_the_platform_table_by_default(
+    bare, tmp_path, monkeypatch
+) -> None:
     brew = tmp_path / "brew"
     fake = _fake(brew)
     monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
@@ -77,7 +89,13 @@ def test_fallback_ignores_unusable_candidates(bare, tmp_path) -> None:
     (broken / "ffmpeg").symlink_to(tmp_path / "nowhere")
     dir_named = tmp_path / "dirname"
     (dir_named / "ffmpeg").mkdir(parents=True)
-    dirs = [str(not_exec.parent), str(broken), str(dir_named), str(tmp_path / "absent"), ""]
+    dirs = [
+        str(not_exec.parent),
+        str(broken),
+        str(dir_named),
+        str(tmp_path / "absent"),
+        "",
+    ]
     assert tool_paths.find_media_tool("ffmpeg", fallback_dirs=dirs) is None
 
 
@@ -87,7 +105,9 @@ def test_fallback_refuses_names_with_a_separator(bare, tmp_path, name) -> None:
     _fake(tmp_path / "brew")
     (tmp_path / "brew" / "sub").mkdir()
     _fake(tmp_path / "brew" / "sub")
-    assert tool_paths.find_media_tool(name, fallback_dirs=[str(tmp_path / "brew")]) is None
+    assert (
+        tool_paths.find_media_tool(name, fallback_dirs=[str(tmp_path / "brew")]) is None
+    )
 
 
 @posix_only
@@ -99,7 +119,9 @@ def test_no_fallback_on_windows(bare, tmp_path, monkeypatch) -> None:
     assert tool_paths.find_media_tool("ffmpeg", platform_name="win32") is None
 
 
-def test_startup_report_names_the_search_without_a_subprocess(bare, tmp_path, monkeypatch, caplog) -> None:
+def test_startup_report_names_the_search_without_a_subprocess(
+    bare, tmp_path, monkeypatch, caplog
+) -> None:
     def forbidden(*_args, **_kwargs):
         raise AssertionError("aucun sous-processus au démarrage")
 
@@ -126,8 +148,10 @@ def test_startup_report_says_when_a_tool_is_missing(bare, monkeypatch) -> None:
 
 def test_main_logs_the_search_right_after_the_journal_is_installed() -> None:
     source = (ROOT / "main.py").read_text(encoding="utf-8")
-    body = source[source.index("added_dirs = extend_search_path()"):]
-    assert body.index("install_diagnostics()") < body.index("log_tool_search(added_dirs)")
+    body = source[source.index("added_dirs = extend_search_path()") :]
+    assert body.index("install_diagnostics()") < body.index(
+        "log_tool_search(added_dirs)"
+    )
 
 
 def test_no_direct_which_for_ffmpeg_tools_outside_tool_paths() -> None:

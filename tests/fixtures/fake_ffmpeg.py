@@ -37,16 +37,26 @@ def main(arguments: list[str]) -> int:
             handle.write(json.dumps(arguments) + "\n")
     if any("ebur128" in argument for argument in arguments):
         # Mesure de loudness (première passe d'un export normalisé) : le résumé d'ebur128, tout de suite.
-        print("[Parsed_ebur128_0 @ 0x0] Summary:\n\n  Integrated loudness:\n    I:         -20.0 LUFS\n"
-              "    Threshold: -30.0 LUFS\n\n  Loudness range:\n    LRA:         5.0 LU\n\n"
-              "  True peak:\n    Peak:       -6.0 dBFS", file=sys.stderr, flush=True)
+        print(
+            "[Parsed_ebur128_0 @ 0x0] Summary:\n\n  Integrated loudness:\n    I:         -20.0 LUFS\n"
+            "    Threshold: -30.0 LUFS\n\n  Loudness range:\n    LRA:         5.0 LU\n\n"
+            "  True peak:\n    Peak:       -6.0 dBFS",
+            file=sys.stderr,
+            flush=True,
+        )
         return 0
     fail_encoder = os.environ.get("FAKE_FFMPEG_FAIL_ENCODER")
     if fail_encoder and any(fail_encoder in argument for argument in arguments):
-        print(f"Error initializing the encoder {fail_encoder}", file=sys.stderr, flush=True)
+        print(
+            f"Error initializing the encoder {fail_encoder}",
+            file=sys.stderr,
+            flush=True,
+        )
         return 1
     late_encoder = os.environ.get("FAKE_FFMPEG_FAIL_ENCODER_LATE")
-    late_failure = bool(late_encoder and any(late_encoder in argument for argument in arguments))
+    late_failure = bool(
+        late_encoder and any(late_encoder in argument for argument in arguments)
+    )
     output_path = ""
     for argument in arguments:
         if argument.startswith("FAIL"):

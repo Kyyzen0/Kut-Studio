@@ -58,7 +58,9 @@ def _make_video_asset(path: str, asset_id: str = "asset_1") -> MediaAsset:
 
 def _make_video_project(input_files: list[str]) -> Project:
     """Construit un ``Project`` avec deux clips contigus sur V1."""
-    assets = [_make_video_asset(path, f"asset_{i}") for i, path in enumerate(input_files)]
+    assets = [
+        _make_video_asset(path, f"asset_{i}") for i, path in enumerate(input_files)
+    ]
     clips = [
         Clip(
             id=f"clip_{i}",
@@ -183,7 +185,9 @@ def test_export_full_pipeline_emits_finished_ok(
         render_plan=build_render_plan(window.project),
         output_path=str(output_file),
         format=ExportFormat.MP4_H264,
-        preset=ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),
+        preset=ExportPreset(
+            name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"
+        ),
         fps=30,
     )
     engine.start(request)
@@ -191,7 +195,9 @@ def test_export_full_pipeline_emits_finished_ok(
 
     assert not failed, f"Export a échoué : {failed}"
     assert finished, "Le signal finished_ok n'a pas été émis"
-    assert output_file.exists(), f"Le fichier de sortie n'a pas été créé : {output_file}"
+    assert output_file.exists(), (
+        f"Le fichier de sortie n'a pas été créé : {output_file}"
+    )
 
 
 def test_export_with_no_exportable_clips_emits_failed(
@@ -219,15 +225,18 @@ def test_export_with_no_exportable_clips_emits_failed(
         render_plan=build_render_plan(window.project),
         output_path=str(tmp_path / "output.mp4"),
         format=ExportFormat.MP4_H264,
-        preset=ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),
+        preset=ExportPreset(
+            name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"
+        ),
         fps=30,
     )
     engine.start(request)
 
-    assert failed_messages, "failed doit être émis quand il n'y a aucun média à exporter"
+    assert failed_messages, (
+        "failed doit être émis quand il n'y a aucun média à exporter"
+    )
     assert (
-        "média" in failed_messages[0].lower()
-        or "video" in failed_messages[0].lower()
+        "média" in failed_messages[0].lower() or "video" in failed_messages[0].lower()
     ), f"Message d'erreur inattendu : {failed_messages[0]}"
 
 
@@ -246,7 +255,10 @@ def test_export_request_validates_fps_and_resolution(qtbot, tmp_path, fake_ffmpe
     from core.render_plan import RenderPlan
 
     empty_plan = RenderPlan(
-        width=1920, height=1080, fps=30.0, duration=4.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        duration=4.0,
         video_layers=(),
     )
 
@@ -255,7 +267,9 @@ def test_export_request_validates_fps_and_resolution(qtbot, tmp_path, fake_ffmpe
             render_plan=empty_plan,
             output_path=str(tmp_path / "out.mp4"),
             format=ExportFormat.MP4_H264,
-            preset=ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),
+            preset=ExportPreset(
+                name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"
+            ),
             fps=0,
         )
 
@@ -264,7 +278,9 @@ def test_export_request_validates_fps_and_resolution(qtbot, tmp_path, fake_ffmpe
             render_plan=empty_plan,
             output_path=str(tmp_path / "out.mp4"),
             format=ExportFormat.MP4_H264,
-            preset=ExportPreset(name="Standard", resolution=(0, 0), crf=23, audio_bitrate="128k"),
+            preset=ExportPreset(
+                name="Standard", resolution=(0, 0), crf=23, audio_bitrate="128k"
+            ),
             fps=30,
         )
 
@@ -340,30 +356,54 @@ def _build_overlap_project(red_path: Path, blue_path: Path) -> Project:
         fps=15.0,
         media_assets=[
             MediaAsset(
-                id="red", path=str(red_path), name="Red",
-                duration=2.0, width=160, height=90, fps=15.0, media_type="video",
+                id="red",
+                path=str(red_path),
+                name="Red",
+                duration=2.0,
+                width=160,
+                height=90,
+                fps=15.0,
+                media_type="video",
             ),
             MediaAsset(
-                id="blue", path=str(blue_path), name="Blue",
-                duration=4.0, width=160, height=90, fps=15.0, media_type="video",
+                id="blue",
+                path=str(blue_path),
+                name="Blue",
+                duration=4.0,
+                width=160,
+                height=90,
+                fps=15.0,
+                media_type="video",
             ),
         ],
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="v1-red", asset_id="red", track_id="V1",
-                        timeline_start=0.0, source_in=0.0, source_out=2.0,
+                        id="v1-red",
+                        asset_id="red",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
                     ),
                 ],
             ),
             Track(
-                id="V2", name="V2", type="video",
+                id="V2",
+                name="V2",
+                type="video",
                 clips=[
                     Clip(
-                        id="v2-blue", asset_id="blue", track_id="V2",
-                        timeline_start=1.0, source_in=0.0, source_out=3.0,
+                        id="v2-blue",
+                        asset_id="blue",
+                        track_id="V2",
+                        timeline_start=1.0,
+                        source_in=0.0,
+                        source_out=3.0,
                     ),
                 ],
             ),
@@ -380,25 +420,47 @@ def _build_gap_project(red_path: Path, blue_path: Path) -> Project:
         fps=15.0,
         media_assets=[
             MediaAsset(
-                id="red", path=str(red_path), name="Red",
-                duration=2.0, width=160, height=90, fps=15.0, media_type="video",
+                id="red",
+                path=str(red_path),
+                name="Red",
+                duration=2.0,
+                width=160,
+                height=90,
+                fps=15.0,
+                media_type="video",
             ),
             MediaAsset(
-                id="blue", path=str(blue_path), name="Blue",
-                duration=2.0, width=160, height=90, fps=15.0, media_type="video",
+                id="blue",
+                path=str(blue_path),
+                name="Blue",
+                duration=2.0,
+                width=160,
+                height=90,
+                fps=15.0,
+                media_type="video",
             ),
         ],
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="v1-red", asset_id="red", track_id="V1",
-                        timeline_start=0.0, source_in=0.0, source_out=2.0,
+                        id="v1-red",
+                        asset_id="red",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
                     ),
                     Clip(
-                        id="v1-blue", asset_id="blue", track_id="V1",
-                        timeline_start=3.0, source_in=0.0, source_out=2.0,
+                        id="v1-blue",
+                        asset_id="blue",
+                        track_id="V1",
+                        timeline_start=3.0,
+                        source_in=0.0,
+                        source_out=2.0,
                     ),
                 ],
             ),
@@ -432,7 +494,9 @@ def test_real_ffmpeg_export_overlap_has_correct_duration(qtbot, tmp_path):
         render_plan=plan,
         output_path=str(output_path),
         format=ExportFormat.MP4_H264,
-        preset=ExportPreset(name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"),
+        preset=ExportPreset(
+            name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"
+        ),
         fps=15,
     )
 
@@ -445,9 +509,7 @@ def test_real_ffmpeg_export_overlap_has_correct_duration(qtbot, tmp_path):
     assert output_path.exists()
 
     duration = _probe_duration(ffprobe, output_path)
-    assert abs(duration - 4.0) < 0.5, (
-        f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
-    )
+    assert abs(duration - 4.0) < 0.5, f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
 
 
 def test_real_ffmpeg_export_with_gap_has_correct_duration(qtbot, tmp_path):
@@ -475,7 +537,9 @@ def test_real_ffmpeg_export_with_gap_has_correct_duration(qtbot, tmp_path):
         render_plan=plan,
         output_path=str(output_path),
         format=ExportFormat.MP4_H264,
-        preset=ExportPreset(name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"),
+        preset=ExportPreset(
+            name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"
+        ),
         fps=15,
     )
 
@@ -632,21 +696,33 @@ def _build_audio_mix_project(
         media_assets=[video_asset, audio_asset],
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="vid-clip", asset_id="vid-tone", track_id="V1",
-                        timeline_start=0.0, source_in=0.0, source_out=4.0,
+                        id="vid-clip",
+                        asset_id="vid-tone",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
                     ),
                 ],
             ),
             Track(
-                id="A1", name="A1", type="audio",
+                id="A1",
+                name="A1",
+                type="audio",
                 clips=[
                     Clip(
-                        id="audio-clip", asset_id="audio-tone", track_id="A1",
+                        id="audio-clip",
+                        asset_id="audio-tone",
+                        track_id="A1",
                         # Le clip audio démarre à 2 s : trou audio [0, 2].
-                        timeline_start=2.0, source_in=0.0, source_out=3.0,
+                        timeline_start=2.0,
+                        source_in=0.0,
+                        source_out=3.0,
                     ),
                 ],
             ),
@@ -661,7 +737,11 @@ def test_real_ffmpeg_export_produces_video_and_audio_streams(qtbot, tmp_path):
     # 1. Génère une vidéo rouge 4 s avec tonalité 440 Hz embarquée.
     video_path = tmp_path / "vid.mp4"
     _generate_color_with_tone(
-        ffmpeg, video_path, color="red", tone_freq=440, duration=4.0,
+        ffmpeg,
+        video_path,
+        color="red",
+        tone_freq=440,
+        duration=4.0,
     )
 
     # 2. Génère un fichier audio pur 3 s avec tonalité 880 Hz.
@@ -689,7 +769,9 @@ def test_real_ffmpeg_export_produces_video_and_audio_streams(qtbot, tmp_path):
         render_plan=plan,
         output_path=str(output_path),
         format=ExportFormat.MP4_H264,
-        preset=ExportPreset(name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"),
+        preset=ExportPreset(
+            name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"
+        ),
         fps=15,
     )
 
@@ -710,9 +792,7 @@ def test_real_ffmpeg_export_produces_video_and_audio_streams(qtbot, tmp_path):
 
     # 6. Vérifie la durée.
     duration = float(streams["format"]["duration"])
-    assert abs(duration - 5.0) < 0.5, (
-        f"Durée attendue ≈ 5s, obtenue {duration:.3f}s"
-    )
+    assert abs(duration - 5.0) < 0.5, f"Durée attendue ≈ 5s, obtenue {duration:.3f}s"
 
 
 # ---------------------------------------------------------------------------
@@ -751,20 +831,32 @@ def _build_subtitle_project(video_path: Path) -> Project:
         media_assets=[video_asset, sub_asset],
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="vid", asset_id="asset-vid", track_id="V1",
-                        timeline_start=0.0, source_in=0.0, source_out=4.0,
+                        id="vid",
+                        asset_id="asset-vid",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
                     ),
                 ],
             ),
             Track(
-                id="S1", name="S1", type="subtitle",
+                id="S1",
+                name="S1",
+                type="subtitle",
                 clips=[
                     Clip(
-                        id="sub", asset_id="asset-sub", track_id="S1",
-                        timeline_start=1.0, source_in=0.0, source_out=2.5,
+                        id="sub",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=1.0,
+                        source_in=0.0,
+                        source_out=2.5,
                         text="Bonjour le monde",
                     ),
                 ],
@@ -789,7 +881,10 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     # moteur ajoute quand même un flux audio silencieux).
     video_path = tmp_path / "src.mp4"
     _generate_color_clip(
-        ffmpeg, video_path, color="blue", duration=4.0,
+        ffmpeg,
+        video_path,
+        color="blue",
+        duration=4.0,
     )
 
     # 2. Construction du projet.
@@ -811,7 +906,9 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
         render_plan=plan,
         output_path=str(output_path),
         format=ExportFormat.MP4_H264,
-        preset=ExportPreset(name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"),
+        preset=ExportPreset(
+            name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"
+        ),
         fps=15,
     )
 
@@ -835,8 +932,7 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     leftover_pre = [
         path
         for path in leftover_pre
-        if not path.is_relative_to(tmp_path)
-        and "kut-studio-subtitles-" in path.name
+        if not path.is_relative_to(tmp_path) and "kut-studio-subtitles-" in path.name
     ]
     assert leftover_pre == [], (
         "Aucun SRT temporaire de Kut-Studio ne doit exister avant l'export."
@@ -875,9 +971,7 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     leftover_post = _glob.glob(
         str(Path(_tempfile.gettempdir()) / "kut-studio-subtitles-*.srt")
     )
-    assert leftover_post == [], (
-        f"SRT temporaires non nettoyés : {leftover_post}"
-    )
+    assert leftover_post == [], f"SRT temporaires non nettoyés : {leftover_post}"
 
     # 5. Le fichier de sortie est inspectable.
     streams = _probe_streams(ffprobe, output_path)
@@ -886,9 +980,7 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     assert has_video, "Le fichier final doit contenir un flux vidéo"
     assert has_audio, "Le fichier final doit contenir un flux audio"
     duration = float(streams["format"]["duration"])
-    assert abs(duration - 4.0) < 0.5, (
-        f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
-    )
+    assert abs(duration - 4.0) < 0.5, f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
 
 
 # ---------------------------------------------------------------------------
@@ -944,18 +1036,10 @@ def _build_animated_project(video_path: Path, audio_path: Path) -> Project:
         # Animation d'opacité de 1.0 à 0.4 sur [0, 4] et position_x
         # de 0.0 → 0.5 sur [0, 4].
         transform_keyframes=[
-            TransformKeyframe(
-                property_name="opacity", time_seconds=0.0, value=1.0
-            ),
-            TransformKeyframe(
-                property_name="opacity", time_seconds=4.0, value=0.4
-            ),
-            TransformKeyframe(
-                property_name="position_x", time_seconds=0.0, value=0.0
-            ),
-            TransformKeyframe(
-                property_name="position_x", time_seconds=4.0, value=0.5
-            ),
+            TransformKeyframe(property_name="opacity", time_seconds=0.0, value=1.0),
+            TransformKeyframe(property_name="opacity", time_seconds=4.0, value=0.4),
+            TransformKeyframe(property_name="position_x", time_seconds=0.0, value=0.0),
+            TransformKeyframe(property_name="position_x", time_seconds=4.0, value=0.5),
         ],
     )
     audio_clip = Clip(
@@ -1022,9 +1106,7 @@ def _dump_frame_png(
     return output if output.exists() else None
 
 
-def _probe_frame_color(
-    ffmpeg: str, path: Path, ts_seconds: float
-) -> bytes:
+def _probe_frame_color(ffmpeg: str, path: Path, ts_seconds: float) -> bytes:
     """Extrait la frame à ``ts_seconds`` via un dump PNG et retourne les octets.
 
     Permet de comparer deux frames échantillonnées en bytes : si
@@ -1094,9 +1176,7 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
         timeline_start=0.0,
         source_in=0.0,
         source_out=4.0,
-        transform=ClipTransform(
-            position_x=0.0, scale=1.0, rotation=0.0, opacity=1.0
-        ),
+        transform=ClipTransform(position_x=0.0, scale=1.0, rotation=0.0, opacity=1.0),
         transform_keyframes=[
             # Opacité : 1.0 → 0.4 sur 4 s (animée via ``geq``).
             TransformKeyframe(property_name="opacity", time_seconds=0.0, value=1.0),
@@ -1158,7 +1238,9 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
     assert "lt(T\\," in filter_complex
     assert "scale=w=" in filter_complex
     assert "rotate=" in filter_complex
-    assert "lt(t,3.9999995)" in filter_complex  # fin de segment au dernier keyframe (4 s)
+    assert (
+        "lt(t,3.9999995)" in filter_complex
+    )  # fin de segment au dernier keyframe (4 s)
     assert "overlay=" in filter_complex
 
     # 5. Exécution réelle de l'engine (sans sous-titre → engine finit
@@ -1175,9 +1257,7 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
     has_video = any(s.get("codec_type") == "video" for s in streams["streams"])
     assert has_video
     duration = float(streams["format"]["duration"])
-    assert abs(duration - 4.0) < 0.5, (
-        f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
-    )
+    assert abs(duration - 4.0) < 0.5, f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
 
     # 7. Aucun fichier temporaire ou média de test ne doit subsister
     # dans le dossier du test ou le /tmp système.

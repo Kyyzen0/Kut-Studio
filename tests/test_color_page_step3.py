@@ -55,17 +55,33 @@ def test_the_faithful_preview_shows_the_selection_and_the_comparison(window):
     window._set_color_compare(0.4)
     compared = window._preview_grade_overrides()[clip_id]
     assert isinstance(compared, Compare) and isinstance(compared.value, Highlight)
-    assert compared.split == pytest.approx(0.4), "plan plein cadre : la part du cadre est celle du clip"
+    assert compared.split == pytest.approx(0.4), (
+        "plan plein cadre : la part du cadre est celle du clip"
+    )
     jobs = window._preview_segment_jobs(0.0)
-    layer = next(layer for job in jobs for layer in job.plan.video_layers if layer.clip_id == clip_id)
-    assert isinstance(layer.color_grade, Compare), "les segments planifiés portent ce qu'on montre"
+    layer = next(
+        layer
+        for job in jobs
+        for layer in job.plan.video_layers
+        if layer.clip_id == clip_id
+    )
+    assert isinstance(layer.color_grade, Compare), (
+        "les segments planifiés portent ce qu'on montre"
+    )
     window.on_color_highlight_toggled(False)
-    assert window._preview_grade_overrides()[clip_id].value is window.project.tracks[0].clips[0].color_grade
+    assert (
+        window._preview_grade_overrides()[clip_id].value
+        is window.project.tracks[0].clips[0].color_grade
+    )
     window.switch_page(PAGE_EDIT)
-    assert window._preview_grade_overrides() is None, "hors de la page Couleur, le vrai étalonnage"
+    assert window._preview_grade_overrides() is None, (
+        "hors de la page Couleur, le vrai étalonnage"
+    )
 
 
-def test_moving_the_compare_line_refreshes_the_faithful_segments_once_it_stops(qtbot, window, monkeypatch):
+def test_moving_the_compare_line_refreshes_the_faithful_segments_once_it_stops(
+    qtbot, window, monkeypatch
+):
     clip_id = _clip(window)
     refreshed: list[str] = []
     monkeypatch.setattr(window, "_refresh_color_monitor", refreshed.append)
@@ -87,7 +103,6 @@ def test_the_compare_line_is_converted_into_the_picture_of_a_moved_clip(window):
     assert panel.compare_split_in_layer(0.3) == pytest.approx(0.3)
 
 
-
 # --- pipette ---------------------------------------------------------------------------------------------------------
 
 
@@ -97,13 +112,19 @@ def blue_window(window, tmp_path):
     from render_probe import lavfi_video
 
     clip = window.project.tracks[0].clips[0]
-    asset = next(item for item in window.project.media_assets if item.id == clip.asset_id)
-    media = lavfi_video(tmp_path / "blue.mp4", "color=c=0x3366CC:d=10", size=(64, 36), seconds=10.0)
+    asset = next(
+        item for item in window.project.media_assets if item.id == clip.asset_id
+    )
+    media = lavfi_video(
+        tmp_path / "blue.mp4", "color=c=0x3366CC:d=10", size=(64, 36), seconds=10.0
+    )
     asset.path, asset.width, asset.height = str(media), 64, 36
     return window
 
 
-def test_the_eyedropper_sets_the_qualifier_from_a_click_in_the_viewer(qtbot, blue_window):
+def test_the_eyedropper_sets_the_qualifier_from_a_click_in_the_viewer(
+    qtbot, blue_window
+):
     window = blue_window
     clip_id = _clip(window)
     window.color_panel.qualifier.pick_button.click()
@@ -112,12 +133,18 @@ def test_the_eyedropper_sets_the_qualifier_from_a_click_in_the_viewer(qtbot, blu
     width, height = window.project.width, window.project.height
     steps = len(window.history.entries())
     overlay.color_picked.emit(width / 2, height / 2, False)
-    assert not overlay.pick_mode and not window.color_panel.qualifier.pick_button.isChecked(), "une prise par clic"
+    assert (
+        not overlay.pick_mode
+        and not window.color_panel.qualifier.pick_button.isChecked()
+    ), "une prise par clic"
     from core.timeline_operations import find_clip
 
     def qualified():
         grade = find_clip(window.project, clip_id).color_grade
-        return bool(getattr(grade, "correctors", None)) and grade.correctors[0].qualifier is not None
+        return (
+            bool(getattr(grade, "correctors", None))
+            and grade.correctors[0].qualifier is not None
+        )
 
     qtbot.waitUntil(qualified, timeout=10000)
     qualifier = find_clip(window.project, clip_id).color_grade.correctors[0].qualifier
@@ -136,7 +163,9 @@ def test_a_click_outside_the_clip_picture_says_so(blue_window, monkeypatch):
     window.preview_panel.overlay.color_picked.emit(1.0, 1.0, False)
     from ui import i18n
 
-    assert window.statusBar().currentMessage() == i18n.translate("status.color.pick_outside")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "status.color.pick_outside"
+    )
 
 
 def test_leaving_the_colour_page_stops_the_eyedropper(window):
@@ -175,17 +204,25 @@ def test_a_window_is_added_from_its_tab_and_edited_in_the_viewer(qtbot, window):
 
     assert window.history.undo_label == i18n.translate("history.color.window_add")
     overlay = window.preview_panel.overlay
-    assert overlay.window is not None and overlay.window.window_id == node.windows[0].id, "le viewer l'édite"
+    assert (
+        overlay.window is not None and overlay.window.window_id == node.windows[0].id
+    ), "le viewer l'édite"
     assert overlay.selection is None, "la fenêtre remplace les poignées du clip"
-    for _ in range(3):                                             # un glisser : plusieurs mouvements, une étape
-        overlay.window_dragged.emit(node.id, node.windows[0].id, {"position_x": 0.3, "width": 0.25})
+    for _ in range(3):  # un glisser : plusieurs mouvements, une étape
+        overlay.window_dragged.emit(
+            node.id, node.windows[0].id, {"position_x": 0.3, "width": 0.25}
+        )
     overlay.window_released.emit(node.id, node.windows[0].id)
     moved = _node(window, clip_id).windows[0]
     assert (moved.position_x, moved.width, moved.id) == (0.3, 0.25, node.windows[0].id)
     assert len(window.history.entries()) == steps + 2
-    assert editor.spins["width"].value() == pytest.approx(25.0), "les champs suivent le viewer"
+    assert editor.spins["width"].value() == pytest.approx(25.0), (
+        "les champs suivent le viewer"
+    )
     window.color_panel.tabs.setCurrentWidget(window.color_panel.wheels)
-    assert overlay.window is None, "hors de l'onglet Fenêtres, le viewer rend les poignées du clip"
+    assert overlay.window is None, (
+        "hors de l'onglet Fenêtres, le viewer rend les poignées du clip"
+    )
 
 
 def test_window_fields_and_blur_are_one_history_step_per_burst(qtbot, window):
@@ -208,7 +245,9 @@ def test_window_fields_and_blur_are_one_history_step_per_burst(qtbot, window):
     detail.spins["sharpen"].setValue(0.5)
     window._finalize_color_history()
     node = _node(window, clip_id)
-    assert (node.blur, node.sharpen) == (4.0, 0.5) and len(window.history.entries()) == steps + 2
+    assert (node.blur, node.sharpen) == (4.0, 0.5) and len(
+        window.history.entries()
+    ) == steps + 2
     window.undo_last()
     assert _node(window, clip_id).blur == 0.0
 
@@ -226,23 +265,38 @@ def test_deleting_a_window_drops_its_keyframes_and_tracking_links(qtbot, window)
     editor.add_buttons[MaskShape.ELLIPSE].click()
     window_id = _node(window, clip_id).windows[0].id
     clip = find_clip(window.project, clip_id)
-    clip.animation = [Keyframe(mask_property_id(window_id, "position_x"), 0.0, 0.4), Keyframe("opacity", 0.0, 1.0)]
-    clip.tracking = replace(clip.tracking or ClipTracking(),
-                            links=(TrackLink(tracker_ids=("t1",), target=TrackTarget.MASK, mask_id=window_id),))
-    window._record_history("préparation")                        # comme une liaison posée par le panneau Tracking
+    clip.animation = [
+        Keyframe(mask_property_id(window_id, "position_x"), 0.0, 0.4),
+        Keyframe("opacity", 0.0, 1.0),
+    ]
+    clip.tracking = replace(
+        clip.tracking or ClipTracking(),
+        links=(
+            TrackLink(tracker_ids=("t1",), target=TrackTarget.MASK, mask_id=window_id),
+        ),
+    )
+    window._record_history(
+        "préparation"
+    )  # comme une liaison posée par le panneau Tracking
     editor.remove_button.click()
     clip = find_clip(window.project, clip_id)
-    assert not getattr(clip.color_grade, "correctors", (None,))[0] or not clip.color_grade.correctors[0].windows
+    assert (
+        not getattr(clip.color_grade, "correctors", (None,))[0]
+        or not clip.color_grade.correctors[0].windows
+    )
     assert [kf.property_name for kf in clip.animation] == ["opacity"]
     assert not clip.tracking.links
     window.undo_last()
     clip = find_clip(window.project, clip_id)
     assert clip.color_grade.correctors[0].windows[0].id == window_id
-    assert len(clip.animation) == 2 and clip.tracking.links, "Annuler rend fenêtre, images-clés et liaison"
+    assert len(clip.animation) == 2 and clip.tracking.links, (
+        "Annuler rend fenêtre, images-clés et liaison"
+    )
     window.redo_last()
     clip = find_clip(window.project, clip_id)
-    assert [kf.property_name for kf in clip.animation] == ["opacity"] and not clip.tracking.links, \
-        "Rétablir : l'étape enregistrée est déjà nettoyée"
+    assert [kf.property_name for kf in clip.animation] == [
+        "opacity"
+    ] and not clip.tracking.links, "Rétablir : l'étape enregistrée est déjà nettoyée"
 
 
 def test_show_selection_works_for_a_window_without_qualifier(window):
@@ -251,13 +305,22 @@ def test_show_selection_works_for_a_window_without_qualifier(window):
     clip_id = _clip(window)
     _windows_tab(window).add_buttons[MaskShape.RECTANGLE].click()
     window.color_panel.windows.highlight_button.click()
-    assert window.color_panel.qualifier.highlight_button.isChecked(), "un seul état, deux boutons"
+    assert window.color_panel.qualifier.highlight_button.isChecked(), (
+        "un seul état, deux boutons"
+    )
     clip = window.project.tracks[0].clips[0]
     shown = window._monitor_color_grade(clip)
     assert isinstance(shown, Highlight) and shown.node_id == _node(window, clip_id).id
     jobs = window._preview_segment_jobs(0.0)
-    layer = next(layer for job in jobs for layer in job.plan.video_layers if layer.clip_id == clip_id)
-    assert isinstance(layer.color_grade, Highlight), "les segments fidèles montrent la sélection de la fenêtre"
+    layer = next(
+        layer
+        for job in jobs
+        for layer in job.plan.video_layers
+        if layer.clip_id == clip_id
+    )
+    assert isinstance(layer.color_grade, Highlight), (
+        "les segments fidèles montrent la sélection de la fenêtre"
+    )
 
 
 def test_the_viewer_handles_turn_a_gesture_into_the_typed_values():
@@ -268,27 +331,63 @@ def test_the_viewer_handles_turn_a_gesture_into_the_typed_values():
 
     overlay = ViewerOverlay()
     overlay.set_canvas(QRectF(0, 0, 200, 100), (200.0, 100.0))
-    shown = {"position_x": 0.5, "position_y": 0.5, "width": 0.4, "height": 0.4, "rotation": 0.0, "feather": 0.0,
-             "expansion": 0.0, "opacity": 1.0}
-    base = dict(shown, position_x=0.3, width=0.2)            # le tracking a déplacé et agrandi la fenêtre montrée
-    geometry = WindowGeometry("n1", "w", (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (200.0, 100.0), "rectangle", shown, base)
+    shown = {
+        "position_x": 0.5,
+        "position_y": 0.5,
+        "width": 0.4,
+        "height": 0.4,
+        "rotation": 0.0,
+        "feather": 0.0,
+        "expansion": 0.0,
+        "opacity": 1.0,
+    }
+    base = dict(
+        shown, position_x=0.3, width=0.2
+    )  # le tracking a déplacé et agrandi la fenêtre montrée
+    geometry = WindowGeometry(
+        "n1",
+        "w",
+        (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+        (200.0, 100.0),
+        "rectangle",
+        shown,
+        base,
+    )
     none = Qt.KeyboardModifier.NoModifier
 
     def drag(mode, start, end, window=geometry):
-        return overlay._window_values({"mode": mode, "window": window, "start": start}, end, none)
+        return overlay._window_values(
+            {"mode": mode, "window": window, "start": start}, end, none
+        )
 
-    assert drag("w_move", (100, 50), (120, 60)) == pytest.approx({"position_x": 0.4, "position_y": 0.6})
-    assert drag("w_r", (140, 50), (160, 50)) == pytest.approx({"width": 0.3}), "0,4 → 0,6 montré, ×1,5 saisi"
+    assert drag("w_move", (100, 50), (120, 60)) == pytest.approx(
+        {"position_x": 0.4, "position_y": 0.6}
+    )
+    assert drag("w_r", (140, 50), (160, 50)) == pytest.approx({"width": 0.3}), (
+        "0,4 → 0,6 montré, ×1,5 saisi"
+    )
     assert drag("w_rotate", (100, 0), (150, 50))["rotation"] == pytest.approx(90.0)
-    polygon = WindowGeometry("n1", "w", geometry.world, geometry.box, "polygon", shown, base,
-                             points=((0.0, -0.5), (0.5, 0.5), (-0.5, 0.5)))
-    assert drag("w_p0", (100, 30), (110, 30), polygon)["points"][0] == pytest.approx((0.125, -0.5))
+    polygon = WindowGeometry(
+        "n1",
+        "w",
+        geometry.world,
+        geometry.box,
+        "polygon",
+        shown,
+        base,
+        points=((0.0, -0.5), (0.5, 0.5), (-0.5, 0.5)),
+    )
+    assert drag("w_p0", (100, 30), (110, 30), polygon)["points"][0] == pytest.approx(
+        (0.125, -0.5)
+    )
     overlay.set_window(geometry)
     assert overlay._window_hit(overlay.to_scene(100, 50)) == "w_move"
     assert overlay._window_hit(overlay.to_scene(140, 30)) == "w_tr"
 
 
-def test_removing_a_node_drops_the_state_of_its_windows_and_reset_clears_its_blur(qtbot, window):
+def test_removing_a_node_drops_the_state_of_its_windows_and_reset_clears_its_blur(
+    qtbot, window
+):
     from dataclasses import replace
 
     from core.animation import Keyframe
@@ -300,17 +399,27 @@ def test_removing_a_node_drops_the_state_of_its_windows_and_reset_clears_its_blu
     _windows_tab(window).add_buttons[MaskShape.RECTANGLE].click()
     first = _node(window, clip_id)
     window_id = first.windows[0].id
-    window.on_color_node_add(first.id)                              # le nœud fenêtré devient supprimable
+    window.on_color_node_add(first.id)  # le nœud fenêtré devient supprimable
     clip = find_clip(window.project, clip_id)
     clip.animation = [Keyframe(mask_property_id(window_id, "width"), 0.0, 0.3)]
-    clip.tracking = replace(clip.tracking or ClipTracking(),
-                            links=(TrackLink(tracker_ids=("t1",), target=TrackTarget.MASK, mask_id=window_id),))
+    clip.tracking = replace(
+        clip.tracking or ClipTracking(),
+        links=(
+            TrackLink(tracker_ids=("t1",), target=TrackTarget.MASK, mask_id=window_id),
+        ),
+    )
     window._record_history("préparation")
     window.on_color_node_remove(first.id)
     clip = find_clip(window.project, clip_id)
-    assert not clip.animation and not clip.tracking.links, "le nœud emporte l'état de ses fenêtres"
+    assert not clip.animation and not clip.tracking.links, (
+        "le nœud emporte l'état de ses fenêtres"
+    )
 
-    second = clip.color_grade if not hasattr(clip.color_grade, "correctors") else clip.color_grade.correctors[0]
+    second = (
+        clip.color_grade
+        if not hasattr(clip.color_grade, "correctors")
+        else clip.color_grade.correctors[0]
+    )
     node_id = getattr(second, "id", "n1")
     window.on_color_node_selected(node_id)
     window.color_panel.detail.spins["blur"].setValue(3.0)
@@ -321,5 +430,7 @@ def test_removing_a_node_drops_the_state_of_its_windows_and_reset_clears_its_blu
     window.on_color_node_reset(node.id)
     grade = find_clip(window.project, clip_id).color_grade
     reset = grade.correctors[0] if hasattr(grade, "correctors") else None
-    assert reset is None or (reset.blur, reset.sharpen) == (0.0, 0.0), "réinitialisé : plus de flou ni de netteté"
+    assert reset is None or (reset.blur, reset.sharpen) == (0.0, 0.0), (
+        "réinitialisé : plus de flou ni de netteté"
+    )
     assert window.color_panel.detail.spins["blur"].value() == 0.0

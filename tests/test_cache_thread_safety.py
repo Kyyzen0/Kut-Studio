@@ -36,7 +36,9 @@ def _run_threads(work) -> list[str]:
         except BaseException as exc:  # noqa: BLE001 - tout échec d'un thread est le défaut recherché
             errors.append(repr(exc)[:200])
 
-    threads = [threading.Thread(target=guarded, args=(index,)) for index in range(THREADS)]
+    threads = [
+        threading.Thread(target=guarded, args=(index,)) for index in range(THREADS)
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -44,8 +46,10 @@ def _run_threads(work) -> list[str]:
     return errors
 
 
-def test_animation_curves_can_be_evaluated_from_several_threads(maximum_interleaving, monkeypatch):
-    monkeypatch.setattr(visual_effects, "_CURVE_CACHE_SIZE", 2)             # évictions permanentes
+def test_animation_curves_can_be_evaluated_from_several_threads(
+    maximum_interleaving, monkeypatch
+):
+    monkeypatch.setattr(visual_effects, "_CURVE_CACHE_SIZE", 2)  # évictions permanentes
 
     def work(index: int) -> None:
         for step in range(2500):
@@ -59,7 +63,9 @@ def test_animation_curves_can_be_evaluated_from_several_threads(maximum_interlea
     assert _run_threads(work) == []
 
 
-def test_tracking_series_cache_can_be_used_from_several_threads(maximum_interleaving, monkeypatch):
+def test_tracking_series_cache_can_be_used_from_several_threads(
+    maximum_interleaving, monkeypatch
+):
     monkeypatch.setattr(tracking_motion, "_CACHE_SIZE", 2)
 
     def work(index: int) -> None:
@@ -71,7 +77,9 @@ def test_tracking_series_cache_can_be_used_from_several_threads(maximum_interlea
     assert _run_threads(work) == []
 
 
-def test_the_results_stay_correct_while_threads_compete(maximum_interleaving, monkeypatch):
+def test_the_results_stay_correct_while_threads_compete(
+    maximum_interleaving, monkeypatch
+):
     """Le verrou ne change pas les valeurs : chaque thread relit toujours la courbe de ses propres keyframes."""
     monkeypatch.setattr(visual_effects, "_CURVE_CACHE_SIZE", 3)
     mistakes: list[str] = []
@@ -80,7 +88,11 @@ def test_the_results_stay_correct_while_threads_compete(maximum_interleaving, mo
         for step in range(1500):
             end = 2.0 + (index + step) % 6
             curves = transform_curves(
-                [TransformKeyframe("scale", 0.0, 1.0), TransformKeyframe("scale", 1.0, end)], 3.0
+                [
+                    TransformKeyframe("scale", 0.0, 1.0),
+                    TransformKeyframe("scale", 1.0, end),
+                ],
+                3.0,
             )
             value = curves["scale"].evaluate(1.0)
             if abs(value - end) > 1e-9:

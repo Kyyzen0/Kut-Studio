@@ -76,12 +76,20 @@ def test_mask_handles_beat_the_clip_and_the_layers_around():
 
     clip = ("v", IDENT, FRAME_BOX)
     above = ("t", IDENT, FRAME_BOX)
-    selection = SelectionGeometry("v", IDENT, IDENT, FRAME_BOX, {"anchor_x": 0.5, "anchor_y": 0.5})
+    selection = SelectionGeometry(
+        "v", IDENT, IDENT, FRAME_BOX, {"anchor_x": 0.5, "anchor_y": 0.5}
+    )
     overlay = _overlay(selection=selection, boxes=[clip, above])
     centre = overlay.to_scene(640.0, 360.0)
-    assert overlay._hit(centre) == ("m_move", "m1")                       # pas « select » du calque au-dessus, ni « move » du clip
+    assert overlay._hit(centre) == (
+        "m_move",
+        "m1",
+    )  # pas « select » du calque au-dessus, ni « move » du clip
     assert overlay._hit(overlay.masks.handles()["m_tl"]) == ("m_tl", "m1")
-    assert overlay._hit(overlay.to_scene(20.0, 20.0)) == ("select", "t")   # hors du masque : le comportement habituel
+    assert overlay._hit(overlay.to_scene(20.0, 20.0)) == (
+        "select",
+        "t",
+    )  # hors du masque : le comportement habituel
 
 
 def test_pick_mode_and_compare_keep_priority_over_the_mask():
@@ -97,15 +105,24 @@ def test_a_non_editable_mask_has_no_handles_and_no_inside():
     overlay = _overlay(editable=False, boxes=[("v", IDENT, FRAME_BOX)])
     assert overlay.masks.handles() == {}
     assert overlay._hit(overlay.to_scene(640.0, 360.0)) == ("select", "v")
-    assert overlay.shape().contains(overlay.to_scene(10.0, 10.0))       # le calque reste cliquable
-    events = _drag(overlay, overlay.to_scene(640.0, 360.0), overlay.to_scene(700.0, 360.0))
+    assert overlay.shape().contains(
+        overlay.to_scene(10.0, 10.0)
+    )  # le calque reste cliquable
+    events = _drag(
+        overlay, overlay.to_scene(640.0, 360.0), overlay.to_scene(700.0, 360.0)
+    )
     assert events["drag"] == [] and events["release"] == []
 
 
 def test_polygon_vertices_come_first_and_have_no_side_handles():
     overlay = _overlay(Mask(id="m1", shape=MaskShape.POLYGON))
     names = set(overlay.masks.handles())
-    assert {"m_p0", "m_p4", "m_tl", "m_rotate", "m_feather"} <= names and not {"m_t", "m_r", "m_b", "m_l"} & names
+    assert {"m_p0", "m_p4", "m_tl", "m_rotate", "m_feather"} <= names and not {
+        "m_t",
+        "m_r",
+        "m_b",
+        "m_l",
+    } & names
     vertex = overlay.masks.handles()["m_p1"]
     assert overlay._hit(vertex) == ("m_p1", "m1")
 
@@ -119,8 +136,14 @@ def test_shape_includes_the_mask_for_hit_testing():
 def test_cursors_follow_the_handles():
     overlay = _overlay()
     assert overlay.masks.cursor("m_move") == Qt.SizeAllCursor
-    assert overlay.masks.cursor("m_tl") == Qt.SizeFDiagCursor and overlay.masks.cursor("m_tr") == Qt.SizeBDiagCursor
-    assert overlay.masks.cursor("m_r") == Qt.SizeHorCursor and overlay.masks.cursor("m_t") == Qt.SizeVerCursor
+    assert (
+        overlay.masks.cursor("m_tl") == Qt.SizeFDiagCursor
+        and overlay.masks.cursor("m_tr") == Qt.SizeBDiagCursor
+    )
+    assert (
+        overlay.masks.cursor("m_r") == Qt.SizeHorCursor
+        and overlay.masks.cursor("m_t") == Qt.SizeVerCursor
+    )
     assert overlay.masks.cursor("m_rotate") == Qt.CrossCursor
     overlay.hoverMoveEvent(_Event(overlay.masks.handles()["m_br"]))
     assert overlay.cursor().shape() == Qt.SizeFDiagCursor
@@ -128,7 +151,9 @@ def test_cursors_follow_the_handles():
 
 def test_dragging_the_inside_emits_live_values_then_one_release():
     overlay = _overlay()
-    events = _drag(overlay, overlay.to_scene(640.0, 360.0), overlay.to_scene(704.0, 360.0))
+    events = _drag(
+        overlay, overlay.to_scene(640.0, 360.0), overlay.to_scene(704.0, 360.0)
+    )
     assert len(events["drag"]) == 1 and len(events["release"]) == 1
     clip_id, mask_id, values = events["drag"][0]
     assert (clip_id, mask_id) == ("v", "m1")
@@ -139,7 +164,9 @@ def test_dragging_the_inside_emits_live_values_then_one_release():
 def test_a_drag_far_beyond_the_bounds_emits_the_pinned_value():
     overlay = _overlay()
     start = overlay.to_scene(640.0, 360.0)
-    events = _drag(overlay, start, overlay.to_scene(640.0 + 1280.0 * 4.0, 360.0))      # position_x voudrait 4,5
+    events = _drag(
+        overlay, start, overlay.to_scene(640.0 + 1280.0 * 4.0, 360.0)
+    )  # position_x voudrait 4,5
     assert events["drag"][0][2]["position_x"] == 3.0 and len(events["release"]) == 1
 
 
@@ -147,7 +174,7 @@ def test_dragging_a_polygon_vertex_emits_the_points():
     overlay = _overlay(Mask(id="m1", shape=MaskShape.POLYGON))
     vertex = overlay.masks.handles()["m_p0"]
     events = _drag(overlay, vertex, QPointF(vertex.x() + 20.0, vertex.y() + 10.0))
-    (_clip, _mask, values), = events["drag"]
+    ((_clip, _mask, values),) = events["drag"]
     assert set(values) == {"points"} and len(values["points"]) == 5
     assert values["points"][0] != (0.0, -0.5)
 
@@ -156,11 +183,15 @@ def test_a_drag_keeps_its_start_geometry_when_the_model_sends_a_new_one():
     overlay = _overlay()
     handle = overlay.masks.handles()["m_br"]
     overlay.mousePressEvent(_Event(handle))
-    overlay.set_mask_edit(geometry_of("v", Mask(id="m1", width=0.9), IDENT, FRAME_BOX))     # retour du modèle pendant le geste
+    overlay.set_mask_edit(
+        geometry_of("v", Mask(id="m1", width=0.9), IDENT, FRAME_BOX)
+    )  # retour du modèle pendant le geste
     seen = []
     overlay.mask_dragged.connect(lambda *args: seen.append(args[2]))
     overlay.mouseMoveEvent(_Event(QPointF(handle.x() + 32.0, handle.y())))
-    assert seen[0]["width"] == pytest.approx(0.5 + 2 * 64.0 / 1280.0)                       # calculé depuis la largeur de l'appui, 0,5
+    assert seen[0]["width"] == pytest.approx(
+        0.5 + 2 * 64.0 / 1280.0
+    )  # calculé depuis la largeur de l'appui, 0,5
 
 
 def test_painting_every_shape_and_mode_does_not_raise():
@@ -170,8 +201,16 @@ def test_painting_every_shape_and_mode_does_not_raise():
     for shape in MaskShape:
         for mode in MaskMode:
             for editable in (True, False):
-                overlay = _overlay(Mask(id="m1", shape=shape, mode=mode, inverted=mode is MaskMode.SUBTRACT, feather=0.05),
-                                   editable=editable)
+                overlay = _overlay(
+                    Mask(
+                        id="m1",
+                        shape=shape,
+                        mode=mode,
+                        inverted=mode is MaskMode.SUBTRACT,
+                        feather=0.05,
+                    ),
+                    editable=editable,
+                )
                 painter = QPainter(image)
                 overlay.paint(painter, None)
                 painter.end()
@@ -186,15 +225,30 @@ def window(qtbot, monkeypatch):
 
     from ui.main_window import MainWindow
 
-    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
-    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
+    )
     win = MainWindow()
     qtbot.addWidget(win)
     win.timeline_timer.stop()
     monkeypatch.setattr(win.preview_panel, "preview_at", lambda *_a, **_k: None)
     win.project = Project(name="Mask", width=1280, height=720, fps=25.0)
-    win.project.media_assets.append(MediaAsset("asset", "/tmp/clip.mp4", "clip", 6, 1280, 720, 25.0, "video"))
-    masks = (Mask(id="m1", width=0.5, height=0.5), Mask(id="m2", shape=MaskShape.POLYGON, width=0.4, height=0.4, mode=MaskMode.SUBTRACT))
+    win.project.media_assets.append(
+        MediaAsset("asset", "/tmp/clip.mp4", "clip", 6, 1280, 720, 25.0, "video")
+    )
+    masks = (
+        Mask(id="m1", width=0.5, height=0.5),
+        Mask(
+            id="m2",
+            shape=MaskShape.POLYGON,
+            width=0.4,
+            height=0.4,
+            mode=MaskMode.SUBTRACT,
+        ),
+    )
     clip = Clip("v", "asset", "V1", 0.0, 0.0, 6.0, compositing=Compositing(masks=masks))
     win.project.tracks.append(Track("V1", "V1", "video", clips=[clip]))
     win._timeline_index = None
@@ -216,7 +270,7 @@ def _mask(win, mask_id="m1", clip_id="v"):
 def _select_clip(win, clip_id="v"):
     win.preview_panel.overlay.layer_clicked.emit(clip_id)
     assert win._primary_selected_id() == clip_id
-    win._refresh_viewer_graphics()                  # le cadre du moniteur prend la taille du projet (échelle de la surcouche)
+    win._refresh_viewer_graphics()  # le cadre du moniteur prend la taille du projet (échelle de la surcouche)
 
 
 def _show_mask(win, row=0):
@@ -250,7 +304,12 @@ def test_choosing_a_mask_in_the_stack_replaces_the_clip_handles(window):
     overlay = window.preview_panel.overlay
     assert overlay.selection is None
     geometry = overlay.masks.geometry
-    assert (geometry.clip_id, geometry.mask_id, geometry.shape, geometry.mode) == ("v", "m2", "polygon", "subtract")
+    assert (geometry.clip_id, geometry.mask_id, geometry.shape, geometry.mode) == (
+        "v",
+        "m2",
+        "polygon",
+        "subtract",
+    )
     assert geometry.editable and "m_p0" in overlay.masks.handles()
     _show_mask(window, 0)
     assert overlay.masks.geometry.mask_id == "m1"
@@ -280,7 +339,10 @@ def test_a_removed_mask_leaves_mask_mode(window):
     _select_clip(window)
     _show_mask(window, 0)
     window.properties_panel.compositing_group.remove_mask.click()
-    assert window._mask_edit_id == "" and window.preview_panel.overlay.masks.geometry is None
+    assert (
+        window._mask_edit_id == ""
+        and window.preview_panel.overlay.masks.geometry is None
+    )
 
 
 def test_dragging_the_mask_writes_it_in_one_undoable_history_step(window):
@@ -292,12 +354,21 @@ def test_dragging_the_mask_writes_it_in_one_undoable_history_step(window):
     centre = (640.0, 360.0)
     _press_drag_release(window, centre, (640.0 + 128.0, 360.0 + 72.0))
     mask = _mask(window)
-    assert mask.position_x == pytest.approx(0.6) and mask.position_y == pytest.approx(0.6)
-    assert (mask.width, mask.height, mask.rotation, mask.feather) == (before.width, before.height, 0.0, 0.0)
+    assert mask.position_x == pytest.approx(0.6) and mask.position_y == pytest.approx(
+        0.6
+    )
+    assert (mask.width, mask.height, mask.rotation, mask.feather) == (
+        before.width,
+        before.height,
+        0.0,
+        0.0,
+    )
     assert len(window.history) == entries + 1
     assert window.history.entries()[-1].label == translate("history.mask.drag")
     window.undo_last()
-    assert _mask(window).position_x == pytest.approx(0.5) and _mask(window).position_y == pytest.approx(0.5)
+    assert _mask(window).position_x == pytest.approx(0.5) and _mask(
+        window
+    ).position_y == pytest.approx(0.5)
     assert len(window.history) == entries
 
 
@@ -306,28 +377,36 @@ def test_resizing_rotating_and_feathering_through_the_monitor(window):
     _select_clip(window)
     _show_mask(window, 0)
     overlay = window.preview_panel.overlay
-    k = overlay.scale                                                          # pixels de scène par pixel du cadre
+    k = overlay.scale  # pixels de scène par pixel du cadre
     corner = overlay.masks.handles()["m_br"]
     overlay.mousePressEvent(_Event(corner))
-    overlay.mouseMoveEvent(_Event(QPointF(corner.x() + 128.0 * k, corner.y() + 72.0 * k)))
+    overlay.mouseMoveEvent(
+        _Event(QPointF(corner.x() + 128.0 * k, corner.y() + 72.0 * k))
+    )
     overlay.mouseReleaseEvent(_Event(corner))
     assert _mask(window).width == pytest.approx(0.5 + 2 * 128.0 / 1280.0)
     assert _mask(window).height == pytest.approx(0.5 + 2 * 72.0 / 720.0)
-    k = overlay.scale                                                          # le cadre a pu être recalculé après le geste
+    k = overlay.scale  # le cadre a pu être recalculé après le geste
     feather = overlay.masks.handles()["m_feather"]
     overlay.mousePressEvent(_Event(feather))
     overlay.mouseMoveEvent(_Event(QPointF(feather.x() + 72.0 * k, feather.y())))
     overlay.mouseReleaseEvent(_Event(feather))
-    assert _mask(window).feather == pytest.approx(72.0 / 720.0)             # 72 px du calque / min(1280, 720)
+    assert _mask(window).feather == pytest.approx(
+        72.0 / 720.0
+    )  # 72 px du calque / min(1280, 720)
     rotate = overlay.masks.handles()["m_rotate"]
     centre = overlay.to_scene(640.0, 360.0)
     overlay.mousePressEvent(_Event(rotate))
-    overlay.mouseMoveEvent(_Event(QPointF(centre.x() + 100.0, centre.y())))      # du haut vers la droite : +90°
+    overlay.mouseMoveEvent(
+        _Event(QPointF(centre.x() + 100.0, centre.y()))
+    )  # du haut vers la droite : +90°
     overlay.mouseReleaseEvent(_Event(centre))
     assert _mask(window).rotation == pytest.approx(90.0)
 
 
-def test_an_animated_property_gets_a_keyframe_at_the_playhead_and_the_others_stay_static(window):
+def test_an_animated_property_gets_a_keyframe_at_the_playhead_and_the_others_stay_static(
+    window,
+):
     window.playhead_seconds = 0.0
     pid = mask_property_id("m1", "position_x")
     keyframe_editing.add_keyframe(window.project, "v", pid, 0.0, 0.5)
@@ -339,8 +418,12 @@ def test_an_animated_property_gets_a_keyframe_at_the_playhead_and_the_others_sta
     times = sorted(k.time_seconds for k in get_target(pid).get_keyframes(clip))
     assert times == [0.0, 2.0]
     assert keyframe_editing.value_at(clip, pid, 2.0) == pytest.approx(0.6)
-    assert _mask(window).position_x == pytest.approx(0.5)                       # la valeur statique d'une propriété animée ne bouge pas
-    assert _mask(window).position_y == pytest.approx(0.6)                       # une propriété non animée : valeur statique
+    assert _mask(window).position_x == pytest.approx(
+        0.5
+    )  # la valeur statique d'une propriété animée ne bouge pas
+    assert _mask(window).position_y == pytest.approx(
+        0.6
+    )  # une propriété non animée : valeur statique
 
 
 def test_polygon_vertices_are_written_into_the_mask(window):
@@ -368,18 +451,34 @@ def test_a_locked_track_shows_the_mask_without_handles_and_refuses_writes(window
     window.project.tracks[0].locked = True
     window._refresh_viewer_overlay(1.0)
     overlay = window.preview_panel.overlay
-    assert overlay.masks.geometry is not None and not overlay.masks.geometry.editable and overlay.masks.handles() == {}
+    assert (
+        overlay.masks.geometry is not None
+        and not overlay.masks.geometry.editable
+        and overlay.masks.handles() == {}
+    )
     entries = len(window.history)
-    overlay.mask_dragged.emit("v", "m1", {"position_x": 0.9})                  # un signal qui atteindrait le modèle
+    overlay.mask_dragged.emit(
+        "v", "m1", {"position_x": 0.9}
+    )  # un signal qui atteindrait le modèle
     overlay.mask_released.emit("v", "m1")
-    assert _mask(window).position_x == pytest.approx(0.5) and len(window.history) == entries
+    assert (
+        _mask(window).position_x == pytest.approx(0.5)
+        and len(window.history) == entries
+    )
 
 
 def test_a_locked_graphic_layer_refuses_through_the_layer_rules(window):
     window.project.tracks.clear()
     track = Track("G1", "G1", "graphics")
     window.project.tracks.append(track)
-    clip = add_graphic_clip(window.project, GraphicType.TEXT, timeline_start=0.0, duration=4.0, track=track, clip_id="g")
+    clip = add_graphic_clip(
+        window.project,
+        GraphicType.TEXT,
+        timeline_start=0.0,
+        duration=4.0,
+        track=track,
+        clip_id="g",
+    )
     clip.compositing = Compositing(masks=(Mask(id="m1"),))
     window._timeline_index = None
     window._reload_timeline_preserving_selection()
@@ -394,14 +493,19 @@ def test_a_locked_graphic_layer_refuses_through_the_layer_rules(window):
     assert not overlay.masks.geometry.editable and overlay.masks.handles() == {}
     entries = len(window.history)
     overlay.mask_dragged.emit("g", "m1", {"position_x": 0.9})
-    assert _mask(window, "m1", "g").position_x == pytest.approx(0.5) and len(window.history) == entries
+    assert (
+        _mask(window, "m1", "g").position_x == pytest.approx(0.5)
+        and len(window.history) == entries
+    )
 
 
-def test_outside_the_clip_duration_the_clip_handles_come_back_and_writes_are_refused(window):
+def test_outside_the_clip_duration_the_clip_handles_come_back_and_writes_are_refused(
+    window,
+):
     window.playhead_seconds = 1.0
     _select_clip(window)
     _show_mask(window, 0)
-    window.playhead_seconds = 7.0                                              # la durée du clip est 6 s
+    window.playhead_seconds = 7.0  # la durée du clip est 6 s
     window._refresh_viewer_overlay(7.0)
     overlay = window.preview_panel.overlay
     assert overlay.masks.geometry is None
@@ -409,7 +513,9 @@ def test_outside_the_clip_duration_the_clip_handles_come_back_and_writes_are_ref
     assert _mask(window).position_x == pytest.approx(0.5)
 
 
-def test_a_hidden_track_or_a_disabled_clip_shows_the_mask_without_active_handles(window):
+def test_a_hidden_track_or_a_disabled_clip_shows_the_mask_without_active_handles(
+    window,
+):
     window.playhead_seconds = 1.0
     _select_clip(window)
     _show_mask(window, 0)
@@ -426,7 +532,9 @@ def test_a_value_beyond_the_model_bounds_is_never_written_or_clamped(window):
     overlay = window.preview_panel.overlay
     entries = len(window.history)
     overlay.mask_dragged.emit("v", "m1", {"feather": 1.4})
-    overlay.mask_dragged.emit("v", "m1", {"points": ((9.0, 0.0), (0.0, 1.0), (1.0, 1.0))})
+    overlay.mask_dragged.emit(
+        "v", "m1", {"points": ((9.0, 0.0), (0.0, 1.0), (1.0, 1.0))}
+    )
     overlay.mask_released.emit("v", "m1")
     assert _mask(window).feather == 0.0 and len(window.history) == entries
 
@@ -440,7 +548,9 @@ def test_the_mask_overlay_follows_the_playhead_animation(window):
     _show_mask(window, 0)
     window.playhead_seconds = 2.0
     window._refresh_viewer_overlay(2.0)
-    assert window.preview_panel.overlay.masks.geometry.values["position_x"] == pytest.approx(0.4)
+    assert window.preview_panel.overlay.masks.geometry.values[
+        "position_x"
+    ] == pytest.approx(0.4)
 
 
 def test_tracking_and_window_modes_keep_priority(window, monkeypatch):
@@ -463,38 +573,60 @@ def _fake_tracking(window, monkeypatch, shift=0.1):
     from core.animation_targets import animation_curves
     from core.tracking_model import ClipTracking
 
-    _clip(window).tracking = ClipTracking()                       # non nul : la scène demande l'état effectif
+    _clip(
+        window
+    ).tracking = ClipTracking()  # non nul : la scène demande l'état effectif
 
     def effective(clip, _context):
         pid = mask_property_id("m1", "position_x")
         curves = animation_curves(clip, prefix="mask.m1.")
         mask = clip.compositing.mask_by_id("m1")
         raw = [k for k in clip.animation if k.property_name != pid]
-        derived = [Keyframe(pid, t, evaluate_mask_at(mask, curves, t).position_x + shift) for t in (0.0, clip.duration)]
-        return tb.EffectiveState(tuple(clip.transform_keyframes), tuple(raw + derived), clip.compositing, frozenset({pid}))
+        derived = [
+            Keyframe(pid, t, evaluate_mask_at(mask, curves, t).position_x + shift)
+            for t in (0.0, clip.duration)
+        ]
+        return tb.EffectiveState(
+            tuple(clip.transform_keyframes),
+            tuple(raw + derived),
+            clip.compositing,
+            frozenset({pid}),
+        )
 
     monkeypatch.setattr(tb, "effective_clip_state", effective)
 
 
-def test_a_tracked_mask_is_drawn_where_it_is_rendered_but_dragged_from_its_entered_value(window, monkeypatch):
+def test_a_tracked_mask_is_drawn_where_it_is_rendered_but_dragged_from_its_entered_value(
+    window, monkeypatch
+):
     _fake_tracking(window, monkeypatch)
     window.playhead_seconds = 1.0
     _select_clip(window)
     _show_mask(window, 0)
     overlay = window.preview_panel.overlay
     geometry = overlay.masks.geometry
-    assert geometry.values["position_x"] == pytest.approx(0.6) and geometry.entered["position_x"] == pytest.approx(0.5)
-    _press_drag_release(window, (640.0 + 128.0, 360.0), (640.0 + 128.0 + 64.0, 360.0))      # 64 px du cadre
-    assert _mask(window).position_x == pytest.approx(0.5 + 64.0 / 1280.0)             # la saisie bouge de d, sans saut de 0,1
-    window._refresh_viewer_overlay(1.0)                                              # seconde évaluation, même tête de lecture
+    assert geometry.values["position_x"] == pytest.approx(0.6) and geometry.entered[
+        "position_x"
+    ] == pytest.approx(0.5)
+    _press_drag_release(
+        window, (640.0 + 128.0, 360.0), (640.0 + 128.0 + 64.0, 360.0)
+    )  # 64 px du cadre
+    assert _mask(window).position_x == pytest.approx(
+        0.5 + 64.0 / 1280.0
+    )  # la saisie bouge de d, sans saut de 0,1
+    window._refresh_viewer_overlay(1.0)  # seconde évaluation, même tête de lecture
     shown = window.preview_panel.overlay.masks.geometry.values["position_x"]
-    assert shown == pytest.approx(0.6 + 64.0 / 1280.0)                               # déplacé de d, suivi appliqué une seule fois
+    assert shown == pytest.approx(
+        0.6 + 64.0 / 1280.0
+    )  # déplacé de d, suivi appliqué une seule fois
 
 
 # -- doublon d'un clip (revue de #147) -------------------------------------------------------------
 
 
-def test_selecting_a_duplicate_leaves_mask_mode_and_going_back_does_not_restore_it(window):
+def test_selecting_a_duplicate_leaves_mask_mode_and_going_back_does_not_restore_it(
+    window,
+):
     import copy
 
     window.playhead_seconds = 1.0
@@ -508,11 +640,13 @@ def test_selecting_a_duplicate_leaves_mask_mode_and_going_back_does_not_restore_
     window._reload_timeline_preserving_selection()
     _select_clip(window, "v2")
     overlay = window.preview_panel.overlay
-    assert overlay.masks.geometry is None and window._mask_edit_id == ""      # mêmes identifiants de masque, autre clip
+    assert (
+        overlay.masks.geometry is None and window._mask_edit_id == ""
+    )  # mêmes identifiants de masque, autre clip
     assert overlay.selection is not None and overlay.selection.clip_id == "v2"
     assert not window.properties_panel.compositing_group.edit_in_monitor.isChecked()
     _select_clip(window, "v")
-    assert overlay.masks.geometry is None                                      # le mode n'est pas rétabli tout seul
+    assert overlay.masks.geometry is None  # le mode n'est pas rétabli tout seul
     assert overlay.selection is not None and overlay.selection.clip_id == "v"
 
 

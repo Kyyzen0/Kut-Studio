@@ -27,8 +27,13 @@ def source(tmp_path):
 
 
 def _manager(folder: Path, runner) -> ProxyManager:
-    return ProxyManager(folder, ffmpeg_command=lambda: ["ffmpeg-fake"], runner=runner,
-                        memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
+    return ProxyManager(
+        folder,
+        ffmpeg_command=lambda: ["ffmpeg-fake"],
+        runner=runner,
+        memo=SignatureMemo(ttl=0.0),
+        disk_ttl=0.0,
+    )
 
 
 def _wait(condition, timeout=8.0) -> bool:
@@ -40,7 +45,9 @@ def _wait(condition, timeout=8.0) -> bool:
     return False
 
 
-def test_two_instances_generating_the_same_proxy_write_to_different_partial_files(tmp_path, source):
+def test_two_instances_generating_the_same_proxy_write_to_different_partial_files(
+    tmp_path, source
+):
     folder = tmp_path / "proxies"
     both_running = threading.Barrier(2, timeout=5)
     paths: list[str] = []
@@ -49,31 +56,41 @@ def test_two_instances_generating_the_same_proxy_write_to_different_partial_file
         paths.append(command[-1])
         on_start(4242)
         Path(command[-1]).write_bytes(b"P" * 64)
-        both_running.wait()                                  # les deux FFmpeg tournent en même temps
+        both_running.wait()  # les deux FFmpeg tournent en même temps
         return RunResult(0)
 
     first, second = _manager(folder, runner), _manager(folder, runner)
     try:
         first.request(source, duration=2.0)
         second.request(source, duration=2.0)
-        assert _wait(lambda: first.info(source).state is ProxyState.READY
-                     and second.info(source).state is ProxyState.READY)
+        assert _wait(
+            lambda: (
+                first.info(source).state is ProxyState.READY
+                and second.info(source).state is ProxyState.READY
+            )
+        )
     finally:
         first.shutdown()
         second.shutdown()
 
     assert len(paths) == 2 and paths[0] != paths[1]
     assert all(".partial." in os.path.basename(path) for path in paths)
-    assert first.info(source).proxy_path == second.info(source).proxy_path      # même proxy final
+    assert (
+        first.info(source).proxy_path == second.info(source).proxy_path
+    )  # même proxy final
     assert Path(first.info(source).proxy_path).is_file()
-    assert not [name for name in os.listdir(folder) if ".partial." in name]     # aucun partiel ne traîne
+    assert not [
+        name for name in os.listdir(folder) if ".partial." in name
+    ]  # aucun partiel ne traîne
 
 
-def test_a_recent_partial_file_of_another_instance_survives_the_startup_cleanup(tmp_path, source):
+def test_a_recent_partial_file_of_another_instance_survives_the_startup_cleanup(
+    tmp_path, source
+):
     folder = tmp_path / "proxies"
     folder.mkdir()
     running_elsewhere = folder / "proxy-abc.partial.4242-deadbeef.mp4"
-    running_elsewhere.write_bytes(b"en cours")                 # une autre instance écrit en ce moment
+    running_elsewhere.write_bytes(b"en cours")  # une autre instance écrit en ce moment
     abandoned = folder / "proxy-def.partial.1-cafecafe.mp4"
     abandoned.write_bytes(b"abandoned")
     long_ago = time.time() - 3600
@@ -88,7 +105,9 @@ def test_a_recent_partial_file_of_another_instance_survives_the_startup_cleanup(
     assert running_elsewhere.exists() and not abandoned.exists()
 
 
-def test_two_instances_finishing_together_never_share_a_marker_temporary_file(tmp_path, source, monkeypatch):
+def test_two_instances_finishing_together_never_share_a_marker_temporary_file(
+    tmp_path, source, monkeypatch
+):
     """Le marqueur est écrit via un temporaire : sous Windows deux écritures simultanées du même nom échouaient."""
     folder = tmp_path / "proxies"
     both_running = threading.Barrier(2, timeout=5)
@@ -112,8 +131,12 @@ def test_two_instances_finishing_together_never_share_a_marker_temporary_file(tm
     try:
         first.request(source, duration=2.0)
         second.request(source, duration=2.0)
-        assert _wait(lambda: first.info(source).state is ProxyState.READY
-                     and second.info(source).state is ProxyState.READY)
+        assert _wait(
+            lambda: (
+                first.info(source).state is ProxyState.READY
+                and second.info(source).state is ProxyState.READY
+            )
+        )
     finally:
         first.shutdown()
         second.shutdown()
@@ -124,7 +147,9 @@ def test_two_instances_finishing_together_never_share_a_marker_temporary_file(tm
     assert not [name for name in os.listdir(folder) if name.endswith(".tmp")]
 
 
-def test_a_failing_instance_does_not_delete_the_proxy_another_instance_just_produced(tmp_path, source):
+def test_a_failing_instance_does_not_delete_the_proxy_another_instance_just_produced(
+    tmp_path, source
+):
     folder = tmp_path / "proxies"
 
     def ok(command, cancel, on_progress, on_start):
@@ -142,14 +167,18 @@ def test_a_failing_instance_does_not_delete_the_proxy_another_instance_just_prod
         assert _wait(lambda: good.info(source).state is ProxyState.READY)
         proxy = Path(good.info(source).proxy_path)
 
-        bad.request(source, duration=2.0, force=True)               # l'autre instance tente de le refaire… et échoue
-        assert _wait(lambda: bool(bad._errors))                       # l'échec est bien enregistré chez elle
+        bad.request(
+            source, duration=2.0, force=True
+        )  # l'autre instance tente de le refaire… et échoue
+        assert _wait(lambda: bool(bad._errors))  # l'échec est bien enregistré chez elle
         assert _wait(lambda: not bad._active and not bad._pending)
     finally:
         good.shutdown()
         bad.shutdown()
 
-    assert proxy.is_file(), "l'échec de l'une ne doit pas supprimer le proxy valide produit par l'autre"
+    assert proxy.is_file(), (
+        "l'échec de l'une ne doit pas supprimer le proxy valide produit par l'autre"
+    )
     assert good.info(source).state is ProxyState.READY
 
 
@@ -174,9 +203,13 @@ def _ok_runner(command, cancel, on_progress, on_start):
     return RunResult(0)
 
 
-def test_a_transient_access_denied_while_promoting_the_proxy_is_retried(tmp_path, source, monkeypatch):
+def test_a_transient_access_denied_while_promoting_the_proxy_is_retried(
+    tmp_path, source, monkeypatch
+):
     monkeypatch.setattr("core.proxy_manager.REPLACE_DELAY_SECONDS", 0.001)
-    state = _refuse_replace(monkeypatch, suffix=".mp4", times=2)               # deux refus, puis le système laisse passer
+    state = _refuse_replace(
+        monkeypatch, suffix=".mp4", times=2
+    )  # deux refus, puis le système laisse passer
     manager = _manager(tmp_path / "proxies", _ok_runner)
     try:
         manager.request(source, duration=2.0)
@@ -184,7 +217,9 @@ def test_a_transient_access_denied_while_promoting_the_proxy_is_retried(tmp_path
     finally:
         manager.shutdown()
     assert state["refused"] == 2
-    assert not [name for name in os.listdir(tmp_path / "proxies") if ".partial." in name]
+    assert not [
+        name for name in os.listdir(tmp_path / "proxies") if ".partial." in name
+    ]
 
 
 def test_a_promotion_that_keeps_failing_is_harmless_when_another_instance_already_produced_the_proxy(
@@ -198,21 +233,27 @@ def test_a_promotion_that_keeps_failing_is_harmless_when_another_instance_alread
         assert _wait(lambda: first.info(source).state is ProxyState.READY)
         proxy = Path(first.info(source).proxy_path)
 
-        _refuse_replace(monkeypatch, suffix=".mp4", times=None)                # l'autre instance ne peut plus promouvoir
+        _refuse_replace(
+            monkeypatch, suffix=".mp4", times=None
+        )  # l'autre instance ne peut plus promouvoir
         second = _manager(folder, _ok_runner)
         try:
             second.request(source, duration=2.0, force=True)
             assert _wait(lambda: not second._active and not second._pending)
-            assert not second._errors                                          # pas d'erreur : le proxy existe déjà
+            assert not second._errors  # pas d'erreur : le proxy existe déjà
         finally:
             second.shutdown()
     finally:
         first.shutdown()
     assert proxy.is_file() and first.info(source).state is ProxyState.READY
-    assert not [name for name in os.listdir(folder) if ".partial." in name]    # son fichier partiel est retiré
+    assert not [
+        name for name in os.listdir(folder) if ".partial." in name
+    ]  # son fichier partiel est retiré
 
 
-def test_a_promotion_that_keeps_failing_with_no_proxy_is_still_an_error(tmp_path, source, monkeypatch):
+def test_a_promotion_that_keeps_failing_with_no_proxy_is_still_an_error(
+    tmp_path, source, monkeypatch
+):
     monkeypatch.setattr("core.proxy_manager.REPLACE_DELAY_SECONDS", 0.001)
     _refuse_replace(monkeypatch, suffix=".mp4", times=None)
     manager = _manager(tmp_path / "proxies", _ok_runner)

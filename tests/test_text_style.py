@@ -56,6 +56,7 @@ def test_text_style_validates_opacity() -> None:
 def test_text_style_rejects_non_finite_opacity() -> None:
     """Les valeurs non finies restent une erreur."""
     import math
+
     with pytest.raises(ValueError):
         TextStyle(opacity=math.nan)
     with pytest.raises(ValueError):

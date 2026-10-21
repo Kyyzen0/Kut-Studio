@@ -17,8 +17,13 @@ def _make_project(name: str = "Test") -> Project:
         ],
         media_assets=[
             MediaAsset(
-                id="asset-v", path="/tmp/v.mp4", name="V",
-                duration=10.0, width=1920, height=1080, fps=30.0,
+                id="asset-v",
+                path="/tmp/v.mp4",
+                name="V",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
                 media_type="video",
             ),
         ],

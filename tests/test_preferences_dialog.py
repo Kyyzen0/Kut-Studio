@@ -74,4 +74,3 @@ def test_open_dialog_retranslates_and_unsubscribes_on_close(qtbot) -> None:
         assert callback not in i18n._subscribers
     finally:
         i18n.set_language(original)
-

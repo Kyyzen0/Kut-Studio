@@ -19,8 +19,10 @@ from core.render_plan import build_render_plan
 
 def _project_with_an_orphan_clip():
     project = build_rich_project()
-    orphan = project.tracks[0].clips[0]                       # clip vidéo à 0 s, sur « av1 »
-    project.media_assets = [asset for asset in project.media_assets if asset.id != orphan.asset_id]
+    orphan = project.tracks[0].clips[0]  # clip vidéo à 0 s, sur « av1 »
+    project.media_assets = [
+        asset for asset in project.media_assets if asset.id != orphan.asset_id
+    ]
     return project, orphan
 
 
@@ -37,13 +39,15 @@ def test_the_window_keeps_working_with_an_orphan_clip(qtbot, monkeypatch):
     project, orphan = _project_with_an_orphan_clip()
     window.project = project
     window.timeline_panel.set_project(project)
-    window.seek_to_position(orphan.timeline_start + 0.5)       # ces appels levaient KeyError
+    window.seek_to_position(orphan.timeline_start + 0.5)  # ces appels levaient KeyError
     window._sync_preview_to_timeline()
     plan = window.get_render_plan()
     assert all(layer.clip_id != orphan.id for layer in plan.video_layers)
 
 
-def test_a_saved_project_with_an_orphan_clip_reopens_completely(qtbot, monkeypatch, tmp_path):
+def test_a_saved_project_with_an_orphan_clip_reopens_completely(
+    qtbot, monkeypatch, tmp_path
+):
     window = _window(qtbot, monkeypatch)
     project, orphan = _project_with_an_orphan_clip()
     path = tmp_path / "orphan.kut"
@@ -57,7 +61,12 @@ def test_a_saved_project_with_an_orphan_clip_reopens_completely(qtbot, monkeypat
 def test_an_export_refuses_a_plan_with_missing_media_with_a_clear_message(tmp_path):
     """À l'écran le clip est vide ; dans un fichier livré ce serait un trou muet : l'export refuse."""
     project, orphan = _project_with_an_orphan_clip()
-    request = ExportRequest(render_plan=build_render_plan(project), output_path=str(tmp_path / "out.mp4"),
-                            format=ExportFormat.MP4_H264, preset=ExportPreset("T", (320, 180), 28, "64k"), fps=25)
+    request = ExportRequest(
+        render_plan=build_render_plan(project),
+        output_path=str(tmp_path / "out.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset("T", (320, 180), 28, "64k"),
+        fps=25,
+    )
     with pytest.raises(ValueError, match=f"Média introuvable.*{orphan.asset_id}"):
         ExportEngine()._build_command(request)

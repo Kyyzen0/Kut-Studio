@@ -23,7 +23,9 @@ from core.render_plan import build_render_plan
 from core.sequences import insert_sequence_clip
 from core.visual_effects import ClipTransform
 
-pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")
+pytestmark = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None, reason="FFmpeg indisponible"
+)
 
 W, H, FPS = 160, 90, 25
 
@@ -37,48 +39,145 @@ def _run(command: list[str]) -> None:
 def media(tmp_path):
     red = tmp_path / "red.mp4"
     blue = tmp_path / "blue.mp4"
-    _run([
-        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=red:s={W}x{H}:r={FPS}:d=4",
-        "-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-shortest", str(red),
-    ])
-    _run([
-        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=blue:s={W}x{H}:r={FPS}:d=4",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(blue),
-    ])
+    _run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=red:s={W}x{H}:r={FPS}:d=4",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(red),
+        ]
+    )
+    _run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=blue:s={W}x{H}:r={FPS}:d=4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(blue),
+        ]
+    )
     return {
         "red": MediaAsset("red", str(red), "red", 4.0, W, H, float(FPS), "video", True),
-        "blue": MediaAsset("blue", str(blue), "blue", 4.0, W, H, float(FPS), "video", False),
+        "blue": MediaAsset(
+            "blue", str(blue), "blue", 4.0, W, H, float(FPS), "video", False
+        ),
     }
 
 
 def _project(media, *, inner_scale: float = 1.0) -> Project:
-    intro = Sequence("intro", "Intro", W, H, float(FPS), tracks=[
-        Track("V1", "V1", "video", clips=[
-            Clip("r", "red", "V1", 0.0, 0.0, 3.0, transform=ClipTransform(scale=inner_scale))
-        ]),
-    ])
-    main = Sequence("main", "Master", W, H, float(FPS), tracks=[
-        Track("V1", "V1", "video"), Track("V2", "V2", "video"),
-    ])
-    return Project("p", media_assets=list(media.values()), sequences=[main, intro], active_sequence_id="main")
+    intro = Sequence(
+        "intro",
+        "Intro",
+        W,
+        H,
+        float(FPS),
+        tracks=[
+            Track(
+                "V1",
+                "V1",
+                "video",
+                clips=[
+                    Clip(
+                        "r",
+                        "red",
+                        "V1",
+                        0.0,
+                        0.0,
+                        3.0,
+                        transform=ClipTransform(scale=inner_scale),
+                    )
+                ],
+            ),
+        ],
+    )
+    main = Sequence(
+        "main",
+        "Master",
+        W,
+        H,
+        float(FPS),
+        tracks=[
+            Track("V1", "V1", "video"),
+            Track("V2", "V2", "video"),
+        ],
+    )
+    return Project(
+        "p",
+        media_assets=list(media.values()),
+        sequences=[main, intro],
+        active_sequence_id="main",
+    )
 
 
 def _render(plan, out_path) -> None:
-    graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
+    graph, video, audio, inputs = ExportEngine._build_filter_complex(
+        plan, W, H, FPS, None
+    )
     command = [*_ffmpeg_command_prefix(), "-y", "-v", "error"]
     for path in inputs:
         command += input_arguments(path)
-    command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out_path)]
+    command += [
+        "-filter_complex",
+        graph,
+        "-map",
+        f"[{video}]",
+        "-map",
+        f"[{audio}]",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        str(out_path),
+    ]
     _run(command)
 
 
 def _pixel(path, seconds: float, x: int, y: int) -> tuple[int, int, int]:
     data = subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", f"{seconds:.3f}", "-i", str(path), "-frames:v", "1",
-         "-vf", f"crop=1:1:{x}:{y},format=rgb24", "-f", "rawvideo", "-"],
-        capture_output=True, timeout=60,
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-ss",
+            f"{seconds:.3f}",
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-vf",
+            f"crop=1:1:{x}:{y},format=rgb24",
+            "-f",
+            "rawvideo",
+            "-",
+        ],
+        capture_output=True,
+        timeout=60,
     ).stdout
     assert len(data) == 3, "aucune image lue"
     return tuple(data)
@@ -90,8 +189,21 @@ def _close(a, b, tolerance: int = 12) -> bool:
 
 def _mean_volume(path) -> float:
     completed = subprocess.run(
-        ["ffmpeg", "-v", "info", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
-        capture_output=True, text=True, timeout=60,
+        [
+            "ffmpeg",
+            "-v",
+            "info",
+            "-i",
+            str(path),
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     match = re.search(r"mean_volume:\s*(-?[\d.]+|-inf) dB", completed.stderr)
     assert match, completed.stderr[-500:]
@@ -107,10 +219,14 @@ def test_direct_and_nested_renders_are_identical(media, tmp_path):
     _render(build_render_plan(project), nested)
     for seconds in (0.5, 2.0):
         for point in ((W // 2, H // 2), (5, 5), (W - 6, H - 6)):
-            assert _close(_pixel(direct, seconds, *point), _pixel(nested, seconds, *point)), (seconds, point)
+            assert _close(
+                _pixel(direct, seconds, *point), _pixel(nested, seconds, *point)
+            ), (seconds, point)
 
 
-def test_nested_background_is_transparent_and_parent_transform_applies_after(media, tmp_path):
+def test_nested_background_is_transparent_and_parent_transform_applies_after(
+    media, tmp_path
+):
     project = _project(media, inner_scale=0.5)
     project.tracks[0].clips.append(Clip("b", "blue", "V1", 0.0, 0.0, 4.0))
     nested = insert_sequence_clip(project, "intro", "V2", 0.0)
@@ -134,7 +250,11 @@ def test_multiple_instances_and_three_levels_render(media, tmp_path):
     insert_sequence_clip(project, "intro", "V1", 3.0, source_in=0.0, source_out=1.0)
     out = tmp_path / "deep.mp4"
     plan = build_render_plan(project)
-    assert [entry.sequence_id for entry in plan.nested_sequences] == ["intro", "l3", "l2"]
+    assert [entry.sequence_id for entry in plan.nested_sequences] == [
+        "intro",
+        "l3",
+        "l2",
+    ]
     _render(plan, out)
     assert _close(_pixel(out, 1.0, W // 2, H // 2), (255, 0, 0), 40)
     assert _close(_pixel(out, 3.5, W // 2, H // 2), (255, 0, 0), 40)
@@ -160,9 +280,19 @@ def test_preview_segment_matches_export(media, tmp_path):
     _render(build_render_plan(project), exported)
     segment = tmp_path / "segment.mp4"
     plan = segment_plan(project, 2.0, 4.0)
-    _run(build_preview_command(
-        plan, width=W, height=H, fps=FPS, quality="high", start=2.0, duration=1.0,
-        output_path=str(segment),
-    ))
+    _run(
+        build_preview_command(
+            plan,
+            width=W,
+            height=H,
+            fps=FPS,
+            quality="high",
+            start=2.0,
+            duration=1.0,
+            output_path=str(segment),
+        )
+    )
     for point in ((W // 2, H // 2), (5, 5)):
-        assert _close(_pixel(segment, 0.4, *point), _pixel(exported, 2.4, *point), 20), point
+        assert _close(
+            _pixel(segment, 0.4, *point), _pixel(exported, 2.4, *point), 20
+        ), point

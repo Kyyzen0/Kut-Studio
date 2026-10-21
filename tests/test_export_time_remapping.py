@@ -118,8 +118,12 @@ class TestRenderPlanWithTimeRemapping:
         clip = _make_clip(time_remapping=TimeRemapping())
         track = Track(id="track-v1", name="V1", type="video", clips=[clip])
         project = Project(
-            name="Test", width=1920, height=1080, fps=30.0,
-            media_assets=[asset], tracks=[track],
+            name="Test",
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_assets=[asset],
+            tracks=[track],
         )
         plan = build_render_plan(project)
         assert len(plan.video_layers) == 1
@@ -134,8 +138,12 @@ class TestRenderPlanWithTimeRemapping:
         clip = _make_clip(time_remapping=TimeRemapping(speed=2.0))
         track = Track(id="track-v1", name="V1", type="video", clips=[clip])
         project = Project(
-            name="Test", width=1920, height=1080, fps=30.0,
-            media_assets=[asset], tracks=[track],
+            name="Test",
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_assets=[asset],
+            tracks=[track],
         )
         plan = build_render_plan(project)
         assert len(plan.video_layers) == 1
@@ -150,8 +158,12 @@ class TestRenderPlanWithTimeRemapping:
         clip = _make_clip(time_remapping=TimeRemapping(speed=0.5))
         track = Track(id="track-v1", name="V1", type="video", clips=[clip])
         project = Project(
-            name="Test", width=1920, height=1080, fps=30.0,
-            media_assets=[asset], tracks=[track],
+            name="Test",
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_assets=[asset],
+            tracks=[track],
         )
         plan = build_render_plan(project)
         assert len(plan.video_layers) == 1
@@ -171,8 +183,12 @@ class TestRenderPlanWithTimeRemapping:
         )
         track = Track(id="track-v1", name="V1", type="video", clips=[clip])
         project = Project(
-            name="Test", width=1920, height=1080, fps=30.0,
-            media_assets=[asset], tracks=[track],
+            name="Test",
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_assets=[asset],
+            tracks=[track],
         )
         plan = build_render_plan(project)
         assert len(plan.video_layers) == 1
@@ -186,8 +202,12 @@ class TestRenderPlanWithTimeRemapping:
         clip = _make_clip(time_remapping=TimeRemapping(reverse=True))
         track = Track(id="track-v1", name="V1", type="video", clips=[clip])
         project = Project(
-            name="Test", width=1920, height=1080, fps=30.0,
-            media_assets=[asset], tracks=[track],
+            name="Test",
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_assets=[asset],
+            tracks=[track],
         )
         plan = build_render_plan(project)
         assert len(plan.video_layers) == 1
@@ -200,8 +220,12 @@ class TestRenderPlanWithTimeRemapping:
         clip = _make_clip()
         track = Track(id="track-v1", name="V1", type="video", clips=[clip])
         project = Project(
-            name="Test", width=1920, height=1080, fps=30.0,
-            media_assets=[asset], tracks=[track],
+            name="Test",
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_assets=[asset],
+            tracks=[track],
         )
         plan = build_render_plan(project)
         layer = plan.video_layers[0]
@@ -219,39 +243,73 @@ class TestVideoTimeStage:
     def test_a_normal_clip_has_no_time_stage(self):
         assert _retime_map_of(_make_render_layer()) is None
 
-    def test_a_frozen_clip_keeps_the_historical_freeze_chain_instead_of_a_time_stage(self):
-        layer = _make_render_layer(time_remapping=TimeRemapping(
-            freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=3.0))
+    def test_a_frozen_clip_keeps_the_historical_freeze_chain_instead_of_a_time_stage(
+        self,
+    ):
+        layer = _make_render_layer(
+            time_remapping=TimeRemapping(
+                freeze_mode=FreezeFrameMode.FREEZE,
+                freeze_source_time=5.0,
+                freeze_duration=3.0,
+            )
+        )
         assert _retime_map_of(layer) is None
 
-    @pytest.mark.parametrize("remapping", [
-        TimeRemapping(speed=2.0), TimeRemapping(speed=0.25), TimeRemapping(speed=4.0),
-        TimeRemapping(reverse=True), TimeRemapping(speed=2.0, reverse=True),
-        TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=3.0),
-    ])
+    @pytest.mark.parametrize(
+        "remapping",
+        [
+            TimeRemapping(speed=2.0),
+            TimeRemapping(speed=0.25),
+            TimeRemapping(speed=4.0),
+            TimeRemapping(reverse=True),
+            TimeRemapping(speed=2.0, reverse=True),
+            TimeRemapping(
+                freeze_mode=FreezeFrameMode.FREEZE,
+                freeze_source_time=5.0,
+                freeze_duration=3.0,
+            ),
+        ],
+    )
     def test_a_video_chain_never_contains_an_audio_only_filter(self, remapping):
         """Régression : « Media type mismatch between fps and atempo » faisait échouer tout l'export."""
         layer = _make_render_layer(source_fps=30.0, time_remapping=remapping)
         chain = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
-        assert not any(name in chain for name in ("atempo", "areverse", "asetpts", "aresample", "aformat"))
-        assert "select=eq(n," not in chain                # la virgule interne cassait le filter_complex
+        assert not any(
+            name in chain
+            for name in ("atempo", "areverse", "asetpts", "aresample", "aformat")
+        )
+        assert (
+            "select=eq(n," not in chain
+        )  # la virgule interne cassait le filter_complex
 
     @pytest.mark.parametrize("speed", [0.5, 2.0, 4.0])
-    def test_a_speed_change_is_one_retimed_stream_sampled_from_the_original_timestamps(self, speed):
+    def test_a_speed_change_is_one_retimed_stream_sampled_from_the_original_timestamps(
+        self, speed
+    ):
         """Plus de ``fps`` avant le remappage : la source n'est conformée qu'une fois, sur ses horodatages d'origine."""
-        layer = _make_render_layer(source_fps=30.0, time_remapping=TimeRemapping(speed=speed))
+        layer = _make_render_layer(
+            source_fps=30.0, time_remapping=TimeRemapping(speed=speed)
+        )
         chain = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
         assert "setpts='(" in chain and "fps=30:start_time=0" in chain
-        assert chain.count("fps=30") == 1                  # un seul rééchantillonnage (avant : deux, d'où un décalage)
-        assert "tpad=stop_mode=clone" in chain and "trim=end_frame=" in chain      # durée exacte en images
+        assert (
+            chain.count("fps=30") == 1
+        )  # un seul rééchantillonnage (avant : deux, d'où un décalage)
+        assert (
+            "tpad=stop_mode=clone" in chain and "trim=end_frame=" in chain
+        )  # durée exacte en images
 
     def test_reverse_goes_through_the_reverse_filter_on_a_bounded_run(self):
-        layer = _make_render_layer(source_fps=30.0, time_remapping=TimeRemapping(reverse=True))
+        layer = _make_render_layer(
+            source_fps=30.0, time_remapping=TimeRemapping(reverse=True)
+        )
         chain = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
         assert ",reverse," in chain
 
     def test_speed_and_reverse_reverse_first_then_retime(self):
-        layer = _make_render_layer(source_fps=30.0, time_remapping=TimeRemapping(speed=2.0, reverse=True))
+        layer = _make_render_layer(
+            source_fps=30.0, time_remapping=TimeRemapping(speed=2.0, reverse=True)
+        )
         chain = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
         assert chain.index(",reverse,") < chain.index("setpts='(")
 
@@ -266,7 +324,10 @@ class TestVideoTimeStage:
             ),
         )
         # Image 150 (5,0 s × 30 i/s) : on vise une demi-image avant elle, (150 − 0,5) / 30.
-        assert _build_freeze_video_filter(layer) == "trim=start=4.983333,setpts=PTS-STARTPTS,trim=end_frame=1"
+        assert (
+            _build_freeze_video_filter(layer)
+            == "trim=start=4.983333,setpts=PTS-STARTPTS,trim=end_frame=1"
+        )
 
     def test_freeze_no_reverse_no_speed(self):
         """Un clip en freeze n'a ni reverse ni speed."""
@@ -313,7 +374,9 @@ class TestAudioTimeStage:
         assert len(stages) >= 3 and all(0.5 <= value <= 2.0 for value in stages)
 
     def test_the_pitch_can_follow_the_speed_like_a_tape(self):
-        layer = _make_audio_layer(time_remapping=TimeRemapping(speed=2.0, preserve_pitch=False))
+        layer = _make_audio_layer(
+            time_remapping=TimeRemapping(speed=2.0, preserve_pitch=False)
+        )
         chain = _build_audio_filter(0, layer, 0, 100.0)
         assert "asetrate=96000" in chain and "atempo" not in chain
 
@@ -323,23 +386,43 @@ class TestAudioTimeStage:
 
     def test_a_freeze_is_a_silence_of_exactly_the_clip_duration(self):
         """L'ancien filtre coupait le son sur toute la durée de la *source* (``volume=0``), pas celle de l'arrêt sur image."""
-        layer = _make_audio_layer(time_remapping=TimeRemapping(
-            freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=3.0))
+        layer = _make_audio_layer(
+            time_remapping=TimeRemapping(
+                freeze_mode=FreezeFrameMode.FREEZE,
+                freeze_source_time=5.0,
+                freeze_duration=3.0,
+            )
+        )
         chain = _build_audio_filter(0, layer, 0, 100.0)
         # Silence fabriqué en vidant la source (``atrim=end=0``) : pas de puits ``anullsink`` (FFmpeg 7.x avorte).
-        assert "atrim=end=0" in chain and "apad=whole_dur=3,atrim=end=3" in chain and "volume=0" not in chain
+        assert (
+            "atrim=end=0" in chain
+            and "apad=whole_dur=3,atrim=end=3" in chain
+            and "volume=0" not in chain
+        )
         assert "anullsink" not in chain
 
     def test_the_sound_can_keep_its_own_time_while_only_the_picture_is_remapped(self):
-        layer = _make_audio_layer(time_remapping=TimeRemapping(speed=2.0, remap_audio=False))
+        layer = _make_audio_layer(
+            time_remapping=TimeRemapping(speed=2.0, remap_audio=False)
+        )
         chain = _build_audio_filter(0, layer, 0, 100.0)
-        assert "atempo" not in chain and "areverse" not in chain and "atrim=start=" in chain
+        assert (
+            "atempo" not in chain
+            and "areverse" not in chain
+            and "atrim=start=" in chain
+        )
 
     def test_the_remapped_sound_ends_exactly_at_the_clip_duration(self):
         layer = _make_audio_layer(time_remapping=TimeRemapping(speed=2.0))
-        duration = _retime_audio_map_of(layer).duration                    # la durée est celle du mapping : 10 s de source à 2×
+        duration = _retime_audio_map_of(
+            layer
+        ).duration  # la durée est celle du mapping : 10 s de source à 2×
         assert duration == 5.0
-        assert f"apad=whole_dur={duration:g},atrim=end={duration:g}" in _build_audio_filter(0, layer, 0, 100.0)
+        assert (
+            f"apad=whole_dur={duration:g},atrim=end={duration:g}"
+            in _build_audio_filter(0, layer, 0, 100.0)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +445,9 @@ class TestBuildLayerFilterIntegration:
 
     def test_speed_clip_filter_chain(self):
         """Un clip avec speed a un setpts exact (pas atempo) puis une cadence de sortie à durée exacte."""
-        layer = _make_render_layer(source_fps=30.0, time_remapping=TimeRemapping(speed=2.0))
+        layer = _make_render_layer(
+            source_fps=30.0, time_remapping=TimeRemapping(speed=2.0)
+        )
         filter_str = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
         assert "setpts='(" in filter_str and "fps=30:start_time=0" in filter_str
         assert "atempo" not in filter_str
@@ -415,7 +500,11 @@ class TestBuildAudioFilterIntegration:
             ),
         )
         filter_str = _build_audio_filter(0, layer, 0, 100.0)
-        assert "atrim=end=0" in filter_str and "volume=0" not in filter_str and "anullsink" not in filter_str
+        assert (
+            "atrim=end=0" in filter_str
+            and "volume=0" not in filter_str
+            and "anullsink" not in filter_str
+        )
 
 
 class TestLayerOffset:
@@ -424,14 +513,18 @@ class TestLayerOffset:
     @staticmethod
     def evaluate(value: float, time_base: float) -> int:
         """Ce que calcule FFmpeg pour ``setpts=PTS+<terme>`` (``PTS`` = 0) : division par ``TB`` puis troncature."""
-        seconds, guard = re.fullmatch(r"([0-9.]+)/TB\+([0-9.e-]+)", _format_offset(value)).groups()
+        seconds, guard = re.fullmatch(
+            r"([0-9.]+)/TB\+([0-9.e-]+)", _format_offset(value)
+        ).groups()
         return int(float(seconds) / time_base + float(guard))
 
     def test_an_exact_offset_keeps_its_short_form_and_gains_the_guard(self):
         assert _format_offset(2.5) == "2.5/TB+0.001"
         assert _format_offset(0.0) == "0.0/TB+0.001"
 
-    @pytest.mark.parametrize("rate", [24.0, 25.0, 30.0, 60.0, 30000 / 1001, 24000 / 1001])
+    @pytest.mark.parametrize(
+        "rate", [24.0, 25.0, 30.0, 60.0, 30000 / 1001, 24000 / 1001]
+    )
     def test_every_frame_boundary_truncates_to_its_own_tick(self, rate):
         """31/30 s s'écrivait ``1.033333`` (30,99999 ticks) ; ``1.16`` s à 25 i/s, divisé par ``TB``, donne 28,999999999999996."""
         for tick in range(0, 4000):

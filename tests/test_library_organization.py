@@ -614,19 +614,37 @@ def test_collect_missing_assets(tmp_path) -> None:
     real = tmp_path / "real.mp4"
     real.write_bytes(b"")
     a1 = MediaAsset(
-        id="missing-1", path="/nope.mp4", name="m1",
-        duration=1.0, width=1920, height=1080, fps=30.0,
-        media_type="video", has_audio=False,
+        id="missing-1",
+        path="/nope.mp4",
+        name="m1",
+        duration=1.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=False,
     )
     a2 = MediaAsset(
-        id="present", path=str(real), name="p",
-        duration=1.0, width=1920, height=1080, fps=30.0,
-        media_type="video", has_audio=False,
+        id="present",
+        path=str(real),
+        name="p",
+        duration=1.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=False,
     )
     a3 = MediaAsset(
-        id="missing-2", path="", name="m2",
-        duration=1.0, width=1920, height=1080, fps=30.0,
-        media_type="video", has_audio=False,
+        id="missing-2",
+        path="",
+        name="m2",
+        duration=1.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=False,
     )
     project = Project(
         name="x",

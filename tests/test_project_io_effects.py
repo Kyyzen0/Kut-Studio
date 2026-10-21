@@ -196,14 +196,27 @@ def test_roundtrip_keeps_effect_objects_as_dataclasses(tmp_path: Path) -> None:
 
 
 def test_projects_without_effects_roundtrip_to_an_empty_list(tmp_path: Path) -> None:
-    project = Project(name="Vide", media_assets=[_asset()], tracks=[
-        Track(id="V1", name="V1", type="video", clips=[
-            Clip(
-                id="clip-1", asset_id="asset-1", track_id="V1",
-                timeline_start=0.0, source_in=0.0, source_out=2.0,
+    project = Project(
+        name="Vide",
+        media_assets=[_asset()],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="clip-1",
+                        asset_id="asset-1",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    )
+                ],
             )
-        ])
-    ])
+        ],
+    )
     target = tmp_path / "empty-effects.kut"
     save_project(project, str(target))
 
@@ -248,7 +261,12 @@ def test_partially_invalid_effects_do_not_block_loading(tmp_path: Path) -> None:
         {"type": "sepia"},  # identifiant manquant
         {"id": "fx-bad-params", "type": "blur", "params": [1, 2, 3]},
         {"id": "fx-non-numeric", "type": "blur", "params": {"intensity": "x"}},
-        {"id": "fx-ok-1", "type": "blur", "enabled": True, "params": {"intensity": 4.0}},
+        {
+            "id": "fx-ok-1",
+            "type": "blur",
+            "enabled": True,
+            "params": {"intensity": 4.0},
+        },
         {"id": "fx-ok-2", "type": "black_and_white", "enabled": False},
     ]
     target = tmp_path / "partial.kut"
@@ -309,9 +327,7 @@ def test_effects_write_leaves_no_temporary_file(tmp_path: Path) -> None:
     target = tmp_path / "effects.kut"
     save_project(_project_with_effects(), str(target))
 
-    leftovers = [
-        path.name for path in tmp_path.iterdir() if path.name.endswith(".tmp")
-    ]
+    leftovers = [path.name for path in tmp_path.iterdir() if path.name.endswith(".tmp")]
     assert leftovers == []
 
 

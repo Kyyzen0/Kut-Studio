@@ -23,15 +23,32 @@ import re
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QAbstractButton, QAbstractSlider, QAbstractSpinBox, QApplication, QComboBox, QGroupBox, QLineEdit, QListView,
-    QPlainTextEdit, QTextEdit, QWidget,
+    QAbstractButton,
+    QAbstractSlider,
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QLineEdit,
+    QListView,
+    QPlainTextEdit,
+    QTextEdit,
+    QWidget,
 )
 
 from core.usage_level import UsageLevel
 
 MANIFEST = Path(__file__).parent / "data" / "usage_level_controls.json"
 LEVELS = (UsageLevel.SIMPLE, UsageLevel.STUDIO, UsageLevel.ADVANCED)
-CONTROL_TYPES = (QAbstractButton, QAbstractSlider, QAbstractSpinBox, QComboBox, QLineEdit, QTextEdit, QPlainTextEdit)
+CONTROL_TYPES = (
+    QAbstractButton,
+    QAbstractSlider,
+    QAbstractSpinBox,
+    QComboBox,
+    QLineEdit,
+    QTextEdit,
+    QPlainTextEdit,
+)
 # Raccourci affiché après le libellé (« Couper [Ctrl+K] »). Hors de l'f-string : un antislash y est une erreur avant Python 3.12.
 _SHORTCUT_SUFFIX = re.compile(r" \[[^\]]*\]$")
 
@@ -56,11 +73,13 @@ def _flat_tree(tree: list, prefix: str, keys: _Keys, out: list[str]) -> None:
     for entry in tree:
         if entry == "-":
             continue
-        if entry == "":                                  # un QWidgetAction (l'en-tête du menu d'un média) n'a pas de libellé
+        if (
+            entry == ""
+        ):  # un QWidgetAction (l'en-tête du menu d'un média) n'a pas de libellé
             out.append(keys.make(f"{prefix}/[en-tête]"))
             continue
         if isinstance(entry, dict):
-            (title, children), = entry.items()
+            ((title, children),) = entry.items()
             path = keys.make(f"{prefix}/{title}")
             out.append(path)
             _flat_tree(children, path, keys, out)
@@ -74,12 +93,23 @@ def _tree_keys(name: str, tree: list) -> list[str]:
     return out
 
 
-def _walk_menu(menu, path: str, floor: UsageLevel, registered: dict, keys: _Keys, out: dict[str, UsageLevel]) -> None:
+def _walk_menu(
+    menu,
+    path: str,
+    floor: UsageLevel,
+    registered: dict,
+    keys: _Keys,
+    out: dict[str, UsageLevel],
+) -> None:
     entry = registered.get(id(menu))
-    for action in (entry.items if entry is not None else menu.actions()):
+    for action in entry.items if entry is not None else menu.actions():
         if action.isSeparator():
             continue
-        own = entry.levels.get(id(action), UsageLevel.SIMPLE) if entry is not None else UsageLevel.SIMPLE
+        own = (
+            entry.levels.get(id(action), UsageLevel.SIMPLE)
+            if entry is not None
+            else UsageLevel.SIMPLE
+        )
         level = own if own.at_least(floor) else floor
         key = keys.make(f"{path}/{action.text()}")
         out[key] = level
@@ -96,7 +126,9 @@ def _declared_menus(window) -> dict[str, UsageLevel]:
         menu = bar_action.menu()
         if menu is not None:
             assert menu.objectName() in MENU_GATES or id(menu) not in registered
-            _walk_menu(menu, menu.objectName(), UsageLevel.SIMPLE, registered, _Keys(), out)
+            _walk_menu(
+                menu, menu.objectName(), UsageLevel.SIMPLE, registered, _Keys(), out
+            )
     return out
 
 
@@ -114,13 +146,17 @@ def _declared_buttons(window) -> dict[str, UsageLevel]:
         out[f"rail/{section.id}"] = SECTION_LEVELS.get(section.id, UsageLevel.SIMPLE)
     for page in window.page_buttons:
         out[f"pages/{page}"] = PAGE_LEVELS.get(page, UsageLevel.SIMPLE)
-    out["layers_panel/add_button"] = UsageLevel.SIMPLE           # barre du panneau Calques ; Grouper et Préréglages : Studio
+    out["layers_panel/add_button"] = (
+        UsageLevel.SIMPLE
+    )  # barre du panneau Calques ; Grouper et Préréglages : Studio
     out["layers_panel/group_button"] = UsageLevel.STUDIO
     out["layers_panel/presets_button"] = UsageLevel.STUDIO
     return out
 
 
-def observed_surfaces(window, monkeypatch, shown: list, ids: dict[str, str]) -> set[str]:
+def observed_surfaces(
+    window, monkeypatch, shown: list, ids: dict[str, str]
+) -> set[str]:
     """Menus, boutons et menus contextuels **à l'écran** au niveau courant (relevé de ``tests/menu_order.py``)."""
     from context_menu_dumps import all_dumps, layers_buttons
     from menu_order import asset_menu_dump, clip_menu_dump, track_menu_dump, window_dump
@@ -139,7 +175,9 @@ def observed_surfaces(window, monkeypatch, shown: list, ids: dict[str, str]) -> 
         "ctx_audio_track": track_menu_dump(window, "A1"),
         "ctx_asset": asset_menu_dump(window, monkeypatch, shown),
     }
-    context.update(all_dumps(window))           # panneau Calques, dossiers, bande d'automation, nœuds (Couleur, Composition)
+    context.update(
+        all_dumps(window)
+    )  # panneau Calques, dossiers, bande d'automation, nœuds (Couleur, Composition)
     keys.extend(f"layers_panel/{n}" for n in layers_buttons(window))
     for name, tree in context.items():
         keys.extend(_tree_keys(name, tree))
@@ -155,11 +193,19 @@ def declared_surfaces(window) -> dict[str, UsageLevel]:
 
 def inspector_groups(panel) -> dict[str, QWidget]:
     return {
-        "project": panel._all_inspector_groups[0], "clip": panel._all_inspector_groups[1],
-        "transition": panel.transition_group, "color": panel.color_group, "movement": panel.movement_group,
-        "speed": panel.speed_group, "graphics": panel.graphics_group, "volume": panel._all_inspector_groups[7],
-        "audio": panel.audio_group, "subtitle": panel.subtitle_group, "effects": panel.effects_group,
-        "audio_effects": panel.audio_effects_group, "compositing": panel.compositing_group,
+        "project": panel._all_inspector_groups[0],
+        "clip": panel._all_inspector_groups[1],
+        "transition": panel.transition_group,
+        "color": panel.color_group,
+        "movement": panel.movement_group,
+        "speed": panel.speed_group,
+        "graphics": panel.graphics_group,
+        "volume": panel._all_inspector_groups[7],
+        "audio": panel.audio_group,
+        "subtitle": panel.subtitle_group,
+        "effects": panel.effects_group,
+        "audio_effects": panel.audio_effects_group,
+        "compositing": panel.compositing_group,
         "tracking": panel.tracking_group,
     }
 
@@ -171,9 +217,14 @@ def inspector_controls(panel) -> list[tuple[str, QWidget]]:
     out: list[tuple[str, QWidget]] = []
     for widget in panel.scroll_area.widget().findChildren(QWidget):
         parent = widget.parentWidget()
-        if widget.objectName().startswith("qt_") or isinstance(parent, (*CONTROL_TYPES, QListView)):
+        if widget.objectName().startswith("qt_") or isinstance(
+            parent, (*CONTROL_TYPES, QListView)
+        ):
             continue
-        if not (isinstance(widget, CONTROL_TYPES) or (isinstance(widget, QGroupBox) and id(widget) in names)):
+        if not (
+            isinstance(widget, CONTROL_TYPES)
+            or (isinstance(widget, QGroupBox) and id(widget) in names)
+        ):
             continue
         group = "panel"
         node: QWidget | None = widget
@@ -182,8 +233,12 @@ def inspector_controls(panel) -> list[tuple[str, QWidget]]:
                 group = names[id(node)]
                 break
             node = node.parentWidget()
-        label = widget.objectName() or (widget.text().strip() if isinstance(widget, QAbstractButton) else "")  # jamais une valeur
-        out.append((keys.make(f"inspector/{group}/{type(widget).__name__}|{label}"), widget))
+        label = widget.objectName() or (
+            widget.text().strip() if isinstance(widget, QAbstractButton) else ""
+        )  # jamais une valeur
+        out.append(
+            (keys.make(f"inspector/{group}/{type(widget).__name__}|{label}"), widget)
+        )
     return out
 
 
@@ -205,7 +260,14 @@ def _floor(widget: QWidget, panel) -> UsageLevel:
     return level
 
 
-EFFECT_SCENARIOS = ("color_correction", "vignette", "sharpen", "blur", "glow", "chromatic_aberration")
+EFFECT_SCENARIOS = (
+    "color_correction",
+    "vignette",
+    "sharpen",
+    "blur",
+    "glow",
+    "chromatic_aberration",
+)
 """Effets sélectionnés tour à tour (ADR-0008, étapes 4 et 5) : les réglages et les losanges d'images clés d'un effet n'existent
 que pour l'effet affiché. La correction de couleur, la vignette, le flou, la lueur (rayon) et l'aberration chromatique ont des
 paramètres animables ; la netteté n'en a aucun."""
@@ -218,7 +280,10 @@ def effect_view(kind: str):
     from core.effects_model import EffectType, create_effect
     from inspector_order import clip_states
 
-    effects = tuple(create_effect(EffectType(name), effect_id=f"inv-{name}") for name in EFFECT_SCENARIOS)
+    effects = tuple(
+        create_effect(EffectType(name), effect_id=f"inv-{name}")
+        for name in EFFECT_SCENARIOS
+    )
     return dataclasses.replace(clip_states()["video"], effects=effects)
 
 
@@ -255,7 +320,11 @@ def _declared_inspector_now(panel) -> dict[str, UsageLevel]:
         for index in range(limit.combo.count()):
             data = limit.combo.itemData(index)
             wanted = limit.levels.get(data, UsageLevel.SIMPLE)
-            out[f"{base}|choix={data}"] = wanted if wanted.at_least(_floor(limit.combo, panel)) else _floor(limit.combo, panel)
+            out[f"{base}|choix={data}"] = (
+                wanted
+                if wanted.at_least(_floor(limit.combo, panel))
+                else _floor(limit.combo, panel)
+            )
     return out
 
 
@@ -275,7 +344,11 @@ def _helper_keys_now(panel) -> set[str]:
     for key, widget in inspector_controls(panel):
         node: QWidget | None = widget
         while node is not None:
-            if node in inverse or isinstance(node, AdvancedFold) or node is panel.more_options_button:
+            if (
+                node in inverse
+                or isinstance(node, AdvancedFold)
+                or node is panel.more_options_button
+            ):
                 helpers.add(key)
                 break
             node = node.parentWidget()
@@ -292,7 +365,9 @@ def visible_inspector(panel, states: dict, *, tabs=range(7)) -> set[str]:
         panel.show_clip(view)
         if position >= len(states):
             panel.effects_list.setCurrentRow(position - len(states))
-        panel._set_group_condition(panel.transition_group, True)        # le contexte « une transition est sélectionnée »
+        panel._set_group_condition(
+            panel.transition_group, True
+        )  # le contexte « une transition est sélectionnée »
         controls = inspector_controls(panel)
         key_of = {id(widget): key for key, widget in controls}
         for tab in tabs:
@@ -307,7 +382,11 @@ def visible_inspector(panel, states: dict, *, tabs=range(7)) -> set[str]:
                     continue
                 view_ = combo.view()
                 for index in range(combo.count()):
-                    if not (isinstance(view_, QListView) and view_.isRowHidden(index) and index != combo.currentIndex()):
+                    if not (
+                        isinstance(view_, QListView)
+                        and view_.isRowHidden(index)
+                        and index != combo.currentIndex()
+                    ):
                         shown.add(f"{key_of[id(combo)]}|choix={combo.itemData(index)}")
     panel.show_clip(None)
     return shown
@@ -318,7 +397,7 @@ def open_everything(panel) -> None:
     if not panel.more_options_button.isHidden():
         panel.more_options_button.setChecked(True)
     for fold in panel._all_folds():
-        if not fold.isHidden():                  # montré par le niveau ; le groupe qui le porte peut être sur un autre onglet
+        if not fold.isHidden():  # montré par le niveau ; le groupe qui le porte peut être sur un autre onglet
             fold.setChecked(True)
     QApplication.processEvents()
 

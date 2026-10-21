@@ -18,11 +18,20 @@ Path = Callable[[float], tuple[float, float, float, float]]
 
 
 def _object_texture(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    return 0.78 + 0.12 * np.sin(0.9 * x + 0.35 * y) * np.cos(0.55 * y - 0.25 * x) + 0.08 * np.sin(0.21 * x - 0.43 * y + 1.0)
+    return (
+        0.78
+        + 0.12 * np.sin(0.9 * x + 0.35 * y) * np.cos(0.55 * y - 0.25 * x)
+        + 0.08 * np.sin(0.21 * x - 0.43 * y + 1.0)
+    )
 
 
 def _background_texture(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    return 0.30 + 0.07 * np.sin(0.31 * x + 0.17 * y) + 0.06 * np.cos(0.23 * y - 0.11 * x + 0.4) + 0.04 * np.sin(0.7 * x * 0.3 + 0.9 * y * 0.2)
+    return (
+        0.30
+        + 0.07 * np.sin(0.31 * x + 0.17 * y)
+        + 0.06 * np.cos(0.23 * y - 0.11 * x + 0.4)
+        + 0.04 * np.sin(0.7 * x * 0.3 + 0.9 * y * 0.2)
+    )
 
 
 @dataclass
@@ -46,7 +55,7 @@ class Scene:
         """Luminance (0…1, ``float32``) à l'instant ``tau``, avec anticrénelage ``samples × samples``."""
         offsets = (np.arange(samples) + 0.5) / samples - 0.5
         total = np.zeros((self.height, self.width), dtype=np.float64)
-        ys, xs = np.mgrid[0:self.height, 0:self.width].astype(np.float64)
+        ys, xs = np.mgrid[0 : self.height, 0 : self.width].astype(np.float64)
         for oy in offsets:
             for ox in offsets:
                 total += self._render_at(xs + ox, ys + oy, tau)
@@ -65,18 +74,33 @@ class Scene:
             image = np.where(inside, body.texture(local_x, local_y), image)
         return image
 
-    def centroid(self, frame: np.ndarray, threshold: float = 0.55) -> tuple[float, float]:
+    def centroid(
+        self, frame: np.ndarray, threshold: float = 0.55
+    ) -> tuple[float, float]:
         """Barycentre (px) des pixels plus clairs que ``threshold`` (le corps, plus clair que le fond), pondéré par l'excédent."""
         weights = np.clip(frame - threshold, 0.0, None).astype(np.float64)
-        ys, xs = np.mgrid[0:frame.shape[0], 0:frame.shape[1]]
+        ys, xs = np.mgrid[0 : frame.shape[0], 0 : frame.shape[1]]
         total = weights.sum()
         return float((weights * xs).sum() / total), float((weights * ys).sum() / total)
 
 
-def linear(x0: float, y0: float, vx: float, vy: float, angle: float = 0.0, spin: float = 0.0, scale: float = 1.0,
-           zoom: float = 0.0) -> Path:
+def linear(
+    x0: float,
+    y0: float,
+    vx: float,
+    vy: float,
+    angle: float = 0.0,
+    spin: float = 0.0,
+    scale: float = 1.0,
+    zoom: float = 0.0,
+) -> Path:
     """Trajectoire à vitesse, rotation et zoom constants."""
-    return lambda tau: (x0 + vx * tau, y0 + vy * tau, angle + spin * tau, scale + zoom * tau)
+    return lambda tau: (
+        x0 + vx * tau,
+        y0 + vy * tau,
+        angle + spin * tau,
+        scale + zoom * tau,
+    )
 
 
 def accelerated(x0: float, y0: float, v0: float, acceleration: float) -> Path:

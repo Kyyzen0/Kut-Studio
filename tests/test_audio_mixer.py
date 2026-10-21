@@ -101,9 +101,16 @@ def test_non_numeric_audio_values_fall_back_to_neutral(bad):
 
 def test_clip_normalises_out_of_range_audio():
     clip = Clip(
-        id="c", asset_id="m", track_id="A1", timeline_start=0.0,
-        source_in=0.0, source_out=4.0,
-        gain_db=99.0, pan=-9.0, fade_in=-2.0, fade_out=99.0,
+        id="c",
+        asset_id="m",
+        track_id="A1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
+        gain_db=99.0,
+        pan=-9.0,
+        fade_in=-2.0,
+        fade_out=99.0,
     )
     assert clip.gain_db == MAX_GAIN_DB
     assert clip.pan == -1.0
@@ -113,16 +120,26 @@ def test_clip_normalises_out_of_range_audio():
 
 def test_fades_never_exceed_clip_duration():
     clip = Clip(
-        id="c", asset_id="m", track_id="A1", timeline_start=0.0,
-        source_in=0.0, source_out=2.0, fade_in=5.0, fade_out=5.0,
+        id="c",
+        asset_id="m",
+        track_id="A1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=2.0,
+        fade_in=5.0,
+        fade_out=5.0,
     )
     assert clip.fade_in + clip.fade_out <= clip.duration + 1e-9
 
 
 def test_setting_one_fade_never_moves_the_other():
     clip = Clip(
-        id="c", asset_id="m", track_id="A1", timeline_start=0.0,
-        source_in=0.0, source_out=4.0,
+        id="c",
+        asset_id="m",
+        track_id="A1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
     )
     clip.set_fade_in(3.0)
     clip.set_fade_out(3.0)
@@ -133,8 +150,12 @@ def test_setting_one_fade_never_moves_the_other():
 
 def test_fade_setters_return_applied_value():
     clip = Clip(
-        id="c", asset_id="m", track_id="A1", timeline_start=0.0,
-        source_in=0.0, source_out=2.0,
+        id="c",
+        asset_id="m",
+        track_id="A1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=2.0,
     )
     assert clip.set_fade_in(99.0) == pytest.approx(2.0)
     clip.reset_fades()
@@ -151,8 +172,12 @@ def test_track_audio_fields_are_clamped():
 
 def test_video_and_subtitle_clips_keep_audio_defaults():
     clip = Clip(
-        id="v", asset_id="m", track_id="V1", timeline_start=0.0,
-        source_in=0.0, source_out=2.0,
+        id="v",
+        asset_id="m",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=2.0,
     )
     assert clip.gain_db == 0.0
     assert clip.fade_in == 0.0
@@ -167,7 +192,9 @@ def test_video_and_subtitle_clips_keep_audio_defaults():
 def test_pan_is_a_constant_power_balance_continuous_at_the_centre():
     """Le centre vaut l'absence de filtre (0 dB des deux côtés) ; le côté opposé s'éteint en cosinus."""
     assert pan_to_gains(0.0) == pytest.approx((1.0, 1.0), abs=1e-9)
-    assert pan_to_gains(0.01)[0] == pytest.approx(1.0, abs=1e-3), "plus de saut de −3 dB juste à côté du centre"
+    assert pan_to_gains(0.01)[0] == pytest.approx(1.0, abs=1e-3), (
+        "plus de saut de −3 dB juste à côté du centre"
+    )
     assert pan_to_gains(0.5) == pytest.approx((0.7071, 1.0), abs=1e-4)
     assert pan_to_gains(-0.5) == pytest.approx((1.0, 0.7071), abs=1e-4)
     assert pan_to_gains(-1.0) == pytest.approx((1.0, 0.0), abs=1e-6)
@@ -230,21 +257,34 @@ def _legacy_payload(version: int) -> dict:
             "fps": 25.0,
             "media_assets": [
                 {
-                    "id": "m1", "path": "/tmp/v.mp4", "name": "v",
-                    "duration": 5, "width": 1280, "height": 720,
-                    "fps": 25.0, "media_type": "video", "has_audio": True,
+                    "id": "m1",
+                    "path": "/tmp/v.mp4",
+                    "name": "v",
+                    "duration": 5,
+                    "width": 1280,
+                    "height": 720,
+                    "fps": 25.0,
+                    "media_type": "video",
+                    "has_audio": True,
                 }
             ],
             "markers": [],
             "tracks": [
                 {
-                    "id": "A1", "name": "A1", "type": "audio",
+                    "id": "A1",
+                    "name": "A1",
+                    "type": "audio",
                     "clips": [
                         {
-                            "id": "c1", "asset_id": "m1", "track_id": "A1",
-                            "timeline_start": 0, "source_in": 0,
-                            "source_out": 2.0, "enabled": True,
-                            "label": "x", "text": "",
+                            "id": "c1",
+                            "asset_id": "m1",
+                            "track_id": "A1",
+                            "timeline_start": 0,
+                            "source_in": 0,
+                            "source_out": 2.0,
+                            "enabled": True,
+                            "label": "x",
+                            "text": "",
                         }
                     ],
                 }
@@ -262,9 +302,7 @@ def test_older_versions_load_with_neutral_audio(tmp_path, version):
     clip = track.clips[0]
     assert track.volume_db == 0.0
     assert track.pan == 0.0
-    assert (clip.gain_db, clip.pan, clip.fade_in, clip.fade_out) == (
-        0.0, 0.0, 0.0, 0.0
-    )
+    assert (clip.gain_db, clip.pan, clip.fade_in, clip.fade_out) == (0.0, 0.0, 0.0, 0.0)
 
 
 def test_invalid_audio_values_in_file_are_clamped(tmp_path):
@@ -327,12 +365,35 @@ def test_render_plan_reports_silence_without_audio():
 def _two_audio_tracks() -> Project:
     project = make_audio_project()
     project.media_assets.append(
-        MediaAsset(id="m2", path="/tmp/b.wav", name="b", duration=10.0, width=0, height=0, fps=0.0,
-                   media_type="audio", has_audio=True)
+        MediaAsset(
+            id="m2",
+            path="/tmp/b.wav",
+            name="b",
+            duration=10.0,
+            width=0,
+            height=0,
+            fps=0.0,
+            media_type="audio",
+            has_audio=True,
+        )
     )
-    project.tracks.append(Track(id="A2", name="A2", type="audio", clips=[
-        Clip(id="c2", asset_id="m2", track_id="A2", timeline_start=0.0, source_in=0.0, source_out=4.0)
-    ]))
+    project.tracks.append(
+        Track(
+            id="A2",
+            name="A2",
+            type="audio",
+            clips=[
+                Clip(
+                    id="c2",
+                    asset_id="m2",
+                    track_id="A2",
+                    timeline_start=0.0,
+                    source_in=0.0,
+                    source_out=4.0,
+                )
+            ],
+        )
+    )
     return project
 
 
@@ -358,7 +419,9 @@ def test_mute_and_solo_decide_which_audio_tracks_reach_the_render_plan():
     project.tracks[0].solo = True
     assert _heard(project) == {"c1"}
 
-    project.tracks[0].muted = True                 # solo ET muette : la sourdine l'emporte, et le solo exclut l'autre
+    project.tracks[
+        0
+    ].muted = True  # solo ET muette : la sourdine l'emporte, et le solo exclut l'autre
     assert _heard(project) == set()
 
 
@@ -405,9 +468,10 @@ def test_master_filter():
     assert "volume=-2.000dB" in _build_master_filter(
         build_render_plan(project, master_gain_db=-2.0)
     )
-    assert _build_master_filter(
-        build_render_plan(project, master_muted=True)
-    ) == "volume=0"  # facteur linéaire : ``volume=0dB`` est le gain unité, le rendu réel est dans test_export_master_mute.py
+    assert (
+        _build_master_filter(build_render_plan(project, master_muted=True))
+        == "volume=0"
+    )  # facteur linéaire : ``volume=0dB`` est le gain unité, le rendu réel est dans test_export_master_mute.py
 
 
 def test_export_stays_valid_without_audio():
@@ -545,9 +609,18 @@ def test_mixer_meters_show_only_real_readings(mixer):
     assert mixer.level_provider is None
     mixer.refresh_levels()
     strip = mixer.strip_for("A1")
-    assert strip.meter.peak_db == FLOOR_DB and mixer.master_bar().loudness_label.text() == ""
-    reading = MeterFrame(time=1.0, peak_db=-6.0, rms_db=-9.0, momentary_lufs=-14.2, short_term_lufs=-15.0,
-                         track_peaks_db=(-12.0,))
+    assert (
+        strip.meter.peak_db == FLOOR_DB
+        and mixer.master_bar().loudness_label.text() == ""
+    )
+    reading = MeterFrame(
+        time=1.0,
+        peak_db=-6.0,
+        rms_db=-9.0,
+        momentary_lufs=-14.2,
+        short_term_lufs=-15.0,
+        track_peaks_db=(-12.0,),
+    )
     mixer.level_provider = lambda: (reading, ("A1",))
     mixer.refresh_levels()
     assert strip.meter.peak_db == pytest.approx(-12.0)

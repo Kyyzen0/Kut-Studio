@@ -12,17 +12,28 @@ from core.render_plan import RenderLayer
 
 def _layer_with_effects():
     return RenderLayer(
-        clip_id="clip-effects", asset_id="asset-1", track_id="V1", track_index=0,
-        source_path="/tmp/source.mp4", source_in=0.0, source_out=3.0,
-        timeline_start=0.0, timeline_end=3.0,
+        clip_id="clip-effects",
+        asset_id="asset-1",
+        track_id="V1",
+        track_index=0,
+        source_path="/tmp/source.mp4",
+        source_in=0.0,
+        source_out=3.0,
+        timeline_start=0.0,
+        timeline_end=3.0,
         effects=(
             create_effect(
-                EffectType.COLOR_CORRECTION, effect_id="color",
+                EffectType.COLOR_CORRECTION,
+                effect_id="color",
                 params={"brightness": 0.2, "contrast": 1.3, "saturation": 0.7},
             ),
             create_effect(EffectType.BLUR, effect_id="blur", params={"intensity": 4}),
-            create_effect(EffectType.SHARPEN, effect_id="sharp", params={"intensity": 1.5}),
-            create_effect(EffectType.VIGNETTE, effect_id="vignette", params={"intensity": 0.5}),
+            create_effect(
+                EffectType.SHARPEN, effect_id="sharp", params={"intensity": 1.5}
+            ),
+            create_effect(
+                EffectType.VIGNETTE, effect_id="vignette", params={"intensity": 0.5}
+            ),
             create_effect(EffectType.BLACK_AND_WHITE, effect_id="bw"),
             create_effect(EffectType.SEPIA, effect_id="sepia"),
             create_effect(EffectType.BLUR, effect_id="disabled", enabled=False),
@@ -45,20 +56,22 @@ def test_video_filter_applies_enabled_effects_in_model_order():
 
     assert positions == sorted(positions)
     assert "gblur=sigma=2.0" not in filter_graph
-    assert positions[-1] < filter_graph.rindex("format=rgba")  # la conversion finale (la 1re passe devant la sépia)
+    assert positions[-1] < filter_graph.rindex(
+        "format=rgba"
+    )  # la conversion finale (la 1re passe devant la sépia)
 
 
 def test_color_grade_runs_after_existing_visual_effects_deterministically():
     base = _layer_with_effects()
-    layer = replace(
-        base, color_grade=ColorGrade(exposure=0.5, saturation=1.2)
-    )
+    layer = replace(base, color_grade=ColorGrade(exposure=0.5, saturation=1.2))
 
     filter_graph = _build_layer_filter(0, layer, 0, 1280, 720, 30)
 
     visual_effect = filter_graph.index("gblur=sigma=4.0")
-    color_grade = filter_graph.index("lutrgb=")                 # l'exposition ouvre l'étalonnage
+    color_grade = filter_graph.index("lutrgb=")  # l'exposition ouvre l'étalonnage
     saturation = filter_graph.index("eq=contrast=1.0:saturation=1.2")
-    alpha_format = filter_graph.rindex("format=rgba")  # la conversion finale ; la co-sitée précède le premier filtre RVB
+    alpha_format = filter_graph.rindex(
+        "format=rgba"
+    )  # la conversion finale ; la co-sitée précède le premier filtre RVB
     assert visual_effect < color_grade < saturation < alpha_format
     assert "gamma=" not in filter_graph, "l'exposition n'est plus un gamma"

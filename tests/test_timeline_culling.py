@@ -62,7 +62,9 @@ def test_a_long_timeline_mounts_only_the_visible_clips(qtbot):
     assert len(panel.clip_views) == 400
     assert 0 < panel.mounted_clip_count < 80
 
-    panel.scroll.horizontalScrollBar().setValue(panel.scroll.horizontalScrollBar().maximum())
+    panel.scroll.horizontalScrollBar().setValue(
+        panel.scroll.horizontalScrollBar().maximum()
+    )
     qtbot.wait(20)
     assert panel.mounted_clip_count < 80
     last = panel.clip_views[-1]

@@ -26,7 +26,9 @@ def window(qtbot, monkeypatch):
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
     main = MainWindow()
-    main.set_usage_level("advanced")      # le sous-menu Vitesse complet (courbe, interpolation) est de niveau Avancé
+    main.set_usage_level(
+        "advanced"
+    )  # le sous-menu Vitesse complet (courbe, interpolation) est de niveau Avancé
     qtbot.addWidget(main)
     main.timeline_timer.stop()
     keep_preview_player_off_the_disk(main, monkeypatch)
@@ -34,7 +36,17 @@ def window(qtbot, monkeypatch):
 
 
 def _asset(asset_id="a", duration=60.0, fps=30.0):
-    return MediaAsset(asset_id, f"/media/{asset_id}.mp4", asset_id, duration, 1920, 1080, fps, "video", True)
+    return MediaAsset(
+        asset_id,
+        f"/media/{asset_id}.mp4",
+        asset_id,
+        duration,
+        1920,
+        1080,
+        fps,
+        "video",
+        True,
+    )
 
 
 def _load(window, project):
@@ -47,8 +59,14 @@ def _load(window, project):
 def _two_clips(window):
     first = Clip("c1", "a", "V1", 0.0, 0.0, 10.0)
     second = Clip("c2", "a", "V1", 12.0, 20.0, 30.0)
-    project = Project("p", media_assets=[_asset()], tracks=[Track("V1", "V1", "video", clips=[first, second]),
-                                                            Track("A1", "A1", "audio")])
+    project = Project(
+        "p",
+        media_assets=[_asset()],
+        tracks=[
+            Track("V1", "V1", "video", clips=[first, second]),
+            Track("A1", "A1", "audio"),
+        ],
+    )
     _load(window, project)
     return first, second
 
@@ -84,7 +102,9 @@ def test_a_command_applies_to_the_whole_selection_in_one_history_entry(window):
     assert _entries(window) == before + 1
     window.undo_last()
     clips = window.project.tracks[0].clips
-    assert all(c.time_remapping.interpolation is TimeInterpolation.SAMPLING for c in clips)
+    assert all(
+        c.time_remapping.interpolation is TimeInterpolation.SAMPLING for c in clips
+    )
 
 
 def test_a_refused_command_reports_to_the_status_bar_and_records_nothing(window):
@@ -95,7 +115,7 @@ def test_a_refused_command_reports_to_the_status_bar_and_records_nothing(window)
     window.on_time_command("c1", "interpolation", "optical_flow")
     assert _entries(window) == before
     assert first.time_remapping.interpolation is TimeInterpolation.SAMPLING
-    assert window.statusBar().currentMessage()                                           # l'utilisateur est prévenu
+    assert window.statusBar().currentMessage()  # l'utilisateur est prévenu
 
 
 def test_adding_a_speed_point_needs_the_playhead_on_the_clip(window):
@@ -103,10 +123,13 @@ def test_adding_a_speed_point_needs_the_playhead_on_the_clip(window):
     window.playhead_seconds = 4.0
     window.on_time_command("c1", "add_point")
     assert [round(k.time_seconds, 2) for k in speed_points(first)] == [4.0]
-    window.playhead_seconds = 11.0                                                       # entre les deux clips
+    window.playhead_seconds = 11.0  # entre les deux clips
     before = _entries(window)
     window.on_time_command("c1", "add_point")
-    assert _entries(window) == before and "tête de lecture" in window.statusBar().currentMessage()
+    assert (
+        _entries(window) == before
+        and "tête de lecture" in window.statusBar().currentMessage()
+    )
 
 
 def test_the_hold_command_lengthens_the_clip_by_one_second_at_the_playhead(window):
@@ -115,7 +138,9 @@ def test_the_hold_command_lengthens_the_clip_by_one_second_at_the_playhead(windo
     duration = first.duration
     window.on_time_command("c1", "hold")
     assert first.duration == pytest.approx(duration + 1.0)
-    assert first.time_map.source_time(3.5) == pytest.approx(first.time_map.source_time(3.0))
+    assert first.time_map.source_time(3.5) == pytest.approx(
+        first.time_map.source_time(3.0)
+    )
     assert window.history.undo_label == "Arrêt sur image dans la courbe"
 
 
@@ -131,7 +156,10 @@ def test_copy_then_paste_carries_the_time_to_another_clip(window):
     window.on_time_command("c1", "interpolation", "optical_flow")
     window.on_time_command("c1", "copy")
     window.on_time_command("c2", "paste")
-    assert second.time_remapping.speed == 0.5 and second.time_remapping.interpolation is TimeInterpolation.OPTICAL_FLOW
+    assert (
+        second.time_remapping.speed == 0.5
+        and second.time_remapping.interpolation is TimeInterpolation.OPTICAL_FLOW
+    )
     assert (second.source_in, second.source_out) == (20.0, 30.0)
     assert window.history.undo_label == "Coller le temps"
 
@@ -140,13 +168,19 @@ def test_pasting_with_nothing_copied_says_so(window):
     _two_clips(window)
     before = _entries(window)
     window.on_time_command("c1", "paste")
-    assert _entries(window) == before and "copiez" in window.statusBar().currentMessage()
+    assert (
+        _entries(window) == before and "copiez" in window.statusBar().currentMessage()
+    )
 
 
-def test_the_keyboard_commands_act_on_the_selected_clip_or_the_clip_under_the_playhead(window):
+def test_the_keyboard_commands_act_on_the_selected_clip_or_the_clip_under_the_playhead(
+    window,
+):
     first, second = _two_clips(window)
     window.playhead_seconds = 2.0
-    window._time_shortcut_handlers()["time_add_speed_point"]()                           # rien de sélectionné : le clip sous la tête
+    window._time_shortcut_handlers()[
+        "time_add_speed_point"
+    ]()  # rien de sélectionné : le clip sous la tête
     assert len(speed_points(first)) == 1
     window.playhead_seconds = 14.0
     window.timeline_panel._set_selection(["c2"], "c2", announce=False)
@@ -159,7 +193,9 @@ def test_the_time_shortcuts_are_registered_configurable_commands(window):
 
     assert COMMANDS_BY_ID["time_add_speed_point"].category is Category.TIME
     assert COMMANDS_BY_ID["time_freeze_frame"].category is Category.TIME
-    assert {"time_add_speed_point", "time_freeze_frame"} <= set(window._shortcut_handlers())
+    assert {"time_add_speed_point", "time_freeze_frame"} <= set(
+        window._shortcut_handlers()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +213,9 @@ def _commands(actions):
     return {(command, argument) for command, argument in actions.values()}
 
 
-def test_the_speed_menu_offers_the_constant_speeds_the_interpolation_and_the_curve_tools(window):
+def test_the_speed_menu_offers_the_constant_speeds_the_interpolation_and_the_curve_tools(
+    window,
+):
     _two_clips(window)
     _menu, actions = _menu_actions(window, "c1")
     commands = _commands(actions)
@@ -185,31 +223,61 @@ def test_the_speed_menu_offers_the_constant_speeds_the_interpolation_and_the_cur
         assert ("speed", speed) in commands
     for mode in ("sampling", "blending", "optical_flow"):
         assert ("interpolation", mode) in commands
-    for command in ("add_point", "hold", "clear_curve", "preserve_pitch", "remap_audio", "copy", "paste", "reset", "analyze"):
+    for command in (
+        "add_point",
+        "hold",
+        "clear_curve",
+        "preserve_pitch",
+        "remap_audio",
+        "copy",
+        "paste",
+        "reset",
+        "analyze",
+    ):
         assert any(item[0] == command for item in commands), command
     assert ("preset", "slow_25") in commands and ("preset", "ramp_in") in commands
 
 
 def test_the_menu_shows_the_current_state(window):
     first, _second = _two_clips(window)
-    first.time_remapping = TimeRemapping(speed=0.5, reverse=True, interpolation=TimeInterpolation.BLENDING)
+    first.time_remapping = TimeRemapping(
+        speed=0.5, reverse=True, interpolation=TimeInterpolation.BLENDING
+    )
     _menu, actions = _menu_actions(window, "c1")
-    checked = {(command, argument) for action, (command, argument) in actions.items() if action.isChecked()}
-    assert ("speed", 0.5) in checked and ("reverse", False) in checked or ("reverse", True) not in checked
-    assert ("interpolation", "blending") in checked and ("interpolation", "sampling") not in checked
+    checked = {
+        (command, argument)
+        for action, (command, argument) in actions.items()
+        if action.isChecked()
+    }
+    assert (
+        ("speed", 0.5) in checked
+        and ("reverse", False) in checked
+        or ("reverse", True) not in checked
+    )
+    assert ("interpolation", "blending") in checked and (
+        "interpolation",
+        "sampling",
+    ) not in checked
 
 
 def test_the_menu_greys_what_cannot_apply(window):
     first, _second = _two_clips(window)
     _menu, actions = _menu_actions(window, "c1")
-    by_command = {(command, argument): action for action, (command, argument) in actions.items()}
-    assert not by_command[("analyze", None)].isEnabled()                                  # pas en flux optique
-    assert not by_command[("clear_curve", None)].isEnabled()                              # pas de courbe
+    by_command = {
+        (command, argument): action for action, (command, argument) in actions.items()
+    }
+    assert not by_command[("analyze", None)].isEnabled()  # pas en flux optique
+    assert not by_command[("clear_curve", None)].isEnabled()  # pas de courbe
     first.time_remapping = TimeRemapping(interpolation=TimeInterpolation.OPTICAL_FLOW)
     add_speed_point(window.project, "c1", 1.0, 0.5)
     _menu, actions = _menu_actions(window, "c1")
-    by_command = {(command, argument): action for action, (command, argument) in actions.items()}
-    assert by_command[("analyze", None)].isEnabled() and by_command[("clear_curve", None)].isEnabled()
+    by_command = {
+        (command, argument): action for action, (command, argument) in actions.items()
+    }
+    assert (
+        by_command[("analyze", None)].isEnabled()
+        and by_command[("clear_curve", None)].isEnabled()
+    )
 
 
 def test_no_speed_menu_for_a_frozen_clip_and_no_interpolation_for_audio(window):
@@ -220,23 +288,60 @@ def test_no_speed_menu_for_a_frozen_clip_and_no_interpolation_for_audio(window):
     _load(window, window.project)
     assert _menu_actions(window, "c2")[1] == {}
     commands = _commands(_menu_actions(window, "a1")[1])
-    assert ("speed", 2.0) in commands and not any(command == "interpolation" for command, _argument in commands)
+    assert ("speed", 2.0) in commands and not any(
+        command == "interpolation" for command, _argument in commands
+    )
 
 
 def test_a_nested_clip_only_accepts_sampling_in_the_menu(window):
     from core.sequences import insert_sequence_clip
 
-    inner = Sequence(id="inner", name="Inner", width=1920, height=1080, fps=30.0, tracks=[
-        Track(id="V1", name="V1", type="video", clips=[Clip(id="i1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0,
-                                                           source_out=5.0)])])
-    main = Sequence(id="main", name="Main", width=1920, height=1080, fps=30.0, tracks=[Track(id="V1", name="V1", type="video")])
-    project = Project("p", media_assets=[_asset()], sequences=[main, inner], active_sequence_id="main")
+    inner = Sequence(
+        id="inner",
+        name="Inner",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="i1",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=5.0,
+                    )
+                ],
+            )
+        ],
+    )
+    main = Sequence(
+        id="main",
+        name="Main",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        tracks=[Track(id="V1", name="V1", type="video")],
+    )
+    project = Project(
+        "p", media_assets=[_asset()], sequences=[main, inner], active_sequence_id="main"
+    )
     nested = insert_sequence_clip(project, "inner", "V1", 0.0)
     _load(window, project)
     _menu, actions = _menu_actions(window, nested.id)
-    by_command = {(command, argument): action for action, (command, argument) in actions.items()}
+    by_command = {
+        (command, argument): action for action, (command, argument) in actions.items()
+    }
     assert by_command[("interpolation", "sampling")].isEnabled()
-    assert not by_command[("interpolation", "blending")].isEnabled() and not by_command[("interpolation", "optical_flow")].isEnabled()
+    assert (
+        not by_command[("interpolation", "blending")].isEnabled()
+        and not by_command[("interpolation", "optical_flow")].isEnabled()
+    )
 
 
 def test_the_timeline_signal_reaches_the_window_command(window):
@@ -257,18 +362,28 @@ def _select(window, clip_id):
 
 def test_the_inspector_section_reflects_the_clip_and_hides_what_does_not_apply(window):
     first, _second = _two_clips(window)
-    first.time_remapping = TimeRemapping(interpolation=TimeInterpolation.OPTICAL_FLOW, flow_quality=FlowQuality.BEST,
-                                         preserve_pitch=False)
+    first.time_remapping = TimeRemapping(
+        interpolation=TimeInterpolation.OPTICAL_FLOW,
+        flow_quality=FlowQuality.BEST,
+        preserve_pitch=False,
+    )
     _load(window, window.project)
     _select(window, "c1")
     section = window.properties_panel.time_section
-    assert section.interpolation_combo.currentData() == "optical_flow" and section.quality_combo.currentData() == "best"
+    assert (
+        section.interpolation_combo.currentData() == "optical_flow"
+        and section.quality_combo.currentData() == "best"
+    )
     assert not section.pitch_check.isChecked() and section.audio_check.isChecked()
-    assert not section.quality_combo.isHidden() and not section.analyze_button.isHidden()
+    assert (
+        not section.quality_combo.isHidden() and not section.analyze_button.isHidden()
+    )
     first.time_remapping = TimeRemapping()
     _load(window, window.project)
     _select(window, "c1")
-    assert section.quality_combo.isHidden() and section.analyze_button.isHidden()         # seulement avec le flux optique
+    assert (
+        section.quality_combo.isHidden() and section.analyze_button.isHidden()
+    )  # seulement avec le flux optique
     assert section.curve_label.text() == "Vitesse constante"
 
 
@@ -276,7 +391,9 @@ def test_changing_a_control_of_the_section_applies_the_command(window):
     first, _second = _two_clips(window)
     _select(window, "c1")
     section = window.properties_panel.time_section
-    section.interpolation_combo.setCurrentIndex(section.interpolation_combo.findData("blending"))
+    section.interpolation_combo.setCurrentIndex(
+        section.interpolation_combo.findData("blending")
+    )
     assert first.time_remapping.interpolation is TimeInterpolation.BLENDING
     section.pitch_check.setChecked(False)
     assert not window.project.tracks[0].clips[0].time_remapping.preserve_pitch
@@ -293,7 +410,9 @@ def test_the_curve_buttons_add_a_point_and_delete_the_curve(window):
     assert len(speed_points(first)) == 1
     assert section.curve_label.text() == "1 points de vitesse"
     section.clear_curve_button.click()
-    assert not first.has_speed_curve and section.curve_label.text() == "Vitesse constante"
+    assert (
+        not first.has_speed_curve and section.curve_label.text() == "Vitesse constante"
+    )
 
 
 def test_the_section_follows_the_language(window):
@@ -304,7 +423,10 @@ def test_the_section_follows_the_language(window):
     section = window.properties_panel.time_section
     i18n.set_language("en")
     try:
-        assert section.interpolation_combo.itemText(2) == "Optical flow" and section.add_point_button.text() == "Speed point"
+        assert (
+            section.interpolation_combo.itemText(2) == "Optical flow"
+            and section.add_point_button.text() == "Speed point"
+        )
     finally:
         i18n.set_language("fr")
     assert section.interpolation_combo.itemText(2) == "Flux optique"
@@ -313,17 +435,51 @@ def test_the_section_follows_the_language(window):
 def test_a_nested_clip_cannot_pick_interpolation_in_the_section(window):
     from core.sequences import insert_sequence_clip
 
-    inner = Sequence(id="inner", name="Inner", width=1920, height=1080, fps=30.0, tracks=[
-        Track(id="V1", name="V1", type="video", clips=[Clip(id="i1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0,
-                                                           source_out=5.0)])])
-    main = Sequence(id="main", name="Main", width=1920, height=1080, fps=30.0, tracks=[Track(id="V1", name="V1", type="video")])
-    project = Project("p", media_assets=[_asset()], sequences=[main, inner], active_sequence_id="main")
+    inner = Sequence(
+        id="inner",
+        name="Inner",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="i1",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=5.0,
+                    )
+                ],
+            )
+        ],
+    )
+    main = Sequence(
+        id="main",
+        name="Main",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        tracks=[Track(id="V1", name="V1", type="video")],
+    )
+    project = Project(
+        "p", media_assets=[_asset()], sequences=[main, inner], active_sequence_id="main"
+    )
     nested = insert_sequence_clip(project, "inner", "V1", 0.0)
     _load(window, project)
     _select(window, nested.id)
     section = window.properties_panel.time_section
     model = section.interpolation_combo.model()
-    assert model.item(0).isEnabled() and not model.item(1).isEnabled() and not model.item(2).isEnabled()
+    assert (
+        model.item(0).isEnabled()
+        and not model.item(1).isEnabled()
+        and not model.item(2).isEnabled()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -341,8 +497,12 @@ def test_the_monitor_says_when_it_shows_a_simplified_preview(window):
     window.playhead_seconds = 2.0
     window._update_preview_notice()
     notice = window.preview_panel.preview_quality_notice
-    assert not notice.isHidden() and "Flux optique" in notice.text() and "simplifié" in notice.text()
-    window.playhead_seconds = 21.0                                                        # c1 (20 s à 50 %) est fini : c2, normal
+    assert (
+        not notice.isHidden()
+        and "Flux optique" in notice.text()
+        and "simplifié" in notice.text()
+    )
+    window.playhead_seconds = 21.0  # c1 (20 s à 50 %) est fini : c2, normal
     window._update_preview_notice()
     assert notice.isHidden()
 
@@ -353,7 +513,9 @@ def test_no_notice_when_the_speed_makes_every_frame_exact(window):
     window.on_time_command("c1", "interpolation", "optical_flow")
     window.playhead_seconds = 2.0
     window._update_preview_notice()
-    assert window.preview_panel.preview_quality_notice.isHidden()                         # 200 % : l'échantillonnage est exact
+    assert (
+        window.preview_panel.preview_quality_notice.isHidden()
+    )  # 200 % : l'échantillonnage est exact
 
 
 def test_the_notice_merges_with_the_adaptive_quality_message(window, monkeypatch):
@@ -363,10 +525,16 @@ def test_the_notice_merges_with_the_adaptive_quality_message(window, monkeypatch
     window.on_time_command("c1", "speed", 0.5)
     window.on_time_command("c1", "interpolation", "blending")
     window.playhead_seconds = 2.0
-    monkeypatch.setattr(type(window.runtime.preview), "degraded", property(lambda self: True))
+    monkeypatch.setattr(
+        type(window.runtime.preview), "degraded", property(lambda self: True)
+    )
     window._update_preview_notice()
     text = window.preview_panel.preview_quality_notice.text()
-    assert translate("preview.quality_reduced", quality=window.runtime.preview_label()) in text and "Mélange d'images" in text
+    assert (
+        translate("preview.quality_reduced", quality=window.runtime.preview_label())
+        in text
+        and "Mélange d'images" in text
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -384,58 +552,103 @@ def flow_window(window, tmp_path, monkeypatch):
 
     from core.flow_cache import FlowCache
 
-    monkeypatch.setattr("ui.main_window_mixins.time_editing.TimeEditingMixin._flow_cache_for_analysis",
-                        lambda self: FlowCache(tmp_path / "flow"))
+    monkeypatch.setattr(
+        "ui.main_window_mixins.time_editing.TimeEditingMixin._flow_cache_for_analysis",
+        lambda self: FlowCache(tmp_path / "flow"),
+    )
     media = _encode_scene(tmp_path / "scene.mp4", 1.0, SCENE_FRAMES)
-    asset = MediaAsset("s", media, "scene", SCENE_FRAMES / 30.0, SW, SH, 30.0, "video", False)
-    clip = Clip("c1", "s", "V1", 0.0, 0.0, SCENE_FRAMES / 30.0,
-                time_remapping=TimeRemapping(speed=0.5, interpolation=TimeInterpolation.OPTICAL_FLOW,
-                                             flow_quality=FlowQuality.BALANCED))
-    project = Project("p", width=SW, height=SH, fps=30.0, media_assets=[asset], tracks=[Track("V1", "V1", "video", clips=[clip])])
+    asset = MediaAsset(
+        "s", media, "scene", SCENE_FRAMES / 30.0, SW, SH, 30.0, "video", False
+    )
+    clip = Clip(
+        "c1",
+        "s",
+        "V1",
+        0.0,
+        0.0,
+        SCENE_FRAMES / 30.0,
+        time_remapping=TimeRemapping(
+            speed=0.5,
+            interpolation=TimeInterpolation.OPTICAL_FLOW,
+            flow_quality=FlowQuality.BALANCED,
+        ),
+    )
+    project = Project(
+        "p",
+        width=SW,
+        height=SH,
+        fps=30.0,
+        media_assets=[asset],
+        tracks=[Track("V1", "V1", "video", clips=[clip])],
+    )
     _load(window, project)
     return window
 
 
-def test_the_analysis_from_the_menu_reports_progress_then_the_result(flow_window, qtbot):
+def test_the_analysis_from_the_menu_reports_progress_then_the_result(
+    flow_window, qtbot
+):
     flow_window.on_time_command("c1", "analyze")
     assert flow_window._flow_job is not None
     qtbot.waitUntil(lambda: flow_window._flow_job is None, timeout=60000)
     message = flow_window.statusBar().currentMessage()
     assert "Flux optique analysé" in message and "paires" in message
-    assert flow_window.properties_panel.time_section.analyze_button.text() == "Analyser le flux"
+    assert (
+        flow_window.properties_panel.time_section.analyze_button.text()
+        == "Analyser le flux"
+    )
 
 
-def test_the_inspector_button_becomes_cancel_while_running_and_stops_the_analysis(flow_window, qtbot):
+def test_the_inspector_button_becomes_cancel_while_running_and_stops_the_analysis(
+    flow_window, qtbot
+):
     flow_window.on_time_command("c1", "preset", "slow_25")
     flow_window.on_time_command("c1", "quality", "best")
     _select(flow_window, "c1")
     section = flow_window.properties_panel.time_section
     flow_window.on_time_command("c1", "analyze")
     assert section.analyze_button.text() == "Annuler l'analyse"
-    section.analyze_button.click()                                                         # « Annuler l'analyse »
+    section.analyze_button.click()  # « Annuler l'analyse »
     qtbot.waitUntil(lambda: flow_window._flow_job is None, timeout=60000)
     assert section.analyze_button.text() == "Analyser le flux"
-    assert flow_window.statusBar().currentMessage() in {"Analyse du flux optique annulée.", flow_window.statusBar().currentMessage()}
+    assert flow_window.statusBar().currentMessage() in {
+        "Analyse du flux optique annulée.",
+        flow_window.statusBar().currentMessage(),
+    }
 
 
-def test_a_second_analysis_is_refused_while_one_runs_and_closing_stops_it(flow_window, qtbot):
+def test_a_second_analysis_is_refused_while_one_runs_and_closing_stops_it(
+    flow_window, qtbot
+):
     flow_window.on_time_command("c1", "preset", "slow_25")
     flow_window.on_time_command("c1", "quality", "best")
     flow_window.on_time_command("c1", "analyze")
     flow_window.on_time_command("c1", "analyze")
     assert "déjà en cours" in flow_window.statusBar().currentMessage()
-    flow_window._cancel_flow_analysis()                                                    # la fermeture de l'application
-    assert flow_window._flow_job is None and flow_window.properties_panel.time_section.analyze_button.text() == "Analyser le flux"
+    flow_window._cancel_flow_analysis()  # la fermeture de l'application
+    assert (
+        flow_window._flow_job is None
+        and flow_window.properties_panel.time_section.analyze_button.text()
+        == "Analyser le flux"
+    )
 
 
-def test_nothing_to_analyze_without_the_optical_flow_mode_or_when_every_frame_is_exact(flow_window):
+def test_nothing_to_analyze_without_the_optical_flow_mode_or_when_every_frame_is_exact(
+    flow_window,
+):
     flow_window.on_time_command("c1", "interpolation", "blending")
     flow_window.on_time_command("c1", "analyze")
-    assert "Flux optique" in flow_window.statusBar().currentMessage() and flow_window._flow_job is None
+    assert (
+        "Flux optique" in flow_window.statusBar().currentMessage()
+        and flow_window._flow_job is None
+    )
     flow_window.on_time_command("c1", "interpolation", "optical_flow")
     flow_window.on_time_command("c1", "speed", 2.0)
     flow_window.on_time_command("c1", "analyze")
-    assert "Rien à analyser" in flow_window.statusBar().currentMessage() and flow_window._flow_job is None
+    assert (
+        "Rien à analyser" in flow_window.statusBar().currentMessage()
+        and flow_window._flow_job is None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -443,20 +656,26 @@ def test_nothing_to_analyze_without_the_optical_flow_mode_or_when_every_frame_is
 # ---------------------------------------------------------------------------
 
 
-def test_the_graph_editor_shows_the_speed_in_percent_and_edits_it_back_in_factor(window, qtbot):
+def test_the_graph_editor_shows_the_speed_in_percent_and_edits_it_back_in_factor(
+    window, qtbot
+):
     first, _second = _two_clips(window)
     add_speed_point(window.project, "c1", 0.0, 1.0)
-    point = add_speed_point(window.project, "c1", 4.0, 0.5, interpolation=InterpolationType.LINEAR)
+    point = add_speed_point(
+        window.project, "c1", 4.0, 0.5, interpolation=InterpolationType.LINEAR
+    )
     window._reload_timeline_preserving_selection("c1")
     editor = window.open_graph_editor("time.speed")
     qtbot.waitExposed(editor)
     assert editor.property_id == "time.speed" and editor.value_spin.suffix() == " %"
     editor.select_ids({point.id})
-    assert editor.value_spin.value() == pytest.approx(50.0)                              # 0,5 stocké, « 50 % » affiché
+    assert editor.value_spin.value() == pytest.approx(
+        50.0
+    )  # 0,5 stocké, « 50 % » affiché
     editor.value_spin.setValue(200.0)
     editor.value_spin.editingFinished.emit()
-    assert [k.value for k in speed_points(first)] == [1.0, 2.0]                          # stocké en facteur
-    assert editor.value_spin.maximum() == pytest.approx(1000.0)                          # bornes ±10× = ±1000 %
+    assert [k.value for k in speed_points(first)] == [1.0, 2.0]  # stocké en facteur
+    assert editor.value_spin.maximum() == pytest.approx(1000.0)  # bornes ±10× = ±1000 %
 
 
 def test_other_properties_keep_their_raw_values_in_the_graph_editor(window, qtbot):
@@ -469,7 +688,10 @@ def test_other_properties_keep_their_raw_values_in_the_graph_editor(window, qtbo
     editor = window.open_graph_editor("opacity")
     qtbot.waitExposed(editor)
     editor.select_ids({editor.curve().keyframes[0].id})
-    assert editor.value_spin.suffix() == "" and editor.value_spin.value() == pytest.approx(0.25)
+    assert (
+        editor.value_spin.suffix() == ""
+        and editor.value_spin.value() == pytest.approx(0.25)
+    )
 
 
 def test_a_refused_paste_keeps_its_reason_instead_of_saying_pasted(window):
@@ -481,7 +703,9 @@ def test_a_refused_paste_keeps_its_reason_instead_of_saying_pasted(window):
     before = _entries(window)
     window.on_time_command("c2", "paste")
     assert _entries(window) == before and window.statusBar().currentMessage()
-    assert "collé" not in window.statusBar().currentMessage()                              # le refus n'est pas recouvert
+    assert (
+        "collé" not in window.statusBar().currentMessage()
+    )  # le refus n'est pas recouvert
     window.project.tracks[0].locked = False
     window.on_time_command("c2", "paste")
     assert window.project.tracks[0].clips[1].time_remapping.speed == 0.5
@@ -490,7 +714,12 @@ def test_a_refused_paste_keeps_its_reason_instead_of_saying_pasted(window):
 
 def _speed_editor(window, qtbot, *, points=((0.0, 1.0), (4.0, 1.0))):
     """Graph Editor ouvert sur la vitesse de ``c1`` ; retourne ``(éditeur, points)``."""
-    created = [add_speed_point(window.project, "c1", moment, value, interpolation=InterpolationType.LINEAR) for moment, value in points]
+    created = [
+        add_speed_point(
+            window.project, "c1", moment, value, interpolation=InterpolationType.LINEAR
+        )
+        for moment, value in points
+    ]
     window.history.reset(window.project)
     window._reload_timeline_preserving_selection("c1")
     editor = window.open_graph_editor("time.speed")
@@ -498,22 +727,34 @@ def _speed_editor(window, qtbot, *, points=((0.0, 1.0), (4.0, 1.0))):
     return editor, created
 
 
-def test_a_speed_value_that_would_leave_a_degenerate_clip_is_refused_by_the_graph_editor(window, qtbot):
+def test_a_speed_value_that_would_leave_a_degenerate_clip_is_refused_by_the_graph_editor(
+    window, qtbot
+):
     asset = _asset(duration=60.0)
-    clip = Clip("c1", "a", "V1", 0.0, 0.0, 0.1)                                            # 0,1 s de source
-    window.project = Project("p", media_assets=[asset], tracks=[Track("V1", "V1", "video", clips=[clip]), Track("A1", "A1", "audio")])
+    clip = Clip("c1", "a", "V1", 0.0, 0.0, 0.1)  # 0,1 s de source
+    window.project = Project(
+        "p",
+        media_assets=[asset],
+        tracks=[Track("V1", "V1", "video", clips=[clip]), Track("A1", "A1", "audio")],
+    )
     _load(window, window.project)
     editor, (point,) = _speed_editor(window, qtbot, points=((0.0, 1.0),))
     before, entries = clip.duration, _entries(window)
     editor.select_ids({point.id})
-    editor.value_spin.setValue(1000.0)                                                       # 10× : 0,01 s, sous le plancher
+    editor.value_spin.setValue(1000.0)  # 10× : 0,01 s, sous le plancher
     editor.value_spin.editingFinished.emit()
     live = window.project.tracks[0].clips[0]
-    assert [k.value for k in speed_points(live)] == [1.0] and live.duration == pytest.approx(before)   # l'édition générique l'aurait laissé
-    assert _entries(window) == entries and window.statusBar().currentMessage()               # refusé, dit, rien d'enregistré
+    assert [k.value for k in speed_points(live)] == [
+        1.0
+    ] and live.duration == pytest.approx(before)  # l'édition générique l'aurait laissé
+    assert (
+        _entries(window) == entries and window.statusBar().currentMessage()
+    )  # refusé, dit, rien d'enregistré
 
 
-def test_dragging_a_speed_point_back_and_forth_restores_every_keyframe_cut_on_the_way(window, qtbot):
+def test_dragging_a_speed_point_back_and_forth_restores_every_keyframe_cut_on_the_way(
+    window, qtbot
+):
     from PySide6.QtCore import QPointF
 
     from core.keyframe_editing import KeyframeRef, add_keyframe
@@ -522,50 +763,82 @@ def test_dragging_a_speed_point_back_and_forth_restores_every_keyframe_cut_on_th
     add_keyframe(window.project, "c1", "opacity", 7.0, 0.2)
     add_keyframe(window.project, "c1", "opacity", 9.0, 0.9)
     editor, (_start, moving) = _speed_editor(window, qtbot)
-    start = [(k.time_seconds, k.value) for k in window.project.tracks[0].clips[0].transform_keyframes]
+    start = [
+        (k.time_seconds, k.value)
+        for k in window.project.tracks[0].clips[0].transform_keyframes
+    ]
     duration = window.project.tracks[0].clips[0].duration
     entries = _entries(window)
     window.set_keyframe_selection({KeyframeRef("c1", "time.speed", moving.id)})
-    origin = {"anchor": moving, "anchor_time": moving.time_seconds, "values": {moving.id: moving.value}}
+    origin = {
+        "anchor": moving,
+        "anchor_time": moving.time_seconds,
+        "values": {moving.id: moving.value},
+    }
     press = editor.canvas.to_screen(moving.time_seconds, moving.value)
-    editor.drag_keyframes(origin, press, editor.canvas.to_screen(moving.time_seconds, 9.0))   # bien plus vite : le clip raccourcit
+    editor.drag_keyframes(
+        origin, press, editor.canvas.to_screen(moving.time_seconds, 9.0)
+    )  # bien plus vite : le clip raccourcit
     shortened = window.project.tracks[0].clips[0]
     assert shortened.duration < duration - 1.0
-    editor.drag_keyframes(origin, press, QPointF(press))                                       # …retour à la valeur de départ, même geste
+    editor.drag_keyframes(
+        origin, press, QPointF(press)
+    )  # …retour à la valeur de départ, même geste
     restored = window.project.tracks[0].clips[0]
     assert restored.duration == pytest.approx(duration)
-    assert [(k.time_seconds, k.value) for k in restored.transform_keyframes] == start          # aucun keyframe perdu
+    assert [
+        (k.time_seconds, k.value) for k in restored.transform_keyframes
+    ] == start  # aucun keyframe perdu
     editor.finish_gesture("Modifier")
-    assert _entries(window) == entries + 1                                                     # un geste = une entrée d'historique
+    assert _entries(window) == entries + 1  # un geste = une entrée d'historique
 
 
-def test_every_other_graph_editor_edit_of_the_speed_is_a_recorded_time_operation(window, qtbot):
+def test_every_other_graph_editor_edit_of_the_speed_is_a_recorded_time_operation(
+    window, qtbot
+):
     first, _second = _two_clips(window)
     editor, (_start, point) = _speed_editor(window, qtbot)
     editor.select_ids({point.id})
     entries = _entries(window)
-    editor.time_spin.setValue(6.0)                                                           # champ « temps » : le point passe de 4 s à 6 s
+    editor.time_spin.setValue(6.0)  # champ « temps » : le point passe de 4 s à 6 s
     editor.time_spin.editingFinished.emit()
     live = window.project.tracks[0].clips[0]
-    assert [round(k.time_seconds, 2) for k in speed_points(live)] == [0.0, 6.0] and _entries(window) == entries + 1
-    editor.add_keyframe_at(2.0)                                                              # double-clic : un point qui garde la vitesse
-    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 2.0, 6.0]
+    assert [round(k.time_seconds, 2) for k in speed_points(live)] == [
+        0.0,
+        6.0,
+    ] and _entries(window) == entries + 1
+    editor.add_keyframe_at(2.0)  # double-clic : un point qui garde la vitesse
+    assert [
+        round(k.time_seconds, 2)
+        for k in speed_points(window.project.tracks[0].clips[0])
+    ] == [0.0, 2.0, 6.0]
     editor.select_ids({point.id})
-    for combo, data in ((editor.interpolation_combo, InterpolationType.BEZIER.value), (editor.tangent_combo, "broken")):
+    for combo, data in (
+        (editor.interpolation_combo, InterpolationType.BEZIER.value),
+        (editor.tangent_combo, "broken"),
+    ):
         index = combo.findData(data)
         combo.setCurrentIndex(index)
-        combo.activated.emit(index)                                                          # le choix de l'utilisateur, pas un réglage de code
+        combo.activated.emit(index)  # le choix de l'utilisateur, pas un réglage de code
     kinds = {k.id: k for k in speed_points(window.project.tracks[0].clips[0])}[point.id]
-    assert kinds.interpolation is InterpolationType.BEZIER and kinds.tangent_mode.value == "broken"
-    assert _entries(window) == entries + 4                                                   # une entrée par réglage, jamais zéro
+    assert (
+        kinds.interpolation is InterpolationType.BEZIER
+        and kinds.tangent_mode.value == "broken"
+    )
+    assert _entries(window) == entries + 4  # une entrée par réglage, jamais zéro
     window.undo_last()
     window.undo_last()
     window.undo_last()
     window.undo_last()
-    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 4.0]
+    assert [
+        round(k.time_seconds, 2)
+        for k in speed_points(window.project.tracks[0].clips[0])
+    ] == [0.0, 4.0]
 
 
-def test_a_speed_edit_on_a_locked_track_is_refused_by_the_graph_editor_and_says_why(window, qtbot):
+def test_a_speed_edit_on_a_locked_track_is_refused_by_the_graph_editor_and_says_why(
+    window, qtbot
+):
     first, _second = _two_clips(window)
     editor, (_start, point) = _speed_editor(window, qtbot)
     editor.select_ids({point.id})
@@ -574,20 +847,33 @@ def test_a_speed_edit_on_a_locked_track_is_refused_by_the_graph_editor_and_says_
     editor.time_spin.setValue(6.0)
     editor.time_spin.editingFinished.emit()
     editor.add_keyframe_at(2.0)
-    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 4.0]
-    assert _entries(window) == entries and "verrouill" in window.statusBar().currentMessage()
+    assert [
+        round(k.time_seconds, 2)
+        for k in speed_points(window.project.tracks[0].clips[0])
+    ] == [0.0, 4.0]
+    assert (
+        _entries(window) == entries
+        and "verrouill" in window.statusBar().currentMessage()
+    )
 
 
-def test_the_graph_editor_follows_the_ripple_policy_of_the_user_for_speed(window, qtbot):
+def test_the_graph_editor_follows_the_ripple_policy_of_the_user_for_speed(
+    window, qtbot
+):
     first, _second = _two_clips(window)
-    window.set_time_ripple_timeline(True)                                                    # « conserver la durée sur la timeline »
+    window.set_time_ripple_timeline(True)  # « conserver la durée sur la timeline »
     editor, (_start, point) = _speed_editor(window, qtbot)
     duration = window.project.tracks[0].clips[0].duration
     editor.select_ids({point.id})
-    editor.value_spin.setValue(50.0)                                                         # ralentir allongerait le clip (16 s)
+    editor.value_spin.setValue(50.0)  # ralentir allongerait le clip (16 s)
     editor.value_spin.editingFinished.emit()
-    assert window.project.tracks[0].clips[0].duration == pytest.approx(duration)               # la politique est respectée
-    assert [k.value for k in speed_points(window.project.tracks[0].clips[0])] == [1.0, 0.5]
+    assert window.project.tracks[0].clips[0].duration == pytest.approx(
+        duration
+    )  # la politique est respectée
+    assert [k.value for k in speed_points(window.project.tracks[0].clips[0])] == [
+        1.0,
+        0.5,
+    ]
 
 
 def test_the_graph_editor_paints_with_no_clip_and_no_property(window, qtbot):
@@ -596,7 +882,7 @@ def test_the_graph_editor_paints_with_no_clip_and_no_property(window, qtbot):
     editor = window.open_graph_editor()
     qtbot.waitExposed(editor)
     assert editor.property_id is None and editor.display_scale() == 1.0
-    assert not editor.canvas.grab().isNull()                                             # pas d'exception dans paintEvent
+    assert not editor.canvas.grab().isNull()  # pas d'exception dans paintEvent
 
 
 def test_the_preparation_report_of_an_export_is_shown_never_silent(window):
@@ -607,13 +893,18 @@ def test_the_preparation_report_of_an_export_is_shown_never_silent(window):
     for _ in range(40):
         report.add(Fallback.NONE, 0.9)
     window._on_preparation_reported(report)
-    assert "40 images" in window.statusBar().currentMessage() and "confiance 90 %" in window.statusBar().currentMessage()
+    assert (
+        "40 images" in window.statusBar().currentMessage()
+        and "confiance 90 %" in window.statusBar().currentMessage()
+    )
     for _ in range(3):
         report.add(Fallback.SCENE_CUT, None)
     window._on_preparation_reported(report)
-    assert "3 image(s) remplacée(s)" in window.statusBar().currentMessage()                # l'écart est dit, avec son compte
+    assert (
+        "3 image(s) remplacée(s)" in window.statusBar().currentMessage()
+    )  # l'écart est dit, avec son compte
     window.statusBar().clearMessage()
-    window._on_preparation_reported(PrepareReport())                                       # rien de fabriqué : rien à dire
+    window._on_preparation_reported(PrepareReport())  # rien de fabriqué : rien à dire
     assert window.statusBar().currentMessage() == ""
 
 
@@ -626,21 +917,33 @@ def test_the_flow_backend_setting_is_persisted_tolerantly(tmp_path):
     import json
     from dataclasses import replace
 
-    from core.user_settings import FILE_NAME, UserSettings, load_user_settings, save_user_settings
+    from core.user_settings import (
+        FILE_NAME,
+        UserSettings,
+        load_user_settings,
+        save_user_settings,
+    )
 
     assert UserSettings().flow_backend == "auto"
     path = save_user_settings(replace(UserSettings(), flow_backend="cpu"), tmp_path)
-    assert path.name == FILE_NAME and json.loads(path.read_text(encoding="utf-8"))["flow_backend"] == "cpu"
+    assert (
+        path.name == FILE_NAME
+        and json.loads(path.read_text(encoding="utf-8"))["flow_backend"] == "cpu"
+    )
     assert load_user_settings(tmp_path).flow_backend == "cpu"
     invalid = tmp_path / "invalid"
     invalid.mkdir()
     (invalid / FILE_NAME).write_text('{"flow_backend": "turbo"}', encoding="utf-8")
-    assert load_user_settings(invalid).flow_backend == "auto"                            # une valeur inconnue : Auto
+    assert (
+        load_user_settings(invalid).flow_backend == "auto"
+    )  # une valeur inconnue : Auto
     older = tmp_path / "older"
     older.mkdir()
     (older / FILE_NAME).write_text('{"language": "en"}', encoding="utf-8")
     loaded = load_user_settings(older)
-    assert loaded.language == "en" and loaded.flow_backend == "auto"                     # un fichier d'avant : Auto
+    assert (
+        loaded.language == "en" and loaded.flow_backend == "auto"
+    )  # un fichier d'avant : Auto
 
 
 def test_choosing_a_backend_reaches_every_engine_and_is_saved(window):
@@ -652,16 +955,23 @@ def test_choosing_a_backend_reaches_every_engine_and_is_saved(window):
     assert window.preview_engine.flow_preference is BackendPreference.CPU
     assert window._settings_snapshot().flow_backend == "cpu"
     window.set_flow_backend("n'importe quoi")
-    assert window.export_engine.flow_preference is BackendPreference.AUTO                # une valeur inconnue redonne Auto
+    assert (
+        window.export_engine.flow_preference is BackendPreference.AUTO
+    )  # une valeur inconnue redonne Auto
 
 
 def test_the_gpu_choice_is_greyed_out_because_no_accelerator_exists_yet(window):
-    options = {value: (label, available) for value, label, available in window.flow_backend_options()}
+    options = {
+        value: (label, available)
+        for value, label, available in window.flow_backend_options()
+    }
     assert options["auto"][1] and options["cpu"][1] and not options["gpu"][1]
     assert "indisponible" in options["gpu"][0]
 
 
-def test_the_performance_page_offers_the_flow_backend_and_applies_the_choice(window, qtbot):
+def test_the_performance_page_offers_the_flow_backend_and_applies_the_choice(
+    window, qtbot
+):
     from ui.performance_settings import PerformanceSettingsTab
 
     tab = PerformanceSettingsTab(window)
@@ -669,7 +979,9 @@ def test_the_performance_page_offers_the_flow_backend_and_applies_the_choice(win
     tab.refresh_encoding()
     combo = tab.flow_backend_combo
     assert not combo.isHidden() or not tab.isVisible()
-    assert combo.count() == 3 and not combo.model().item(combo.findData("gpu")).isEnabled()
+    assert (
+        combo.count() == 3 and not combo.model().item(combo.findData("gpu")).isEnabled()
+    )
     combo.setCurrentIndex(combo.findData("cpu"))
     combo.activated.emit(combo.currentIndex())
     assert window._flow_backend_request == "cpu"
@@ -686,18 +998,24 @@ def test_the_diagnostics_name_the_requested_and_the_used_backend(window):
 # ---------------------------------------------------------------------------
 
 
-def test_the_speed_edits_keep_the_source_range_by_default_and_the_timeline_duration_on_request(window):
+def test_the_speed_edits_keep_the_source_range_by_default_and_the_timeline_duration_on_request(
+    window,
+):
     first, _second = _two_clips(window)
     duration = first.duration
     window.on_time_command("c1", "speed", 0.5)
-    assert first.duration == pytest.approx(duration * 2) and first.source_out == 10.0           # portion de média gardée
+    assert (
+        first.duration == pytest.approx(duration * 2) and first.source_out == 10.0
+    )  # portion de média gardée
     window.on_time_command("c1", "speed", 1.0)
     window.on_time_command("c1", "ripple", True)
     assert window._time_ripple_timeline and window.timeline_panel.time_ripple_timeline
-    window.on_time_command("c1", "preset", "slow_25")                                           # constant : set_clip_speed ignore le ripple
+    window.on_time_command(
+        "c1", "preset", "slow_25"
+    )  # constant : set_clip_speed ignore le ripple
     window.on_time_command("c1", "reset")
     window.playhead_seconds = 2.0
-    window.on_time_command("c1", "hold")                                                        # un arrêt, durée gardée
+    window.on_time_command("c1", "hold")  # un arrêt, durée gardée
     assert first.duration == pytest.approx(duration, abs=1e-3)
 
 
@@ -706,10 +1024,16 @@ def test_the_ripple_choice_is_persisted_and_shown_in_the_menu(window):
     window.on_time_command("c1", "ripple", True)
     assert window._settings_snapshot().time_ripple_timeline is True
     _menu, actions = _menu_actions(window, "c1")
-    by_command = {(command, argument): action for action, (command, argument) in actions.items()}
-    toggle = next(action for (command, _argument), action in by_command.items() if command == "ripple")
+    by_command = {
+        (command, argument): action for action, (command, argument) in actions.items()
+    }
+    toggle = next(
+        action
+        for (command, _argument), action in by_command.items()
+        if command == "ripple"
+    )
     assert toggle.isChecked()
-    assert by_command[("ripple", False)] is toggle                                               # un clic le désactive
+    assert by_command[("ripple", False)] is toggle  # un clic le désactive
     window.on_time_command("c1", "ripple", False)
     assert window._settings_snapshot().time_ripple_timeline is False
 
@@ -718,16 +1042,27 @@ def test_the_ripple_setting_is_saved_and_read_back_with_a_safe_default(tmp_path)
     import json
     from dataclasses import replace
 
-    from core.user_settings import FILE_NAME, UserSettings, load_user_settings, save_user_settings
+    from core.user_settings import (
+        FILE_NAME,
+        UserSettings,
+        load_user_settings,
+        save_user_settings,
+    )
 
     assert UserSettings().time_ripple_timeline is False
-    path = save_user_settings(replace(UserSettings(), time_ripple_timeline=True), tmp_path)
+    path = save_user_settings(
+        replace(UserSettings(), time_ripple_timeline=True), tmp_path
+    )
     assert json.loads(path.read_text(encoding="utf-8"))["time_ripple_timeline"] is True
     assert load_user_settings(tmp_path).time_ripple_timeline is True
     garbled = tmp_path / "garbled"
     garbled.mkdir()
-    (garbled / FILE_NAME).write_text('{"time_ripple_timeline": "peut-être"}', encoding="utf-8")
-    assert load_user_settings(garbled).time_ripple_timeline is False                             # une valeur incohérente : le défaut
+    (garbled / FILE_NAME).write_text(
+        '{"time_ripple_timeline": "peut-être"}', encoding="utf-8"
+    )
+    assert (
+        load_user_settings(garbled).time_ripple_timeline is False
+    )  # une valeur incohérente : le défaut
 
 
 # ---------------------------------------------------------------------------
@@ -740,7 +1075,7 @@ def _ramped_window(window):
     add_speed_point(window.project, "c1", 0.0, 1.0)
     add_speed_point(window.project, "c1", 3.0, 0.5)
     add_speed_point(window.project, "c1", 6.0, 2.0)
-    window.history.reset(window.project)                                                 # l'état de départ du test : courbe posée
+    window.history.reset(window.project)  # l'état de départ du test : courbe posée
     window._reload_timeline_preserving_selection("c1")
     return first, second
 
@@ -748,7 +1083,9 @@ def _ramped_window(window):
 def _speed_refs(clip):
     from core.keyframe_editing import KeyframeRef
 
-    return [KeyframeRef(clip.id, "time.speed", point.id) for point in speed_points(clip)]
+    return [
+        KeyframeRef(clip.id, "time.speed", point.id) for point in speed_points(clip)
+    ]
 
 
 def test_the_speed_points_are_drawn_as_keyframe_diamonds_on_the_clip(window):
@@ -756,7 +1093,9 @@ def test_the_speed_points_are_drawn_as_keyframe_diamonds_on_the_clip(window):
     widget = window.timeline_panel.clip_widgets["c1"]
     items = widget._keyframe_items()
     assert [frames[0].property_name for _rect, frames in items].count("time.speed") == 3
-    assert window.timeline_panel.clip_widgets["c2"]._keyframe_items() == []              # un clip sans courbe reste net
+    assert (
+        window.timeline_panel.clip_widgets["c2"]._keyframe_items() == []
+    )  # un clip sans courbe reste net
 
 
 def test_an_audio_clip_shows_its_speed_points_but_no_transform_diamonds(window):
@@ -766,11 +1105,16 @@ def test_an_audio_clip_shows_its_speed_points_but_no_transform_diamonds(window):
     add_speed_point(window.project, "a1", 0.0, 1.0)
     add_speed_point(window.project, "a1", 2.0, 0.5)
     _load(window, window.project)
-    properties = {frames[0].property_name for _rect, frames in window.timeline_panel.clip_widgets["a1"]._keyframe_items()}
+    properties = {
+        frames[0].property_name
+        for _rect, frames in window.timeline_panel.clip_widgets["a1"]._keyframe_items()
+    }
     assert properties == {"time.speed"}
 
 
-def test_dragging_speed_points_moves_them_in_one_history_entry_and_changes_the_duration(window):
+def test_dragging_speed_points_moves_them_in_one_history_entry_and_changes_the_duration(
+    window,
+):
     first, _second = _ramped_window(window)
     refs = _speed_refs(first)
     duration, before = first.duration, _entries(window)
@@ -778,7 +1122,10 @@ def test_dragging_speed_points_moves_them_in_one_history_entry_and_changes_the_d
     assert [round(k.time_seconds, 2) for k in speed_points(first)] == [0.0, 4.0, 7.0]
     assert first.duration != duration and _entries(window) == before + 1
     window.undo_last()
-    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 3.0, 6.0]
+    assert [
+        round(k.time_seconds, 2)
+        for k in speed_points(window.project.tracks[0].clips[0])
+    ] == [0.0, 3.0, 6.0]
 
 
 def test_a_refused_drag_reports_and_records_nothing(window):
@@ -799,7 +1146,9 @@ def test_deleting_the_selected_speed_points_goes_through_the_time_transaction(wi
     assert len(speed_points(first)) == 1 and _entries(window) == before + 1
     window.set_keyframe_selection(set(_speed_refs(first)))
     assert window.remove_keyframes_command() == 1
-    assert not first.has_speed_curve and first.time_remapping.speed == 1.0               # la vitesse constante est restaurée
+    assert (
+        not first.has_speed_curve and first.time_remapping.speed == 1.0
+    )  # la vitesse constante est restaurée
 
 
 def test_a_mixed_drag_moves_transform_keyframes_and_speed_points_together(window):
@@ -810,10 +1159,16 @@ def test_a_mixed_drag_moves_transform_keyframes_and_speed_points_together(window
     refs = [*_speed_refs(first)[1:2], KeyframeRef("c1", "opacity", opacity.id)]
     window.on_keyframes_move_requested(refs, 0.5)
     assert round(speed_points(first)[1].time_seconds, 2) == 3.5
-    assert [round(k.time_seconds, 2) for k in first.transform_keyframes if k.property_name == "opacity"] == [1.5]
+    assert [
+        round(k.time_seconds, 2)
+        for k in first.transform_keyframes
+        if k.property_name == "opacity"
+    ] == [1.5]
 
 
-def test_the_analysis_is_made_at_the_size_of_the_selected_export_so_the_export_recomputes_nothing(flow_window, qtbot, tmp_path, monkeypatch):
+def test_the_analysis_is_made_at_the_size_of_the_selected_export_so_the_export_recomputes_nothing(
+    flow_window, qtbot, tmp_path, monkeypatch
+):
     from types import SimpleNamespace
 
     from core.export_engine import ExportFormat, ExportPreset
@@ -821,17 +1176,34 @@ def test_the_analysis_is_made_at_the_size_of_the_selected_export_so_the_export_r
     from core.render_plan import build_render_plan
     from core.retime_layers import prepare_plan
 
-    preset = ExportPreset("Petit", (160, 90), 8, "96k")                                     # autre taille que le projet (320 × 180)
-    monkeypatch.setattr(flow_window.export_panel, "current_spec",
-                        lambda: SimpleNamespace(export_parts=lambda _project_fps: (ExportFormat.MP4_H264, preset, 30)))
+    preset = ExportPreset(
+        "Petit", (160, 90), 8, "96k"
+    )  # autre taille que le projet (320 × 180)
+    monkeypatch.setattr(
+        flow_window.export_panel,
+        "current_spec",
+        lambda: SimpleNamespace(
+            export_parts=lambda _project_fps: (ExportFormat.MP4_H264, preset, 30)
+        ),
+    )
     flow_window.on_time_command("c1", "analyze")
     qtbot.waitUntil(lambda: flow_window._flow_job is None, timeout=60000)
     assert "Flux optique analysé" in flow_window.statusBar().currentMessage()
-    done = prepare_plan(build_render_plan(flow_window.project), 160, 90, 30, FlowCache(tmp_path / "flow"))
-    assert done.report.pairs_computed == 0 and done.report.pairs_cached > 0                 # tout venait de l'analyse
+    done = prepare_plan(
+        build_render_plan(flow_window.project),
+        160,
+        90,
+        30,
+        FlowCache(tmp_path / "flow"),
+    )
+    assert (
+        done.report.pairs_computed == 0 and done.report.pairs_cached > 0
+    )  # tout venait de l'analyse
 
 
-def test_the_analysis_follows_the_backend_asked_for_in_the_settings(flow_window, qtbot, monkeypatch):
+def test_the_analysis_follows_the_backend_asked_for_in_the_settings(
+    flow_window, qtbot, monkeypatch
+):
     seen = []
     import ui.main_window_mixins.time_editing as module
 
@@ -841,7 +1213,9 @@ def test_the_analysis_follows_the_backend_asked_for_in_the_settings(flow_window,
 
         def start(self): ...
         def snapshot(self):
-            return SimpleNamespace(finished=True, total=0, done=0, state=None, report=None, message="")
+            return SimpleNamespace(
+                finished=True, total=0, done=0, state=None, report=None, message=""
+            )
 
     from types import SimpleNamespace
 

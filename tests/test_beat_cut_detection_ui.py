@@ -36,18 +36,54 @@ def _load(window, tmp_path, *, music: bool = True) -> None:
     if music:
         write_wav(song, drum_loop(120.0, 0.25, 12.0))
     assets = [
-        MediaAsset("v", str(tmp_path / "plan.mp4"), "Plan", 10.0, 160, 90, 25.0, "video", False),
+        MediaAsset(
+            "v", str(tmp_path / "plan.mp4"), "Plan", 10.0, 160, 90, 25.0, "video", False
+        ),
         MediaAsset("m", str(song), "Song", 12.0, 0, 0, 0.0, "audio", True),
     ]
-    video = Track(id="V1", name="V1", type="video", clips=[
-        Clip(id="c1", asset_id="v", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=4.0),
-    ])
+    video = Track(
+        id="V1",
+        name="V1",
+        type="video",
+        clips=[
+            Clip(
+                id="c1",
+                asset_id="v",
+                track_id="V1",
+                timeline_start=0.0,
+                source_in=0.0,
+                source_out=4.0,
+            ),
+        ],
+    )
     tracks = [video]
     if music:
-        tracks.append(Track(id="A1", name="Musique", type="audio", audio_role="music", clips=[
-            Clip(id="m1", asset_id="m", track_id="A1", timeline_start=1.0, source_in=0.0, source_out=10.0),
-        ]))
-    project = Project(name="Rythme", width=160, height=90, fps=25.0, media_assets=assets, tracks=tracks)
+        tracks.append(
+            Track(
+                id="A1",
+                name="Musique",
+                type="audio",
+                audio_role="music",
+                clips=[
+                    Clip(
+                        id="m1",
+                        asset_id="m",
+                        track_id="A1",
+                        timeline_start=1.0,
+                        source_in=0.0,
+                        source_out=10.0,
+                    ),
+                ],
+            )
+        )
+    project = Project(
+        name="Rythme",
+        width=160,
+        height=90,
+        fps=25.0,
+        media_assets=assets,
+        tracks=tracks,
+    )
     window.project = project
     window.history.reset(project)
     window.timeline_panel.set_project(project)
@@ -64,7 +100,9 @@ def test_without_grid_nor_music_nothing_is_measured(window, tmp_path):
     _load(window, tmp_path, music=False)
     window.cut_selection_on_beats(1)
     assert getattr(window, "_tempo_detection", None) is None
-    assert window.statusBar().currentMessage() == i18n.translate("beat.message.no_grid_no_music")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "beat.message.no_grid_no_music"
+    )
     assert len(window.project.tracks[0].clips) == 1
 
 
@@ -73,7 +111,9 @@ def test_a_retimed_music_is_not_measured(window, tmp_path):
     window.project.tracks[1].clips[0].sequence_id = "imbriquée"
     window.cut_selection_on_beats(1)
     assert getattr(window, "_tempo_detection", None) is None
-    assert window.statusBar().currentMessage() == i18n.translate("beat.message.music_retimed")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "beat.message.music_retimed"
+    )
 
 
 def test_the_music_alone_is_not_a_target(window, tmp_path):
@@ -81,34 +121,52 @@ def test_the_music_alone_is_not_a_target(window, tmp_path):
     window.timeline_panel.selected_clip_id = "m1"
     window.cut_selection_on_beats(1)
     assert getattr(window, "_tempo_detection", None) is None
-    assert window.statusBar().currentMessage() == i18n.translate("social.message.no_video")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "social.message.no_video"
+    )
 
 
 @needs_ffmpeg
-def test_the_selected_clip_is_cut_on_the_measured_beats_in_one_undo_step(qtbot, window, tmp_path):
+def test_the_selected_clip_is_cut_on_the_measured_beats_in_one_undo_step(
+    qtbot, window, tmp_path
+):
     _load(window, tmp_path)
     window.cut_selection_on_beats(1)
-    qtbot.waitUntil(lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000)
+    qtbot.waitUntil(
+        lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000
+    )
 
     grid = window.project.active_sequence.beat_grid
     assert grid is not None and grid.bpm == pytest.approx(120.0, abs=0.5)
-    expected = [0.25 + 0.5 * k for k in range(8)]                   # 0,25 … 3,75 : les temps à l'intérieur du plan
+    expected = [
+        0.25 + 0.5 * k for k in range(8)
+    ]  # 0,25 … 3,75 : les temps à l'intérieur du plan
     assert _video_cuts(window) == pytest.approx(expected, abs=0.05)
-    assert [clip.id for clip in window.project.tracks[1].clips] == ["m1"]   # la musique n'est pas coupée
+    assert [clip.id for clip in window.project.tracks[1].clips] == [
+        "m1"
+    ]  # la musique n'est pas coupée
     assert window.statusBar().currentMessage().startswith("Tempo mesuré")
 
     window.undo_last()
     assert len(window.project.tracks[0].clips) == 1
-    assert window.project.active_sequence.beat_grid is None          # grille et coupes s'annulent ensemble
+    assert (
+        window.project.active_sequence.beat_grid is None
+    )  # grille et coupes s'annulent ensemble
 
 
 @needs_ffmpeg
-def test_cut_every_two_beats_and_a_single_measurement_at_a_time(qtbot, window, tmp_path):
+def test_cut_every_two_beats_and_a_single_measurement_at_a_time(
+    qtbot, window, tmp_path
+):
     _load(window, tmp_path)
     window.cut_selection_on_beats(2)
-    window.cut_selection_on_beats(2)                                 # déjà en cours : refusée
-    assert window.statusBar().currentMessage() == i18n.translate("beat.message.detecting")
-    qtbot.waitUntil(lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000)
+    window.cut_selection_on_beats(2)  # déjà en cours : refusée
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "beat.message.detecting"
+    )
+    qtbot.waitUntil(
+        lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000
+    )
     assert _video_cuts(window) == pytest.approx([0.25, 1.25, 2.25, 3.25], abs=0.05)
 
 
@@ -117,10 +175,14 @@ def test_a_cancelled_measurement_changes_nothing(qtbot, window, tmp_path):
     _load(window, tmp_path)
     window.cut_selection_on_beats(1)
     window._tempo_detection.dialog.canceled.emit()
-    qtbot.waitUntil(lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000)
+    qtbot.waitUntil(
+        lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000
+    )
     assert len(window.project.tracks[0].clips) == 1
     assert window.project.active_sequence.beat_grid is None
-    assert window.statusBar().currentMessage() == i18n.translate("beat.message.detect_cancelled")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "beat.message.detect_cancelled"
+    )
 
 
 @needs_ffmpeg
@@ -129,11 +191,17 @@ def test_a_music_retimed_during_the_measurement_cuts_nothing(qtbot, window, tmp_
 
     _load(window, tmp_path)
     window.cut_selection_on_beats(1)
-    window.project.tracks[1].clips[0].time_remapping = TimeRemapping(speed=2.0)   # la boîte n'est pas modale
-    qtbot.waitUntil(lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000)
+    window.project.tracks[1].clips[0].time_remapping = TimeRemapping(
+        speed=2.0
+    )  # la boîte n'est pas modale
+    qtbot.waitUntil(
+        lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000
+    )
     assert len(window.project.tracks[0].clips) == 1
     assert window.project.active_sequence.beat_grid is None
-    assert window.statusBar().currentMessage() == i18n.translate("beat.message.music_retimed")
+    assert window.statusBar().currentMessage() == i18n.translate(
+        "beat.message.music_retimed"
+    )
 
 
 def test_an_existing_grid_is_used_without_measuring(window, tmp_path):

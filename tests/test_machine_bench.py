@@ -101,7 +101,9 @@ def test_resolve_auto_reads_warm_cache(tmp_path, monkeypatch):
 
 
 def test_measured_profile_name_respects_off_switch(tmp_path, monkeypatch):
-    monkeypatch.delenv("KUT_STUDIO_MACHINE_BENCH", raising=False)   # tests/conftest.py le coupe pour toute la suite
+    monkeypatch.delenv(
+        "KUT_STUDIO_MACHINE_BENCH", raising=False
+    )  # tests/conftest.py le coupe pour toute la suite
     resources = MachineResources(logical_cpus=8, memory_bytes=16 * 1024**3)
     save_cached_bench(
         BenchResult(
@@ -115,7 +117,14 @@ def test_measured_profile_name_respects_off_switch(tmp_path, monkeypatch):
         directory=tmp_path,
     )
     assert measured_profile_name(resources, directory=tmp_path) == "high"
-    assert measured_profile_name(resources, directory=tmp_path, environment={"KUT_STUDIO_MACHINE_BENCH": "off"}) is None
+    assert (
+        measured_profile_name(
+            resources,
+            directory=tmp_path,
+            environment={"KUT_STUDIO_MACHINE_BENCH": "off"},
+        )
+        is None
+    )
 
 
 def test_run_machine_bench_with_fake_decode():
@@ -133,8 +142,14 @@ def test_run_machine_bench_with_fake_decode():
 
 def test_tied_votes_without_decode_are_balanced():
     """Compose high + raster low sans decode : égalité → balanced (déterministe)."""
-    assert _score_to_profile(compose_ms=10.0, decode_fps=None, raster_ms=40.0) == "balanced"
-    assert _score_to_profile(compose_ms=200.0, decode_fps=None, raster_ms=2.0) == "balanced"
+    assert (
+        _score_to_profile(compose_ms=10.0, decode_fps=None, raster_ms=40.0)
+        == "balanced"
+    )
+    assert (
+        _score_to_profile(compose_ms=200.0, decode_fps=None, raster_ms=2.0)
+        == "balanced"
+    )
 
 
 def test_bench_enabled_switch():

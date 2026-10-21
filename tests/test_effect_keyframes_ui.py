@@ -19,9 +19,14 @@ from core.usage_level import UsageLevel
 from tests.test_inspector_lock_guards import _add_track_clip, window  # noqa: F401 - fixture et aide communes
 
 ORDER = [
-    ("cc1", EffectType.COLOR_CORRECTION), ("cc2", EffectType.COLOR_CORRECTION), ("vg", EffectType.VIGNETTE),
-    ("sh", EffectType.SHARPEN), ("bl", EffectType.BLUR), ("gl", EffectType.GLOW),
-    ("ca", EffectType.CHROMATIC_ABERRATION), ("hh", EffectType.HEAT_HAZE),
+    ("cc1", EffectType.COLOR_CORRECTION),
+    ("cc2", EffectType.COLOR_CORRECTION),
+    ("vg", EffectType.VIGNETTE),
+    ("sh", EffectType.SHARPEN),
+    ("bl", EffectType.BLUR),
+    ("gl", EffectType.GLOW),
+    ("ca", EffectType.CHROMATIC_ABERRATION),
+    ("hh", EffectType.HEAT_HAZE),
 ]
 
 
@@ -46,7 +51,11 @@ def _rows(win):
 
 
 def _frames(clip, property_id):
-    return sorted((k.time_seconds, k.value) for k in clip.animation if k.property_name == property_id)
+    return sorted(
+        (k.time_seconds, k.value)
+        for k in clip.animation
+        if k.property_name == property_id
+    )
 
 
 def _spin(win, name):
@@ -55,14 +64,26 @@ def _spin(win, name):
 
 def test_only_the_animatable_parameters_have_diamonds(window):
     _prepared(window)
-    expected = {"cc1": {"brightness", "contrast", "saturation"}, "cc2": {"brightness", "contrast", "saturation"},
-                "vg": {"intensity"}, "sh": set(), "bl": {"intensity"}, "gl": {"radius"}, "ca": {"intensity"}, "hh": set()}
+    expected = {
+        "cc1": {"brightness", "contrast", "saturation"},
+        "cc2": {"brightness", "contrast", "saturation"},
+        "vg": {"intensity"},
+        "sh": set(),
+        "bl": {"intensity"},
+        "gl": {"radius"},
+        "ca": {"intensity"},
+        "hh": set(),
+    }
     from ui.properties_widgets.diamond_button import KeyframeDiamondButton
 
     for effect_id, names in expected.items():
         _select(window, effect_id)
         assert set(_rows(window)) == names, effect_id
-        assert len(window.properties_panel.effect_parameters_container.findChildren(KeyframeDiamondButton)) == len(names)
+        assert len(
+            window.properties_panel.effect_parameters_container.findChildren(
+                KeyframeDiamondButton
+            )
+        ) == len(names)
 
 
 def test_without_a_keyframe_the_spin_edits_the_base_value(window):
@@ -83,7 +104,7 @@ def test_the_diamond_adds_and_removes_a_keyframe_at_the_playhead(window):
     assert _frames(clip, "fx.cc1.brightness") == [(1.0, 0.0)]
     assert len(window.history) == entries + 1
     assert _rows(window)["brightness"].diamond.isChecked()
-    _rows(window)["brightness"].diamond.click()                  # sous la tête : retire l'image clé
+    _rows(window)["brightness"].diamond.click()  # sous la tête : retire l'image clé
     assert not _frames(clip, "fx.cc1.brightness")
     assert len(window.history) == entries + 2
     assert clip.effects[0].params["brightness"] == pytest.approx(0.0)
@@ -96,11 +117,15 @@ def test_editing_an_animated_parameter_writes_the_keyframe_at_the_playhead(windo
     _rows(window)["brightness"].diamond.click()
     window.seek_to_position(2.0)
     entries = len(window.history)
-    _spin(window, "brightness").setValue(0.3)                    # (c) animé : image clé à 2 s, la base ne bouge pas
+    _spin(window, "brightness").setValue(
+        0.3
+    )  # (c) animé : image clé à 2 s, la base ne bouge pas
     assert _frames(clip, "fx.cc1.brightness") == [(1.0, 0.0), (2.0, pytest.approx(0.3))]
     assert clip.effects[0].params["brightness"] == pytest.approx(0.0)
     assert len(window.history) == entries + 1
-    _spin(window, "brightness").setValue(0.4)                    # même instant : mise à jour, pas de doublon
+    _spin(window, "brightness").setValue(
+        0.4
+    )  # même instant : mise à jour, pas de doublon
     assert _frames(clip, "fx.cc1.brightness") == [(1.0, 0.0), (2.0, pytest.approx(0.4))]
     assert len(window.history) == entries + 2
 
@@ -108,7 +133,10 @@ def test_editing_an_animated_parameter_writes_the_keyframe_at_the_playhead(windo
 def test_previous_and_next_jump_between_keyframes(window):
     _track, clip = _prepared(window)
     _select(window, "cc1")
-    clip.animation = [Keyframe("fx.cc1.brightness", 1.0, 0.1, id="a"), Keyframe("fx.cc1.brightness", 3.0, 0.5, id="b")]
+    clip.animation = [
+        Keyframe("fx.cc1.brightness", 1.0, 0.1, id="a"),
+        Keyframe("fx.cc1.brightness", 3.0, 0.5, id="b"),
+    ]
     window._reload_timeline_preserving_selection(clip.id)
     window.on_clip_selected(clip.id)
     _select(window, "cc1")
@@ -125,7 +153,10 @@ def test_previous_and_next_jump_between_keyframes(window):
 
 def test_the_spin_shows_the_evaluated_value_and_follows_the_playhead(window):
     _track, clip = _prepared(window)
-    clip.animation = [Keyframe("fx.cc1.brightness", 1.0, 0.0, id="a"), Keyframe("fx.cc1.brightness", 3.0, 1.0, id="b")]
+    clip.animation = [
+        Keyframe("fx.cc1.brightness", 1.0, 0.0, id="a"),
+        Keyframe("fx.cc1.brightness", 3.0, 1.0, id="b"),
+    ]
     window._reload_timeline_preserving_selection(clip.id)
     window.on_clip_selected(clip.id)
     _select(window, "cc1")
@@ -134,7 +165,9 @@ def test_the_spin_shows_the_evaluated_value_and_follows_the_playhead(window):
     window.seek_to_position(3.0)
     assert _spin(window, "brightness").value() == pytest.approx(1.0, abs=1e-3)
     assert _rows(window)["brightness"].diamond.isChecked()
-    assert _spin(window, "contrast").value() == pytest.approx(clip.effects[0].params["contrast"])    # non animé : sa base
+    assert _spin(window, "contrast").value() == pytest.approx(
+        clip.effects[0].params["contrast"]
+    )  # non animé : sa base
 
 
 def test_undo_and_redo_restore_the_keyframes(window):
@@ -173,9 +206,17 @@ def test_a_locked_clip_refuses_without_writing(window, kind):
     window._reload_timeline_preserving_selection(clip.id)
     window.on_clip_selected(clip.id)
     _select(window, "cc1")
-    before = (list(clip.animation), len(window.history), [dict(e.params) for e in clip.effects])
+    before = (
+        list(clip.animation),
+        len(window.history),
+        [dict(e.params) for e in clip.effects],
+    )
     row = _rows(window)["brightness"]
-    assert not row.diamond.isEnabled() and not row.next.isEnabled() and not _spin(window, "brightness").isEnabled()
+    assert (
+        not row.diamond.isEnabled()
+        and not row.next.isEnabled()
+        and not _spin(window, "brightness").isEnabled()
+    )
     for call in (
         lambda: window.on_effect_keyframe_set(clip.id, "fx.cc1.brightness", 2.0, 0.9),
         lambda: window.on_effect_keyframe_removed(clip.id, "fx.cc1.brightness", 1.0),
@@ -183,7 +224,11 @@ def test_a_locked_clip_refuses_without_writing(window, kind):
         lambda: window.on_animation_toggled(clip.id, "fx.cc1.brightness", False),
     ):
         call()
-    assert (list(clip.animation), len(window.history), [dict(e.params) for e in clip.effects]) == before
+    assert (
+        list(clip.animation),
+        len(window.history),
+        [dict(e.params) for e in clip.effects],
+    ) == before
 
 
 def test_two_instances_of_the_same_effect_keep_separate_curves(window):
@@ -192,16 +237,26 @@ def test_two_instances_of_the_same_effect_keep_separate_curves(window):
     _select(window, "cc1")
     _rows(window)["brightness"].diamond.click()
     _select(window, "cc2")
-    assert not _rows(window)["brightness"].diamond.isChecked()          # l'autre instance n'a pas de courbe
+    assert not _rows(window)[
+        "brightness"
+    ].diamond.isChecked()  # l'autre instance n'a pas de courbe
     _rows(window)["contrast"].diamond.click()
-    assert {k.property_name for k in clip.animation} == {"fx.cc1.brightness", "fx.cc2.contrast"}
+    assert {k.property_name for k in clip.animation} == {
+        "fx.cc1.brightness",
+        "fx.cc2.contrast",
+    }
     window.seek_to_position(2.0)
     _spin(window, "contrast").setValue(1.5)
-    assert len(_frames(clip, "fx.cc2.contrast")) == 2 and len(_frames(clip, "fx.cc1.brightness")) == 1
+    assert (
+        len(_frames(clip, "fx.cc2.contrast")) == 2
+        and len(_frames(clip, "fx.cc1.brightness")) == 1
+    )
     assert not any(k.property_name == "fx.cc1.contrast" for k in clip.animation)
 
 
-def test_the_menu_removes_the_animation_and_the_conversion_becomes_possible_again(window):
+def test_the_menu_removes_the_animation_and_the_conversion_becomes_possible_again(
+    window,
+):
     _track, clip = _prepared(window)
     window.seek_to_position(1.0)
     _select(window, "cc1")
@@ -210,15 +265,25 @@ def test_the_menu_removes_the_animation_and_the_conversion_becomes_possible_agai
     with pytest.raises(CompositionError, match="effets animés"):
         convert_to_composition(window.project, [clip.id])
     panel = window.properties_panel
-    texts = [a.text() for a in panel.effect_animation_menu("cc1", "brightness").actions() if not a.isSeparator()]
-    assert any("Supprimer l'animation de l'effet" in t for t in texts) and any("Désactiver l'animation" in t for t in texts)
+    texts = [
+        a.text()
+        for a in panel.effect_animation_menu("cc1", "brightness").actions()
+        if not a.isSeparator()
+    ]
+    assert any("Supprimer l'animation de l'effet" in t for t in texts) and any(
+        "Désactiver l'animation" in t for t in texts
+    )
     entries = len(window.history)
-    clear = next(a for a in panel.effect_animation_menu("cc1", "brightness").actions() if "Supprimer l'animation de l'effet" in a.text())
+    clear = next(
+        a
+        for a in panel.effect_animation_menu("cc1", "brightness").actions()
+        if "Supprimer l'animation de l'effet" in a.text()
+    )
     clear.trigger()
     assert not [k for k in clip.animation if k.property_name.startswith("fx.")]
-    assert len(window.history) == entries + 1                     # une seule étape pour tout l'effet
+    assert len(window.history) == entries + 1  # une seule étape pour tout l'effet
     assert not _rows(window)["brightness"].diamond.isChecked()
-    convert_to_composition(window.project, [clip.id])             # ne lève plus
+    convert_to_composition(window.project, [clip.id])  # ne lève plus
 
 
 def test_the_menu_entry_for_one_parameter_keeps_the_others_and_the_shown_value(window):
@@ -229,10 +294,18 @@ def test_the_menu_entry_for_one_parameter_keeps_the_others_and_the_shown_value(w
         _rows(window)[name].diamond.click()
     window.seek_to_position(2.0)
     _spin(window, "brightness").setValue(0.6)
-    disable = next(a for a in window.properties_panel.effect_animation_menu("cc1", "brightness").actions() if "Désactiver" in a.text())
+    disable = next(
+        a
+        for a in window.properties_panel.effect_animation_menu(
+            "cc1", "brightness"
+        ).actions()
+        if "Désactiver" in a.text()
+    )
     disable.trigger()
     assert not _frames(clip, "fx.cc1.brightness") and _frames(clip, "fx.cc1.contrast")
-    assert clip.effects[0].params["brightness"] == pytest.approx(0.6)       # la valeur montrée est gardée
+    assert clip.effects[0].params["brightness"] == pytest.approx(
+        0.6
+    )  # la valeur montrée est gardée
 
 
 def test_the_saved_file_is_version_20_only_with_a_curve(window):
@@ -244,7 +317,9 @@ def test_the_saved_file_is_version_20_only_with_a_curve(window):
     _rows(window)["brightness"].diamond.click()
     assert project_payload(window.project)["version"] == 20
     window.on_effect_animation_cleared(clip.id, "cc1")
-    assert json.dumps(project_payload(window.project), sort_keys=True) == plain      # octet pour octet comme avant
+    assert (
+        json.dumps(project_payload(window.project), sort_keys=True) == plain
+    )  # octet pour octet comme avant
 
 
 # ---------------------------------------------------------------- niveaux d'usage
@@ -272,7 +347,9 @@ def test_the_diamonds_follow_the_usage_level_and_a_hot_switch_loses_nothing(wind
     assert all(not row.gate.isHidden() for row in _rows(window).values())
     _levels(window, "studio")
     assert (list(clip.animation), [dict(e.params) for e in clip.effects]) == snapshot
-    assert _spin(window, "brightness").value() == pytest.approx(0.7, abs=1e-3)     # la valeur évaluée reste affichée
+    assert _spin(window, "brightness").value() == pytest.approx(
+        0.7, abs=1e-3
+    )  # la valeur évaluée reste affichée
 
 
 def test_the_menu_is_advanced_beyond_the_toggle_and_the_effect_clear(window):
@@ -283,13 +360,19 @@ def test_the_menu_is_advanced_beyond_the_toggle_and_the_effect_clear(window):
     panel = window.properties_panel
 
     def entries():
-        return [a.text() for a in panel.effect_animation_menu("cc1", "brightness").actions() if not a.isSeparator()]
+        return [
+            a.text()
+            for a in panel.effect_animation_menu("cc1", "brightness").actions()
+            if not a.isSeparator()
+        ]
 
     studio = entries()
-    assert len(studio) == 2                                       # désactiver ; supprimer l'animation de l'effet
+    assert len(studio) == 2  # désactiver ; supprimer l'animation de l'effet
     _levels(window, "advanced")
     advanced = entries()
-    assert len(advanced) > len(studio) and any("Interpolation" in t or "interpolation" in t for t in advanced)
+    assert len(advanced) > len(studio) and any(
+        "Interpolation" in t or "interpolation" in t for t in advanced
+    )
     assert panel.usage_level is UsageLevel.ADVANCED
 
 
@@ -299,7 +382,9 @@ def test_no_level_ever_disables_the_rows(window):
     for level in ("simple", "studio", "advanced"):
         _levels(window, level)
         for row in _rows(window).values():
-            assert row.diamond.isEnabled() and row.gate.isEnabled()      # un niveau montre ou cache, jamais setEnabled
+            assert (
+                row.diamond.isEnabled() and row.gate.isEnabled()
+            )  # un niveau montre ou cache, jamais setEnabled
 
 
 # ---------------------------------------------------------------- éditeur de courbes
@@ -308,15 +393,30 @@ def test_no_level_ever_disables_the_rows(window):
 def test_the_graph_editor_lists_the_animatable_parameters_with_readable_labels(window):
     _track, clip = _prepared(window)
     editor = window.open_graph_editor()
-    labels = {editor.property_combo.itemData(i): editor.property_combo.itemText(i) for i in range(editor.property_combo.count())}
+    labels = {
+        editor.property_combo.itemData(i): editor.property_combo.itemText(i)
+        for i in range(editor.property_combo.count())
+    }
     assert labels["fx.cc1.brightness"] == "Correction couleur — Luminosité"
     assert labels["fx.cc2.brightness"] == "Correction couleur n° 2 — Luminosité"
-    assert labels["fx.vg.intensity"].endswith("Intensité") and "Vignette" in labels["fx.vg.intensity"]
+    assert (
+        labels["fx.vg.intensity"].endswith("Intensité")
+        and "Vignette" in labels["fx.vg.intensity"]
+    )
     # Étape 5 : flou, rayon de la lueur et aberration chromatique (``sendcmd``) ; ni la netteté ni la brume.
-    assert labels["fx.bl.intensity"].endswith("Intensité") and "Flou" in labels["fx.bl.intensity"]
-    assert labels["fx.gl.radius"].endswith("Rayon") and "Bloom" in labels["fx.gl.radius"]
+    assert (
+        labels["fx.bl.intensity"].endswith("Intensité")
+        and "Flou" in labels["fx.bl.intensity"]
+    )
+    assert (
+        labels["fx.gl.radius"].endswith("Rayon") and "Bloom" in labels["fx.gl.radius"]
+    )
     assert "Aberration" in labels["fx.ca.intensity"]
-    assert not [pid for pid in labels if pid.startswith("fx.") and pid.split(".")[1] in {"sh", "hh"}]
+    assert not [
+        pid
+        for pid in labels
+        if pid.startswith("fx.") and pid.split(".")[1] in {"sh", "hh"}
+    ]
     assert not [pid for pid in labels if pid in {"fx.gl.threshold", "fx.gl.intensity"}]
     assert len([pid for pid in labels if pid.startswith("fx.")]) == 10
 
@@ -326,7 +426,13 @@ def test_a_curve_drawn_from_the_diamond_menu_opens_in_the_graph_editor(window):
     window.seek_to_position(1.0)
     _select(window, "vg")
     _rows(window)["intensity"].diamond.click()
-    graph = next(a for a in window.properties_panel.effect_animation_menu("vg", "intensity").actions() if "ourbe" in a.text() or "raph" in a.text())
+    graph = next(
+        a
+        for a in window.properties_panel.effect_animation_menu(
+            "vg", "intensity"
+        ).actions()
+        if "ourbe" in a.text() or "raph" in a.text()
+    )
     graph.trigger()
     assert window.graph_editor.property_id == "fx.vg.intensity"
     assert len(window.graph_editor.curve().keyframes) == 1
@@ -357,15 +463,32 @@ def test_clearing_an_effect_animation_in_the_model_keeps_the_shown_values_and_dr
     from core.keyframe_editing import clear_effect_animation
     from core.project_model import Clip, Project, Track
 
-    clip = Clip(id="c", asset_id="a", track_id="t", timeline_start=0.0, source_in=0.0, source_out=4.0,
-                effects=[create_effect(EffectType.COLOR_CORRECTION, effect_id="e1"),
-                                         create_effect(EffectType.COLOR_CORRECTION, effect_id="other")])
-    clip.animation = [Keyframe("fx.e1.brightness", 0.0, 0.0, id="a"), Keyframe("fx.e1.brightness", 2.0, 0.5, id="b"),
-                      Keyframe("fx.e1.radius", 1.0, 3.0, id="o"), Keyframe("fx.other.brightness", 1.0, 1.0, id="k")]
+    clip = Clip(
+        id="c",
+        asset_id="a",
+        track_id="t",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
+        effects=[
+            create_effect(EffectType.COLOR_CORRECTION, effect_id="e1"),
+            create_effect(EffectType.COLOR_CORRECTION, effect_id="other"),
+        ],
+    )
+    clip.animation = [
+        Keyframe("fx.e1.brightness", 0.0, 0.0, id="a"),
+        Keyframe("fx.e1.brightness", 2.0, 0.5, id="b"),
+        Keyframe("fx.e1.radius", 1.0, 3.0, id="o"),
+        Keyframe("fx.other.brightness", 1.0, 1.0, id="k"),
+    ]
     track = Track(id="t", name="T", type="video")
     track.clips.append(clip)
     project = Project(name="P")
     project.tracks.append(track)
     assert clear_effect_animation(project, "c", "e1", 1.0) == 2
-    assert [k.id for k in clip.animation] == ["k"]          # l'orpheline part, l'autre effet reste
-    assert clip.effects[0].params["brightness"] == pytest.approx(0.25)             # valeur montrée à 1 s
+    assert [k.id for k in clip.animation] == [
+        "k"
+    ]  # l'orpheline part, l'autre effet reste
+    assert clip.effects[0].params["brightness"] == pytest.approx(
+        0.25
+    )  # valeur montrée à 1 s

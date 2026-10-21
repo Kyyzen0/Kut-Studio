@@ -15,7 +15,13 @@ from core.tracking_model import ClipTracking, TrackLink
 
 
 def _project() -> Project:
-    return Project(name="Dépendances", width=160, height=90, fps=10.0, tracks=[Track("V1", "V1", "video")])
+    return Project(
+        name="Dépendances",
+        width=160,
+        height=90,
+        fps=10.0,
+        tracks=[Track("V1", "V1", "video")],
+    )
 
 
 def _two_layers(project: Project):
@@ -35,7 +41,7 @@ def test_a_selection_that_leaves_the_parent_behind_is_refused_and_changes_nothin
     before = _snapshot(project)
     with pytest.raises(SequenceError, match="Sélectionnez-les ensemble"):
         create_sequence_from_selection(project, [child.id])
-    assert _snapshot(project) == before                      # aucune séquence créée, aucun clip déplacé
+    assert _snapshot(project) == before  # aucune séquence créée, aucun clip déplacé
 
 
 def test_a_selection_that_takes_the_parent_without_its_child_is_refused():
@@ -62,7 +68,11 @@ def test_a_group_cannot_be_split_from_its_members():
     with pytest.raises(SequenceError):
         create_sequence_from_selection(project, [first.id])
     result = create_sequence_from_selection(project, [group.id, first.id, second.id])
-    assert {clip.id for track in result.sequence.tracks for clip in track.clips} == {group.id, first.id, second.id}
+    assert {clip.id for track in result.sequence.tracks for clip in track.clips} == {
+        group.id,
+        first.id,
+        second.id,
+    }
 
 
 def test_unrelated_layers_nest_freely():
@@ -70,16 +80,24 @@ def test_unrelated_layers_nest_freely():
     first = add_graphic_clip(project, "shape", timeline_start=0, duration=2)
     add_graphic_clip(project, "shape", timeline_start=0, duration=2)
     result = create_sequence_from_selection(project, [first.id])
-    assert [clip.id for track in result.sequence.tracks for clip in track.clips] == [first.id]
+    assert [clip.id for track in result.sequence.tracks for clip in track.clips] == [
+        first.id
+    ]
 
 
 def _video_project_with_tracking():
     media = MediaAsset("m", "/tmp/m.mp4", "m", 4.0, 160, 90, 10.0, "video", False)
     source = Clip("source", "m", "V1", 0.0, 0.0, 3.0)
     target = Clip("target", "m", "V1", 0.0, 0.0, 3.0)
-    target.tracking = ClipTracking(links=(TrackLink(id="link", source_clip_id="source", tracker_ids=("t1",)),))
+    target.tracking = ClipTracking(
+        links=(TrackLink(id="link", source_clip_id="source", tracker_ids=("t1",)),)
+    )
     project = Project(
-        name="Tracking", width=160, height=90, fps=10.0, media_assets=[media],
+        name="Tracking",
+        width=160,
+        height=90,
+        fps=10.0,
+        media_assets=[media],
         tracks=[Track("V1", "V1", "video", clips=[source, target])],
     )
     return project, source, target
@@ -92,14 +110,25 @@ def test_a_tracking_link_cannot_be_separated_from_its_source_clip():
     with pytest.raises(SequenceError, match="tracking"):
         create_sequence_from_selection(project, [source.id])
     result = create_sequence_from_selection(project, [source.id, target.id])
-    assert {clip.id for track in result.sequence.tracks for clip in track.clips} == {"source", "target"}
+    assert {clip.id for track in result.sequence.tracks for clip in track.clips} == {
+        "source",
+        "target",
+    }
 
 
 def test_a_link_to_the_clip_itself_or_to_a_missing_clip_does_not_block_nesting():
     project, source, target = _video_project_with_tracking()
-    target.tracking = ClipTracking(links=(
-        TrackLink(id="own", source_clip_id="", tracker_ids=("t1",)),            # le clip lui-même
-        replace(TrackLink(id="gone", tracker_ids=("t1",)), source_clip_id="supprime"),   # source disparue
-    ))
+    target.tracking = ClipTracking(
+        links=(
+            TrackLink(
+                id="own", source_clip_id="", tracker_ids=("t1",)
+            ),  # le clip lui-même
+            replace(
+                TrackLink(id="gone", tracker_ids=("t1",)), source_clip_id="supprime"
+            ),  # source disparue
+        )
+    )
     result = create_sequence_from_selection(project, [target.id])
-    assert [clip.id for track in result.sequence.tracks for clip in track.clips] == ["target"]
+    assert [clip.id for track in result.sequence.tracks for clip in track.clips] == [
+        "target"
+    ]

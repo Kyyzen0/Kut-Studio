@@ -11,7 +11,13 @@ from core.process_tree import kill_process_tree
 
 
 class _FakeProcess:
-    def __init__(self, events: list[str], pid: int = 4242, running: bool = True, kill_error: OSError | None = None) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        pid: int = 4242,
+        running: bool = True,
+        kill_error: OSError | None = None,
+    ) -> None:
         self.pid = pid
         self._events = events
         self._running = running
@@ -32,13 +38,16 @@ def _launcher(events: list[str], error: Exception | None = None):
         assert options["timeout"] > 0 and options["check"] is False
         if error is not None:
             raise error
+
     return run
 
 
 def test_on_windows_the_whole_tree_is_killed_before_the_parent():
     events: list[str] = []
     kill_process_tree(_FakeProcess(events), windows=True, run=_launcher(events))
-    assert events == ["taskkill:taskkill /PID 4242 /T /F", "kill"], "taskkill d'abord : il suit les enfants du parent encore vivant"
+    assert events == ["taskkill:taskkill /PID 4242 /T /F", "kill"], (
+        "taskkill d'abord : il suit les enfants du parent encore vivant"
+    )
 
 
 def test_off_windows_only_the_process_itself_is_killed():
@@ -49,20 +58,29 @@ def test_off_windows_only_the_process_itself_is_killed():
 
 def test_an_already_finished_process_needs_no_taskkill():
     events: list[str] = []
-    kill_process_tree(_FakeProcess(events, running=False), windows=True, run=_launcher(events))
+    kill_process_tree(
+        _FakeProcess(events, running=False), windows=True, run=_launcher(events)
+    )
     assert events == ["kill"]
 
 
 def test_a_taskkill_that_cannot_run_still_kills_the_parent_and_never_raises(caplog):
-    for error in (FileNotFoundError("taskkill"), subprocess.TimeoutExpired("taskkill", 10.0)):
+    for error in (
+        FileNotFoundError("taskkill"),
+        subprocess.TimeoutExpired("taskkill", 10.0),
+    ):
         events: list[str] = []
         with caplog.at_level("WARNING", logger="kut_studio.process"):
-            kill_process_tree(_FakeProcess(events), windows=True, run=_launcher(events, error))
+            kill_process_tree(
+                _FakeProcess(events), windows=True, run=_launcher(events, error)
+            )
         assert events[-1] == "kill"
     assert "taskkill impossible" in caplog.text
 
 
 def test_a_parent_that_cannot_be_killed_does_not_raise():
     events: list[str] = []
-    kill_process_tree(_FakeProcess(events, kill_error=PermissionError("refusé")), windows=False)
+    kill_process_tree(
+        _FakeProcess(events, kill_error=PermissionError("refusé")), windows=False
+    )
     assert events == ["kill"]

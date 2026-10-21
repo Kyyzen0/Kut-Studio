@@ -20,10 +20,15 @@ def _seed(tmp_path, monkeypatch, level: str):
 def test_the_window_starts_at_the_stored_level(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "studio")
     window = _window(qtbot, monkeypatch, tmp_path)
-    assert window.usage_level is UsageLevel.STUDIO and window._settings_snapshot().usage_level == "studio"
+    assert (
+        window.usage_level is UsageLevel.STUDIO
+        and window._settings_snapshot().usage_level == "studio"
+    )
 
 
-def test_a_fresh_install_window_is_simple_and_an_old_file_is_advanced(qtbot, monkeypatch, tmp_path):
+def test_a_fresh_install_window_is_simple_and_an_old_file_is_advanced(
+    qtbot, monkeypatch, tmp_path
+):
     fresh = tmp_path / "fresh"
     assert _window(qtbot, monkeypatch, fresh).usage_level is UsageLevel.SIMPLE
     old = tmp_path / "old"
@@ -60,10 +65,15 @@ def test_set_usage_level_saves_and_emits_once(qtbot, monkeypatch, tmp_path):
     assert window.set_usage_level("simple") is True
     assert window.usage_level is UsageLevel.SIMPLE and seen == ["simple"]
     assert load_user_settings(tmp_path).usage_level == "simple"
-    assert window.set_usage_level(UsageLevel.STUDIO) is True and seen == ["simple", "studio"]
+    assert window.set_usage_level(UsageLevel.STUDIO) is True and seen == [
+        "simple",
+        "studio",
+    ]
 
 
-def test_set_usage_level_unchanged_writes_nothing_and_emits_nothing(qtbot, monkeypatch, tmp_path):
+def test_set_usage_level_unchanged_writes_nothing_and_emits_nothing(
+    qtbot, monkeypatch, tmp_path
+):
     _seed(tmp_path, monkeypatch, "studio")
     window = _window(qtbot, monkeypatch, tmp_path)
     calls: list[UserSettings] = []
@@ -74,8 +84,11 @@ def test_set_usage_level_unchanged_writes_nothing_and_emits_nothing(qtbot, monke
     assert calls == [] and seen == []
 
 
-@pytest.mark.parametrize("bad", ["expert", "", None, True, 2, ["simple"], "S" * 100_000],
-                         ids=lambda v: f"len{len(v)}" if isinstance(v, str) and len(v) > 50 else repr(v))
+@pytest.mark.parametrize(
+    "bad",
+    ["expert", "", None, True, 2, ["simple"], "S" * 100_000],
+    ids=lambda v: f"len{len(v)}" if isinstance(v, str) and len(v) > 50 else repr(v),
+)
 def test_set_usage_level_refuses_an_invalid_value(qtbot, monkeypatch, tmp_path, bad):
     _seed(tmp_path, monkeypatch, "studio")
     window = _window(qtbot, monkeypatch, tmp_path)

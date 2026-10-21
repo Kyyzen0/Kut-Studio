@@ -12,9 +12,16 @@ from pathlib import Path
 
 import pytest
 
-WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "multiplatform.yml"
+WORKFLOW = (
+    Path(__file__).resolve().parent.parent
+    / ".github"
+    / "workflows"
+    / "multiplatform.yml"
+)
 
-pytestmark = pytest.mark.skipif(not WORKFLOW.is_file(), reason="pas de .github/workflows dans cette arborescence")
+pytestmark = pytest.mark.skipif(
+    not WORKFLOW.is_file(), reason="pas de .github/workflows dans cette arborescence"
+)
 
 
 def _jobs() -> dict[str, str]:
@@ -33,23 +40,35 @@ def _jobs() -> dict[str, str]:
 
 
 def _without_comments(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
 
 
-def test_the_dedicated_libass_job_turns_a_skip_into_a_failure_and_runs_only_libass_tests() -> None:
+def test_the_dedicated_libass_job_turns_a_skip_into_a_failure_and_runs_only_libass_tests() -> (
+    None
+):
     job = _without_comments(_jobs()["macos-libass"])
     assert re.search(r'^\s+KUT_STUDIO_REQUIRE_LIBASS: "1"\s*$', job, re.MULTILINE)
     assert "runs-on: macos-latest" in job
-    assert re.search(r"pytest .*-m libass\b", job), "le job doit sélectionner les tests marqués libass"
-    assert "KUT_STUDIO_FFMPEG=" in job and "KUT_STUDIO_FFPROBE=" in job, "ffmpeg-full doit être rendu visible"
+    assert re.search(r"pytest .*-m libass\b", job), (
+        "le job doit sélectionner les tests marqués libass"
+    )
+    assert "KUT_STUDIO_FFMPEG=" in job and "KUT_STUDIO_FFPROBE=" in job, (
+        "ffmpeg-full doit être rendu visible"
+    )
     assert re.search(r"brew install ffmpeg-full", job)
 
 
 def test_the_dedicated_libass_job_is_blocking_bounded_and_independent() -> None:
     job = _without_comments(_jobs()["macos-libass"])
-    assert "continue-on-error" not in job, "un job non bloquant rendrait la couverture libass optionnelle en silence"
+    assert "continue-on-error" not in job, (
+        "un job non bloquant rendrait la couverture libass optionnelle en silence"
+    )
     assert re.search(r"^\s+timeout-minutes: \d+\s*$", job, re.MULTILINE)
-    assert not re.search(r"^\s+needs:", job, re.MULTILINE), "le job dédié ne dépend pas de la matrice (ni l'inverse)"
+    assert not re.search(r"^\s+needs:", job, re.MULTILINE), (
+        "le job dédié ne dépend pas de la matrice (ni l'inverse)"
+    )
 
 
 def test_the_main_matrix_is_unchanged_and_does_not_require_libass() -> None:
@@ -57,8 +76,12 @@ def test_the_main_matrix_is_unchanged_and_does_not_require_libass() -> None:
     matrix = _without_comments(jobs["test-and-build"])
     assert "os: [macos-latest, windows-latest, ubuntu-latest]" in matrix
     assert "fail-fast: false" in matrix
-    assert "KUT_STUDIO_REQUIRE_LIBASS" not in matrix, "la matrice principale saute sans libass (macOS) comme avant"
-    assert "|| brew install ffmpeg" in matrix, "la matrice garde l'installation du FFmpeg Homebrew sans libass"
+    assert "KUT_STUDIO_REQUIRE_LIBASS" not in matrix, (
+        "la matrice principale saute sans libass (macOS) comme avant"
+    )
+    assert "|| brew install ffmpeg" in matrix, (
+        "la matrice garde l'installation du FFmpeg Homebrew sans libass"
+    )
     assert set(jobs) == {"test-and-build", "macos-libass", "linux-ffmpeg7"}
 
 
@@ -66,10 +89,16 @@ def test_the_ffmpeg7_job_really_tests_ffmpeg_7_and_python_3_13_and_blocks() -> N
     """FFmpeg 7.0 / 7.1 se comporte autrement que 6.1 et 8+ (``setpts`` efface la cadence) : le job le garde testé."""
     job = _without_comments(_jobs()["linux-ffmpeg7"])
     assert "container: debian:trixie" in job
-    assert '"ffmpeg version 7."*) ;;' in job, "une autre version majeure doit faire échouer le job, pas passer en silence"
+    assert '"ffmpeg version 7."*) ;;' in job, (
+        "une autre version majeure doit faire échouer le job, pas passer en silence"
+    )
     assert "sys.version_info[:2] == (3, 13)" in job
-    assert re.search(r"python -m pytest -q -n auto --timeout=\d+", job), "toute la suite, avec un délai par test"
-    assert "continue-on-error" not in job and not re.search(r"^\s+needs:", job, re.MULTILINE)
+    assert re.search(r"python -m pytest -q -n auto --timeout=\d+", job), (
+        "toute la suite, avec un délai par test"
+    )
+    assert "continue-on-error" not in job and not re.search(
+        r"^\s+needs:", job, re.MULTILINE
+    )
     assert re.search(r"^\s+timeout-minutes: \d+\s*$", job, re.MULTILINE)
 
 
@@ -93,7 +122,9 @@ def test_a_suite_job_outlives_a_slow_runner_plus_one_stuck_test(name: str) -> No
     per_test = [int(seconds) for seconds in re.findall(r"--timeout=(\d+)\b", job)]
     assert minutes and per_test, "délai du job ou délai par test introuvable"
     needed = SLOWEST_HEALTHY_SUITE_JOB_MINUTES[name] * 60 + max(per_test)
-    assert int(minutes.group(1)) * 60 >= needed, f"{name} : il faut au moins {needed / 60:.0f} min"
+    assert int(minutes.group(1)) * 60 >= needed, (
+        f"{name} : il faut au moins {needed / 60:.0f} min"
+    )
 
 
 def test_the_workflow_keeps_read_only_permissions_and_sha_pinned_actions() -> None:
@@ -103,7 +134,11 @@ def test_the_workflow_keeps_read_only_permissions_and_sha_pinned_actions() -> No
     actions = re.findall(r"^\s+(?:- )?uses: (\S+)", text, re.MULTILINE)
     assert actions, "aucune action trouvée : l'analyse du fichier est en défaut"
     # Une action locale (``./.github/actions/...``) est versionnée avec le commit : rien à épingler.
-    assert all(action.startswith("./.github/actions/") or re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action) for action in actions), actions
+    assert all(
+        action.startswith("./.github/actions/")
+        or re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action)
+        for action in actions
+    ), actions
 
 
 # ---------------------------------------------------------------------------
@@ -141,24 +176,47 @@ def test_coverage_is_measured_once_on_linux_with_the_same_condition_as_mypy() ->
     suites = [step for step in steps if "python -m pytest" in step]
     covered = [step for step in suites if "--cov" in step]
     plain = [step for step in suites if "--cov" not in step]
-    assert len(covered) == 1 and len(plain) == 1, "une suite instrumentée (Linux) et une suite nue (macOS, Windows)"
+    assert len(covered) == 1 and len(plain) == 1, (
+        "une suite instrumentée (Linux) et une suite nue (macOS, Windows)"
+    )
     assert _condition(covered[0]) == linux_only
-    assert _condition(plain[0]) == "runner.os != 'Linux'", "macOS et Windows lancent toujours toute la suite"
-    for flag in ("--cov-branch", "--cov-report=json", "--cov-report=xml", "--timeout=600", "-n auto"):
+    assert _condition(plain[0]) == "runner.os != 'Linux'", (
+        "macOS et Windows lancent toujours toute la suite"
+    )
+    for flag in (
+        "--cov-branch",
+        "--cov-report=json",
+        "--cov-report=xml",
+        "--timeout=600",
+        "-n auto",
+    ):
         assert flag in covered[0], f"{flag} manque à la suite instrumentée"
     assert "--timeout=600" in plain[0] and "-n auto" in plain[0]
 
 
-def test_the_coverage_ratchet_blocks_the_linux_job_and_reports_even_on_failure() -> None:
+def test_the_coverage_ratchet_blocks_the_linux_job_and_reports_even_on_failure() -> (
+    None
+):
     steps = _matrix_steps()
-    ratchets = [step for step in steps if "tools/coverage_ratchet.py coverage.json" in step]
+    ratchets = [
+        step for step in steps if "tools/coverage_ratchet.py coverage.json" in step
+    ]
     assert len(ratchets) == 1
     ratchet = ratchets[0]
     assert _condition(ratchet) == "runner.os == 'Linux'"
-    assert "continue-on-error" not in ratchet, "un cliquet non bloquant laisserait la couverture régresser en silence"
-    assert re.search(r"^\s+shell: bash\s*$", ratchet, re.MULTILINE), "bash explicite = pipefail : « | tee » garde le code"
-    assert any("GITHUB_STEP_SUMMARY" in step and "coverage-ratchet.txt" in step for step in steps)
-    uploads = [step for step in steps if "upload-artifact" in step and "coverage.json" in step]
+    assert "continue-on-error" not in ratchet, (
+        "un cliquet non bloquant laisserait la couverture régresser en silence"
+    )
+    assert re.search(r"^\s+shell: bash\s*$", ratchet, re.MULTILINE), (
+        "bash explicite = pipefail : « | tee » garde le code"
+    )
+    assert any(
+        "GITHUB_STEP_SUMMARY" in step and "coverage-ratchet.txt" in step
+        for step in steps
+    )
+    uploads = [
+        step for step in steps if "upload-artifact" in step and "coverage.json" in step
+    ]
     assert len(uploads) == 1 and "coverage.xml" in uploads[0]
     assert re.search(r"retention-days: 7\b", uploads[0])
     assert "runner.os == 'Linux'" in (_condition(uploads[0]) or "")
@@ -175,7 +233,9 @@ def test_every_suite_dumps_the_python_stacks_before_its_per_test_timeout() -> No
     ``faulthandler_timeout`` écrit depuis un thread C qui n'a pas besoin du GIL, sur le stderr hérité du worker
     xdist ; il doit partir avant ``--timeout``, sinon un blocage ordinaire tue le worker sans pile dans le journal.
     """
-    commands = re.findall(r"python -m pytest .*", _without_comments(WORKFLOW.read_text(encoding="utf-8")))
+    commands = re.findall(
+        r"python -m pytest .*", _without_comments(WORKFLOW.read_text(encoding="utf-8"))
+    )
     assert len(commands) == 4, commands
     for command in commands:
         timeout = re.search(r"--timeout=(\d+)\b", command)

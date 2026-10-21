@@ -36,7 +36,9 @@ def journal(tmp_path, monkeypatch):
     uninstall_diagnostics()
 
 
-def test_a_failed_export_and_its_queue_job_reach_the_log_file(qtbot, queue, tmp_path, monkeypatch, journal):  # noqa: F811
+def test_a_failed_export_and_its_queue_job_reach_the_log_file(
+    qtbot, queue, tmp_path, monkeypatch, journal
+):  # noqa: F811
     monkeypatch.setenv("FAKE_FFMPEG_FAIL", "Invalid data found when processing input")
     job = _enqueue(queue, tmp_path)
     queue.start_all()
@@ -44,12 +46,19 @@ def test_a_failed_export_and_its_queue_job_reach_the_log_file(qtbot, queue, tmp_
 
     assert job.status.value == "failed"
     text = journal()
-    assert "Export échoué (code 1" in text and "Invalid data found when processing input" in text
+    assert (
+        "Export échoué (code 1" in text
+        and "Invalid data found when processing input" in text
+    )
     assert f"File de rendu : tâche {job.id} en échec (ffmpeg)" in text
 
 
-def test_ffmpeg_that_cannot_start_is_logged(qtbot, queue, tmp_path, monkeypatch, journal):  # noqa: F811
-    monkeypatch.setattr("core.export_engine._ffmpeg_path", (str(tmp_path / "ffmpeg-inexistant"),))
+def test_ffmpeg_that_cannot_start_is_logged(
+    qtbot, queue, tmp_path, monkeypatch, journal
+):  # noqa: F811
+    monkeypatch.setattr(
+        "core.export_engine._ffmpeg_path", (str(tmp_path / "ffmpeg-inexistant"),)
+    )
     _enqueue(queue, tmp_path)
     queue.start_all()
     _wait_idle(qtbot, queue)
@@ -57,7 +66,9 @@ def test_ffmpeg_that_cannot_start_is_logged(qtbot, queue, tmp_path, monkeypatch,
     assert "FFmpeg n'a pas pu démarrer" in journal()
 
 
-def test_a_preview_segment_that_ffmpeg_cannot_render_is_logged(tmp_path, monkeypatch, journal):
+def test_a_preview_segment_that_ffmpeg_cannot_render_is_logged(
+    tmp_path, monkeypatch, journal
+):
     from core.preview_cache import PreviewSegmentKey
     from core.preview_engine import PreviewEngine, PreviewJob
     from core.project_factory import create_default_project
@@ -65,10 +76,18 @@ def test_a_preview_segment_that_ffmpeg_cannot_render_is_logged(tmp_path, monkeyp
 
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(
-        "core.preview_engine._run_cancellable", lambda command, token, *, timeout: (1, "Conversion failed!")
+        "core.preview_engine._run_cancellable",
+        lambda command, token, *, timeout: (1, "Conversion failed!"),
     )
-    key = PreviewSegmentKey(clip_id="clip-a", start=0.0, end=2.0, quality="standard", params_hash="p")
-    job = PreviewJob(key=key, plan=build_render_plan(create_default_project()), start=0.0, duration=2.0)
+    key = PreviewSegmentKey(
+        clip_id="clip-a", start=0.0, end=2.0, quality="standard", params_hash="p"
+    )
+    job = PreviewJob(
+        key=key,
+        plan=build_render_plan(create_default_project()),
+        start=0.0,
+        duration=2.0,
+    )
 
     with pytest.raises(RuntimeError, match="a echoue"):
         PreviewEngine(cache=None)._default_render(job, None)
@@ -88,8 +107,11 @@ def test_a_failed_proxy_generation_is_logged(tmp_path, journal):
         return RunResult(1, "Error while decoding stream #0:0: Invalid data")
 
     manager = ProxyManager(
-        tmp_path / "proxies", ffmpeg_command=lambda: ["ffmpeg-fake"], runner=failing_runner,
-        memo=SignatureMemo(ttl=0.0), disk_ttl=0.0,
+        tmp_path / "proxies",
+        ffmpeg_command=lambda: ["ffmpeg-fake"],
+        runner=failing_runner,
+        memo=SignatureMemo(ttl=0.0),
+        disk_ttl=0.0,
     )
     try:
         manager.request(str(source), duration=2.0)

@@ -39,7 +39,9 @@ TIMEOUT = 20000
 
 @pytest.fixture
 def fake_ffmpeg(monkeypatch):
-    monkeypatch.setattr("core.export_engine._ffmpeg_path", (sys.executable, str(FAKE_FFMPEG)))
+    monkeypatch.setattr(
+        "core.export_engine._ffmpeg_path", (sys.executable, str(FAKE_FFMPEG))
+    )
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.3")
 
 
@@ -47,15 +49,30 @@ def _project(tmp_path: Path, name: str = "Projet test") -> Project:
     media = tmp_path / "source.mp4"
     media.write_bytes(b"\x00" * 64)
     asset = MediaAsset(
-        id="a1", path=str(media), name="source", duration=10.0,
-        width=1920, height=1080, fps=30.0, media_type="video",
+        id="a1",
+        path=str(media),
+        name="source",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
     )
     clip = Clip(
-        id="c1", asset_id="a1", track_id="V1", timeline_start=0.0,
-        source_in=0.0, source_out=4.0, label="Clip",
+        id="c1",
+        asset_id="a1",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
+        label="Clip",
     )
     return Project(
-        name=name, width=1920, height=1080, fps=30.0, media_assets=[asset],
+        name=name,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_assets=[asset],
         tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
     )
 
@@ -65,7 +82,9 @@ def make_queue(tmp_path):
     created: list[RenderQueue] = []
 
     def factory(directory: Path | None = None) -> RenderQueue:
-        queue = RenderQueue(ExportEngine(), RenderQueueStore(directory or tmp_path / "queue"))
+        queue = RenderQueue(
+            ExportEngine(), RenderQueueStore(directory or tmp_path / "queue")
+        )
         created.append(queue)
         return queue
 
@@ -98,8 +117,10 @@ def _status_log(queue) -> list[tuple[str, JobStatus]]:
     def record(job_id: str) -> None:
         job = queue.job(job_id)
         entry = (job_id, job.status)
-        if job is not None and (not log or log[-1] != entry) and (
-            not any(e == entry for e in log)
+        if (
+            job is not None
+            and (not log or log[-1] != entry)
+            and (not any(e == entry for e in log))
         ):
             log.append(entry)
 
@@ -125,40 +146,62 @@ def _pid_alive(pid: int) -> bool:
 def test_job_is_created_from_a_preset_with_all_the_expected_fields(tmp_path):
     spec = get_preset("youtube")
     job = RenderJob.create(
-        project_fps=25.0, spec=spec, snapshot_path=str(tmp_path / "p.kut"), output_path=_out(tmp_path, "yt.mp4"),
-        project_name="Mon film", duration_seconds=12.5, master_gain_db=-3.0, now=1000.0,
+        project_fps=25.0,
+        spec=spec,
+        snapshot_path=str(tmp_path / "p.kut"),
+        output_path=_out(tmp_path, "yt.mp4"),
+        project_name="Mon film",
+        duration_seconds=12.5,
+        master_gain_db=-3.0,
+        now=1000.0,
     )
     assert job.id and job.status is JobStatus.WAITING and job.progress == 0
     assert job.name == "Mon film · YouTube"
     assert job.file_name == "yt.mp4"
     assert (job.container, job.video_codec, job.audio_codec) == ("mp4", "h264", "aac")
-    assert job.resolution == (1920, 1080) and job.fps == 25.0 and job.quality == 18  # cadence de la séquence
+    assert (
+        job.resolution == (1920, 1080) and job.fps == 25.0 and job.quality == 18
+    )  # cadence de la séquence
     assert job.preset_id == "youtube" and job.hardware == "cpu"
-    assert job.created_at == 1000.0 and job.started_at is None and job.finished_at is None
+    assert (
+        job.created_at == 1000.0 and job.started_at is None and job.finished_at is None
+    )
     assert job.error_message == "" and job.result is None
     assert job.master_gain_db == -3.0 and job.duration_seconds == 12.5
 
 
 def test_job_ids_are_unique(tmp_path):
     spec = default_preset()
-    ids = {RenderJob.create(project_fps=30.0, spec=spec, snapshot_path="x", output_path="y.mp4").id for _ in range(50)}
+    ids = {
+        RenderJob.create(
+            project_fps=30.0, spec=spec, snapshot_path="x", output_path="y.mp4"
+        ).id
+        for _ in range(50)
+    }
     assert len(ids) == 50
 
 
 def test_job_serialization_round_trips_every_state(tmp_path):
     job = RenderJob.create(
-        project_fps=30.0, spec=get_preset("prores_master"), snapshot_path="s.kut", output_path="o.mov",
-        project_name="P", duration_seconds=3.0, now=10.0,
+        project_fps=30.0,
+        spec=get_preset("prores_master"),
+        snapshot_path="s.kut",
+        output_path="o.mov",
+        project_name="P",
+        duration_seconds=3.0,
+        now=10.0,
     )
     assert RenderJob.from_dict(json.loads(json.dumps(job.to_dict()))) == job
     job.mark_rendering(now=11.0)
     job.progress = 42
     assert RenderJob.from_dict(job.to_dict()) == job
-    job.mark_completed(
-        RenderResult(1234, 2.5, 3.0, "prores_ks", "cpu", None), now=15.0
-    )
+    job.mark_completed(RenderResult(1234, 2.5, 3.0, "prores_ks", "cpu", None), now=15.0)
     restored = RenderJob.from_dict(json.loads(json.dumps(job.to_dict())))
-    assert restored == job and restored.result.output_bytes == 1234 and restored.progress == 100
+    assert (
+        restored == job
+        and restored.result.output_bytes == 1234
+        and restored.progress == 100
+    )
     job.mark_failed("boom", ErrorKind.FFMPEG, now=16.0)
     assert RenderJob.from_dict(job.to_dict()) == job
     job.mark_cancelled("stop", now=17.0)
@@ -167,8 +210,15 @@ def test_job_serialization_round_trips_every_state(tmp_path):
 
 @pytest.mark.parametrize(
     "broken",
-    [None, 3, [], {}, {"id": "x"}, {"id": "x", "snapshot_path": "s", "output_path": "o", "container": "avi"},
-     {"id": "x", "snapshot_path": "s", "output_path": "o", "width": 0}],
+    [
+        None,
+        3,
+        [],
+        {},
+        {"id": "x"},
+        {"id": "x", "snapshot_path": "s", "output_path": "o", "container": "avi"},
+        {"id": "x", "snapshot_path": "s", "output_path": "o", "width": 0},
+    ],
 )
 def test_job_deserialization_rejects_unusable_entries(broken):
     with pytest.raises(ValueError):
@@ -176,18 +226,32 @@ def test_job_deserialization_rejects_unusable_entries(broken):
 
 
 def test_job_deserialization_tolerates_corrupt_optional_fields():
-    job = RenderJob.from_dict({
-        "id": "x", "snapshot_path": "s", "output_path": "o.mp4", "status": "weird",
-        "progress": 999, "hardware": "quantum", "created_at": "nope", "result": 5,
-        "master_gain_db": float("nan"),
-    })
+    job = RenderJob.from_dict(
+        {
+            "id": "x",
+            "snapshot_path": "s",
+            "output_path": "o.mp4",
+            "status": "weird",
+            "progress": 999,
+            "hardware": "quantum",
+            "created_at": "nope",
+            "result": 5,
+            "master_gain_db": float("nan"),
+        }
+    )
     assert job.status is JobStatus.WAITING and job.progress == 100
     assert job.hardware == "cpu" and job.created_at == 0.0 and job.result is None
     assert job.master_gain_db == 0.0
 
 
 def test_there_is_no_paused_status():
-    assert {s.value for s in JobStatus} == {"waiting", "rendering", "completed", "failed", "cancelled"}
+    assert {s.value for s in JobStatus} == {
+        "waiting",
+        "rendering",
+        "completed",
+        "failed",
+        "cancelled",
+    }
 
 
 # --- Presets ---------------------------------------------------------------------------------------
@@ -195,14 +259,30 @@ def test_there_is_no_paused_status():
 
 def test_required_presets_exist_with_the_expected_settings():
     by_id = {spec.id: spec for spec in builtin_presets()}
-    assert {"h264_1080p", "h264_1440p", "h264_4k", "youtube", "tiktok", "prores_master", "tiktok_60", "reels",
-            "shorts", "instagram_feed_4_5", "square"} <= set(by_id)
+    assert {
+        "h264_1080p",
+        "h264_1440p",
+        "h264_4k",
+        "youtube",
+        "tiktok",
+        "prores_master",
+        "tiktok_60",
+        "reels",
+        "shorts",
+        "instagram_feed_4_5",
+        "square",
+    } <= set(by_id)
     assert by_id["h264_1080p"].resolution == (1920, 1080)
     assert by_id["h264_1440p"].resolution == (2560, 1440)
     assert by_id["h264_4k"].resolution == (3840, 2160)
     assert by_id["tiktok"].resolution == (1080, 1920)
-    assert by_id["instagram_feed_4_5"].resolution == (1080, 1350) and by_id["square"].resolution == (1080, 1080)
-    assert (by_id["prores_master"].container, by_id["prores_master"].video_codec) == ("mov", "prores_ks")
+    assert by_id["instagram_feed_4_5"].resolution == (1080, 1350) and by_id[
+        "square"
+    ].resolution == (1080, 1080)
+    assert (by_id["prores_master"].container, by_id["prores_master"].video_codec) == (
+        "mov",
+        "prores_ks",
+    )
     assert CUSTOM_PRESET_ID not in by_id  # Custom est construit, pas figé
 
 
@@ -211,21 +291,39 @@ def test_presets_only_produce_configuration_for_the_existing_engine():
         export_format, export_preset, fps = spec.export_parts(25.0)
         assert isinstance(export_format, ExportFormat)
         assert export_preset.resolution == spec.resolution and fps == (spec.fps or 25.0)
-        assert export_format.container == spec.container and export_format.codec == spec.video_codec
+        assert (
+            export_format.container == spec.container
+            and export_format.codec == spec.video_codec
+        )
 
 
 def test_preset_drives_the_engine_command_without_extra_ffmpeg_logic(tmp_path):
     project = _project(tmp_path)
     from core.render_plan import build_render_plan
 
-    for preset_id, expected_codec in (("tiktok", "libx264"), ("prores_master", "prores_ks")):
+    for preset_id, expected_codec in (
+        ("tiktok", "libx264"),
+        ("prores_master", "prores_ks"),
+    ):
         job = RenderJob.create(
-            project_fps=30.0, spec=get_preset(preset_id), snapshot_path="s", output_path=_out(tmp_path, f"{preset_id}.mov"),
+            project_fps=30.0,
+            spec=get_preset(preset_id),
+            snapshot_path="s",
+            output_path=_out(tmp_path, f"{preset_id}.mov"),
         )
-        command = ExportEngine()._build_command(job.to_request(build_render_plan(project)))
+        command = ExportEngine()._build_command(
+            job.to_request(build_render_plan(project))
+        )
         assert command[command.index("-c:v") + 1] == expected_codec
-    tiktok = RenderJob.create(project_fps=30.0, spec=get_preset("tiktok"), snapshot_path="s", output_path=_out(tmp_path, "t.mp4"))
-    command = ExportEngine()._build_command(tiktok.to_request(build_render_plan(project)))
+    tiktok = RenderJob.create(
+        project_fps=30.0,
+        spec=get_preset("tiktok"),
+        snapshot_path="s",
+        output_path=_out(tmp_path, "t.mp4"),
+    )
+    command = ExportEngine()._build_command(
+        tiktok.to_request(build_render_plan(project))
+    )
     assert any("1080" in part and "1920" in part for part in command)
 
 
@@ -248,11 +346,19 @@ def test_custom_preset_is_validated():
 
 def test_every_planned_hardware_family_is_accepted_by_the_data_model():
     assert {h.value for h in HardwareEncoder} == {
-        "cpu", "auto", "videotoolbox", "nvenc", "qsv", "amf", "vaapi",
+        "cpu",
+        "auto",
+        "videotoolbox",
+        "nvenc",
+        "qsv",
+        "amf",
+        "vaapi",
     }
     for family in HardwareEncoder:
         spec = custom_preset(hardware=family.value)
-        job = RenderJob.create(project_fps=30.0, spec=spec, snapshot_path="s", output_path="o.mp4")
+        job = RenderJob.create(
+            project_fps=30.0, spec=spec, snapshot_path="s", output_path="o.mp4"
+        )
         assert RenderJob.from_dict(job.to_dict()).hardware == family.value
     assert coerce_hardware("garbage") is HardwareEncoder.CPU
 
@@ -274,7 +380,9 @@ def test_cpu_choice_is_unchanged_and_unknown_codecs_are_rejected():
 
 def test_store_round_trip_skips_invalid_jobs_and_drops_duplicates(tmp_path):
     store = RenderQueueStore(tmp_path / "q")
-    good = RenderJob.create(project_fps=30.0, spec=default_preset(), snapshot_path="s", output_path="o.mp4")
+    good = RenderJob.create(
+        project_fps=30.0, spec=default_preset(), snapshot_path="s", output_path="o.mp4"
+    )
     store.save([good])
     data = json.loads(store.queue_file.read_text(encoding="utf-8"))
     data["jobs"] += [{"id": "broken"}, good.to_dict(), "junk"]
@@ -324,7 +432,9 @@ def test_enqueue_validates_early(queue, tmp_path):
     spec = default_preset()
     with pytest.raises(ValueError, match="dossier de sortie"):
         queue.enqueue(_project(tmp_path), spec, str(tmp_path / "nope" / "x.mp4"))
-    empty = Project(name="vide", width=1920, height=1080, fps=30.0, media_assets=[], tracks=[])
+    empty = Project(
+        name="vide", width=1920, height=1080, fps=30.0, media_assets=[], tracks=[]
+    )
     with pytest.raises(ValueError, match="Aucun média"):
         queue.enqueue(empty, spec, _out(tmp_path, "x.mp4"))
     _enqueue(queue, tmp_path, "same.mp4")
@@ -335,11 +445,15 @@ def test_enqueue_validates_early(queue, tmp_path):
 
 
 def test_output_extension_follows_the_preset_container(queue, tmp_path):
-    job = queue.enqueue(_project(tmp_path), get_preset("prores_master"), _out(tmp_path, "film.mp4"))
+    job = queue.enqueue(
+        _project(tmp_path), get_preset("prores_master"), _out(tmp_path, "film.mp4")
+    )
     assert job.output_path.endswith("film.mov")
 
 
-def test_waiting_jobs_can_be_reordered_and_the_order_is_the_run_order(qtbot, queue, tmp_path):
+def test_waiting_jobs_can_be_reordered_and_the_order_is_the_run_order(
+    qtbot, queue, tmp_path
+):
     a, b, c = (_enqueue(queue, tmp_path, f"{n}.mp4") for n in "abc")
     assert queue.move(c.id, -2) and [j.id for j in queue.jobs] == [c.id, a.id, b.id]
     assert queue.move(c.id, +1) and [j.id for j in queue.jobs] == [a.id, c.id, b.id]
@@ -363,7 +477,9 @@ def test_only_waiting_jobs_can_be_moved(qtbot, queue, tmp_path):
 # --- Exécution ---------------------------------------------------------------------------------------------------
 
 
-def test_job_runs_to_completion_with_progress_and_result(qtbot, queue, tmp_path, monkeypatch):
+def test_job_runs_to_completion_with_progress_and_result(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.6")
     job = _enqueue(queue, tmp_path)
     progress: list[int] = []
@@ -378,8 +494,13 @@ def test_job_runs_to_completion_with_progress_and_result(qtbot, queue, tmp_path,
     assert not Path(partial_path_for(job)).exists()
     assert job.started_at and job.finished_at and job.finished_at >= job.started_at
     assert job.result.encoder == "libx264" and job.result.hardware_used == "cpu"
-    assert job.result.timeline_seconds == pytest.approx(4.0) and job.result.output_bytes == 0
-    assert finished == [{"completed": 1, "failed": 0, "cancelled": 0, "outputs": [job.output_path]}]
+    assert (
+        job.result.timeline_seconds == pytest.approx(4.0)
+        and job.result.output_bytes == 0
+    )
+    assert finished == [
+        {"completed": 1, "failed": 0, "cancelled": 0, "outputs": [job.output_path]}
+    ]
 
 
 def test_start_job_runs_only_that_job(qtbot, queue, tmp_path):
@@ -432,7 +553,10 @@ def test_only_one_ffmpeg_runs_at_a_time(qtbot, queue, tmp_path, monkeypatch):
 
 
 def test_overall_progress_is_weighted_by_duration(queue, tmp_path):
-    short, long_ = _enqueue(queue, tmp_path, "s.mp4"), _enqueue(queue, tmp_path, "l.mp4")
+    short, long_ = (
+        _enqueue(queue, tmp_path, "s.mp4"),
+        _enqueue(queue, tmp_path, "l.mp4"),
+    )
     short.duration_seconds, long_.duration_seconds = 1.0, 3.0
     queue._batch = {short.id, long_.id}
     short.mark_completed(RenderResult())
@@ -445,7 +569,9 @@ def test_overall_progress_is_weighted_by_duration(queue, tmp_path):
 # --- Erreurs FFmpeg ------------------------------------------------------------------------------------------------------
 
 
-def test_ffmpeg_error_marks_the_job_failed_with_a_readable_message(qtbot, queue, tmp_path, monkeypatch):
+def test_ffmpeg_error_marks_the_job_failed_with_a_readable_message(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_FAIL", "Invalid data found when processing input")
     job = _enqueue(queue, tmp_path)
     summary = []
@@ -454,22 +580,32 @@ def test_ffmpeg_error_marks_the_job_failed_with_a_readable_message(qtbot, queue,
     _wait_idle(qtbot, queue)
     assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.FFMPEG
     assert "Invalid data" in job.error_message
-    assert not Path(job.output_path).exists() and not Path(partial_path_for(job)).exists()
+    assert (
+        not Path(job.output_path).exists() and not Path(partial_path_for(job)).exists()
+    )
     assert summary[0]["failed"] == 1 and queue.is_busy is False
 
 
-def test_one_failing_job_does_not_stop_the_rest_of_the_queue(qtbot, queue, tmp_path, monkeypatch):
+def test_one_failing_job_does_not_stop_the_rest_of_the_queue(
+    qtbot, queue, tmp_path, monkeypatch
+):
     # Marqueur hors de l'alphabet hexadécimal : « bad » apparaissait parfois dans l'identifiant d'un job (aa220bade959).
     monkeypatch.setenv("FAKE_FFMPEG_FAIL_ON", "broken")
-    ok1, bad, ok2 = (_enqueue(queue, tmp_path, n) for n in ("ok1.mp4", "broken.mp4", "ok2.mp4"))
+    ok1, bad, ok2 = (
+        _enqueue(queue, tmp_path, n) for n in ("ok1.mp4", "broken.mp4", "ok2.mp4")
+    )
     queue.start_all()
     _wait_idle(qtbot, queue)
     assert [j.status for j in (ok1, bad, ok2)] == [
-        JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.COMPLETED,
+        JobStatus.COMPLETED,
+        JobStatus.FAILED,
+        JobStatus.COMPLETED,
     ]
 
 
-def test_a_failed_render_keeps_a_previous_good_file(qtbot, queue, tmp_path, monkeypatch):
+def test_a_failed_render_keeps_a_previous_good_file(
+    qtbot, queue, tmp_path, monkeypatch
+):
     target = tmp_path / "keep.mp4"
     target.write_bytes(b"ancien rendu")
     monkeypatch.setenv("FAKE_FFMPEG_FAIL", "boom")
@@ -502,7 +638,9 @@ def test_cancelling_a_waiting_job(queue, tmp_path):
     assert not Path(job.output_path).exists()
 
 
-def test_cancelling_a_running_render_kills_ffmpeg_and_cleans_up(qtbot, queue, tmp_path, monkeypatch):
+def test_cancelling_a_running_render_kills_ffmpeg_and_cleans_up(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "30")
     pid_file = tmp_path / "pid.txt"
     monkeypatch.setenv("FAKE_FFMPEG_PID_FILE", str(pid_file))
@@ -510,17 +648,28 @@ def test_cancelling_a_running_render_kills_ffmpeg_and_cleans_up(qtbot, queue, tm
     target.write_bytes(b"ancien rendu")
     job = _enqueue(queue, tmp_path, "keep.mp4")
     queue.start_all()
-    qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists()
-                    and bool(pid_file.read_text().strip()), timeout=TIMEOUT)  # fichier créé puis écrit : attendre le contenu
+    qtbot.waitUntil(
+        lambda: (
+            queue._engine.is_running
+            and pid_file.exists()
+            and bool(pid_file.read_text().strip())
+        ),
+        timeout=TIMEOUT,
+    )  # fichier créé puis écrit : attendre le contenu
     pid = int(pid_file.read_text())
     assert queue.cancel(job.id)
     _wait_idle(qtbot, queue)
     assert job.status is JobStatus.CANCELLED
     assert not queue._engine.is_running and not _pid_alive(pid)
-    assert target.read_bytes() == b"ancien rendu" and not Path(partial_path_for(job)).exists()
+    assert (
+        target.read_bytes() == b"ancien rendu"
+        and not Path(partial_path_for(job)).exists()
+    )
 
 
-def test_cancelling_one_job_lets_the_queue_continue(qtbot, queue, tmp_path, monkeypatch):
+def test_cancelling_one_job_lets_the_queue_continue(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "30")
     a, b = _enqueue(queue, tmp_path, "a.mp4"), _enqueue(queue, tmp_path, "b.mp4")
     queue.start_all()
@@ -531,7 +680,9 @@ def test_cancelling_one_job_lets_the_queue_continue(qtbot, queue, tmp_path, monk
     assert a.status is JobStatus.CANCELLED and b.status is JobStatus.COMPLETED
 
 
-def test_stop_cancels_the_current_render_and_keeps_the_rest_waiting(qtbot, queue, tmp_path, monkeypatch):
+def test_stop_cancels_the_current_render_and_keeps_the_rest_waiting(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "30")
     a, b = _enqueue(queue, tmp_path, "a.mp4"), _enqueue(queue, tmp_path, "b.mp4")
     summary = []
@@ -564,7 +715,11 @@ def test_retry_a_failed_job_then_it_succeeds(qtbot, queue, tmp_path, monkeypatch
     assert job.status is JobStatus.FAILED
     monkeypatch.delenv("FAKE_FFMPEG_FAIL")
     assert queue.retry(job.id)
-    assert job.status is JobStatus.WAITING and job.error_message == "" and job.progress == 0
+    assert (
+        job.status is JobStatus.WAITING
+        and job.error_message == ""
+        and job.progress == 0
+    )
     queue.start_job(job.id)
     _wait_idle(qtbot, queue)
     assert job.status is JobStatus.COMPLETED
@@ -575,7 +730,9 @@ def test_retry_a_completed_job_rerenders_it(qtbot, queue, tmp_path):
     queue.start_all()
     _wait_idle(qtbot, queue)
     first_finish = job.finished_at
-    assert queue.retry(job.id) and job.status is JobStatus.WAITING and job.result is None
+    assert (
+        queue.retry(job.id) and job.status is JobStatus.WAITING and job.result is None
+    )
     queue.start_all()
     _wait_idle(qtbot, queue)
     assert job.status is JobStatus.COMPLETED and job.finished_at >= first_finish
@@ -587,10 +744,14 @@ def test_retry_is_refused_for_waiting_or_missing_snapshot(queue, tmp_path):
     queue.cancel(job.id)
     Path(job.snapshot_path).unlink()
     assert not queue.retry(job.id)
-    assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.SNAPSHOT_MISSING
+    assert (
+        job.status is JobStatus.FAILED and job.error_kind == ErrorKind.SNAPSHOT_MISSING
+    )
 
 
-def test_remove_deletes_the_job_and_its_snapshot_but_not_a_running_one(qtbot, queue, tmp_path, monkeypatch):
+def test_remove_deletes_the_job_and_its_snapshot_but_not_a_running_one(
+    qtbot, queue, tmp_path, monkeypatch
+):
     waiting = _enqueue(queue, tmp_path, "w.mp4")
     snapshot_dir = queue.store.snapshot_dir(waiting.id)
     assert snapshot_dir.exists() and queue.remove(waiting.id)
@@ -606,8 +767,12 @@ def test_remove_deletes_the_job_and_its_snapshot_but_not_a_running_one(qtbot, qu
     assert queue.remove(running.id)
 
 
-def test_clear_finished_keeps_failures_unless_asked(qtbot, queue, tmp_path, monkeypatch):
-    monkeypatch.setenv("FAKE_FFMPEG_FAIL_ON", "broken")      # hors de l'hexadécimal des identifiants de job
+def test_clear_finished_keeps_failures_unless_asked(
+    qtbot, queue, tmp_path, monkeypatch
+):
+    monkeypatch.setenv(
+        "FAKE_FFMPEG_FAIL_ON", "broken"
+    )  # hors de l'hexadécimal des identifiants de job
     jobs = [_enqueue(queue, tmp_path, n) for n in ("ok.mp4", "broken.mp4", "wait.mp4")]
     queue.cancel(jobs[2].id)
     queue.start_all()
@@ -622,39 +787,54 @@ def test_clear_finished_keeps_failures_unless_asked(qtbot, queue, tmp_path, monk
 # --- Persistance et récupération ---------------------------------------------------------------------------------------------------
 
 
-def test_waiting_and_finished_jobs_survive_a_restart(qtbot, queue, make_queue, tmp_path):
-    done, waiting = _enqueue(queue, tmp_path, "done.mp4"), _enqueue(queue, tmp_path, "later.mp4")
+def test_waiting_and_finished_jobs_survive_a_restart(
+    qtbot, queue, make_queue, tmp_path
+):
+    done, waiting = (
+        _enqueue(queue, tmp_path, "done.mp4"),
+        _enqueue(queue, tmp_path, "later.mp4"),
+    )
     queue.start_job(done.id)
     _wait_idle(qtbot, queue)
     queue.shutdown()
     reborn = make_queue()
     assert reborn.restore() == 2
     assert [(j.id, j.status) for j in reborn.jobs] == [
-        (done.id, JobStatus.COMPLETED), (waiting.id, JobStatus.WAITING),
+        (done.id, JobStatus.COMPLETED),
+        (waiting.id, JobStatus.WAITING),
     ]
     reborn.start_all()
     _wait_idle(qtbot, reborn)
     assert reborn.job(waiting.id).status is JobStatus.COMPLETED
 
 
-def test_a_job_rendering_at_crash_time_is_marked_interrupted_never_completed(queue, make_queue, tmp_path):
+def test_a_job_rendering_at_crash_time_is_marked_interrupted_never_completed(
+    queue, make_queue, tmp_path
+):
     job = _enqueue(queue, tmp_path)
     job.mark_rendering()
     job.progress = 80
     partial = Path(partial_path_for(job))
     partial.write_bytes(b"x" * 10)
-    queue.store.save(list(queue.jobs))  # état persisté « pendant le rendu », sans arrêt propre
+    queue.store.save(
+        list(queue.jobs)
+    )  # état persisté « pendant le rendu », sans arrêt propre
     reborn = make_queue()
     reborn.restore()
     restored = reborn.job(job.id)
-    assert restored.status is JobStatus.FAILED and restored.error_kind == ErrorKind.INTERRUPTED
+    assert (
+        restored.status is JobStatus.FAILED
+        and restored.error_kind == ErrorKind.INTERRUPTED
+    )
     assert restored.error_message == INTERRUPTED_MESSAGE and restored.result is None
     assert not partial.exists()
     assert reborn.store.load()[0].status is JobStatus.FAILED  # corrigé aussi sur disque
     assert reborn.retry(job.id) and reborn.job(job.id).status is JobStatus.WAITING
 
 
-def test_waiting_job_without_snapshot_is_failed_on_restore_and_orphans_are_pruned(queue, make_queue, tmp_path):
+def test_waiting_job_without_snapshot_is_failed_on_restore_and_orphans_are_pruned(
+    queue, make_queue, tmp_path
+):
     job = _enqueue(queue, tmp_path)
     shutil.rmtree(queue.store.snapshot_dir(job.id))
     orphan = queue.store.jobs_dir / "orphelin"
@@ -670,7 +850,9 @@ def test_restore_with_no_file_is_empty(make_queue):
     assert make_queue().restore() == 0
 
 
-def test_persistence_failure_does_not_break_the_queue(qtbot, queue, tmp_path, monkeypatch):
+def test_persistence_failure_does_not_break_the_queue(
+    qtbot, queue, tmp_path, monkeypatch
+):
     job = _enqueue(queue, tmp_path)
 
     def broken(_jobs):
@@ -679,20 +861,34 @@ def test_persistence_failure_does_not_break_the_queue(qtbot, queue, tmp_path, mo
     monkeypatch.setattr(queue.store, "save", broken)
     queue.start_all()
     _wait_idle(qtbot, queue)
-    assert job.status is JobStatus.COMPLETED and "lecture seule" in queue.last_persist_error
+    assert (
+        job.status is JobStatus.COMPLETED
+        and "lecture seule" in queue.last_persist_error
+    )
 
 
 # --- Fermeture et processus ---------------------------------------------------------------------------------------------------------------
 
 
-def test_shutdown_kills_ffmpeg_and_leaves_no_orphan(qtbot, queue, tmp_path, monkeypatch):
+def test_shutdown_kills_ffmpeg_and_leaves_no_orphan(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "60")
     pid_file = tmp_path / "pid.txt"
     monkeypatch.setenv("FAKE_FFMPEG_PID_FILE", str(pid_file))
-    running, waiting = _enqueue(queue, tmp_path, "r.mp4"), _enqueue(queue, tmp_path, "w.mp4")
+    running, waiting = (
+        _enqueue(queue, tmp_path, "r.mp4"),
+        _enqueue(queue, tmp_path, "w.mp4"),
+    )
     queue.start_all()
-    qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists()
-                    and bool(pid_file.read_text().strip()), timeout=TIMEOUT)  # fichier créé puis écrit : attendre le contenu
+    qtbot.waitUntil(
+        lambda: (
+            queue._engine.is_running
+            and pid_file.exists()
+            and bool(pid_file.read_text().strip())
+        ),
+        timeout=TIMEOUT,
+    )  # fichier créé puis écrit : attendre le contenu
     pid = int(pid_file.read_text())
     assert queue.shutdown() is True
     assert not queue._engine.is_running and not _pid_alive(pid)
@@ -731,7 +927,9 @@ def test_late_engine_signals_from_outside_the_queue_are_ignored(queue, tmp_path)
 # --- FFmpeg absent / disponible --------------------------------------------------------------------------------------------------------------
 
 
-def test_missing_ffmpeg_fails_jobs_with_a_clear_message_and_recovers(qtbot, make_queue, tmp_path, monkeypatch):
+def test_missing_ffmpeg_fails_jobs_with_a_clear_message_and_recovers(
+    qtbot, make_queue, tmp_path, monkeypatch
+):
     monkeypatch.setattr("core.export_engine._ffmpeg_path", None)
     monkeypatch.setattr("core.export_engine.find_media_tool", lambda _name: None)
     queue = make_queue()
@@ -741,7 +939,9 @@ def test_missing_ffmpeg_fails_jobs_with_a_clear_message_and_recovers(qtbot, make
     _wait_idle(qtbot, queue)
     assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.FFMPEG_MISSING
     assert "FFmpeg" in job.error_message
-    monkeypatch.setattr("core.export_engine._ffmpeg_path", (sys.executable, str(FAKE_FFMPEG)))
+    monkeypatch.setattr(
+        "core.export_engine._ffmpeg_path", (sys.executable, str(FAKE_FFMPEG))
+    )
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.2")
     assert queue.ffmpeg_available() is True
     queue.retry(job.id)
@@ -761,17 +961,67 @@ def test_real_ffmpeg_renders_a_queued_job_end_to_end(qtbot, make_queue, tmp_path
     ffmpeg, ffprobe = _real_ffmpeg()
     source = tmp_path / "red.mp4"
     subprocess.run(
-        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i",
-         "color=c=red:s=160x90:r=15:d=2", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-         "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(source)],
-        check=True, capture_output=True,
+        [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=160x90:r=15:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=stereo",
+            "-t",
+            "2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
     )
     project = Project(
-        name="Réel", width=160, height=90, fps=15.0,
-        media_assets=[MediaAsset(id="r", path=str(source), name="red", duration=2.0,
-                                 width=160, height=90, fps=15.0, media_type="video")],
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="c", asset_id="r", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)])],
+        name="Réel",
+        width=160,
+        height=90,
+        fps=15.0,
+        media_assets=[
+            MediaAsset(
+                id="r",
+                path=str(source),
+                name="red",
+                duration=2.0,
+                width=160,
+                height=90,
+                fps=15.0,
+                media_type="video",
+            )
+        ],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c",
+                        asset_id="r",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    )
+                ],
+            )
+        ],
     )
     queue = make_queue()
     spec = custom_preset(width=160, height=90, fps=15, quality=28, audio_bitrate="96k")
@@ -781,10 +1031,23 @@ def test_real_ffmpeg_renders_a_queued_job_end_to_end(qtbot, make_queue, tmp_path
     assert job.status is JobStatus.COMPLETED, job.error_message
     output = Path(job.output_path)
     assert output.stat().st_size > 0
-    duration = float(subprocess.run(
-        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(output)],
-        check=True, capture_output=True, text=True,
-    ).stdout.strip())
+    duration = float(
+        subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(output),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
     assert abs(duration - 2.0) < 0.5
     assert job.result.output_bytes == output.stat().st_size > 0
     assert not Path(partial_path_for(job)).exists()
@@ -794,7 +1057,9 @@ def test_real_ffmpeg_error_is_reported_readably(qtbot, make_queue, tmp_path):
     _real_ffmpeg()
     project = _project(tmp_path)  # « source.mp4 » n'est pas un vrai média
     queue = make_queue()
-    job = queue.enqueue(project, custom_preset(width=160, height=90, fps=15), _out(tmp_path, "bad.mp4"))
+    job = queue.enqueue(
+        project, custom_preset(width=160, height=90, fps=15), _out(tmp_path, "bad.mp4")
+    )
     queue.start_all()
     _wait_idle(qtbot, queue, timeout=60000)
     assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.FFMPEG
@@ -805,7 +1070,9 @@ def test_real_ffmpeg_error_is_reported_readably(qtbot, make_queue, tmp_path):
 # --- correctifs de revue ---------------------------------------------------------------------
 
 
-def test_start_job_during_a_single_run_also_runs_the_promoted_job(qtbot, queue, tmp_path, monkeypatch):
+def test_start_job_during_a_single_run_also_runs_the_promoted_job(
+    qtbot, queue, tmp_path, monkeypatch
+):
     monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.5")
     a, b, c = (_enqueue(queue, tmp_path, f"{n}.mp4") for n in "abc")
     log = _status_log(queue)
@@ -818,10 +1085,14 @@ def test_start_job_during_a_single_run_also_runs_the_promoted_job(qtbot, queue, 
     assert [i for i, s in log if s is JobStatus.RENDERING] == [a.id, c.id]
 
 
-@pytest.mark.parametrize("bad_id", ["../../victime", "/tmp/victime", "a/b", "..", "", "x" * 65, "a b"])
+@pytest.mark.parametrize(
+    "bad_id", ["../../victime", "/tmp/victime", "a/b", "..", "", "x" * 65, "a b"]
+)
 def test_unsafe_job_ids_are_rejected_on_load(bad_id):
     with pytest.raises(ValueError):
-        RenderJob.from_dict({"id": bad_id, "snapshot_path": "s", "output_path": "o.mp4"})
+        RenderJob.from_dict(
+            {"id": bad_id, "snapshot_path": "s", "output_path": "o.mp4"}
+        )
 
 
 def test_a_crafted_queue_file_cannot_delete_outside_the_queue_directory(tmp_path):
@@ -829,13 +1100,17 @@ def test_a_crafted_queue_file_cannot_delete_outside_the_queue_directory(tmp_path
     victim.mkdir()
     (victim / "important.txt").write_text("à garder", encoding="utf-8")
     store = RenderQueueStore(tmp_path / "q")
-    good = RenderJob.create(project_fps=30.0, spec=default_preset(), snapshot_path="s", output_path="o.mp4")
+    good = RenderJob.create(
+        project_fps=30.0, spec=default_preset(), snapshot_path="s", output_path="o.mp4"
+    )
     store.save([good])
     data = json.loads(store.queue_file.read_text(encoding="utf-8"))
     for bad in ("../../victime", str(victim)):
         data["jobs"].append({**good.to_dict(), "id": bad})
     store.queue_file.write_text(json.dumps(data), encoding="utf-8")
-    assert [j.id for j in store.load()] == [good.id]  # les identifiants piégés sont ignorés
+    assert [j.id for j in store.load()] == [
+        good.id
+    ]  # les identifiants piégés sont ignorés
     for bad in ("../../victime", str(victim), ".."):
         with pytest.raises(ValueError):
             store.snapshot_dir(bad)
@@ -843,7 +1118,9 @@ def test_a_crafted_queue_file_cannot_delete_outside_the_queue_directory(tmp_path
     assert (victim / "important.txt").read_text(encoding="utf-8") == "à garder"
 
 
-def test_graphics_are_prepared_off_the_ui_thread_before_ffmpeg_starts(qtbot, queue, tmp_path, monkeypatch):
+def test_graphics_are_prepared_off_the_ui_thread_before_ffmpeg_starts(
+    qtbot, queue, tmp_path, monkeypatch
+):
     """Les images des calques sont rendues dans un fil, puis FFmpeg démarre."""
     import threading
 
@@ -867,14 +1144,18 @@ def test_graphics_are_prepared_off_the_ui_thread_before_ffmpeg_starts(qtbot, que
     assert threads and threads[0].startswith("kut-mograph")
 
 
-def test_cancel_during_graphics_preparation_never_starts_ffmpeg(qtbot, queue, tmp_path, monkeypatch):
+def test_cancel_during_graphics_preparation_never_starts_ffmpeg(
+    qtbot, queue, tmp_path, monkeypatch
+):
     import threading
 
     from core import mograph_ffmpeg
     from core.graphics import add_graphic_clip
 
     gate = threading.Event()
-    monkeypatch.setattr(mograph_ffmpeg, "prepare_graphics_streams", lambda *_a: gate.wait(5) or True)
+    monkeypatch.setattr(
+        mograph_ffmpeg, "prepare_graphics_streams", lambda *_a: gate.wait(5) or True
+    )
     started: list[object] = []
     monkeypatch.setattr(queue._engine, "start", lambda request: started.append(request))
     project = _project(tmp_path)
@@ -888,15 +1169,17 @@ def test_cancel_during_graphics_preparation_never_starts_ffmpeg(qtbot, queue, tm
     assert job.status is JobStatus.CANCELLED and started == []
 
 
-
 def test_an_unexpected_error_while_preparing_fails_the_job_instead_of_blocking_the_queue(
     qtbot, queue, tmp_path, monkeypatch
 ):
     """Régression : seules quelques exceptions étaient prévues ; toute autre laissait le job « RENDERING »."""
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("plan impossible")
 
-    job = _enqueue(queue, tmp_path)                    # enqueue construit déjà un plan : la panne vient après
+    job = _enqueue(
+        queue, tmp_path
+    )  # enqueue construit déjà un plan : la panne vient après
     monkeypatch.setattr("core.render_queue.build_render_plan", explode)
     queue.start_all()
     _wait_idle(qtbot, queue)
@@ -909,10 +1192,15 @@ def test_an_unexpected_error_while_preparing_fails_the_job_instead_of_blocking_t
 
 def test_builtin_presets_follow_the_sequence_frame_rate_except_the_one_that_names_it():
     """Exporter un projet 25 / 23,976 i/s à 30 i/s dupliquait des images : seul « TikTok 60 fps » impose sa cadence."""
-    imposed = {spec.id: spec.fps for spec in builtin_presets() if not spec.follows_project_fps}
+    imposed = {
+        spec.id: spec.fps for spec in builtin_presets() if not spec.follows_project_fps
+    }
     assert imposed == {"tiktok_60": 60.0}
     youtube = get_preset("youtube")
-    assert youtube.output_fps(25.0) == 25.0 and youtube.output_fps(30000 / 1001) == 30000 / 1001
+    assert (
+        youtube.output_fps(25.0) == 25.0
+        and youtube.output_fps(30000 / 1001) == 30000 / 1001
+    )
     assert get_preset("tiktok_60").output_fps(25.0) == 60.0
     with pytest.raises(ValueError):
         youtube.output_fps(0.0)
@@ -920,8 +1208,14 @@ def test_builtin_presets_follow_the_sequence_frame_rate_except_the_one_that_name
 
 def test_custom_preset_accepts_ntsc_rates_and_the_sequence_rate():
     assert custom_preset(fps=29.97).fps == 29.97 and custom_preset().follows_project_fps
-    assert custom_preset(width=1280, height=720, fps=23.976).summary().endswith("1280×720 · 23.976 fps")
-    assert get_preset("youtube").summary().endswith("1920×1080")          # cadence inconnue : non affichée
+    assert (
+        custom_preset(width=1280, height=720, fps=23.976)
+        .summary()
+        .endswith("1280×720 · 23.976 fps")
+    )
+    assert (
+        get_preset("youtube").summary().endswith("1920×1080")
+    )  # cadence inconnue : non affichée
     assert get_preset("youtube").summary(fps=30000 / 1001).endswith("· 29.97 fps")
     for bad in (0, -25.0, float("nan")):
         with pytest.raises(ValueError):
@@ -930,22 +1224,31 @@ def test_custom_preset_accepts_ntsc_rates_and_the_sequence_rate():
 
 def test_a_job_needs_the_sequence_rate_for_a_preset_that_follows_it():
     with pytest.raises(ValueError, match="project_fps"):
-        RenderJob.create(spec=get_preset("youtube"), snapshot_path="s", output_path="o.mp4")
-    fixed = RenderJob.create(spec=get_preset("tiktok_60"), snapshot_path="s", output_path="o.mp4")
+        RenderJob.create(
+            spec=get_preset("youtube"), snapshot_path="s", output_path="o.mp4"
+        )
+    fixed = RenderJob.create(
+        spec=get_preset("tiktok_60"), snapshot_path="s", output_path="o.mp4"
+    )
     assert fixed.fps == 60.0
 
 
 def test_job_frame_rate_survives_the_queue_file_and_old_integer_rates_still_load():
-    job = RenderJob.create(project_fps=29.97, spec=get_preset("youtube"), snapshot_path="s", output_path="o.mp4")
+    job = RenderJob.create(
+        project_fps=29.97,
+        spec=get_preset("youtube"),
+        snapshot_path="s",
+        output_path="o.mp4",
+    )
     data = json.loads(json.dumps(job.to_dict()))
     assert RenderJob.from_dict(data).fps == 29.97
-    data["fps"] = 25                                     # file écrite avant les cadences décimales
+    data["fps"] = 25  # file écrite avant les cadences décimales
     assert RenderJob.from_dict(data).fps == 25.0
     for bad in (0, -1, "inf"):
         data["fps"] = bad
         with pytest.raises(ValueError):
             RenderJob.from_dict(data)
-    data["fps"] = "illisible"                            # comme avant : valeur par défaut
+    data["fps"] = "illisible"  # comme avant : valeur par défaut
     assert RenderJob.from_dict(data).fps == 30.0
 
 
@@ -962,44 +1265,121 @@ def test_ntsc_rates_reach_ffmpeg_as_exact_fractions(tmp_path):
 
     project = _project(tmp_path)
     project.fps = 29.97
-    job = RenderJob.create(project_fps=project.fps, spec=get_preset("youtube"), snapshot_path="s",
-                           output_path=_out(tmp_path, "ntsc.mp4"))
-    command = " ".join(ExportEngine()._build_command(job.to_request(build_render_plan(project))))
+    job = RenderJob.create(
+        project_fps=project.fps,
+        spec=get_preset("youtube"),
+        snapshot_path="s",
+        output_path=_out(tmp_path, "ntsc.mp4"),
+    )
+    command = " ".join(
+        ExportEngine()._build_command(job.to_request(build_render_plan(project)))
+    )
     assert "fps=30000/1001" in command and "r=30000/1001" in command
     assert "29.97" not in command
 
 
 @pytest.mark.parametrize(
     ("source_rate", "project_fps", "expected"),
-    [("25", 25.0, "25/1"), ("30000/1001", 29.97, "30000/1001"), ("24000/1001", 23.976, "24000/1001")],
+    [
+        ("25", 25.0, "25/1"),
+        ("30000/1001", 29.97, "30000/1001"),
+        ("24000/1001", 23.976, "24000/1001"),
+    ],
     ids=["25", "29.97", "23.976"],
 )
-def test_real_export_keeps_the_sequence_frame_rate(qtbot, make_queue, tmp_path, source_rate, project_fps, expected):
+def test_real_export_keeps_the_sequence_frame_rate(
+    qtbot, make_queue, tmp_path, source_rate, project_fps, expected
+):
     """De bout en bout : un preset qui suit la séquence écrit un fichier à la cadence exacte de la séquence."""
     ffmpeg, ffprobe = _real_ffmpeg()
     source = tmp_path / "src.mp4"
     subprocess.run(
-        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"testsrc2=s=160x90:r={source_rate}:d=1",
-         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-shortest", str(source)],
-        check=True, capture_output=True,
+        [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc2=s=160x90:r={source_rate}:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=stereo",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
     )
     project = Project(
-        name="Cadence", width=160, height=90, fps=project_fps,
-        media_assets=[MediaAsset(id="s", path=str(source), name="src", duration=1.0,
-                                 width=160, height=90, fps=project_fps, media_type="video")],
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="c", asset_id="s", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=1.0)])],
+        name="Cadence",
+        width=160,
+        height=90,
+        fps=project_fps,
+        media_assets=[
+            MediaAsset(
+                id="s",
+                path=str(source),
+                name="src",
+                duration=1.0,
+                width=160,
+                height=90,
+                fps=project_fps,
+                media_type="video",
+            )
+        ],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c",
+                        asset_id="s",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                    )
+                ],
+            )
+        ],
     )
     queue = make_queue()
-    job = queue.enqueue(project, custom_preset(width=160, height=90, quality=30, audio_bitrate="96k"),
-                        _out(tmp_path, "rate.mp4"))
+    job = queue.enqueue(
+        project,
+        custom_preset(width=160, height=90, quality=30, audio_bitrate="96k"),
+        _out(tmp_path, "rate.mp4"),
+    )
     queue.start_all()
     _wait_idle(qtbot, queue, timeout=60000)
     assert job.status is JobStatus.COMPLETED, job.error_message
     rate = subprocess.run(
-        [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
-         "-of", "default=nw=1:nk=1", job.output_path],
-        check=True, capture_output=True, text=True,
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=r_frame_rate",
+            "-of",
+            "default=nw=1:nk=1",
+            job.output_path,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     assert rate == expected

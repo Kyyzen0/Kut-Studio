@@ -22,7 +22,11 @@ def _points(i):
 @pytest.fixture(scope="module")
 def video(tmp_path_factory):
     return moving_points_video(
-        tmp_path_factory.mktemp("tracking-ui") / "clip.mkv", width=W, height=H, fps=FPS, count=FRAMES,
+        tmp_path_factory.mktemp("tracking-ui") / "clip.mkv",
+        width=W,
+        height=H,
+        fps=FPS,
+        count=FRAMES,
         points_at=_points,
     )
 
@@ -34,16 +38,29 @@ def window(qtbot, monkeypatch, video, tmp_path):
     from ui.main_window import MainWindow
 
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_a, **_k: None)
-    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.information", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes
+    )
     win = MainWindow()
     qtbot.addWidget(win)
-    win.set_usage_level("advanced")                            # le suivi est un groupe avancé (une installation neuve est en Simple)
+    win.set_usage_level(
+        "advanced"
+    )  # le suivi est un groupe avancé (une installation neuve est en Simple)
     win.timeline_timer.stop()
     monkeypatch.setattr(win.preview_panel, "preview_at", lambda *_a, **_k: None)
     project = Project(name="Suivi", width=W, height=H, fps=FPS)
-    project.media_assets.append(MediaAsset("a", str(video), "clip", FRAMES / FPS, W, H, FPS, "video"))
-    project.tracks.insert(0, Track("V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, FRAMES / FPS)]))
+    project.media_assets.append(
+        MediaAsset("a", str(video), "clip", FRAMES / FPS, W, H, FPS, "video")
+    )
+    project.tracks.insert(
+        0,
+        Track(
+            "V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, FRAMES / FPS)]
+        ),
+    )
     win.project = project
     win._timeline_index = None
     win._reload_timeline_preserving_selection()
@@ -76,7 +93,10 @@ def test_tracking_tab_shows_panel_and_viewer_trackers(window):
     panel.add_button.click()
     assert len(window.history) == entries + 1
     tracker = _tracking(window).trackers[0]
-    assert panel.tracker_list.count() == 1 and panel.tracker_list.item(0).text() == tracker.name
+    assert (
+        panel.tracker_list.count() == 1
+        and panel.tracker_list.item(0).text() == tracker.name
+    )
     overlay = window.preview_panel.tracking_overlay
     assert overlay.isVisible() and overlay.active
     assert overlay.trackers[0].point == pytest.approx((W / 2, H / 2))
@@ -101,7 +121,10 @@ def test_viewer_drag_corrects_point_and_resizes_zones_with_one_entry_each(window
     overlay.drag_finished.emit(tracker.id, "point")
     assert len(window.history) == entries + 1
     data = _tracking(window).tracker(tracker.id).data
-    assert data.sample(0).x == pytest.approx(84.0) and data.status_at(0) is SampleStatus.MANUAL
+    assert (
+        data.sample(0).x == pytest.approx(84.0)
+        and data.status_at(0) is SampleStatus.MANUAL
+    )
     overlay.zone_dragged.emit(tracker.id, "search", 90.0, 70.0)
     overlay.drag_finished.emit(tracker.id, "search")
     settings = _tracking(window).tracker(tracker.id).settings
@@ -135,14 +158,19 @@ def test_link_and_bake_from_the_panel(window, qtbot):
     window.tracking_panel.forward_button.click()
     _wait_jobs(qtbot, window)
     window.add_layer_at_playhead("text", "")
-    text = next(c for t in window.project.tracks if t.type == "graphics" for c in t.clips)
+    text = next(
+        c for t in window.project.tracks if t.type == "graphics" for c in t.clips
+    )
     window._restore_clip_selection("v")
     window.show_tracking_panel()  # ajouter un calque ouvre l'onglet Graphiques
     panel = window.tracking_panel
     labels = [panel.target.itemText(i) for i in range(panel.target.count())]
     assert any("transform" in label for label in labels)
-    index = next(i for i in range(panel.target.count())
-                 if (panel.target.itemData(i) or {}).get("clip_id") == text.id)
+    index = next(
+        i
+        for i in range(panel.target.count())
+        if (panel.target.itemData(i) or {}).get("clip_id") == text.id
+    )
     panel.target.setCurrentIndex(index)
     entries = len(window.history)
     panel.link_button.click()
@@ -176,7 +204,9 @@ def test_stop_cancels_and_project_switch_abandons_jobs(window, qtbot, monkeypatc
     window.add_tracker_at_playhead(80.0, 60.0)
     started = []
 
-    def slow_schedule(key, fn, **_kwargs):  # la tâche reste en file : on peut l'arrêter à coup sûr
+    def slow_schedule(
+        key, fn, **_kwargs
+    ):  # la tâche reste en file : on peut l'arrêter à coup sûr
         started.append(fn)
 
     monkeypatch.setattr(window.runtime, "schedule_analysis", slow_schedule)
@@ -216,18 +246,27 @@ def test_dragging_a_stabilized_clip_edits_the_user_transform(window, qtbot):
     _wait_jobs(qtbot, window)
     from core import tracking_ops as ops
 
-    ops.set_stabilization(window.project, "v", tracker_ids=(_tracking(window).trackers[0].id,),
-                          smoothing=Smoothing.LOCKED, borders=BorderMode.BLACK)
+    ops.set_stabilization(
+        window.project,
+        "v",
+        tracker_ids=(_tracking(window).trackers[0].id,),
+        smoothing=Smoothing.LOCKED,
+        borders=BorderMode.BLACK,
+    )
     window._commit_layer_edit("Stabilisation")
     window.seek_to_position(20 / FPS)
-    window.properties_panel._select_inspector_tab(0)  # mode transform : poignées du clip
+    window.properties_panel._select_inspector_tab(
+        0
+    )  # mode transform : poignées du clip
     window._refresh_viewer_graphics()
     selection = window.preview_panel.overlay.selection
     assert selection is not None
     # Les valeurs à éditer sont la saisie (0), pas la position stabilisée (≈ −40 px).
     assert selection.values["position_x"] == pytest.approx(0.0)
     overlay = window.preview_panel.overlay
-    overlay.transform_dragged.emit("v", {"position_x": selection.values["position_x"] + 0.1})
+    overlay.transform_dragged.emit(
+        "v", {"position_x": selection.values["position_x"] + 0.1}
+    )
     overlay.transform_released.emit("v", "Déplacer le calque")
     assert _clip(window).transform.position_x == pytest.approx(0.1)
 
@@ -249,20 +288,46 @@ def test_the_panel_state_matches_its_typed_contract(window):
 
     clip = _clip(window)
     tracker = ops.add_tracker(window.project, "v", timeline_time=0.0, x=80.0, y=60.0)
-    samples = {i: Sample(80.0 + i, 60.0, 1.0, SampleStatus.TRACKED) for i in range(FRAMES)}
+    samples = {
+        i: Sample(80.0 + i, 60.0, 1.0, SampleStatus.TRACKED) for i in range(FRAMES)
+    }
     clip.tracking = clip.tracking.with_tracker(
         replace(tracker, data=TrackData.from_samples(FPS, samples, source_size=(W, H)))
     )
     ops.set_stabilization(window.project, "v", tracker_ids=(tracker.id,))
-    ops.add_link(window.project, "v", "v", [tracker.id], target=TrackTarget.ANCHOR, timeline_time=0.0)
+    ops.add_link(
+        window.project,
+        "v",
+        "v",
+        [tracker.id],
+        target=TrackTarget.ANCHOR,
+        timeline_time=0.0,
+    )
     window._restore_clip_selection("v")
 
     state = window._tracking_panel_state()
 
     assert set(state) <= set(get_type_hints(TrackingPanelState))
-    assert {"kind", "available", "links", "trackers", "selected", "stabilization", "targets"} <= set(state)
-    assert all(set(row) == set(get_type_hints(LinkRow)) for row in state["links"]) and state["links"]
-    assert all(set(row) == set(get_type_hints(TrackerRow)) for row in state["trackers"]) and state["trackers"]
+    assert {
+        "kind",
+        "available",
+        "links",
+        "trackers",
+        "selected",
+        "stabilization",
+        "targets",
+    } <= set(state)
+    assert (
+        all(set(row) == set(get_type_hints(LinkRow)) for row in state["links"])
+        and state["links"]
+    )
+    assert (
+        all(set(row) == set(get_type_hints(TrackerRow)) for row in state["trackers"])
+        and state["trackers"]
+    )
     assert set(state["stabilization"]) == set(get_type_hints(StabilizationInfo))
-    assert state["targets"] and all(set(spec) == set(get_type_hints(TargetSpec)) for _label, spec in state["targets"])
+    assert state["targets"] and all(
+        set(spec) == set(get_type_hints(TargetSpec))
+        for _label, spec in state["targets"]
+    )
     assert get_type_hints(TrackingPanelState)["stabilization"] is StabilizationInfo

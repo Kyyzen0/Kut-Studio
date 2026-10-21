@@ -10,7 +10,7 @@ def _lin(c: int) -> float:
 
 def _luminance(hex_color: str) -> float:
     h = hex_color.lstrip("#")[:6]
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
     return 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
 
 

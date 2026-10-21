@@ -456,7 +456,9 @@ def test_load_project_rejects_missing_project_section(tmp_path: Path) -> None:
         load_project(str(target))
 
 
-def test_load_project_rejects_an_unknown_asset_key_with_a_value_error(tmp_path: Path) -> None:
+def test_load_project_rejects_an_unknown_asset_key_with_a_value_error(
+    tmp_path: Path,
+) -> None:
     """Une clé inconnue dans un média fait lever ``TypeError`` à ``MediaAsset(**item)`` : ``load_project`` doit la
     traduire en ``ValueError`` lisible (son contrat), sans laisser fuir l'exception interne vers un appel direct."""
     target = tmp_path / "unknown-key.kut"
@@ -465,7 +467,9 @@ def test_load_project_rejects_an_unknown_asset_key_with_a_value_error(tmp_path: 
     document["project"]["media_assets"][0]["cle_inconnue"] = 42
     target.write_text(json.dumps(document), encoding="utf-8")
 
-    with pytest.raises(ValueError, match=r"endommagé \(TypeError : .*cle_inconnue") as caught:
+    with pytest.raises(
+        ValueError, match=r"endommagé \(TypeError : .*cle_inconnue"
+    ) as caught:
         load_project(str(target))
 
     assert str(target) in str(caught.value)
@@ -500,9 +504,7 @@ def test_loaded_objects_are_real_dataclasses(tmp_path: Path) -> None:
     assert loaded.media_assets and all(
         isinstance(asset, MediaAsset) for asset in loaded.media_assets
     )
-    assert loaded.tracks and all(
-        isinstance(track, Track) for track in loaded.tracks
-    )
+    assert loaded.tracks and all(isinstance(track, Track) for track in loaded.tracks)
     for track in loaded.tracks:
         assert all(isinstance(clip, Clip) for clip in track.clips)
 

@@ -11,9 +11,32 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-_LAUNCHERS = {"Popen", "run", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
-_OS_LAUNCHERS = {"system", "popen", "spawnl", "spawnv", "spawnve", "spawnlp", "spawnvp", "posix_spawn",
-                 "posix_spawnp", "execv", "execve", "execl", "execlp", "execvp", "startfile"}
+_LAUNCHERS = {
+    "Popen",
+    "run",
+    "call",
+    "check_call",
+    "check_output",
+    "getoutput",
+    "getstatusoutput",
+}
+_OS_LAUNCHERS = {
+    "system",
+    "popen",
+    "spawnl",
+    "spawnv",
+    "spawnve",
+    "spawnlp",
+    "spawnvp",
+    "posix_spawn",
+    "posix_spawnp",
+    "execv",
+    "execve",
+    "execl",
+    "execlp",
+    "execvp",
+    "startfile",
+}
 _CENTRAL = {"core/process_supervisor.py"}
 _QPROCESS_ALLOWED = {
     # Le seul QProcess (export, réutilisé par la file de rendu) : signaux Qt et lecture événementielle de la
@@ -28,7 +51,11 @@ def _launch_sites(path: Path, label: str) -> list[str]:
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
-            found += [f"from subprocess import {alias.name}" for alias in node.names if alias.name in _LAUNCHERS]
+            found += [
+                f"from subprocess import {alias.name}"
+                for alias in node.names
+                if alias.name in _LAUNCHERS
+            ]
         if not isinstance(node, ast.Call):
             continue
         function = node.func
@@ -36,7 +63,9 @@ def _launch_sites(path: Path, label: str) -> list[str]:
             found.append("QProcess()")
         if isinstance(function, ast.Attribute) and isinstance(function.value, ast.Name):
             owner, name = function.value.id, function.attr
-            if (owner == "subprocess" and name in _LAUNCHERS) or (owner == "os" and name in _OS_LAUNCHERS):
+            if (owner == "subprocess" and name in _LAUNCHERS) or (
+                owner == "os" and name in _OS_LAUNCHERS
+            ):
                 found.append(f"{owner}.{name}()")
             if owner == "QProcess" and name in ("startDetached", "execute"):
                 found.append(f"QProcess.{name}()")
@@ -54,7 +83,9 @@ def test_every_child_process_goes_through_the_supervisor():
             if relative in _QPROCESS_ALLOWED:
                 sites = [site for site in sites if site != f"{relative}:QProcess()"]
             offenders += sites
-    assert offenders == [], "lancement hors de core/process_supervisor.py : " + ", ".join(offenders)
+    assert offenders == [], (
+        "lancement hors de core/process_supervisor.py : " + ", ".join(offenders)
+    )
     export_source = (ROOT / "core" / "export_engine.py").read_text(encoding="utf-8")
     assert "started.connect(self._supervise_started)" in export_source
     assert "process_supervisor.register_pid(" in export_source
@@ -70,7 +101,13 @@ def test_the_guard_recognises_direct_launches(tmp_path):
         encoding="utf-8",
     )
     sites = [site.split(":", 1)[1] for site in _launch_sites(sample, "sample.py")]
-    assert sorted(sites) == sorted([
-        "from subprocess import Popen", "subprocess.run()", "subprocess.Popen()", "os.system()", "QProcess()",
-        "QProcess.startDetached()",
-    ])
+    assert sorted(sites) == sorted(
+        [
+            "from subprocess import Popen",
+            "subprocess.run()",
+            "subprocess.Popen()",
+            "os.system()",
+            "QProcess()",
+            "QProcess.startDetached()",
+        ]
+    )

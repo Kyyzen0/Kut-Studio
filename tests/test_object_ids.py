@@ -30,9 +30,20 @@ from core.transitions import add_transition
 def _project() -> Project:
     """Un projet vide de pistes V1, A1, S1 et d'un média vidéo ``m`` de 10 s."""
     return Project(
-        "p", width=1920, height=1080, fps=30.0,
-        media_assets=[MediaAsset("m", "/x/m.mp4", "m", 10.0, 1920, 1080, 30.0, "video", has_audio=False)],
-        tracks=[Track("V1", "V1", "video"), Track("A1", "A1", "audio"), Track("S1", "S1", "subtitle")],
+        "p",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_assets=[
+            MediaAsset(
+                "m", "/x/m.mp4", "m", 10.0, 1920, 1080, 30.0, "video", has_audio=False
+            )
+        ],
+        tracks=[
+            Track("V1", "V1", "video"),
+            Track("A1", "A1", "audio"),
+            Track("S1", "S1", "subtitle"),
+        ],
     )
 
 
@@ -44,8 +55,14 @@ def _snapshot(project: Project) -> dict:
 
 
 def test_without_a_requested_id_one_is_generated_in_the_historical_form():
-    assert re.fullmatch(r"clip-[0-9a-f]{12}", resolve_object_id(None, prefix="clip", kind="clip", taken=set()))
-    assert re.fullmatch(r"marker-[0-9a-f]{8}", resolve_object_id(None, prefix="marker", kind="repère", taken=set(), length=8))
+    assert re.fullmatch(
+        r"clip-[0-9a-f]{12}",
+        resolve_object_id(None, prefix="clip", kind="clip", taken=set()),
+    )
+    assert re.fullmatch(
+        r"marker-[0-9a-f]{8}",
+        resolve_object_id(None, prefix="marker", kind="repère", taken=set(), length=8),
+    )
 
 
 @pytest.mark.parametrize("value", ["intro", "A1", "clip_2", "x" * 64, "Voix_Off_3"])
@@ -53,7 +70,23 @@ def test_a_safe_id_is_accepted_as_is(value):
     assert resolve_object_id(value, prefix="clip", kind="clip", taken=set()) == value
 
 
-@pytest.mark.parametrize("value", ["", "clip-1", "a b", "a]b", "a;b", "a'b", "a,b", "x" * 65, "é", "a\n", "../x", "a[0]"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "clip-1",
+        "a b",
+        "a]b",
+        "a;b",
+        "a'b",
+        "a,b",
+        "x" * 65,
+        "é",
+        "a\n",
+        "../x",
+        "a[0]",
+    ],
+)
 def test_an_id_that_could_become_a_filter_injection_or_is_malformed_is_refused(value):
     with pytest.raises(InvalidObjectId, match="invalide"):
         resolve_object_id(value, prefix="clip", kind="clip", taken=set())
@@ -106,12 +139,19 @@ def test_a_subtitle_clip_and_its_technical_media_get_ids_derived_from_the_reques
     before = _snapshot(project)
     with pytest.raises(InvalidObjectId):
         add_subtitle_clip(project, "Autre", 4.0, 1.0, "S1", clip_id="titre_1")
-    assert _snapshot(project) == before, "ni clip ni média technique créé par un identifiant refusé"
+    assert _snapshot(project) == before, (
+        "ni clip ni média technique créé par un identifiant refusé"
+    )
     generated = add_subtitle_clip(project, "Sans id", 6.0, 1.0, "S1")
-    assert re.fullmatch(r"clip-[0-9a-f]{12}", generated.id) and generated.asset_id == "asset-subtitle-" + generated.id[5:]
+    assert (
+        re.fullmatch(r"clip-[0-9a-f]{12}", generated.id)
+        and generated.asset_id == "asset-subtitle-" + generated.id[5:]
+    )
 
 
-@pytest.mark.parametrize("duplicate", [duplicate_clip, duplicate_clip_preserving_transform])
+@pytest.mark.parametrize(
+    "duplicate", [duplicate_clip, duplicate_clip_preserving_transform]
+)
 def test_a_duplicate_can_be_given_its_id(duplicate):
     project = _project()
     add_clip_to_track(project, "m", "V1", 0.0, clip_id="original")
@@ -148,7 +188,10 @@ def test_a_transition_can_be_given_its_id():
     with pytest.raises(InvalidObjectId, match="existe déjà"):
         add_transition(project, "c", "d", duration=0.5, transition_id="fondu")
     assert len(project.transitions) == 1, "la transition refusée n'a rien ajouté"
-    assert add_transition(project, "c", "d", duration=0.5, transition_id="fondu_2").id == "fondu_2"
+    assert (
+        add_transition(project, "c", "d", duration=0.5, transition_id="fondu_2").id
+        == "fondu_2"
+    )
 
 
 def test_a_marker_can_be_given_its_id():
@@ -175,13 +218,21 @@ def test_nesting_a_selection_takes_both_ids_and_a_refusal_leaves_the_clips_where
     add_clip_to_track(project, "m", "V1", 0.0, clip_id="a")
     add_clip_to_track(project, "m", "V1", 10.0, clip_id="b")
     before = _snapshot(project)
-    for bad in ({"sequence_id": "bad id"}, {"nested_clip_id": "a"}, {"nested_clip_id": "bad]id"}):
+    for bad in (
+        {"sequence_id": "bad id"},
+        {"nested_clip_id": "a"},
+        {"nested_clip_id": "bad]id"},
+    ):
         with pytest.raises(InvalidObjectId):
             create_sequence_from_selection(project, ["a", "b"], "Scène", **bad)
         assert _snapshot(project) == before, f"{bad} : rien ne doit avoir bougé"
-    result = create_sequence_from_selection(project, ["a", "b"], "Scène", sequence_id="scene", nested_clip_id="scene_clip")
+    result = create_sequence_from_selection(
+        project, ["a", "b"], "Scène", sequence_id="scene", nested_clip_id="scene_clip"
+    )
     assert result.clip.id == "scene_clip" and result.clip.sequence_id == "scene"
-    assert {clip.id for track in project.sequences[-1].tracks for clip in track.clips} == {"a", "b"}
+    assert {
+        clip.id for track in project.sequences[-1].tracks for clip in track.clips
+    } == {"a", "b"}
 
 
 # --- Graphiques -------------------------------------------------------------------------------------------------------
@@ -189,13 +240,20 @@ def test_nesting_a_selection_takes_both_ids_and_a_refusal_leaves_the_clips_where
 
 def test_a_graphic_clip_takes_its_id_and_a_refusal_creates_neither_track_nor_media():
     project = _project()
-    clip = add_graphic_clip(project, "shape", timeline_start=1.0, duration=2.0, clip_id="logo")
+    clip = add_graphic_clip(
+        project, "shape", timeline_start=1.0, duration=2.0, clip_id="logo"
+    )
     assert clip.id == "logo" and clip.asset_id == "graphic-asset-logo"
     before = _snapshot(project)
     with pytest.raises(InvalidObjectId, match="existe déjà"):
-        add_graphic_clip(project, "shape", timeline_start=1.0, duration=2.0, clip_id="logo")
+        add_graphic_clip(
+            project, "shape", timeline_start=1.0, duration=2.0, clip_id="logo"
+        )
     assert _snapshot(project) == before
-    assert re.fullmatch(r"graphic-[0-9a-f]{12}", add_graphic_clip(project, "shape", timeline_start=5.0).id)
+    assert re.fullmatch(
+        r"graphic-[0-9a-f]{12}",
+        add_graphic_clip(project, "shape", timeline_start=5.0).id,
+    )
 
 
 def test_a_refused_graphic_id_does_not_create_the_graphics_track():
@@ -236,13 +294,49 @@ def test_a_derived_technical_media_id_that_is_already_taken_is_refused_before_an
     """L'identifiant du clip est libre, celui de son média technique (``asset-subtitle-<id>``, ``graphic-asset-<id>``) ne l'est pas :
     deux médias de même identifiant ne sont pas lus pareil partout, un clip existant pourrait se mettre à rendre le nouveau."""
     project = _project()
-    project.media_assets.append(MediaAsset("asset-subtitle-titre", "", "pris", 1.0, 0, 0, 0.0, "subtitle", has_audio=False))
-    project.media_assets.append(MediaAsset("graphic-asset-logo", "", "pris", 1.0, 100, 100, 30.0, "graphic", has_audio=False))
+    project.media_assets.append(
+        MediaAsset(
+            "asset-subtitle-titre",
+            "",
+            "pris",
+            1.0,
+            0,
+            0,
+            0.0,
+            "subtitle",
+            has_audio=False,
+        )
+    )
+    project.media_assets.append(
+        MediaAsset(
+            "graphic-asset-logo",
+            "",
+            "pris",
+            1.0,
+            100,
+            100,
+            30.0,
+            "graphic",
+            has_audio=False,
+        )
+    )
     before = _snapshot(project)
     with pytest.raises(InvalidObjectId, match="média"):
         add_subtitle_clip(project, "Bonjour", 0.0, 1.0, "S1", clip_id="titre")
     with pytest.raises(InvalidObjectId, match="média"):
-        add_graphic_clip(project, "shape", timeline_start=0.0, duration=1.0, clip_id="logo")
-    assert _snapshot(project) == before, "ni clip, ni média, ni piste de graphiques créés"
-    assert add_subtitle_clip(project, "Bonjour", 0.0, 1.0, "S1", clip_id="autre").asset_id == "asset-subtitle-autre"
-    assert add_graphic_clip(project, "shape", timeline_start=0.0, duration=1.0, clip_id="autre_logo").asset_id == "graphic-asset-autre_logo"
+        add_graphic_clip(
+            project, "shape", timeline_start=0.0, duration=1.0, clip_id="logo"
+        )
+    assert _snapshot(project) == before, (
+        "ni clip, ni média, ni piste de graphiques créés"
+    )
+    assert (
+        add_subtitle_clip(project, "Bonjour", 0.0, 1.0, "S1", clip_id="autre").asset_id
+        == "asset-subtitle-autre"
+    )
+    assert (
+        add_graphic_clip(
+            project, "shape", timeline_start=0.0, duration=1.0, clip_id="autre_logo"
+        ).asset_id
+        == "graphic-asset-autre_logo"
+    )

@@ -23,7 +23,13 @@ from core.audio_automation import (
 )
 from core.edit_history import ProjectHistory
 from core.export_engine import _build_audio_filter
-from core.project_io import CURRENT_VERSION, SUPPORTED_VERSIONS, load_project, project_payload, save_project
+from core.project_io import (
+    CURRENT_VERSION,
+    SUPPORTED_VERSIONS,
+    load_project,
+    project_payload,
+    save_project,
+)
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
 from core.sequences import create_sequence_from_selection
@@ -59,7 +65,10 @@ def test_the_legacy_list_form_is_normalised_however_it_is_written(how):
     else:
         track = Track("A1", "A1", "audio")
         track.automation = _unsorted()
-    assert isinstance(track.automation, TrackAutomation) and track.automation.track_id == "A1"
+    assert (
+        isinstance(track.automation, TrackAutomation)
+        and track.automation.track_id == "A1"
+    )
     assert _points(track.automation) == [(0.5, -6.0, 0.25), (3.0, -12.0, 1.0)]
 
 
@@ -71,7 +80,7 @@ def test_none_and_tuples_are_normalised_and_anything_else_is_refused():
     assert track.automation.is_empty()
     with pytest.raises(TypeError):
         track.automation = "pas une courbe"
-    assert track.automation.is_empty()                        # l'affectation refusée n'a rien changé
+    assert track.automation.is_empty()  # l'affectation refusée n'a rien changé
 
 
 def test_an_assigned_automation_keeps_its_identity_so_in_place_edits_stay_visible():
@@ -110,7 +119,9 @@ def test_a_track_id_the_old_validator_refused_no_longer_breaks_anything(tmp_path
 # --- Chargement : anciens fichiers, format inchangé ------------------------------------------------------------
 
 
-def _file_with_automation(tmp_path, automation, *, version: int = CURRENT_VERSION) -> Path:
+def _file_with_automation(
+    tmp_path, automation, *, version: int = CURRENT_VERSION
+) -> Path:
     project = Project(name="a", media_assets=[], tracks=[Track("M1", "M1", "audio")])
     path = tmp_path / "a.kut"
     save_project(project, str(path))
@@ -125,22 +136,39 @@ def _file_with_automation(tmp_path, automation, *, version: int = CURRENT_VERSIO
     return path
 
 
-def test_the_points_stored_in_a_kut_load_as_a_sorted_automation_and_bad_ones_are_dropped(tmp_path):
+def test_the_points_stored_in_a_kut_load_as_a_sorted_automation_and_bad_ones_are_dropped(
+    tmp_path,
+):
     stored = [
         {"time_seconds": 3.0, "gain_db": -12.0, "fade_seconds": 1.0},
-        {"time_seconds": -1.0, "gain_db": -3.0, "fade_seconds": 0.0},          # invalide : écarté
+        {
+            "time_seconds": -1.0,
+            "gain_db": -3.0,
+            "fade_seconds": 0.0,
+        },  # invalide : écarté
         {"time_seconds": 0.5, "gain_db": -6.0, "fade_seconds": 0.25},
     ]
     track = load_project(str(_file_with_automation(tmp_path, stored))).tracks[0]
-    assert isinstance(track.automation, TrackAutomation) and track.automation.track_id == "M1"
+    assert (
+        isinstance(track.automation, TrackAutomation)
+        and track.automation.track_id == "M1"
+    )
     assert _points(track.automation) == [(0.5, -6.0, 0.25), (3.0, -12.0, 1.0)]
 
 
 @pytest.mark.parametrize("version", sorted(SUPPORTED_VERSIONS))
-def test_every_supported_version_loads_an_automation_in_canonical_form(tmp_path, version):
+def test_every_supported_version_loads_an_automation_in_canonical_form(
+    tmp_path, version
+):
     """Les versions antérieures à l'automation n'ont pas la clé ; les autres la portent : même forme à la sortie."""
-    for stored in (None, [], [{"time_seconds": 1.0, "gain_db": -3.0, "fade_seconds": 0.0}]):
-        track = load_project(str(_file_with_automation(tmp_path, stored, version=version))).tracks[0]
+    for stored in (
+        None,
+        [],
+        [{"time_seconds": 1.0, "gain_db": -3.0, "fade_seconds": 0.0}],
+    ):
+        track = load_project(
+            str(_file_with_automation(tmp_path, stored, version=version))
+        ).tracks[0]
         assert isinstance(track.automation, TrackAutomation)
         assert len(track.automation.points) == (1 if stored else 0)
 
@@ -150,16 +178,26 @@ def test_the_format_is_unchanged(tmp_path):
     project = Project(name="f", tracks=[Track("M1", "M1", "audio")])
     AudioAutomationService().add_automation_point(project, "M1", 1.0, -6.0, 0.2)
     track = project_payload(project)["project"]["sequences"][0]["tracks"][0]
-    assert track["automation"] == [{"time_seconds": 1.0, "gain_db": -6.0, "fade_seconds": 0.2}]
+    assert track["automation"] == [
+        {"time_seconds": 1.0, "gain_db": -6.0, "fade_seconds": 0.2}
+    ]
 
 
-def test_save_load_save_is_identical_with_automation_on_audio_and_video_tracks(tmp_path):
+def test_save_load_save_is_identical_with_automation_on_audio_and_video_tracks(
+    tmp_path,
+):
     project = build_rich_project()
-    assert any(not track.automation.is_empty() for track in project.tracks if track.type == "video")
+    assert any(
+        not track.automation.is_empty()
+        for track in project.tracks
+        if track.type == "video"
+    )
     first, second = tmp_path / "1.kut", tmp_path / "2.kut"
     save_project(project, str(first))
     save_project(load_project(str(first)), str(second))
-    assert json.loads(first.read_text(encoding="utf-8")) == json.loads(second.read_text(encoding="utf-8"))
+    assert json.loads(first.read_text(encoding="utf-8")) == json.loads(
+        second.read_text(encoding="utf-8")
+    )
 
 
 # --- Historique et copies ---------------------------------------------------------------------------------------
@@ -173,14 +211,20 @@ def test_history_snapshots_keep_their_own_automation():
     history.reset(project)
     service.add_automation_point(project, "M1", 2.0, -3.0)
     history.record(project, "Ajouter un point")
-    service.add_automation_point(project, "M1", 3.0, 0.0)               # modification non enregistrée
+    service.add_automation_point(
+        project, "M1", 3.0, 0.0
+    )  # modification non enregistrée
 
     restored = history.undo()
 
     assert restored is not None
     assert isinstance(restored.tracks[0].automation, TrackAutomation)
     assert [p.time_seconds for p in restored.tracks[0].automation.points] == [1.0]
-    assert [p.time_seconds for p in project.tracks[0].automation.points] == [1.0, 2.0, 3.0]
+    assert [p.time_seconds for p in project.tracks[0].automation.points] == [
+        1.0,
+        2.0,
+        3.0,
+    ]
     assert restored.tracks[0].automation is not project.tracks[0].automation
 
 
@@ -188,10 +232,13 @@ def test_copies_of_a_track_keep_the_canonical_form():
     track = Track("M1", "M1", "audio", automation=_unsorted())
     deep = copy.deepcopy(track)
     shallow = copy.copy(track)
-    assert isinstance(deep.automation, TrackAutomation) and deep.automation is not track.automation
+    assert (
+        isinstance(deep.automation, TrackAutomation)
+        and deep.automation is not track.automation
+    )
     assert deep == track
     deep.automation.add_point(9.0, 0.0)
-    assert len(track.automation.points) == 2                              # la copie profonde est indépendante
+    assert len(track.automation.points) == 2  # la copie profonde est indépendante
     assert isinstance(shallow.automation, TrackAutomation)
 
 
@@ -205,7 +252,11 @@ def test_nesting_a_selection_moves_the_automation_and_realigns_it(legacy_list):
     main = project.get_sequence("main")
     main.tracks[1].clips.append(_clip("t1", "red", "V2", 3.0, 2.0))
     main.tracks[2].clips.append(_clip("a1", "music", "A1", 4.0, 3.0))
-    points = [AutomationPoint(1.0, -9.0), AutomationPoint(4.5, -6.0, 0.5), AutomationPoint(6.0, -3.0)]
+    points = [
+        AutomationPoint(1.0, -9.0),
+        AutomationPoint(4.5, -6.0, 0.5),
+        AutomationPoint(6.0, -3.0),
+    ]
     if legacy_list:
         main.tracks[2].automation = points
     else:
@@ -217,10 +268,15 @@ def test_nesting_a_selection_moves_the_automation_and_realigns_it(legacy_list):
     inner = create_sequence_from_selection(project, ["t1", "a1"], "Scène").sequence
 
     audio = next(track for track in inner.tracks if track.id == "A1")
-    assert isinstance(audio.automation, TrackAutomation) and audio.automation.track_id == "A1"
+    assert (
+        isinstance(audio.automation, TrackAutomation)
+        and audio.automation.track_id == "A1"
+    )
     # la sélection commence à 3 s : le point à 1 s précède la sélection et disparaît, les autres sont décalés de 3 s
     assert _points(audio.automation) == [(1.5, -6.0, 0.5), (3.0, -3.0, 0.0)]
-    assert len(main.tracks[2].automation.points) == 3                    # la piste d'origine n'est pas touchée
+    assert (
+        len(main.tracks[2].automation.points) == 3
+    )  # la piste d'origine n'est pas touchée
     host = next(track for track in inner.tracks if track.id == "V2")
     assert host.automation.is_empty() and isinstance(host.automation, TrackAutomation)
 
@@ -245,14 +301,27 @@ GOLDEN_FILTERS = [
 
 def _mix_project(*, legacy_lists: bool) -> Project:
     def clip(clip_id, asset_id, track_id):
-        return Clip(id=clip_id, asset_id=asset_id, track_id=track_id, timeline_start=0.0, source_in=0.0, source_out=6.0)
+        return Clip(
+            id=clip_id,
+            asset_id=asset_id,
+            track_id=track_id,
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=6.0,
+        )
 
     project = Project(
         name="Auto",
         media_assets=[
-            MediaAsset("a1", "/nonexistent/a1.wav", "a1", 10.0, 0, 0, 0.0, "audio", True),
-            MediaAsset("a2", "/nonexistent/a2.wav", "a2", 10.0, 0, 0, 0.0, "audio", True),
-            MediaAsset("v1", "/nonexistent/v1.mp4", "v1", 10.0, 1920, 1080, 30.0, "video", True),
+            MediaAsset(
+                "a1", "/nonexistent/a1.wav", "a1", 10.0, 0, 0, 0.0, "audio", True
+            ),
+            MediaAsset(
+                "a2", "/nonexistent/a2.wav", "a2", 10.0, 0, 0, 0.0, "audio", True
+            ),
+            MediaAsset(
+                "v1", "/nonexistent/v1.mp4", "v1", 10.0, 1920, 1080, 30.0, "video", True
+            ),
         ],
         tracks=[
             Track("M1", "M1", "audio", clips=[clip("m", "a1", "M1")]),
@@ -262,13 +331,19 @@ def _mix_project(*, legacy_lists: bool) -> Project:
     )
     service = AudioAutomationService()
     if legacy_lists:
-        project.tracks[0].automation = [AutomationPoint(0.5, -6.0, 0.25), AutomationPoint(3.0, -12.0, 1.0)]
+        project.tracks[0].automation = [
+            AutomationPoint(0.5, -6.0, 0.25),
+            AutomationPoint(3.0, -12.0, 1.0),
+        ]
         project.tracks[2].automation = [AutomationPoint(2.0, -9.0)]
     else:
         service.add_automation_point(project, "M1", 0.5, -6.0, 0.25)
         service.add_automation_point(project, "M1", 3.0, -12.0, 1.0)
         service.add_automation_point(project, "V1", 2.0, -9.0)
-    project.tracks[1].automation = [AutomationPoint(1.0, -3.0, 0.0), AutomationPoint(0.0, 0.0, 0.0)]
+    project.tracks[1].automation = [
+        AutomationPoint(1.0, -3.0, 0.0),
+        AutomationPoint(0.0, 0.0, 0.0),
+    ]
     return project
 
 
@@ -291,7 +366,9 @@ def test_the_export_filters_are_the_ones_computed_before_the_migration(legacy_li
 
 def test_no_reader_still_handles_two_forms():
     """Aucun module de production ne teste plus « liste ou ``TrackAutomation`` »."""
-    pattern = re.compile(r"getattr\([^)]*automation|hasattr\([^)]*[\"']points[\"']|_iter_automation_points")
+    pattern = re.compile(
+        r"getattr\([^)]*automation|hasattr\([^)]*[\"']points[\"']|_iter_automation_points"
+    )
     offenders = [
         f"{path.relative_to(ROOT).as_posix()}:{number}"
         for package in ("core", "ui")

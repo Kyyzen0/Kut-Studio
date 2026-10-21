@@ -47,9 +47,13 @@ FAKE_FFMPEG = textwrap.dedent(
 )
 
 
-def _use_fake_ffmpeg(monkeypatch, tmp_path: Path, *, filters: str, buildconf: str) -> None:
+def _use_fake_ffmpeg(
+    monkeypatch, tmp_path: Path, *, filters: str, buildconf: str
+) -> None:
     script = tmp_path / "fake_ffmpeg.py"
-    script.write_text(FAKE_FFMPEG.format(filters=filters, buildconf=buildconf), encoding="utf-8")
+    script.write_text(
+        FAKE_FFMPEG.format(filters=filters, buildconf=buildconf), encoding="utf-8"
+    )
     monkeypatch.setattr(export_engine, "_ffmpeg_path", (sys.executable, str(script)))
 
 
@@ -78,39 +82,67 @@ def required(monkeypatch):
     monkeypatch.setenv(ffmpeg_caps.REQUIRE_LIBASS_VARIABLE, "1")
 
 
-def test_a_missing_libass_skips_the_test_with_the_reason_by_default(monkeypatch, tmp_path, not_required) -> None:
-    _use_fake_ffmpeg(monkeypatch, tmp_path, filters=FILTERS_WITHOUT_SUBTITLES, buildconf=BUILDCONF_WITHOUT_LIBASS)
+def test_a_missing_libass_skips_the_test_with_the_reason_by_default(
+    monkeypatch, tmp_path, not_required
+) -> None:
+    _use_fake_ffmpeg(
+        monkeypatch,
+        tmp_path,
+        filters=FILTERS_WITHOUT_SUBTITLES,
+        buildconf=BUILDCONF_WITHOUT_LIBASS,
+    )
     outcome, message = _guard()
     assert outcome == "skip"
     assert "« subtitles »" in message
     assert "libass absent" in message
-    assert "99.1-fake" in message    # le FFmpeg incriminé est nommé
+    assert "99.1-fake" in message  # le FFmpeg incriminé est nommé
     assert not ffmpeg_caps.has_libass()
     assert ffmpeg_caps.libass_skip_reason() == message
 
 
-def test_a_missing_libass_fails_the_test_when_libass_is_required(monkeypatch, tmp_path, required) -> None:
-    _use_fake_ffmpeg(monkeypatch, tmp_path, filters=FILTERS_WITHOUT_SUBTITLES, buildconf=BUILDCONF_WITHOUT_LIBASS)
+def test_a_missing_libass_fails_the_test_when_libass_is_required(
+    monkeypatch, tmp_path, required
+) -> None:
+    _use_fake_ffmpeg(
+        monkeypatch,
+        tmp_path,
+        filters=FILTERS_WITHOUT_SUBTITLES,
+        buildconf=BUILDCONF_WITHOUT_LIBASS,
+    )
     outcome, message = _guard()
     assert outcome == "fail"
     assert "KUT_STUDIO_REQUIRE_LIBASS=1" in message
     assert "libass absent" in message
-    assert "brew install ffmpeg-full" in message    # le message dit quoi faire
+    assert "brew install ffmpeg-full" in message  # le message dit quoi faire
 
 
 @pytest.mark.parametrize("requirement", ["not_required", "required"])
-def test_a_ffmpeg_with_libass_lets_the_test_run(monkeypatch, tmp_path, request, requirement) -> None:
+def test_a_ffmpeg_with_libass_lets_the_test_run(
+    monkeypatch, tmp_path, request, requirement
+) -> None:
     request.getfixturevalue(requirement)
-    _use_fake_ffmpeg(monkeypatch, tmp_path, filters=FILTERS_WITH_SUBTITLES, buildconf=BUILDCONF_WITH_LIBASS)
-    assert _guard() == ("run", "")    # ni saut, ni échec
+    _use_fake_ffmpeg(
+        monkeypatch,
+        tmp_path,
+        filters=FILTERS_WITH_SUBTITLES,
+        buildconf=BUILDCONF_WITH_LIBASS,
+    )
+    assert _guard() == ("run", "")  # ni saut, ni échec
     status = ffmpeg_caps.libass_status()
     assert status.has_filter and status.configured and status.version == "99.1-fake"
     assert ffmpeg_caps.has_libass() and ffmpeg_caps.libass_skip_reason() == ""
 
 
-def test_the_filter_without_the_build_proof_fails_only_when_libass_is_required(monkeypatch, tmp_path) -> None:
+def test_the_filter_without_the_build_proof_fails_only_when_libass_is_required(
+    monkeypatch, tmp_path
+) -> None:
     """Le filtre suffit au comportement historique ; la preuve ``--enable-libass`` n'est exigée qu'en mode strict."""
-    _use_fake_ffmpeg(monkeypatch, tmp_path, filters=FILTERS_WITH_SUBTITLES, buildconf=BUILDCONF_WITHOUT_LIBASS)
+    _use_fake_ffmpeg(
+        monkeypatch,
+        tmp_path,
+        filters=FILTERS_WITH_SUBTITLES,
+        buildconf=BUILDCONF_WITHOUT_LIBASS,
+    )
     monkeypatch.delenv(ffmpeg_caps.REQUIRE_LIBASS_VARIABLE, raising=False)
     assert _guard() == ("run", "")
     monkeypatch.setenv(ffmpeg_caps.REQUIRE_LIBASS_VARIABLE, "1")
@@ -119,20 +151,44 @@ def test_the_filter_without_the_build_proof_fails_only_when_libass_is_required(m
     assert "--enable-libass" in message
 
 
-@pytest.mark.parametrize("line, expected", [
-    (" .. subtitles         V->V       Render text subtitles onto input video using the libass library.", True),
-    (" TS subtitles         V->V       Render text subtitles.", True),
-    (" TSC subtitles        V->V       Render text subtitles.", True),
-    (" .. ass               V->V       Render ASS subtitles onto input video using the libass library.", False),
-    (" .. unsharp           V->V       Sharpen or blur the input video.", False),
-    ("  .S. = Slice threading about subtitles filter", False),
-], ids=["deux-drapeaux", "TS", "trois-drapeaux", "filtre-ass-seul", "autre-filtre", "legende"])
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        (
+            " .. subtitles         V->V       Render text subtitles onto input video using the libass library.",
+            True,
+        ),
+        (" TS subtitles         V->V       Render text subtitles.", True),
+        (" TSC subtitles        V->V       Render text subtitles.", True),
+        (
+            " .. ass               V->V       Render ASS subtitles onto input video using the libass library.",
+            False,
+        ),
+        (" .. unsharp           V->V       Sharpen or blur the input video.", False),
+        ("  .S. = Slice threading about subtitles filter", False),
+    ],
+    ids=[
+        "deux-drapeaux",
+        "TS",
+        "trois-drapeaux",
+        "filtre-ass-seul",
+        "autre-filtre",
+        "legende",
+    ],
+)
 def test_only_a_filter_named_subtitles_counts(line, expected) -> None:
-    assert bool(ffmpeg_caps._SUBTITLES_FILTER.search(f"Filters:\n  ------\n{line}\n")) is expected
+    assert (
+        bool(ffmpeg_caps._SUBTITLES_FILTER.search(f"Filters:\n  ------\n{line}\n"))
+        is expected
+    )
 
 
-def test_an_unlaunchable_ffmpeg_is_reported_not_swallowed(monkeypatch, tmp_path, not_required) -> None:
-    monkeypatch.setattr(export_engine, "_ffmpeg_path", (str(tmp_path / "absent" / "ffmpeg"),))
+def test_an_unlaunchable_ffmpeg_is_reported_not_swallowed(
+    monkeypatch, tmp_path, not_required
+) -> None:
+    monkeypatch.setattr(
+        export_engine, "_ffmpeg_path", (str(tmp_path / "absent" / "ffmpeg"),)
+    )
     outcome, message = _guard()
     assert (outcome, "FFmpeg inutilisable" in message) == ("skip", True)
     monkeypatch.setenv(ffmpeg_caps.REQUIRE_LIBASS_VARIABLE, "1")
@@ -140,11 +196,18 @@ def test_an_unlaunchable_ffmpeg_is_reported_not_swallowed(monkeypatch, tmp_path,
     assert (outcome, "FFmpeg inutilisable" in message) == ("fail", True)
 
 
-def test_a_working_libass_makes_the_application_forget_a_stale_detection(monkeypatch, tmp_path, not_required) -> None:
+def test_a_working_libass_makes_the_application_forget_a_stale_detection(
+    monkeypatch, tmp_path, not_required
+) -> None:
     """Un test précédent a pu laisser ``_cached = False`` (faux FFmpeg) : l'application relirait ce faux négatif."""
-    _use_fake_ffmpeg(monkeypatch, tmp_path, filters=FILTERS_WITH_SUBTITLES, buildconf=BUILDCONF_WITH_LIBASS)
+    _use_fake_ffmpeg(
+        monkeypatch,
+        tmp_path,
+        filters=FILTERS_WITH_SUBTITLES,
+        buildconf=BUILDCONF_WITH_LIBASS,
+    )
     detection = export_engine._ffmpeg_supports_subtitles
-    detection._cached = False    # type: ignore[attr-defined]
+    detection._cached = False  # type: ignore[attr-defined]
     try:
         assert _guard() == ("run", "")
         assert not hasattr(detection, "_cached")
@@ -154,10 +217,24 @@ def test_a_working_libass_makes_the_application_forget_a_stale_detection(monkeyp
             del detection._cached
 
 
-@pytest.mark.parametrize("value, expected", [
-    ("1", True), ("true", True), ("YES", True), (" on ", True),
-    ("0", False), ("", False), ("false", False), ("no", False),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("1", True),
+        ("true", True),
+        ("YES", True),
+        (" on ", True),
+        ("0", False),
+        ("", False),
+        ("false", False),
+        ("no", False),
+    ],
+)
 def test_the_requirement_variable_is_read_as_a_boolean(value, expected) -> None:
-    assert ffmpeg_caps.require_libass_requested({ffmpeg_caps.REQUIRE_LIBASS_VARIABLE: value}) is expected
+    assert (
+        ffmpeg_caps.require_libass_requested(
+            {ffmpeg_caps.REQUIRE_LIBASS_VARIABLE: value}
+        )
+        is expected
+    )
     assert ffmpeg_caps.require_libass_requested({}) is False

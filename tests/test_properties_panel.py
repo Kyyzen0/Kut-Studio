@@ -221,18 +221,14 @@ def test_s2_subtitle_editor_updates_the_project(qtbot, monkeypatch) -> None:
 
     window = _build_window(qtbot, monkeypatch)
     track = add_track(window.project, "subtitle")
-    clip = add_subtitle_clip(
-        window.project, "Bonjour", 0.0, 2.0, track_id=track.id
-    )
+    clip = add_subtitle_clip(window.project, "Bonjour", 0.0, 2.0, track_id=track.id)
     window.timeline_panel.set_project(window.project)
 
     window.on_clip_selected(clip.id)
 
     assert window.active_subtitle_clip is not None
     assert window.active_subtitle_clip.id == clip.id
-    assert window.properties_panel.subtitle_group.isVisibleTo(
-        window.properties_panel
-    )
+    assert window.properties_panel.subtitle_group.isVisibleTo(window.properties_panel)
     window.properties_panel.subtitle_editor.setPlainText("Salut")
     window.update_subtitle_from_editor()
     assert find_clip(window.project, clip.id).text == "Salut"

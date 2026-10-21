@@ -6,7 +6,11 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtGui import QFileOpenEvent
 
 import build
-from ui.external_open import install_external_open, is_project_path, project_path_from_arguments
+from ui.external_open import (
+    install_external_open,
+    is_project_path,
+    project_path_from_arguments,
+)
 from ui.main_window_mixins.project_files import ProjectFilesMixin
 
 
@@ -18,7 +22,12 @@ def test_only_kut_files_are_project_paths_whatever_the_case():
 
 
 def test_startup_argument_is_the_first_project_and_options_are_skipped():
-    assert project_path_from_arguments(["--smoke-test", "/Films/clip.mp4", "/Films/montage.kut"]) == "/Films/montage.kut"
+    assert (
+        project_path_from_arguments(
+            ["--smoke-test", "/Films/clip.mp4", "/Films/montage.kut"]
+        )
+        == "/Films/montage.kut"
+    )
     assert project_path_from_arguments(["-psn_0_12345"]) is None
     assert project_path_from_arguments([]) is None
 

@@ -74,10 +74,14 @@ def test_translate_key_missing_in_language_falls_back_to_default(monkeypatch):
     from ui import i18n as i18n_module
 
     test_key = "_test_only_fallback_key"
-    monkeypatch.setitem(i18n_module._TRANSLATIONS, test_key, {
-        "fr": "valeur-fr",
-        "en": "fallback to default",
-    })
+    monkeypatch.setitem(
+        i18n_module._TRANSLATIONS,
+        test_key,
+        {
+            "fr": "valeur-fr",
+            "en": "fallback to default",
+        },
+    )
     set_language("en")
     # L'entrée anglaise existe → on récupère la valeur anglaise.
     assert translate(test_key) == "fallback to default"
@@ -139,32 +143,35 @@ def test_subscriber_exception_does_not_break_set_language():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("key", [
-    "app.title",
-    "action.new_project",
-    "action.open",
-    "action.save",
-    "action.undo",
-    "action.redo",
-    "tracks.add_video_long",
-    "tracks.add_audio_long",
-    "tracks.add_subtitle_long",
-    "tracks.remove",
-    "tracks.move_up",
-    "tracks.move_down",
-    "panel.preview",
-    "panel.timeline",
-    "panel.properties",
-    "panel.project",
-    "menu.file",
-    "menu.edit",
-    "menu.timeline",
-    "prefs.title",
-    "prefs.theme.dark",
-    "prefs.theme.light",
-    "prefs.theme.system",
-    "prefs.language",
-])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "app.title",
+        "action.new_project",
+        "action.open",
+        "action.save",
+        "action.undo",
+        "action.redo",
+        "tracks.add_video_long",
+        "tracks.add_audio_long",
+        "tracks.add_subtitle_long",
+        "tracks.remove",
+        "tracks.move_up",
+        "tracks.move_down",
+        "panel.preview",
+        "panel.timeline",
+        "panel.properties",
+        "panel.project",
+        "menu.file",
+        "menu.edit",
+        "menu.timeline",
+        "prefs.title",
+        "prefs.theme.dark",
+        "prefs.theme.light",
+        "prefs.theme.system",
+        "prefs.language",
+    ],
+)
 def test_traductions_disponibles_dans_toutes_langues(key):
     set_language("fr")
     fr = translate(key)

@@ -16,7 +16,9 @@ def test_cpu_decode_command_has_no_hardware_option():
 
 
 def test_hardware_decode_command_carries_both_options_when_asked():
-    command = decode_scaling.decode_command("ffmpeg", "clip.mp4", "videotoolbox", "videotoolbox_vld")
+    command = decode_scaling.decode_command(
+        "ffmpeg", "clip.mp4", "videotoolbox", "videotoolbox_vld"
+    )
     assert command[command.index("-hwaccel") + 1] == "videotoolbox"
     assert command[command.index("-hwaccel_output_format") + 1] == "videotoolbox_vld"
 
@@ -26,7 +28,9 @@ def test_an_output_format_without_a_backend_is_refused():
         decode_scaling.decode_command("ffmpeg", "clip.mp4", None, "videotoolbox_vld")
 
 
-def test_the_decode_bench_imports_and_skips_cpu_time_without_the_resource_module(monkeypatch):
+def test_the_decode_bench_imports_and_skips_cpu_time_without_the_resource_module(
+    monkeypatch,
+):
     # Windows n'a pas le module ``resource`` : le banc doit rester importable et ne pas inventer de temps CPU.
     monkeypatch.setattr(decode_scaling, "resource", None)
     assert decode_scaling.children_cpu_seconds() is None
@@ -34,7 +38,10 @@ def test_the_decode_bench_imports_and_skips_cpu_time_without_the_resource_module
 
 def test_throughput_counts_every_stream():
     # 2 flux de 180 images en 3 s : 120 images/s au total, 60 par flux.
-    assert decode_scaling.throughput(180, 2, 3.0) == {"aggregate_fps": 120.0, "per_stream_fps": 60.0}
+    assert decode_scaling.throughput(180, 2, 3.0) == {
+        "aggregate_fps": 120.0,
+        "per_stream_fps": 60.0,
+    }
 
 
 def test_every_gil_job_is_picklable_for_the_process_pool():

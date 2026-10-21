@@ -106,9 +106,7 @@ def test_builtin_presets_cover_six_expected_families() -> None:
 
 
 def test_builtin_preset_ids_match_catalog() -> None:
-    assert builtin_preset_ids() == frozenset(
-        preset.id for preset in builtin_presets()
-    )
+    assert builtin_preset_ids() == frozenset(preset.id for preset in builtin_presets())
 
 
 def test_builtin_presets_are_marked_as_builtin() -> None:
@@ -380,10 +378,20 @@ def test_load_user_presets_handles_corrupted_json(tmp_path) -> None:
 def test_load_user_presets_drops_invalid_entries(tmp_path) -> None:
     """Une entrée corrompue ne doit pas faire échouer le chargement."""
     payload = [
-        {"id": "ok", "name": "OK", "description": "", "category": "look",
-         "effects": [{"type": "sepia", "enabled": True, "params": {}}]},
-        {"id": "bad", "name": "Bad", "description": "", "category": "look",
-         "effects": [{"type": "not-a-type", "enabled": True, "params": {}}]},
+        {
+            "id": "ok",
+            "name": "OK",
+            "description": "",
+            "category": "look",
+            "effects": [{"type": "sepia", "enabled": True, "params": {}}],
+        },
+        {
+            "id": "bad",
+            "name": "Bad",
+            "description": "",
+            "category": "look",
+            "effects": [{"type": "not-a-type", "enabled": True, "params": {}}],
+        },
         {"not": "a preset"},
     ]
     import json

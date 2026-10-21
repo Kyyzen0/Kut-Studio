@@ -59,13 +59,17 @@ def _project_with_video() -> Project:
     )
 
 
-def _make_folder(project: Project, folder_id: str, name: str, **kwargs) -> LibraryFolder:
+def _make_folder(
+    project: Project, folder_id: str, name: str, **kwargs
+) -> LibraryFolder:
     folder = LibraryFolder(id=folder_id, name=name, **kwargs)
     project.library_folders.append(folder)
     return folder
 
 
-def _make_tag(project: Project, tag_id: str, name: str, color: str = "#3498db") -> LibraryTag:
+def _make_tag(
+    project: Project, tag_id: str, name: str, color: str = "#3498db"
+) -> LibraryTag:
     tag = LibraryTag(id=tag_id, name=name, color=color)
     project.library_tags.append(tag)
     return tag
@@ -250,8 +254,12 @@ def test_invalid_folders_are_dropped_without_crashing(tmp_path: Path) -> None:
                 # Nom vide : ignoré
                 {"id": "fld-bad-name", "name": "", "parent_id": None, "color": ""},
                 # Couleur invalide : ignoré
-                {"id": "fld-bad-color", "name": "Mauvaise couleur", "parent_id": None,
-                 "color": "orange"},
+                {
+                    "id": "fld-bad-color",
+                    "name": "Mauvaise couleur",
+                    "parent_id": None,
+                    "color": "orange",
+                },
                 # Doublon : la première occurrence gagne
                 {"id": "fld-good", "name": "Doublon", "parent_id": None, "color": ""},
             ],
@@ -280,8 +288,12 @@ def test_folder_with_unknown_parent_is_reattached_to_root(tmp_path: Path) -> Non
             "media_assets": [],
             "tracks": [],
             "library_folders": [
-                {"id": "fld-orphan", "name": "Orphelin",
-                 "parent_id": "fld-missing", "color": ""},
+                {
+                    "id": "fld-orphan",
+                    "name": "Orphelin",
+                    "parent_id": "fld-missing",
+                    "color": "",
+                },
             ],
             "library_tags": [],
             "library_assignments": [],

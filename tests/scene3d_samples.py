@@ -19,13 +19,27 @@ def write_scene(folder: Path, name: str = "scene.kut3d") -> Path:
 def base_project() -> Project:
     asset = MediaAsset("m1", "/tmp/a.mp4", "a", 20.0, 64, 36, 25.0, "video")
     clips = [Clip("a", "m1", "V1", 0.0, 0.0, 3.0), Clip("b", "m1", "V1", 3.0, 0.0, 3.0)]
-    return Project("p", width=64, height=36, fps=25.0, media_assets=[asset],
-                   tracks=[Track("V1", "V1", "video", clips=clips)])
+    return Project(
+        "p",
+        width=64,
+        height=36,
+        fps=25.0,
+        media_assets=[asset],
+        tracks=[Track("V1", "V1", "video", clips=clips)],
+    )
 
 
-def project_with_scene(folder: Path, *, clip_id: str = "s3d", start: float = 1.0, duration: float = 5.0) -> tuple[Project, Clip, Path]:
+def project_with_scene(
+    folder: Path, *, clip_id: str = "s3d", start: float = 1.0, duration: float = 5.0
+) -> tuple[Project, Clip, Path]:
     project = base_project()
     scene = write_scene(folder)
-    clip = add_graphic_clip(project, GraphicType.SCENE3D, timeline_start=start, duration=duration, source_path=str(scene),
-                            clip_id=clip_id)
+    clip = add_graphic_clip(
+        project,
+        GraphicType.SCENE3D,
+        timeline_start=start,
+        duration=duration,
+        source_path=str(scene),
+        clip_id=clip_id,
+    )
     return project, clip, scene

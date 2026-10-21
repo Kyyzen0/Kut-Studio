@@ -146,9 +146,7 @@ def test_round_trip_preserves_layout():
         WorkspaceState.default()
         .with_panel(PanelId.INSPECTOR, size=345)
         .with_panel(PanelId.TIMELINE, floating=True, visible=True)
-        .with_floating_geometry(
-            PanelId.TIMELINE, FloatingGeometry(120, 90, 1400, 800)
-        )
+        .with_floating_geometry(PanelId.TIMELINE, FloatingGeometry(120, 90, 1400, 800))
         .with_center_ratio(0.42)
     )
     assert WorkspaceState.from_dict(state.to_dict()) == state
@@ -157,9 +155,7 @@ def test_round_trip_preserves_layout():
 def test_json_is_valid_and_versioned():
     payload = json.loads(WorkspaceState.default().to_json())
     assert payload["version"] >= 1
-    assert {entry["panel"] for entry in payload["panels"]} == {
-        p.value for p in PanelId
-    }
+    assert {entry["panel"] for entry in payload["panels"]} == {p.value for p in PanelId}
 
 
 def test_from_dict_ignores_unknown_panel():
@@ -219,9 +215,7 @@ def test_save_then_load_round_trip(tmp_path):
         WorkspaceState.default()
         .with_panel(PanelId.MEDIA, visible=False)
         .with_panel(PanelId.TIMELINE, floating=True)
-        .with_floating_geometry(
-            PanelId.TIMELINE, FloatingGeometry(0, 0, 1200, 700)
-        )
+        .with_floating_geometry(PanelId.TIMELINE, FloatingGeometry(0, 0, 1200, 700))
     )
     path = save_workspace_state(state, tmp_path)
     assert path.exists()
@@ -301,9 +295,7 @@ def test_unknown_workspace_returns_none(tmp_path):
 
 
 def test_save_and_load_named_workspace(tmp_path):
-    state = WorkspaceState.default().with_panel(
-        PanelId.TIMELINE, floating=True
-    )
+    state = WorkspaceState.default().with_panel(PanelId.TIMELINE, floating=True)
     assert save_named_workspace("Mon montage", state, tmp_path).exists()
     assert load_named_workspace("Mon montage", tmp_path) == state
 

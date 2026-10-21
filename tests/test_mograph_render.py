@@ -32,10 +32,14 @@ def _project() -> Project:
     return Project(name="Rendu", width=W, height=H, fps=10.0)
 
 
-def _render(project: Project, t: float = 0.0, *, quality: str = "export", blend: bool = True):
+def _render(
+    project: Project, t: float = 0.0, *, quality: str = "export", blend: bool = True
+):
     plan = build_render_plan(project)
     scene = scene_for_plan(plan)
-    renderer = MographRenderer(scene, W, H, fps=10.0, quality=quality, motion_blur=plan.motion_blur)
+    renderer = MographRenderer(
+        scene, W, H, fps=10.0, quality=quality, motion_blur=plan.motion_blur
+    )
     return renderer.render(scene.top_level(), t, blend_modes=blend)
 
 
@@ -51,7 +55,12 @@ def _transparent_pockets(image, threshold: int = 128) -> int:
     hampe touchent le fond en diagonale, une 8-connexité s'y engouffrerait et ne verrait rien.
     """
     width, height = image.width(), image.height()
-    empty = {(x, y) for y in range(height) for x in range(width) if image.pixelColor(x, y).alpha() < threshold}
+    empty = {
+        (x, y)
+        for y in range(height)
+        for x in range(width)
+        if image.pixelColor(x, y).alpha() < threshold
+    }
     outside = {(x, y) for x, y in empty if x in (0, width - 1) or y in (0, height - 1)}
     frontier = list(outside)
     while frontier:
@@ -105,12 +114,25 @@ def test_line_and_polygon_render():
 def test_text_renders_with_background_and_tracking_changes_width():
     project = _project()
     text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
-    for name, value in (("text", "HI"), ("font_size", 20), ("width", 150), ("height", 60),
-                        ("background_enabled", True), ("background_color", "#0000FFFF")):
+    for name, value in (
+        ("text", "HI"),
+        ("font_size", 20),
+        ("width", 150),
+        ("height", 60),
+        ("background_enabled", True),
+        ("background_color", "#0000FFFF"),
+    ):
         update_graphic(text, name, value)
     image = _render(project)
-    blue = sum(1 for x in range(W) for y in range(H) if _rgba(image, x, y)[2] > 200 and _rgba(image, x, y)[0] < 60)
-    white = sum(1 for x in range(W) for y in range(H) if min(_rgba(image, x, y)[:3]) > 200)
+    blue = sum(
+        1
+        for x in range(W)
+        for y in range(H)
+        if _rgba(image, x, y)[2] > 200 and _rgba(image, x, y)[0] < 60
+    )
+    white = sum(
+        1 for x in range(W) for y in range(H) if min(_rgba(image, x, y)[:3]) > 200
+    )
     assert blue > 50 and white > 10
     from core.mograph_raster import measure_text
 
@@ -137,7 +159,12 @@ def test_text_path_fills_with_the_winding_rule():
     [
         {},
         # Remplissage invisible : seul l'ombre décalée, tracé par ``translated()``, reste à l'image.
-        {"fill_color": "#00000000", "shadow_color": "#000000FF", "shadow_offset_x": 6, "shadow_offset_y": 6},
+        {
+            "fill_color": "#00000000",
+            "shadow_color": "#000000FF",
+            "shadow_offset_x": 6,
+            "shadow_offset_y": 6,
+        },
         # Contour fin : le pinceau de ``drawPath`` doit suivre la même règle de remplissage.
         {"stroke_width": 1, "stroke_color": "#FF0000"},
     ],
@@ -147,17 +174,31 @@ def test_overlapping_glyph_contours_leave_no_hole(style):
     from PySide6.QtGui import QFontDatabase
 
     if "Inter" not in QFontDatabase.families():
-        pytest.skip("police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas")
+        pytest.skip(
+            "police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas"
+        )
     project = _project()
     text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
     # « f » et « t » n'ont pas de contre-poinçon : tout vide fermé dans leur encre est un défaut.
-    fields = {"text": "f t", "font_family": "Inter", "bold": True, "font_size": 40, "width": 150, "height": 60,
-              "fill_color": "#000000", "shadow_offset_x": 0, "shadow_offset_y": 0, **style}
+    fields = {
+        "text": "f t",
+        "font_family": "Inter",
+        "bold": True,
+        "font_size": 40,
+        "width": 150,
+        "height": 60,
+        "fill_color": "#000000",
+        "shadow_offset_x": 0,
+        "shadow_offset_y": 0,
+        **style,
+    }
     for name, value in fields.items():
         update_graphic(text, name, value)
     image = _render(project)
     ink = sum(1 for x in range(W) for y in range(H) if _rgba(image, x, y)[3] > 200)
-    assert ink > 100  # le texte est bien tracé (sinon l'absence de trou ne prouverait rien)
+    assert (
+        ink > 100
+    )  # le texte est bien tracé (sinon l'absence de trou ne prouverait rien)
     assert _transparent_pockets(image) == 0
 
 
@@ -171,11 +212,15 @@ def test_merged_outline_drops_the_edges_inside_overlapping_contours():
     cross = QPainterPath()
     cross.setFillRule(Qt.WindingFill)
     cross.addRect(QRectF(20, 0, 10, 50))  # la hampe…
-    cross.addRect(QRectF(0, 15, 50, 10))  # …et la barre qui la recouvre, comme dans un « t »
+    cross.addRect(
+        QRectF(0, 15, 50, 10)
+    )  # …et la barre qui la recouvre, comme dans un « t »
     assert len(cross.toSubpathPolygons()) == 2
 
     merged = _merged_outline(cross)
-    assert len(merged.toSubpathPolygons()) == 1  # une seule silhouette : plus d'arête dans la lettre
+    assert (
+        len(merged.toSubpathPolygons()) == 1
+    )  # une seule silhouette : plus d'arête dans la lettre
     assert merged.boundingRect() == cross.boundingRect()
     assert _merged_outline(QPainterPath()).isEmpty()
 
@@ -196,7 +241,10 @@ def test_merged_outline_precision_follows_the_screen_scale():
 
     def flattening_error(scale: float) -> float:
         outline = _merged_outline(circle, scale)
-        points = [(outline.elementAt(i).x, outline.elementAt(i).y) for i in range(outline.elementCount())]
+        points = [
+            (outline.elementAt(i).x, outline.elementAt(i).y)
+            for i in range(outline.elementCount())
+        ]
         # Les sommets sont sur la courbe : l'écart est la flèche des cordes, au milieu de chacune.
         return max(
             abs(radius - math.hypot((x0 + x1) / 2 - radius, (y0 + y1) / 2 - radius))
@@ -204,9 +252,16 @@ def test_merged_outline_precision_follows_the_screen_scale():
         )
 
     zoom = 16.0
-    assert flattening_error(zoom) < flattening_error(1.0)  # le facteur de fusion suit bien l'agrandissement
-    assert flattening_error(zoom) * zoom < 0.1  # et l'écart reste sous 0,1 pixel à l'écran
-    assert _merged_outline(circle, 0.1).elementCount() == _merged_outline(circle, 1.0).elementCount()  # jamais sous ×1
+    assert flattening_error(zoom) < flattening_error(
+        1.0
+    )  # le facteur de fusion suit bien l'agrandissement
+    assert (
+        flattening_error(zoom) * zoom < 0.1
+    )  # et l'écart reste sous 0,1 pixel à l'écran
+    assert (
+        _merged_outline(circle, 0.1).elementCount()
+        == _merged_outline(circle, 1.0).elementCount()
+    )  # jamais sous ×1
 
 
 def test_largest_axis_scale_reads_the_widest_axis():
@@ -215,11 +270,17 @@ def test_largest_axis_scale_reads_the_widest_axis():
     from core.mograph_raster import _largest_axis_scale
 
     assert _largest_axis_scale(QTransform()) == pytest.approx(1.0)
-    assert _largest_axis_scale(QTransform.fromScale(3, 3).rotate(30)) == pytest.approx(3.0)
-    assert _largest_axis_scale(QTransform.fromScale(-4, 2)) == pytest.approx(4.0)  # un miroir ne change rien
+    assert _largest_axis_scale(QTransform.fromScale(3, 3).rotate(30)) == pytest.approx(
+        3.0
+    )
+    assert _largest_axis_scale(QTransform.fromScale(-4, 2)) == pytest.approx(
+        4.0
+    )  # un miroir ne change rien
     # Étiré ×10 en largeur et ×0,1 en hauteur, le calque vaut ×1 en moyenne mais son contour est agrandi ×10.
     assert _largest_axis_scale(QTransform.fromScale(10, 0.1)) == pytest.approx(10.0)
-    assert _largest_axis_scale(QTransform.fromScale(10, 0.1).rotate(45)) == pytest.approx(10.0)
+    assert _largest_axis_scale(
+        QTransform.fromScale(10, 0.1).rotate(45)
+    ) == pytest.approx(10.0)
 
 
 def test_text_stroke_merge_uses_the_painter_transform(monkeypatch):
@@ -230,16 +291,28 @@ def test_text_stroke_merge_uses_the_painter_transform(monkeypatch):
 
     seen: list[float] = []
     real = mograph_raster._merged_outline
-    monkeypatch.setattr(mograph_raster, "_merged_outline", lambda path, scale=1.0: (seen.append(scale), real(path, scale))[1])
+    monkeypatch.setattr(
+        mograph_raster,
+        "_merged_outline",
+        lambda path, scale=1.0: (seen.append(scale), real(path, scale))[1],
+    )
 
     project = _project()
     text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
-    for name, value in {"text": "Kut", "font_size": 20, "width": 60, "height": 30, "stroke_width": 2}.items():
+    for name, value in {
+        "text": "Kut",
+        "font_size": 20,
+        "width": 60,
+        "height": 30,
+        "stroke_width": 2,
+    }.items():
         update_graphic(text, name, value)
     image = QImage(60, 30, QImage.Format_ARGB32_Premultiplied)
     for zoom in (1.0, 8.0):
         painter = QPainter(image)
-        painter.scale(zoom, zoom * 0.5)  # le calque est affiché sur sa plus grande échelle : ×zoom, pas la moyenne
+        painter.scale(
+            zoom, zoom * 0.5
+        )  # le calque est affiché sur sa plus grande échelle : ×zoom, pas la moyenne
         draw_content(painter, text.graphic, (60, 30), device_scale=zoom * 0.7071)
         painter.end()
     assert seen == [pytest.approx(1.0), pytest.approx(8.0)]
@@ -252,13 +325,25 @@ def test_stroke_leaves_no_seam_inside_overlapping_glyph_contours(letter):
     from core.mograph_raster import draw_content
 
     if "Inter" not in QFontDatabase.families():
-        pytest.skip("police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas")
+        pytest.skip(
+            "police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas"
+        )
     box = (120, 130)
     project = _project()
     text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
-    fields = {"text": letter, "font_family": "Inter", "bold": True, "font_size": 80, "width": box[0], "height": box[1],
-              "fill_color": "#000000", "stroke_width": 3, "stroke_color": "#FF0000",
-              "shadow_offset_x": 0, "shadow_offset_y": 0}
+    fields = {
+        "text": letter,
+        "font_family": "Inter",
+        "bold": True,
+        "font_size": 80,
+        "width": box[0],
+        "height": box[1],
+        "fill_color": "#000000",
+        "stroke_width": 3,
+        "stroke_color": "#FF0000",
+        "shadow_offset_x": 0,
+        "shadow_offset_y": 0,
+    }
     for name, value in fields.items():
         update_graphic(text, name, value)
 
@@ -272,19 +357,37 @@ def test_stroke_leaves_no_seam_inside_overlapping_glyph_contours(letter):
 
     stroked = draw()
     update_graphic(text, "stroke_width", 0)
-    silhouette = draw()  # la même encre sans contour : la référence de ce qui est « dans » la lettre
+    silhouette = (
+        draw()
+    )  # la même encre sans contour : la référence de ce qui est « dans » la lettre
 
     # Le trait (2 × 3 px, centré sur le bord) mord de 3 px dans la lettre ; +1 pour l'antialiasing, +1
     # pour la discrétisation du disque (centres de pixels, seuil d'alpha) : tout pixel plus profond que
     # cela doit être de la couleur de remplissage, jamais du contour.
     reach = 5
-    ink = {(x, y) for y in range(box[1]) for x in range(box[0]) if silhouette.pixelColor(x, y).alpha() >= 128}
-    disc = [(dx, dy) for dx in range(-reach, reach + 1) for dy in range(-reach, reach + 1) if dx * dx + dy * dy <= reach * reach]
+    ink = {
+        (x, y)
+        for y in range(box[1])
+        for x in range(box[0])
+        if silhouette.pixelColor(x, y).alpha() >= 128
+    }
+    disc = [
+        (dx, dy)
+        for dx in range(-reach, reach + 1)
+        for dy in range(-reach, reach + 1)
+        if dx * dx + dy * dy <= reach * reach
+    ]
     core = [(x, y) for x, y in ink if all((x + dx, y + dy) in ink for dx, dy in disc)]
-    assert len(core) > 40  # il reste bien de l'encre au cœur (sinon l'absence de liseré ne prouverait rien)
-    assert any(stroked.pixelColor(x, y).red() > 200 for x, y in ink)  # et le contour est bien tracé au bord
+    assert (
+        len(core) > 40
+    )  # il reste bien de l'encre au cœur (sinon l'absence de liseré ne prouverait rien)
+    assert any(
+        stroked.pixelColor(x, y).red() > 200 for x, y in ink
+    )  # et le contour est bien tracé au bord
     seam = [(x, y) for x, y in core if stroked.pixelColor(x, y).red() > 64]
-    assert not seam, f"{len(seam)} pixels de la couleur du contour dans la lettre « {letter} »"
+    assert not seam, (
+        f"{len(seam)} pixels de la couleur du contour dans la lettre « {letter} »"
+    )
 
 
 @pytest.mark.parametrize(
@@ -308,9 +411,12 @@ def test_mask_operations(modes, inside, outside):
 def test_intersect_of_disjoint_masks_is_empty_and_invert_flips():
     project = _project()
     clip = _shape(project, size=(160, 90))
-    clip.compositing = Compositing(masks=(
-        Mask(position_x=0.25, width=0.3), Mask(position_x=0.75, width=0.3, mode=MaskMode.INTERSECT),
-    ))
+    clip.compositing = Compositing(
+        masks=(
+            Mask(position_x=0.25, width=0.3),
+            Mask(position_x=0.75, width=0.3, mode=MaskMode.INTERSECT),
+        )
+    )
     image = _render(project)
     assert _rgba(image, 40, 45)[3] == 0 and _rgba(image, 120, 45)[3] == 0
     clip.compositing = Compositing(masks=(Mask(width=0.5, inverted=True),))
@@ -321,7 +427,9 @@ def test_intersect_of_disjoint_masks_is_empty_and_invert_flips():
 def test_feather_softens_and_expansion_grows_the_mask():
     project = _project()
     clip = _shape(project, size=(160, 90))
-    clip.compositing = Compositing(masks=(Mask(shape=MaskShape.ELLIPSE, width=0.5, height=0.8, feather=0.15),))
+    clip.compositing = Compositing(
+        masks=(Mask(shape=MaskShape.ELLIPSE, width=0.5, height=0.8, feather=0.15),)
+    )
     image = _render(project)
     edge = [_rgba(image, x, 45)[3] for x in range(30, 60)]
     assert any(0 < value < 255 for value in edge)
@@ -333,7 +441,10 @@ def test_feather_softens_and_expansion_grows_the_mask():
 def test_motion_blur_smears_moving_layers_only_when_enabled():
     project = _project()
     clip = _shape(project, size=(20, 20))
-    clip.transform_keyframes = [TransformKeyframe("position_x", 0.0, -0.4), TransformKeyframe("position_x", 1.0, 0.4)]
+    clip.transform_keyframes = [
+        TransformKeyframe("position_x", 0.0, -0.4),
+        TransformKeyframe("position_x", 1.0, 0.4),
+    ]
 
     def partial(image):
         return sum(1 for x in range(W) if 0 < _rgba(image, x, 45)[3] < 250)
@@ -342,7 +453,9 @@ def test_motion_blur_smears_moving_layers_only_when_enabled():
     update_graphic(clip, "motion_blur", True)
     blurred = partial(_render(project, 0.5))
     assert blurred > sharp + 4
-    assert partial(_render(project, 0.5, quality="draft")) == sharp  # aperçu brouillon : pas de flou
+    assert (
+        partial(_render(project, 0.5, quality="draft")) == sharp
+    )  # aperçu brouillon : pas de flou
     project.active_sequence.motion_blur = MotionBlurSettings(enabled=False)
     assert partial(_render(project, 0.5)) == sharp  # interrupteur global
 
@@ -365,7 +478,9 @@ def test_adjustment_coverage_follows_opacity_and_masks():
     project = _project()
     adjustment = add_graphic_clip(project, "adjustment", timeline_start=0, duration=2)
     adjustment.transform = ClipTransform(opacity=0.5)
-    adjustment.compositing = Compositing(masks=(Mask(position_x=0.25, width=0.5, height=1.0),))
+    adjustment.compositing = Compositing(
+        masks=(Mask(position_x=0.25, width=0.5, height=1.0),)
+    )
     plan = build_render_plan(project)
     scene = scene_for_plan(plan)
     renderer = MographRenderer(scene, W, H)
@@ -392,8 +507,11 @@ def test_program_splits_only_where_ffmpeg_must_see_below():
     plan = build_render_plan(project)
     program = graphics_program(scene_for_plan(plan))
     assert [(el.kind, el.layer_ids) for el in program] == [
-        ("band", (a.id, b.id)), ("layer", (c.id,)), ("band", (d.id,)),
-        ("adjustment", (adjustment.id,)), ("layer", (e.id,)),
+        ("band", (a.id, b.id)),
+        ("layer", (c.id,)),
+        ("band", (d.id,)),
+        ("adjustment", (adjustment.id,)),
+        ("layer", (e.id,)),
     ]
     assert program[1].blend is BlendMode.MULTIPLY
 
@@ -407,7 +525,9 @@ def _ffmpeg_frame(project: Project, t: float, tmp_path: Path):
     from core.export_engine import ExportEngine, input_arguments
 
     plan = build_render_plan(project)
-    graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, 10, None)
+    graph, video, audio, inputs = ExportEngine._build_filter_complex(
+        plan, W, H, 10, None
+    )
     graph += f";[{video}]trim=start={t},setpts=PTS-STARTPTS,format=rgb24[probe];[{audio}]anullsink"
     out = tmp_path / f"frame-{t}.png"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
@@ -457,8 +577,12 @@ def test_preview_segment_and_export_compose_graphics_identically(tmp_path):
     reference = _render(project, 0.5)
     exported = _ffmpeg_frame(project, 0.5, tmp_path)
     differences = [
-        max(abs(a - b) for a, b in zip(_rgba(reference, x, y)[:3], _rgba(exported, x, y)[:3]))
-        for x in range(0, W, 3) for y in range(0, H, 3)
+        max(
+            abs(a - b)
+            for a, b in zip(_rgba(reference, x, y)[:3], _rgba(exported, x, y)[:3])
+        )
+        for x in range(0, W, 3)
+        for y in range(0, H, 3)
         if _rgba(reference, x, y)[3] in (0, 255)
     ]
     assert max(differences) <= 40  # sous-échantillonnage 4:2:0 sur les bords de lettres
@@ -467,31 +591,74 @@ def test_preview_segment_and_export_compose_graphics_identically(tmp_path):
     from core.filter_graph import build_preview_command
 
     plan = build_render_plan(project)
-    command = build_preview_command(plan, width=W, height=H, fps=10, quality="high",
-                                    start=0.0, duration=1.0, output_path=str(tmp_path / "s.mp4"))
-    common, video_label, *_rest = ExportEngine._build_filter_complex(plan, W, H, 10, None, quality="high")
+    command = build_preview_command(
+        plan,
+        width=W,
+        height=H,
+        fps=10,
+        quality="high",
+        start=0.0,
+        duration=1.0,
+        output_path=str(tmp_path / "s.mp4"),
+    )
+    common, video_label, *_rest = ExportEngine._build_filter_complex(
+        plan, W, H, 10, None, quality="high"
+    )
     # Même graphe que l'export, dernière étape comprise (conversion de couleur BT.709).
-    assert command[command.index("-filter_complex") + 1] == with_output_color_stage(common, video_label)[0]
+    assert (
+        command[command.index("-filter_complex") + 1]
+        == with_output_color_stage(common, video_label)[0]
+    )
 
 
 @needs_ffmpeg
 def test_real_export_with_video_mask_adjustment_and_blend(tmp_path):
     source = tmp_path / "src.mp4"
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
-                    f"color=c=0x20C040:s={W}x{H}:r=10:d=2", "-pix_fmt", "yuv420p", str(source)], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=0x20C040:s={W}x{H}:r=10:d=2",
+            "-pix_fmt",
+            "yuv420p",
+            str(source),
+        ],
+        check=True,
+    )
     project = _project()
-    project.media_assets.append(MediaAsset("a", str(source), "src", 2, W, H, 10, "video"))
-    video = Clip("v", "a", "V1", 0, 0, 2, transform=ClipTransform(anchor_x=0.0, anchor_y=0.0, flip_h=True),
-                 compositing=Compositing(masks=(Mask(shape=MaskShape.ELLIPSE, width=0.9, height=0.9, feather=0.05),)))
+    project.media_assets.append(
+        MediaAsset("a", str(source), "src", 2, W, H, 10, "video")
+    )
+    video = Clip(
+        "v",
+        "a",
+        "V1",
+        0,
+        0,
+        2,
+        transform=ClipTransform(anchor_x=0.0, anchor_y=0.0, flip_h=True),
+        compositing=Compositing(
+            masks=(Mask(shape=MaskShape.ELLIPSE, width=0.9, height=0.9, feather=0.05),)
+        ),
+    )
     project.tracks.append(Track("V1", "V1", "video", clips=[video]))
     adjustment = add_graphic_clip(project, "adjustment", timeline_start=0, duration=2)
     adjustment.effects = [create_effect(EffectType.BLACK_AND_WHITE)]
-    adjustment.compositing = Compositing(masks=(Mask(position_x=0.25, width=0.5, height=1.0),))
+    adjustment.compositing = Compositing(
+        masks=(Mask(position_x=0.25, width=0.5, height=1.0),)
+    )
     frame = _ffmpeg_frame(project, 0.5, tmp_path)
     # Ancrage haut-gauche au centre + miroir : la vidéo occupe le quart bas-gauche.
     left = _rgba(frame, 40, 70)
     right_top = _rgba(frame, 120, 20)
-    assert abs(left[0] - left[1]) < 12 and left[1] > 40  # gris (noir et blanc) sous l'adjustment
+    assert (
+        abs(left[0] - left[1]) < 12 and left[1] > 40
+    )  # gris (noir et blanc) sous l'adjustment
     assert max(right_top[:3]) < 20  # hors de la vidéo : fond noir
 
 
@@ -509,7 +676,9 @@ def test_nested_sequence_with_graphics_exports(tmp_path):
     nested = insert_sequence_clip(project, inner.id, "V1", 0.0)
     nested.transform = ClipTransform(scale=0.5)
     frame = _ffmpeg_frame(project, 0.5, tmp_path)
-    assert min(_rgba(frame, 80, 45)[:3]) > 200  # le calque de la séquence imbriquée, au centre
+    assert (
+        min(_rgba(frame, 80, 45)[:3]) > 200
+    )  # le calque de la séquence imbriquée, au centre
     assert max(_rgba(frame, 5, 5)[:3]) < 20  # échelle 0,5 : le coin reste noir
 
 
@@ -520,7 +689,9 @@ def _stream_files(project, quality="export"):
     from core.export_engine import ExportEngine
 
     plan = build_render_plan(project)
-    _graph, _video, _audio, inputs = ExportEngine._build_filter_complex(plan, W, H, 10, None, quality=quality)
+    _graph, _video, _audio, inputs = ExportEngine._build_filter_complex(
+        plan, W, H, 10, None, quality=quality
+    )
     return [Path(p) for p in inputs if p.endswith(".ffconcat")]
 
 
@@ -528,10 +699,15 @@ def test_static_layers_are_rendered_once_and_animation_per_frame():
     project = _project()
     _shape(project)
     (playlist,) = _stream_files(project)
-    assert playlist.read_text().count("file 'f-") == 2  # une image (+ répétition finale)
+    assert (
+        playlist.read_text().count("file 'f-") == 2
+    )  # une image (+ répétition finale)
     project = _project()
     clip = _shape(project)
-    clip.transform_keyframes = [TransformKeyframe("rotation", 0.0, 0.0), TransformKeyframe("rotation", 2.0, 90.0)]
+    clip.transform_keyframes = [
+        TransformKeyframe("rotation", 0.0, 0.0),
+        TransformKeyframe("rotation", 2.0, 90.0),
+    ]
     (playlist,) = _stream_files(project)
     assert playlist.read_text().count("file 'f-") >= 20
 
@@ -558,12 +734,23 @@ def test_a_new_raster_version_renames_every_frame_and_segment(monkeypatch):
     project = _project()
     _shape(project)
     (before,) = _stream_files(project)
-    segment = fingerprint_plan(build_render_plan(project), width=W, height=H, fps=10, quality="standard")
+    segment = fingerprint_plan(
+        build_render_plan(project), width=W, height=H, fps=10, quality="standard"
+    )
     monkeypatch.setattr(raster, "RASTER_VERSION", raster.RASTER_VERSION + 1)
     (after,) = _stream_files(project)
-    names = {line for line in before.read_text().splitlines() if line.startswith("file 'f-")}
-    assert names.isdisjoint(line for line in after.read_text().splitlines() if line.startswith("file 'f-"))
-    assert fingerprint_plan(build_render_plan(project), width=W, height=H, fps=10, quality="standard") != segment
+    names = {
+        line for line in before.read_text().splitlines() if line.startswith("file 'f-")
+    }
+    assert names.isdisjoint(
+        line for line in after.read_text().splitlines() if line.startswith("file 'f-")
+    )
+    assert (
+        fingerprint_plan(
+            build_render_plan(project), width=W, height=H, fps=10, quality="standard"
+        )
+        != segment
+    )
 
 
 def test_segment_fingerprint_follows_parents_masks_and_motion_blur():
@@ -576,7 +763,9 @@ def test_segment_fingerprint_follows_parents_masks_and_motion_blur():
     set_parent(project, child.id, parent.id, keep_visual=False)
 
     def fingerprint():
-        return fingerprint_plan(build_render_plan(project), width=W, height=H, fps=10, quality="standard")
+        return fingerprint_plan(
+            build_render_plan(project), width=W, height=H, fps=10, quality="standard"
+        )
 
     base = fingerprint()
     parent.transform = ClipTransform(rotation=10)
@@ -593,7 +782,10 @@ def test_cache_manager_accounts_and_evicts_layer_frames(tmp_path):
 
     project = _project()
     clip = _shape(project)
-    clip.transform_keyframes = [TransformKeyframe("rotation", 0.0, 0.0), TransformKeyframe("rotation", 2.0, 90.0)]
+    clip.transform_keyframes = [
+        TransformKeyframe("rotation", 0.0, 0.0),
+        TransformKeyframe("rotation", 2.0, 90.0),
+    ]
     _stream_files(project)
     cache = MographFrameCache()
     manager = CacheManager(mograph=cache, max_bytes=1)
@@ -607,15 +799,23 @@ def test_cache_manager_accounts_and_evicts_layer_frames(tmp_path):
 def test_scopes_frame_sees_layers_at_the_playhead(tmp_path):
     from PySide6.QtGui import QImage
 
-    from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest
+    from core.export_engine import (
+        ExportEngine,
+        ExportFormat,
+        ExportPreset,
+        ExportRequest,
+    )
 
     project = _project()
     late = _shape(project, size=(W, H), color="#FFFFFF")
     late.timeline_start = 1.0  # n'existe qu'à partir de 1 s
     plan = build_render_plan(project)
     request = ExportRequest(
-        render_plan=plan, output_path=str(tmp_path / "x.mp4"), format=ExportFormat.MP4_H264,
-        preset=ExportPreset("T", (W, H), 28, "64k"), fps=10,
+        render_plan=plan,
+        output_path=str(tmp_path / "x.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset("T", (W, H), 28, "64k"),
+        fps=10,
     )
     engine = ExportEngine()
     frames = {}

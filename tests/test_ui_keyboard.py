@@ -61,7 +61,9 @@ def window(main_window):
     if main_window.is_playing:
         main_window.toggle_play()
     focused = QApplication.focusWidget()
-    if focused is not None:  # un champ de saisie resté focalisé par un test précédent ignorerait les raccourcis
+    if (
+        focused is not None
+    ):  # un champ de saisie resté focalisé par un test précédent ignorerait les raccourcis
         focused.clearFocus()
     main_window.setFocus()
     audit.select_first_clip(main_window)
@@ -97,9 +99,14 @@ def dialog_of(window):
 
 
 DIALOGS = [
-    "Préférences", "Préférences complètes", "Gestionnaire de tags",
-    "Enregistrer un preset d'effet", "Enregistrer une transition",
-    "Créer une séquence Multicam", "Résultat de la synchronisation", "Réglages Multicam",
+    "Préférences",
+    "Préférences complètes",
+    "Gestionnaire de tags",
+    "Enregistrer un preset d'effet",
+    "Enregistrer une transition",
+    "Créer une séquence Multicam",
+    "Résultat de la synchronisation",
+    "Réglages Multicam",
 ]
 
 
@@ -132,15 +139,21 @@ def test_dialog_default_button_is_the_validation_or_close_button(dialog_of, name
     elif name == "Gestionnaire de tags":
         assert default is dialog.create_button
     elif name == "Réglages Multicam":
-        assert default is dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Close)   # on ne valide rien : on ferme
+        assert default is dialog.findChild(QDialogButtonBox).button(
+            QDialogButtonBox.Close
+        )  # on ne valide rien : on ferme
     else:
         assert default is dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok)
 
 
 @pytest.mark.parametrize("name", DIALOGS)
-def test_dialog_controls_are_reachable_by_tab_and_icon_buttons_are_named(dialog_of, name):
+def test_dialog_controls_are_reachable_by_tab_and_icon_buttons_are_named(
+    dialog_of, name
+):
     dialog = dialog_of(name)
-    assert not [w for w in audit.tab_sequence(dialog) if isinstance(w, QScrollArea)], "arrêt de Tab invisible"
+    assert not [w for w in audit.tab_sequence(dialog) if isinstance(w, QScrollArea)], (
+        "arrêt de Tab invisible"
+    )
     findings = audit.audit_dialog(name, dialog)
     assert [str(f) for f in findings] == []
 
@@ -153,7 +166,9 @@ def test_escape_closes_every_dialog(dialog_of, name):
     assert _is_closed(dialog)
 
 
-def test_tag_manager_icon_buttons_are_focusable_and_named_in_every_language(window, qtbot):
+def test_tag_manager_icon_buttons_are_focusable_and_named_in_every_language(
+    window, qtbot
+):
     from core.library_organization import LibraryOrganization
     from ui.library_organization_widgets import TagManagerDialog
 
@@ -179,7 +194,9 @@ def test_tag_manager_icon_buttons_are_focusable_and_named_in_every_language(wind
     assert len({tuple(value) for value in names.values()}) == 3  # le nom suit la langue
 
 
-def test_enter_in_the_tag_name_field_creates_the_tag_and_never_opens_the_colour_picker(dialog_of, monkeypatch):
+def test_enter_in_the_tag_name_field_creates_the_tag_and_never_opens_the_colour_picker(
+    dialog_of, monkeypatch
+):
     from PySide6.QtWidgets import QColorDialog
 
     dialog = dialog_of("Gestionnaire de tags")
@@ -208,7 +225,9 @@ def test_enter_in_the_shortcut_search_does_not_remove_a_shortcut(dialog_of):
     editor.search_edit.setFocus()
     QTest.keyClick(editor.search_edit, Qt.Key_Return)
     assert manager.shortcut_map.sequences("tool_blade") == ("B",)
-    assert _is_closed(dialog)  # Entrée valide le dialogue : « Fermer » est son bouton par défaut
+    assert _is_closed(
+        dialog
+    )  # Entrée valide le dialogue : « Fermer » est son bouton par défaut
 
 
 def test_enter_in_a_preset_dialog_validates_only_with_a_name(dialog_of):
@@ -222,7 +241,9 @@ def test_enter_in_a_preset_dialog_validates_only_with_a_name(dialog_of):
     assert dialog.result() == QDialog.Accepted
 
 
-@pytest.mark.parametrize("name", ["Enregistrer un preset d'effet", "Enregistrer une transition"])
+@pytest.mark.parametrize(
+    "name", ["Enregistrer un preset d'effet", "Enregistrer une transition"]
+)
 def test_tab_leaves_the_description_editor(dialog_of, name):
     """Régression : Tab insérait une tabulation dans la description au lieu de passer au champ suivant."""
     dialog = dialog_of(name)
@@ -254,12 +275,20 @@ def test_accessibility_translations_cover_every_language_with_the_same_placehold
     for key, entry in ACCESSIBILITY_TRANSLATIONS.items():
         assert set(entry) == {"fr", "en", "es"}, key
         assert all(text.strip() for text in entry.values()), key
-        assert len({tuple(sorted(re.findall(r"{(\w+)}", text))) for text in entry.values()}) == 1, key
+        assert (
+            len(
+                {tuple(sorted(re.findall(r"{(\w+)}", text))) for text in entry.values()}
+            )
+            == 1
+        ), key
     original = i18n.current_language()
     try:
         for language in ("fr", "en", "es"):
             i18n.set_language(language)
-            assert i18n.translate("a11y.tag.rename") == ACCESSIBILITY_TRANSLATIONS["a11y.tag.rename"][language]
+            assert (
+                i18n.translate("a11y.tag.rename")
+                == ACCESSIBILITY_TRANSLATIONS["a11y.tag.rename"][language]
+            )
     finally:
         i18n.set_language(original)
 
@@ -269,13 +298,19 @@ def test_accessibility_translations_cover_every_language_with_the_same_placehold
 
 def _form_controls(panel):
     return [
-        widget for widget in panel.findChildren(QWidget)
-        if (isinstance(widget, (QAbstractButton, QSlider)) or (isinstance(widget, QComboBox) and not widget.isEditable()))
+        widget
+        for widget in panel.findChildren(QWidget)
+        if (
+            isinstance(widget, (QAbstractButton, QSlider))
+            or (isinstance(widget, QComboBox) and not widget.isEditable())
+        )
         and not widget.objectName().startswith("qt_")
     ]
 
 
-@pytest.mark.parametrize("tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS])
+@pytest.mark.parametrize(
+    "tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS]
+)
 def test_inspector_controls_take_tab_but_never_the_focus_on_click(window, tab, name):
     """Un contrôle qui prend le focus au clic vole Espace / J / K / L : ils ne seraient plus lus par la fenêtre."""
     panel = window.properties_panel
@@ -283,11 +318,17 @@ def test_inspector_controls_take_tab_but_never_the_focus_on_click(window, tab, n
     audit.settle(window)
     assert audit.keyboard_gaps(panel) == []
     for widget in _form_controls(panel):
-        assert widget.focusPolicy() & Qt.TabFocus, (name, widget.objectName(), widget.text() if hasattr(widget, "text") else "")
+        assert widget.focusPolicy() & Qt.TabFocus, (
+            name,
+            widget.objectName(),
+            widget.text() if hasattr(widget, "text") else "",
+        )
         assert not widget.focusPolicy() & Qt.ClickFocus, (name, widget.objectName())
 
 
-@pytest.mark.parametrize("tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS])
+@pytest.mark.parametrize(
+    "tab,name", audit.INSPECTOR_TABS, ids=[name for _i, name in audit.INSPECTOR_TABS]
+)
 def test_inspector_tab_order_follows_the_display_order(window, tab, name):
     panel = window.properties_panel
     panel._select_inspector_tab(tab)
@@ -295,25 +336,41 @@ def test_inspector_tab_order_follows_the_display_order(window, tab, name):
     window.activateWindow()
     first = panel.inspector_tab_buttons[0]
     sequence = audit.tab_sequence(window, start=first, within=panel)
-    assert len(sequence) > 5, f"onglet {name} : Tab n'a visité que {len(sequence)} contrôles"
-    assert not [w for w in sequence if isinstance(w, QScrollArea)], "arrêt de Tab invisible sur une zone défilante"
+    assert len(sequence) > 5, (
+        f"onglet {name} : Tab n'a visité que {len(sequence)} contrôles"
+    )
+    assert not [w for w in sequence if isinstance(w, QScrollArea)], (
+        "arrêt de Tab invisible sur une zone défilante"
+    )
     content = panel.scroll_area.widget()
     assert audit.tab_order_violations(sequence, content) == []
     reached = set(sequence)
-    missing = [w for w in audit.interactive_controls(panel) if w.focusPolicy() & Qt.TabFocus and w not in reached]
+    missing = [
+        w
+        for w in audit.interactive_controls(panel)
+        if w.focusPolicy() & Qt.TabFocus and w not in reached
+    ]
     assert missing == [], [audit.widget_path(w, 3) for w in missing]
 
 
 def test_tab_visits_the_graphics_group_before_the_movement_group(window):
     """Régression : le groupe graphique est créé après « Mouvement » mais affiché au-dessus ; Tab suivait la création."""
-    ids = audit._clip_ids(window, lambda track, clip: getattr(clip, "graphic", None) is not None)
+    ids = audit._clip_ids(
+        window, lambda track, clip: getattr(clip, "graphic", None) is not None
+    )
     window._restore_clip_selection(ids[0])
     panel = window.properties_panel
     panel._select_inspector_tab(4)
     audit.settle(window)
-    sequence = audit.tab_sequence(window, start=panel.inspector_tab_buttons[0], within=panel)
-    graphics = [i for i, w in enumerate(sequence) if panel.graphics_group.isAncestorOf(w)]
-    movement = [i for i, w in enumerate(sequence) if panel.movement_group.isAncestorOf(w)]
+    sequence = audit.tab_sequence(
+        window, start=panel.inspector_tab_buttons[0], within=panel
+    )
+    graphics = [
+        i for i, w in enumerate(sequence) if panel.graphics_group.isAncestorOf(w)
+    ]
+    movement = [
+        i for i, w in enumerate(sequence) if panel.movement_group.isAncestorOf(w)
+    ]
     assert graphics and movement and max(graphics) < min(movement)
 
 
@@ -327,7 +384,9 @@ def test_inspector_icon_buttons_have_accessible_names(window):
     window._restore_clip_selection(ids[0])
     panel._select_inspector_tab(4)
     audit.settle(window)
-    assert [str(f) for f in audit.unnamed_icon_buttons(panel)] == []  # les neuf tuiles d'alignement comprises
+    assert [
+        str(f) for f in audit.unnamed_icon_buttons(panel)
+    ] == []  # les neuf tuiles d'alignement comprises
 
 
 def test_keyframe_button_names_follow_the_language(window):
@@ -350,7 +409,10 @@ def test_keyframe_button_names_follow_the_language(window):
 
 
 def test_multiline_editors_do_not_trap_tab(window):
-    for editor in (*window.findChildren(QTextEdit), *window.findChildren(QPlainTextEdit)):
+    for editor in (
+        *window.findChildren(QTextEdit),
+        *window.findChildren(QPlainTextEdit),
+    ):
         if editor.isReadOnly():
             continue
         assert editor.tabChangesFocus(), audit.widget_path(editor, 3)
@@ -367,8 +429,10 @@ def test_editing_workspace_has_no_button_taking_the_focus_on_click(window):
     for section in audit.LIBRARY_SECTIONS:
         audit.open_library_section(window, section)
         offenders = [
-            audit.widget_path(w, 4) for w in _form_controls(window)
-            if w.focusPolicy() & Qt.ClickFocus and not window.export_panel.isAncestorOf(w)
+            audit.widget_path(w, 4)
+            for w in _form_controls(window)
+            if w.focusPolicy() & Qt.ClickFocus
+            and not window.export_panel.isAncestorOf(w)
         ]
         assert offenders == [], f"section {section} : {offenders}"
     audit.open_library_section(window, "media")
@@ -389,19 +453,26 @@ def test_clicking_an_inspector_button_leaves_space_to_the_playback_shortcut(wind
     trackers_after_click = window.tracking_panel.tracker_list.count()
     QTest.keyClick(window, Qt.Key_Space)
     assert window.is_playing
-    assert window.tracking_panel.tracker_list.count() == trackers_after_click  # le bouton n'a pas été re-déclenché
+    assert (
+        window.tracking_panel.tracker_list.count() == trackers_after_click
+    )  # le bouton n'a pas été re-déclenché
     window.toggle_play()
     assert before >= 0 and panel is not None
 
 
-def test_playback_shortcuts_still_run_with_focus_on_a_focusable_inspector_control(window):
+def test_playback_shortcuts_still_run_with_focus_on_a_focusable_inspector_control(
+    window,
+):
     """Focus (au clavier) sur un bouton ou un curseur de l'inspecteur : les touches de commande que ce contrôle
     ne consomme pas continuent d'atteindre la fenêtre (K lit, V choisit l'outil de sélection…)."""
     panel = window.properties_panel
     panel._select_inspector_tab(1)
     audit.settle(window)
     window.activateWindow()
-    focusable = [panel.color_curve_reset_button, *[w for w in panel.findChildren(QSlider) if w.isVisibleTo(panel)]]
+    focusable = [
+        panel.color_curve_reset_button,
+        *[w for w in panel.findChildren(QSlider) if w.isVisibleTo(panel)],
+    ]
     for control in focusable:
         control.setFocus(Qt.TabFocusReason)
         audit.settle(window)
@@ -456,11 +527,23 @@ def _mnemonic(title: str) -> str | None:
     match = re.search(r"(?<!&)&(?!&)(.)", title)
     if match is None:
         return None
-    letter = unicodedata.normalize("NFD", match.group(1)).encode("ascii", "ignore").decode("ascii")
+    letter = (
+        unicodedata.normalize("NFD", match.group(1))
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
     return letter.casefold() or match.group(1).casefold()
 
 
-ROOT_MENU_KEYS = ("menu.file", "menu.edit", "menu.view", "menu.timeline", "menu.layers", "menu.window", "menu.help")
+ROOT_MENU_KEYS = (
+    "menu.file",
+    "menu.edit",
+    "menu.view",
+    "menu.timeline",
+    "menu.layers",
+    "menu.window",
+    "menu.help",
+)
 
 
 @pytest.mark.parametrize("language", ["fr", "en", "es"])
@@ -471,7 +554,9 @@ def test_menu_mnemonics_are_unique_in_every_language(language):
         titles = {key: i18n.translate(key) for key in ROOT_MENU_KEYS}
         letters = {key: _mnemonic(title) for key, title in titles.items()}
         assert all(letters.values()), f"menu sans mnémonique : {titles}"
-        assert len(set(letters.values())) == len(letters), f"mnémoniques en double : {letters}"
+        assert len(set(letters.values())) == len(letters), (
+            f"mnémoniques en double : {letters}"
+        )
     finally:
         i18n.set_language(original)
 
@@ -483,7 +568,11 @@ def test_the_real_menu_bar_has_one_mnemonic_per_menu(window, monkeypatch, langua
     try:
         window._apply_settings(replace(window._settings_snapshot(), language=language))
         audit.settle(window)
-        titles = [action.menu().title() for action in window.menuBar().actions() if action.menu() is not None]
+        titles = [
+            action.menu().title()
+            for action in window.menuBar().actions()
+            if action.menu() is not None
+        ]
         assert len(titles) >= 5
         letters = [_mnemonic(title) for title in titles]
         assert all(letters), titles
@@ -522,13 +611,21 @@ def test_menu_titles_resolve_to_unique_alt_shortcuts(window, monkeypatch):
     qt_set_sequence_auto_mnemonic(True)
     try:
         window._apply_settings(replace(window._settings_snapshot(), language="en"))
-        titles = [action.menu().title() for action in window.menuBar().actions() if action.menu() is not None]
+        titles = [
+            action.menu().title()
+            for action in window.menuBar().actions()
+            if action.menu() is not None
+        ]
         sequences = [QKeySequence.mnemonic(title).toString() for title in titles]
         assert all(sequences), f"titre sans mnémonique : {titles}"
-        assert len(set(sequences)) == len(sequences), f"mnémoniques en double : {dict(zip(titles, sequences))}"
+        assert len(set(sequences)) == len(sequences), (
+            f"mnémoniques en double : {dict(zip(titles, sequences))}"
+        )
         assert QKeySequence.mnemonic("&File") == QKeySequence("Alt+F")
         file_menu = window.findChild(QWidget, "file_menu")
         assert QKeySequence.mnemonic(file_menu.title()) == QKeySequence("Alt+F")
     finally:
-        qt_set_sequence_auto_mnemonic(sys.platform != "darwin")     # réglage par défaut de la plateforme
+        qt_set_sequence_auto_mnemonic(
+            sys.platform != "darwin"
+        )  # réglage par défaut de la plateforme
         window._apply_settings(replace(window._settings_snapshot(), language=original))

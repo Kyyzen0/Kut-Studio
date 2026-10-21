@@ -19,14 +19,35 @@ from core.tracking_model import ClipTracking, TrackLink
 
 def _project(lock: str | None, *, continuation: tuple[str, ...] = ("b",)) -> Project:
     follower = Clip("f", "m", "V2", 0.0, 0.0, 2.0)
-    follower.tracking = ClipTracking(links=(TrackLink(source_clip_id="a", tracker_ids=("t1",), continuation_ids=continuation),))
+    follower.tracking = ClipTracking(
+        links=(
+            TrackLink(
+                source_clip_id="a", tracker_ids=("t1",), continuation_ids=continuation
+            ),
+        )
+    )
     if lock == "layer":
         follower.graphic = replace(GraphicOverlay(type=GraphicType.TEXT), locked=True)
     return Project(
-        "Démo", width=320, height=180, fps=30.0,
-        media_assets=[MediaAsset("m", "/x/a.mp4", "a", 60.0, 320, 180, 30.0, "video", has_audio=True)],
+        "Démo",
+        width=320,
+        height=180,
+        fps=30.0,
+        media_assets=[
+            MediaAsset(
+                "m", "/x/a.mp4", "a", 60.0, 320, 180, 30.0, "video", has_audio=True
+            )
+        ],
         tracks=[
-            Track("V1", "V1", "video", clips=[Clip("a", "m", "V1", 0.0, 0.0, 4.0), Clip("b", "m", "V1", 4.0, 0.0, 3.0)]),
+            Track(
+                "V1",
+                "V1",
+                "video",
+                clips=[
+                    Clip("a", "m", "V1", 0.0, 0.0, 4.0),
+                    Clip("b", "m", "V1", 4.0, 0.0, 3.0),
+                ],
+            ),
             Track("V2", "V2", "video", locked=(lock == "track"), clips=[follower]),
         ],
     )
@@ -75,7 +96,9 @@ ENTRIES = [_cut, _delete, _ripple, _selection, _selection_ripple]
 
 @pytest.mark.parametrize("lock", ["layer", "track"])
 @pytest.mark.parametrize("entry", ENTRIES, ids=lambda f: f.__name__)
-def test_every_window_entry_refuses_a_locked_follower_before_writing(qtbot, monkeypatch, lock, entry):
+def test_every_window_entry_refuses_a_locked_follower_before_writing(
+    qtbot, monkeypatch, lock, entry
+):
     window = _open(qtbot, monkeypatch, lock)
     before = copy.deepcopy(window.project)
     entry(window)
@@ -83,7 +106,9 @@ def test_every_window_entry_refuses_a_locked_follower_before_writing(qtbot, monk
 
 
 @pytest.mark.parametrize("entry", ENTRIES, ids=lambda f: f.__name__)
-def test_a_free_follower_lets_the_window_do_it_and_undo_redo_restore_it(qtbot, monkeypatch, entry):
+def test_a_free_follower_lets_the_window_do_it_and_undo_redo_restore_it(
+    qtbot, monkeypatch, entry
+):
     window = _open(qtbot, monkeypatch, None)
     before = copy.deepcopy(window.project.tracks)
     entry(window)
@@ -97,5 +122,7 @@ def test_a_free_follower_lets_the_window_do_it_and_undo_redo_restore_it(qtbot, m
 
 def test_a_locked_follower_of_another_source_does_not_block_the_cut(qtbot, monkeypatch):
     window = _open(qtbot, monkeypatch, "layer", continuation=())
-    window.cut_selected_clip("b", 5.0)                                  # « f » suit « a » : la coupe de « b » ne le réécrit pas
+    window.cut_selected_clip(
+        "b", 5.0
+    )  # « f » suit « a » : la coupe de « b » ne le réécrit pas
     assert len(window.project.tracks[0].clips) == 3 and window.history.can_undo

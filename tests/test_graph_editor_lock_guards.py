@@ -47,9 +47,14 @@ def opened(request, window):
 def test_fields_follow_the_lock_in_both_directions(opened):
     win, kind, track, clip, editor, keyframe, ref = opened
     editor._refresh_fields()
-    for widget in (editor.time_spin, editor.value_spin, editor.interpolation_combo, editor.tangent_combo):
+    for widget in (
+        editor.time_spin,
+        editor.value_spin,
+        editor.interpolation_combo,
+        editor.tangent_combo,
+    ):
         assert not widget.isEnabled()
-    assert curve_of(clip, "position_x").keyframes      # la courbe reste lisible
+    assert curve_of(clip, "position_x").keyframes  # la courbe reste lisible
     win.set_keyframe_selection({ref})
     assert not editor.time_spin.isEnabled()
     _unlock(win, kind, track, clip)
@@ -62,16 +67,32 @@ def test_editor_opened_on_an_already_locked_clip_is_read_only(window):
     track, clip = _prepare(window, "track")
     _lock(window, "track", track, clip)
     editor, _kf, _ref = _open(window, clip)
-    assert editor.is_locked() and not editor.time_spin.isEnabled() and not editor.interpolation_combo.isEnabled()
+    assert (
+        editor.is_locked()
+        and not editor.time_spin.isEnabled()
+        and not editor.interpolation_combo.isEnabled()
+    )
 
 
 def test_dragging_keyframes_and_handles_is_refused(opened):
     win, _kind, _track, clip, editor, keyframe, _ref = opened
-    origin = {"anchor": keyframe, "values": {keyframe.id: float(keyframe.value)}, "anchor_time": keyframe.time_seconds}
-    _refused(win, clip, lambda: editor.drag_keyframes(origin, QPointF(100, 100), QPointF(160, 60)))
-    _refused(win, clip, lambda: editor.drag_handle(keyframe, "out", keyframe.time_seconds + 1.0, 1.0))
+    origin = {
+        "anchor": keyframe,
+        "values": {keyframe.id: float(keyframe.value)},
+        "anchor_time": keyframe.time_seconds,
+    }
+    _refused(
+        win,
+        clip,
+        lambda: editor.drag_keyframes(origin, QPointF(100, 100), QPointF(160, 60)),
+    )
+    _refused(
+        win,
+        clip,
+        lambda: editor.drag_handle(keyframe, "out", keyframe.time_seconds + 1.0, 1.0),
+    )
     entries = len(win.history)
-    editor.finish_gesture("x")                                  # aucun geste ouvert : aucune entrée d'historique
+    editor.finish_gesture("x")  # aucun geste ouvert : aucune entrée d'historique
     assert len(win.history) == entries
 
 
@@ -119,7 +140,9 @@ def test_mouse_gestures_on_the_canvas_do_not_write(opened, qtbot):
     qtbot.mousePress(canvas, Qt.LeftButton, pos=start)
     qtbot.mouseMove(canvas, start + QPointF(40, 25).toPoint())
     qtbot.mouseRelease(canvas, Qt.LeftButton, pos=start + QPointF(40, 25).toPoint())
-    qtbot.mouseDClick(canvas, Qt.LeftButton, pos=QPointF(canvas.width() - 30, 30).toPoint())
+    qtbot.mouseDClick(
+        canvas, Qt.LeftButton, pos=QPointF(canvas.width() - 30, 30).toPoint()
+    )
     win._finalize_pending_edit_sessions()
     assert clip == before and len(win.history) == entries
 
@@ -146,7 +169,14 @@ def _preset():
 def test_core_preset_refuses_a_locked_graphic_on_a_video_clip():
     project = Project(name="P", width=1280, height=720, fps=25.0)
     track = Track(id="t", name="T", type="video")
-    clip = Clip(id="c", asset_id="a", track_id="t", timeline_start=0.0, source_in=0.0, source_out=2.0)
+    clip = Clip(
+        id="c",
+        asset_id="a",
+        track_id="t",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=2.0,
+    )
     track.clips.append(clip)
     project.tracks.append(track)
     assert apply_preset_to_clip(project, "c", _preset())
@@ -170,7 +200,9 @@ def test_applying_a_preset_is_refused_and_the_library_button_follows(window, kin
     window._sync_effects_library_context()
     view.select_preset(_preset().id)
     assert not view.apply_button.isEnabled()
-    _refused(window, clip, lambda: window.on_effect_preset_apply_requested(_preset().id))
+    _refused(
+        window, clip, lambda: window.on_effect_preset_apply_requested(_preset().id)
+    )
     _unlock(window, kind, track, clip)
     window.timeline_panel.select_clip(clip.id)
     window._sync_effects_library_context()

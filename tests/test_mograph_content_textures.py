@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 
 from core.blend_modes import BlendMode
-from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, reference_frame
+from core.gpu_composite import (
+    CompositeFrame,
+    CompositeLayer,
+    VideoSource,
+    reference_frame,
+)
 from core.gpu_effects import program_for
 from core.graphics import add_graphic_clip, update_graphic
 from core.mograph_raster import (
@@ -42,7 +47,9 @@ def _solid_project(*, x: float = 0.0, y: float = 0.0, rotation: float = 0.0) -> 
 def test_content_key_ignores_pose_changes(qapp):
     project = _solid_project(x=0.0)
     clip = next(
-        c for track in project.active_sequence.tracks for c in track.clips
+        c
+        for track in project.active_sequence.tracks
+        for c in track.clips
         if getattr(c, "graphic", None) is not None
     )
     scene = scene_for_plan(build_render_plan(project))
@@ -89,21 +96,44 @@ def test_content_texture_placed_by_matrix_matches_full_frame_raster(qapp):
     image = image.convertToFormat(QImage.Format_RGBA8888)
     matrix = mat_mul(evaluated.world, mat_translate(-margin, -margin))
     fit = (0.0, 0.0, float(image.width()), float(image.height()))
-    rgba = np.frombuffer(image.constBits(), np.uint8).reshape(image.height(), image.bytesPerLine())
-    rgba = rgba[:, : image.width() * 4].reshape(image.height(), image.width(), 4).astype(np.float64) / 255.0
+    rgba = np.frombuffer(image.constBits(), np.uint8).reshape(
+        image.height(), image.bytesPerLine()
+    )
+    rgba = (
+        rgba[:, : image.width() * 4]
+        .reshape(image.height(), image.width(), 4)
+        .astype(np.float64)
+        / 255.0
+    )
     frame = CompositeFrame(
-        W, H, 1.0,
-        (CompositeLayer(
-            "g", matrix, fit, opacity=float(evaluated.opacity), program=program_for(()),
-            matte="m", matte_in_fit=True,
-        ),),
+        W,
+        H,
+        1.0,
+        (
+            CompositeLayer(
+                "g",
+                matrix,
+                fit,
+                opacity=float(evaluated.opacity),
+                program=program_for(()),
+                matte="m",
+                matte_in_fit=True,
+            ),
+        ),
         (VideoSource("g", "rgba", image.width(), image.height()),),
     )
     placed = reference_frame(frame, {"g": rgba[..., :3]}, {"m": rgba[..., 3]})
     full = renderer.render([clip_id], 0.3)
     full = full.convertToFormat(QImage.Format_RGBA8888)
-    full_rgba = np.frombuffer(full.constBits(), np.uint8).reshape(full.height(), full.bytesPerLine())
-    full_rgba = full_rgba[:, : full.width() * 4].reshape(full.height(), full.width(), 4).astype(np.float64) / 255.0
+    full_rgba = np.frombuffer(full.constBits(), np.uint8).reshape(
+        full.height(), full.bytesPerLine()
+    )
+    full_rgba = (
+        full_rgba[:, : full.width() * 4]
+        .reshape(full.height(), full.width(), 4)
+        .astype(np.float64)
+        / 255.0
+    )
     # Le rastériseur plein cadre compose sur fond transparent ; la référence GPU est RVB.
     expected = full_rgba[..., :3] * full_rgba[..., 3:4]
     error = np.abs(placed - expected).mean() * 255
@@ -121,10 +151,22 @@ def test_place_content_frame_matches_full_frame_raster(qapp):
 
     full = renderer.render([clip_id], 0.25).convertToFormat(QImage.Format_RGBA8888)
     placed = placed.convertToFormat(QImage.Format_RGBA8888)
-    a = np.frombuffer(placed.constBits(), np.uint8).reshape(placed.height(), placed.bytesPerLine())
-    a = a[:, : placed.width() * 4].reshape(placed.height(), placed.width(), 4).astype(np.float64)
-    b = np.frombuffer(full.constBits(), np.uint8).reshape(full.height(), full.bytesPerLine())
-    b = b[:, : full.width() * 4].reshape(full.height(), full.width(), 4).astype(np.float64)
+    a = np.frombuffer(placed.constBits(), np.uint8).reshape(
+        placed.height(), placed.bytesPerLine()
+    )
+    a = (
+        a[:, : placed.width() * 4]
+        .reshape(placed.height(), placed.width(), 4)
+        .astype(np.float64)
+    )
+    b = np.frombuffer(full.constBits(), np.uint8).reshape(
+        full.height(), full.bytesPerLine()
+    )
+    b = (
+        b[:, : full.width() * 4]
+        .reshape(full.height(), full.width(), 4)
+        .astype(np.float64)
+    )
     assert np.abs(a - b).mean() <= 2.5
 
 
@@ -137,8 +179,12 @@ def test_export_reuses_content_texture_across_poses(tmp_path, monkeypatch, qapp)
     from core.mograph_stream import cache_directory
 
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
-    mograph_stream.cache_directory.cache_clear() if hasattr(cache_directory, "cache_clear") else None
-    monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path / "cache" / "mograph")
+    mograph_stream.cache_directory.cache_clear() if hasattr(
+        cache_directory, "cache_clear"
+    ) else None
+    monkeypatch.setattr(
+        mograph_stream, "cache_directory", lambda: tmp_path / "cache" / "mograph"
+    )
     (tmp_path / "cache" / "mograph").mkdir(parents=True)
     clear_content_texture_cache()
 
@@ -146,7 +192,9 @@ def test_export_reuses_content_texture_across_poses(tmp_path, monkeypatch, qapp)
     from core.visual_effects import ClipTransform
 
     clip = next(
-        c for track in project.active_sequence.tracks for c in track.clips
+        c
+        for track in project.active_sequence.tracks
+        for c in track.clips
         if getattr(c, "graphic", None) is not None
     )
     plan = build_render_plan(project)
@@ -184,7 +232,9 @@ def test_preview_panel_sends_content_layers_with_matrix(qtbot):
         def set_composite(self, frame, mattes):
             self.composite = (frame, mattes)
 
-    panel = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
+    panel = PreviewPanel(
+        lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None
+    )
     qtbot.addWidget(panel)
     view = _FakeView()
     panel.gpu_view = view

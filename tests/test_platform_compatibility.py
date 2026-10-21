@@ -94,16 +94,25 @@ def test_windows_filter_path_is_safe_in_a_quoted_filename_value() -> None:
 def test_an_apostrophe_in_a_filter_path_closes_and_reopens_the_quoted_value() -> None:
     from core.export_engine import _escape_filter_path
 
-    assert _escape_filter_path("/home/Jean d'Arc/s.srt") == "/home/Jean d'\\\\\\''Arc/s.srt"
+    assert (
+        _escape_filter_path("/home/Jean d'Arc/s.srt")
+        == "/home/Jean d'\\\\\\''Arc/s.srt"
+    )
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
-@pytest.mark.parametrize("folder", ["plain dir", "Jean d'Arc", "O'Brien's cut", "café été", "a,b[c];d"])
+@pytest.mark.parametrize(
+    "folder", ["plain dir", "Jean d'Arc", "O'Brien's cut", "café été", "a,b[c];d"]
+)
 # Les sous-titres exigent libass : marque ``libass`` (sautée sans libass, échouée avec KUT_STUDIO_REQUIRE_LIBASS=1,
 # voir tests/ffmpeg_caps.py). Ce n'est pas une régression de l'application : elle détecte l'absence de libass
 # et refuse avec un message clair (build FFmpeg sans libass, ex. celle du runner macOS de la CI).
-@pytest.mark.parametrize("kind", [pytest.param("subtitles", marks=pytest.mark.libass), "lut3d"])
-def test_ffmpeg_opens_subtitle_and_lut_files_whatever_the_folder_name(tmp_path, folder, kind) -> None:
+@pytest.mark.parametrize(
+    "kind", [pytest.param("subtitles", marks=pytest.mark.libass), "lut3d"]
+)
+def test_ffmpeg_opens_subtitle_and_lut_files_whatever_the_folder_name(
+    tmp_path, folder, kind
+) -> None:
     """Régression : un dossier avec apostrophe (profil Windows « O'Brien ») cassait sous-titres et LUT."""
     from core.export_engine import _escape_filter_path
 
@@ -119,9 +128,24 @@ def test_ffmpeg_opens_subtitle_and_lut_files_whatever_the_folder_name(tmp_path, 
         path.write_text(f"LUT_3D_SIZE 2\n{rows}\n", encoding="utf-8")
         video_filter = f"lut3d=file='{_escape_filter_path(str(path))}'"
     completed = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.2",
-         "-vf", video_filter, "-f", "null", "-"],
-        capture_output=True, text=True, timeout=60,
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=64x64:d=0.2",
+            "-vf",
+            video_filter,
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert completed.returncode == 0, completed.stderr
 
@@ -156,19 +180,29 @@ DOCK_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 """Le ``PATH`` que ``launchd`` donne à une application lancée depuis le Dock ou le Finder."""
 
 
-def test_extend_search_path_appends_existing_package_manager_dirs(tmp_path, monkeypatch) -> None:
+def test_extend_search_path_appends_existing_package_manager_dirs(
+    tmp_path, monkeypatch
+) -> None:
     from core import tool_paths
 
     brew, missing = tmp_path / "homebrew" / "bin", tmp_path / "absent" / "bin"
     brew.mkdir(parents=True)
-    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew), str(missing))})
+    monkeypatch.setattr(
+        tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew), str(missing))}
+    )
     environment = {"PATH": DOCK_PATH}
-    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert tool_paths.extend_search_path(
+        platform_name="darwin", environment=environment
+    ) == (str(brew),)
     # À la suite : les outils du système gardent la priorité ; un dossier absent n'est pas ajouté.
-    assert environment["PATH"] == os.pathsep.join([*DOCK_PATH.split(os.pathsep), str(brew)])
+    assert environment["PATH"] == os.pathsep.join(
+        [*DOCK_PATH.split(os.pathsep), str(brew)]
+    )
 
 
-def test_extend_search_path_is_idempotent_and_keeps_a_complete_path(tmp_path, monkeypatch) -> None:
+def test_extend_search_path_is_idempotent_and_keeps_a_complete_path(
+    tmp_path, monkeypatch
+) -> None:
     from core import tool_paths
 
     brew = tmp_path / "bin"
@@ -176,16 +210,24 @@ def test_extend_search_path_is_idempotent_and_keeps_a_complete_path(tmp_path, mo
     monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
     complete = os.pathsep.join([str(brew), DOCK_PATH])  # lancement depuis un terminal
     environment = {"PATH": complete}
-    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == ()
+    assert (
+        tool_paths.extend_search_path(platform_name="darwin", environment=environment)
+        == ()
+    )
     assert environment["PATH"] == complete
     environment = {"PATH": DOCK_PATH}
     tool_paths.extend_search_path(platform_name="darwin", environment=environment)
-    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == ()
+    assert (
+        tool_paths.extend_search_path(platform_name="darwin", environment=environment)
+        == ()
+    )
     assert environment["PATH"].split(os.pathsep).count(str(brew)) == 1
 
 
 @pytest.mark.parametrize("path", [":/usr/bin", "/usr/bin:", "/usr/bin::/bin"])
-def test_extend_search_path_preserves_empty_components(path, tmp_path, monkeypatch) -> None:
+def test_extend_search_path_preserves_empty_components(
+    path, tmp_path, monkeypatch
+) -> None:
     """Un composant vide du PATH est le dossier courant (POSIX) : l'ajout ne doit pas le retirer."""
     from core import tool_paths
 
@@ -193,29 +235,42 @@ def test_extend_search_path_preserves_empty_components(path, tmp_path, monkeypat
     brew.mkdir()
     monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
     environment = {"PATH": path}
-    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert tool_paths.extend_search_path(
+        platform_name="darwin", environment=environment
+    ) == (str(brew),)
     assert environment["PATH"] == f"{path}{os.pathsep}{brew}"
 
 
-def test_extend_search_path_handles_an_empty_path_and_other_platforms(tmp_path, monkeypatch) -> None:
+def test_extend_search_path_handles_an_empty_path_and_other_platforms(
+    tmp_path, monkeypatch
+) -> None:
     from core import tool_paths
 
     brew = tmp_path / "bin"
     brew.mkdir()
     monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
     environment: dict[str, str] = {}
-    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert tool_paths.extend_search_path(
+        platform_name="darwin", environment=environment
+    ) == (str(brew),)
     assert environment["PATH"] == str(brew)  # pas de séparateur parasite devant
     environment = {"PATH": ""}
-    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert tool_paths.extend_search_path(
+        platform_name="darwin", environment=environment
+    ) == (str(brew),)
     assert environment["PATH"] == str(brew)
     untouched = {"PATH": "C:\\Windows\\System32"}
-    assert tool_paths.extend_search_path(platform_name="win32", environment=untouched) == ()
+    assert (
+        tool_paths.extend_search_path(platform_name="win32", environment=untouched)
+        == ()
+    )
     assert untouched == {"PATH": "C:\\Windows\\System32"}
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="faux exécutable POSIX")
-def test_ffmpeg_installed_with_a_package_manager_is_found_from_a_dock_launch(tmp_path, monkeypatch) -> None:
+def test_ffmpeg_installed_with_a_package_manager_is_found_from_a_dock_launch(
+    tmp_path, monkeypatch
+) -> None:
     """Régression : « FFmpeg est introuvable » alors qu'il est installé (Homebrew), depuis le Dock."""
     from core import tool_paths
 
@@ -225,7 +280,9 @@ def test_ffmpeg_installed_with_a_package_manager_is_found_from_a_dock_launch(tmp
     ffmpeg = brew / "ffmpeg"
     ffmpeg.write_text("#!/bin/sh\n")
     ffmpeg.chmod(0o755)
-    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {sys.platform: (str(brew),)})
+    monkeypatch.setattr(
+        tool_paths, "_CONVENTIONAL_TOOL_DIRS", {sys.platform: (str(brew),)}
+    )
     for variable in ("KUT_STUDIO_FFMPEG", "KUT_STUDIO_FFMPEG_DIR"):
         monkeypatch.delenv(variable, raising=False)
     # Un PATH « de système » sans FFmpeg : on ne peut pas se fier à /usr/bin, où la CI Linux installe le vrai.

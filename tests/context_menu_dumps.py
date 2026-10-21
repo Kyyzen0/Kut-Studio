@@ -18,17 +18,25 @@ from core.workspace_state import PAGE_COLOR, PAGE_COMPOSITION
 from ui.layers_panel import COL_NAME, ID_ROLE
 
 
-def _node(clip_id: str, name: str, kind: GraphicType, *, group: bool = False) -> LayerNode:
+def _node(
+    clip_id: str, name: str, kind: GraphicType, *, group: bool = False
+) -> LayerNode:
     return LayerNode(clip_id, name, kind, 0, "", "", True, False, 0.0, 5.0, "V1", group)
 
 
 def layers_dumps(window) -> dict[str, list]:
     panel = window.project_panel.graphics_view.layers_panel
     panel.set_layers(
-        [_node("t1", "Titre", GraphicType.TEXT), _node("g1", "Groupe", GraphicType.GROUP, group=True)],
-        parent_choices={"t1": [("g1", "Groupe")]})
-    items = {panel.tree.topLevelItem(i).data(COL_NAME, ID_ROLE): panel.tree.topLevelItem(i)
-             for i in range(panel.tree.topLevelItemCount())}
+        [
+            _node("t1", "Titre", GraphicType.TEXT),
+            _node("g1", "Groupe", GraphicType.GROUP, group=True),
+        ],
+        parent_choices={"t1": [("g1", "Groupe")]},
+    )
+    items = {
+        panel.tree.topLevelItem(i).data(COL_NAME, ID_ROLE): panel.tree.topLevelItem(i)
+        for i in range(panel.tree.topLevelItemCount())
+    }
     return {
         "ctx_layer": menu_tree(panel.build_context_menu(items["t1"])),
         "ctx_layer_group": menu_tree(panel.build_context_menu(items["g1"])),
@@ -40,7 +48,11 @@ def layers_dumps(window) -> dict[str, list]:
 def layers_buttons(window) -> list[str]:
     """Boutons de la barre du panneau Calques que l'écran ne cache pas (``isHidden`` : l'état du bouton lui-même)."""
     panel = window.project_panel.graphics_view.layers_panel
-    return [name for name in ("add_button", "group_button", "presets_button") if not getattr(panel, name).isHidden()]
+    return [
+        name
+        for name in ("add_button", "group_button", "presets_button")
+        if not getattr(panel, name).isHidden()
+    ]
 
 
 def folder_dumps(window) -> dict[str, list]:
@@ -54,7 +66,9 @@ def folder_dumps(window) -> dict[str, list]:
         if kind == tree._KIND_FOLDER:
             out.setdefault("ctx_folder", menu_tree(tree.build_context_menu(item)))
         else:
-            out.setdefault("ctx_folder_synthetic", menu_tree(tree.build_context_menu(item)))
+            out.setdefault(
+                "ctx_folder_synthetic", menu_tree(tree.build_context_menu(item))
+            )
         iterator += 1
     return out
 
@@ -71,8 +85,12 @@ def lane_dumps(window) -> dict[str, list]:
     lane = panel.automation_lanes["A1"]
     lane.set_state([AutomationPoint(1.0, -3.0, 0.0)], locked=False)
     out = {
-        "ctx_lane_point": menu_tree(lane.build_menu(QPointF(lane.x_of(1.0), lane.y_of(-3.0)))),
-        "ctx_lane_band": menu_tree(lane.build_menu(QPointF(lane.x_of(4.0), lane.y_of(0.0)))),
+        "ctx_lane_point": menu_tree(
+            lane.build_menu(QPointF(lane.x_of(1.0), lane.y_of(-3.0)))
+        ),
+        "ctx_lane_band": menu_tree(
+            lane.build_menu(QPointF(lane.x_of(4.0), lane.y_of(0.0)))
+        ),
     }
     panel.set_automation_visible("A1", False)
     panel._automation_choice.pop("A1", None)
@@ -90,7 +108,12 @@ def node_dumps(window) -> dict[str, list]:
     level, out = window.usage_level, {}
     if level.at_least(PAGE_LEVELS[PAGE_COLOR]):
         editor = window.color_panel.nodes
-        editor.set_graph(ColorNodeGraph.serial(ColorNode(f"n{i + 1}", ColorGrade()) for i in range(2)), "n1")
+        editor.set_graph(
+            ColorNodeGraph.serial(
+                ColorNode(f"n{i + 1}", ColorGrade()) for i in range(2)
+            ),
+            "n1",
+        )
         out["ctx_color_node"] = menu_tree(editor.build_menu("n1"))
         out["ctx_color_background"] = menu_tree(editor.build_menu(None))
     if level.at_least(PAGE_LEVELS[PAGE_COMPOSITION]):
@@ -101,7 +124,12 @@ def node_dumps(window) -> dict[str, list]:
 
 
 def all_dumps(window) -> dict[str, list]:
-    return {**layers_dumps(window), **folder_dumps(window), **lane_dumps(window), **node_dumps(window)}
+    return {
+        **layers_dumps(window),
+        **folder_dumps(window),
+        **lane_dumps(window),
+        **node_dumps(window),
+    }
 
 
 __all__ = ["all_dumps", "layers_buttons"]

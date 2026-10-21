@@ -35,13 +35,13 @@ def test_a_burst_with_the_same_key_is_one_entry_holding_the_final_state():
     for value in range(10):
         _set_volume(project, value)
         history.record(project, "Volume", merge_key="fader")
-    assert len(history) == 2                                     # état initial + une entrée
-    assert history.current_project().name == "volume 9"          # type: ignore[union-attr]
+    assert len(history) == 2  # état initial + une entrée
+    assert history.current_project().name == "volume 9"  # type: ignore[union-attr]
 
 
 def test_undoing_a_merged_gesture_goes_back_to_before_the_gesture_in_one_step():
     history, _clock = _history()
-    initial_name = history.current_project().name                # type: ignore[union-attr]
+    initial_name = history.current_project().name  # type: ignore[union-attr]
     project = create_default_project()
     for value in range(10):
         _set_volume(project, value)
@@ -49,14 +49,14 @@ def test_undoing_a_merged_gesture_goes_back_to_before_the_gesture_in_one_step():
     restored = history.undo()
     assert restored is not None and restored.name == initial_name
     assert not history.can_undo
-    assert history.redo().name == "volume 9"                     # type: ignore[union-attr]
+    assert history.redo().name == "volume 9"  # type: ignore[union-attr]
 
 
 def test_a_pause_longer_than_the_window_starts_a_new_entry():
     history, clock = _history()
     project = create_default_project()
     history.record(project, "Volume", merge_key="fader")
-    clock.now += 5.0                                             # l'utilisateur reprend plus tard : autre réglage
+    clock.now += 5.0  # l'utilisateur reprend plus tard : autre réglage
     history.record(project, "Volume", merge_key="fader")
     assert len(history) == 3
 
@@ -75,7 +75,7 @@ def test_an_unrelated_edit_between_two_gestures_with_the_same_key_separates_them
     history, _clock = _history()
     project = create_default_project()
     history.record(project, "Volume", merge_key="fader")
-    history.record(project, "Couper")                            # autre action entre les deux
+    history.record(project, "Couper")  # autre action entre les deux
     history.record(project, "Volume", merge_key="fader")
     assert len(history) == 4
 
@@ -87,7 +87,9 @@ def test_undo_closes_the_gesture():
     history.record(project, "Volume", merge_key="fader")
     history.undo()
     history.redo()
-    history.record(project, "Volume", merge_key="fader")         # nouveau geste, pas la suite de l'ancien
+    history.record(
+        project, "Volume", merge_key="fader"
+    )  # nouveau geste, pas la suite de l'ancien
     assert len(history) == 3
 
 
@@ -107,7 +109,7 @@ def test_the_initial_state_is_never_merged_away():
     history, _clock = _history()
     project = create_default_project()
     history.record(project, "Volume", merge_key="fader")
-    assert history.undo() is not None                            # on retrouve l'état initial, intact
+    assert history.undo() is not None  # on retrouve l'état initial, intact
     assert history.undo_label is None
 
 
@@ -116,7 +118,7 @@ def test_a_gesture_does_not_push_real_edits_out_of_the_bounded_stack():
     project = create_default_project()
     for index in range(20):
         history.record(project, f"Édition {index}")
-    for value in range(500):                                     # un très long glissement
+    for value in range(500):  # un très long glissement
         history.record(project, "Volume", merge_key="fader")
     assert len(history) == 22 and len(history) < MAX_HISTORY
 
@@ -141,10 +143,14 @@ def test_dragging_a_mixer_fader_is_one_undo_step(qtbot, monkeypatch):
     original = audio.volume_db
     before = len(window.history)
 
-    for value in range(-1, -11, -1):                             # un glissement : dix crans
+    for value in range(-1, -11, -1):  # un glissement : dix crans
         window.on_track_volume_changed(audio.id, float(value))
     assert len(window.history) == before + 1
 
     window.undo_last()
-    audio_after_undo = next(track for track in window.project.tracks if track.type == "audio")
-    assert audio_after_undo.volume_db == original                # un seul Ctrl+Z rend le volume d'origine
+    audio_after_undo = next(
+        track for track in window.project.tracks if track.type == "audio"
+    )
+    assert (
+        audio_after_undo.volume_db == original
+    )  # un seul Ctrl+Z rend le volume d'origine

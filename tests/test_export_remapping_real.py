@@ -31,32 +31,81 @@ def media(tmp_path_factory):
     for color in ("red", "blue", "green"):
         inputs += ["-f", "lavfi", "-i", f"color=c={color}:s=64x64:d=2:r={FPS}"]
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", "[0][1][2]concat=n=3:v=1:a=0,format=yuv420p",
-         "-c:v", "libx264", "-crf", "10", str(path)],
-        check=True, timeout=60,
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            *inputs,
+            "-filter_complex",
+            "[0][1][2]concat=n=3:v=1:a=0,format=yuv420p",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "10",
+            str(path),
+        ],
+        check=True,
+        timeout=60,
     )
     return str(path)
 
 
 def _project(media_path, *, source_in=0.0, source_out=6.0, remapping=None):
-    asset = MediaAsset(id="a", path=media_path, name="rgb", duration=6.0, width=64, height=64, fps=float(FPS),
-                       media_type="video", has_audio=False)
-    clip = Clip(id="c1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=source_in,
-                source_out=source_out, time_remapping=remapping or TimeRemapping())
-    project = Project(name="p", width=W, height=H, fps=float(FPS), media_assets=[asset],
-                      tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
+    asset = MediaAsset(
+        id="a",
+        path=media_path,
+        name="rgb",
+        duration=6.0,
+        width=64,
+        height=64,
+        fps=float(FPS),
+        media_type="video",
+        has_audio=False,
+    )
+    clip = Clip(
+        id="c1",
+        asset_id="a",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=source_in,
+        source_out=source_out,
+        time_remapping=remapping or TimeRemapping(),
+    )
+    project = Project(
+        name="p",
+        width=W,
+        height=H,
+        fps=float(FPS),
+        media_assets=[asset],
+        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
+    )
     return project, clip
 
 
 def _color_at(project, t: float, dx: int = 0) -> str:
     """Couleur dominante (R, G, B, noir ou ?) du pixel du centre (décalé de ``dx``) à l'instant ``t``."""
     plan = build_render_plan(project)
-    graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
+    graph, video, audio, inputs = ExportEngine._build_filter_complex(
+        plan, W, H, FPS, None
+    )
     graph += f";[{video}]trim=start={t},setpts=PTS-STARTPTS,format=rgb24[probe];[{audio}]anullsink"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
         command += input_arguments(path)
-    command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-fps_mode", "passthrough", "-f", "rawvideo", "-"]
+    command += [
+        "-filter_complex",
+        graph,
+        "-map",
+        "[probe]",
+        "-frames:v",
+        "1",
+        "-fps_mode",
+        "passthrough",
+        "-f",
+        "rawvideo",
+        "-",
+    ]
     completed = subprocess.run(command, capture_output=True, timeout=60)
     assert completed.returncode == 0, completed.stderr.decode(errors="replace")[-600:]
     data = completed.stdout
@@ -112,7 +161,9 @@ def test_reverse_and_speed_combine(media):
 
 
 def test_a_freeze_frame_holds_one_image_for_its_whole_duration(media):
-    freeze = TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=3.0, freeze_duration=2.0)
+    freeze = TimeRemapping(
+        freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=3.0, freeze_duration=2.0
+    )
     project, clip = _project(media, remapping=freeze)
     assert clip.duration == pytest.approx(2.0)
     assert _colors(project, (0.1, 1.0, 1.9)) == ["B", "B", "B"]
@@ -120,7 +171,9 @@ def test_a_freeze_frame_holds_one_image_for_its_whole_duration(media):
 
 def test_a_freeze_frame_counts_its_instant_from_the_clip_in_point(media):
     """Avant : l'image était cherchée à ``instant × fps`` depuis le début du flux déjà rogné."""
-    freeze = TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=1.0)
+    freeze = TimeRemapping(
+        freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=1.0
+    )
     project, _ = _project(media, source_in=2.0, source_out=6.0, remapping=freeze)
     assert _colors(project, (0.1, 0.9)) == ["G", "G"]
 
@@ -128,7 +181,7 @@ def test_a_freeze_frame_counts_its_instant_from_the_clip_in_point(media):
 def test_a_trim_after_a_speed_change_keeps_the_frame_shown_at_each_instant(media):
     """Trim (corrigé) puis export : la couleur à un instant donné de la timeline ne change pas."""
     project, clip = _project(media, remapping=TimeRemapping(speed=2.0))
-    before = _colors(project, (1.5, 2.5))                       # B puis G
+    before = _colors(project, (1.5, 2.5))  # B puis G
     trim_clip_left(project, "c1", 1.2)
     assert before == ["B", "G"]
     assert _colors(project, (1.5, 2.5)) == before
@@ -143,10 +196,21 @@ def test_the_clip_scale_applies_to_normal_and_frozen_clips_alike(media, frozen):
     """
     from core.visual_effects import ClipTransform
 
-    remapping = (TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=3.0, freeze_duration=2.0)
-                 if frozen else TimeRemapping())
+    remapping = (
+        TimeRemapping(
+            freeze_mode=FreezeFrameMode.FREEZE,
+            freeze_source_time=3.0,
+            freeze_duration=2.0,
+        )
+        if frozen
+        else TimeRemapping()
+    )
     project, clip = _project(media, remapping=remapping)
-    assert _color_at(project, 0.5, dx=30) != "noir"                  # échelle 1 : l'image couvre ce pixel
+    assert (
+        _color_at(project, 0.5, dx=30) != "noir"
+    )  # échelle 1 : l'image couvre ce pixel
     clip.transform = ClipTransform(scale=0.5)
-    assert _color_at(project, 0.5, dx=30) == "noir"                  # échelle 0,5 : elle ne le couvre plus
-    assert _color_at(project, 0.5, dx=0) != "noir"                   # le centre reste coloré
+    assert (
+        _color_at(project, 0.5, dx=30) == "noir"
+    )  # échelle 0,5 : elle ne le couvre plus
+    assert _color_at(project, 0.5, dx=0) != "noir"  # le centre reste coloré

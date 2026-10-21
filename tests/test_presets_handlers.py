@@ -62,7 +62,9 @@ def _select(window, *clip_ids: str) -> None:
     """Sélection comme à la souris (un clic, puis Maj+clic) : la timeline annonce la sélection."""
     window.timeline_panel.select_clip(clip_ids[0])
     if len(clip_ids) > 1:
-        window.timeline_panel._set_selection(list(clip_ids), clip_ids[-1], announce=True)
+        window.timeline_panel._set_selection(
+            list(clip_ids), clip_ids[-1], announce=True
+        )
 
 
 def _make_intro_and_plan_a_adjacent(window) -> None:
@@ -76,8 +78,12 @@ def _user_look(window, name: str = "Mon look"):
     """Preset utilisateur pris sur intro, après lui avoir appliqué « cinema » (comme le ferait l'enregistrement)."""
     _select(window, "intro")
     window.project_panel.effect_apply_requested.emit("cinema")
-    preset = snapshot_clip_preset(find_clip(window.project, "intro"), name=name, description="",
-                                  category=EffectCategory.LOOK)
+    preset = snapshot_clip_preset(
+        find_clip(window.project, "intro"),
+        name=name,
+        description="",
+        category=EffectCategory.LOOK,
+    )
     window.user_preset_store.add(preset)
     return preset
 
@@ -91,7 +97,9 @@ def test_applying_a_builtin_look_to_the_selected_clip_is_one_undo_step(window):
 
     window.project_panel.effect_apply_requested.emit("cinema")
 
-    assert find_clip(window.project, "intro").effects, "le look pose ses effets sur le clip"
+    assert find_clip(window.project, "intro").effects, (
+        "le look pose ses effets sur le clip"
+    )
     assert find_clip(window.project, "plan_a").effects == []
     assert window.history.undo_label == i18n.translate("history.preset.effects_apply")
     window.undo_last()
@@ -111,22 +119,32 @@ def test_an_unknown_effect_preset_is_reported_in_the_status_bar(window):
 def test_applying_a_look_without_a_video_clip_selected_does_nothing(window):
     window.project_panel.effect_apply_requested.emit("cinema")
 
-    assert all(not clip.effects for track in window.project.tracks for clip in track.clips)
+    assert all(
+        not clip.effects for track in window.project.tracks for clip in track.clips
+    )
     assert not window.history.can_undo
 
 
-def test_saving_a_clip_without_effects_explains_and_writes_nothing(window, dialogs, config_dir):
+def test_saving_a_clip_without_effects_explains_and_writes_nothing(
+    window, dialogs, config_dir
+):
     _select(window, "intro")
 
     window.project_panel.effect_preset_save_requested.emit()
 
-    assert dialogs.of_kind("information") == [(
-        i18n.translate("effects.library.dialog.title"), i18n.translate("effects.library.no_effects_to_save"))]
+    assert dialogs.of_kind("information") == [
+        (
+            i18n.translate("effects.library.dialog.title"),
+            i18n.translate("effects.library.no_effects_to_save"),
+        )
+    ]
     assert window.user_preset_store.all() == []
     assert not (config_dir / USER_PRESETS_FILE).exists()
 
 
-def test_saving_the_clip_look_from_the_dialog_writes_a_user_preset(window, monkeypatch, qtbot, config_dir):
+def test_saving_the_clip_look_from_the_dialog_writes_a_user_preset(
+    window, monkeypatch, qtbot, config_dir
+):
     _select(window, "intro")
     window.project_panel.effect_apply_requested.emit("cinema")
     proposed: list[str] = []
@@ -140,7 +158,11 @@ def test_saving_the_clip_look_from_the_dialog_writes_a_user_preset(window, monke
         window.project_panel.effect_preset_save_requested.emit()
 
     assert not exceptions, [str(error) for _type, error, _tb in exceptions]
-    assert proposed == [i18n.translate("history.layer.preset", name=find_clip(window.project, "intro").label)]
+    assert proposed == [
+        i18n.translate(
+            "history.layer.preset", name=find_clip(window.project, "intro").label
+        )
+    ]
     [preset] = window.user_preset_store.all()
     assert preset.name == "Mon look"
     assert "Mon look" in _saved(config_dir, USER_PRESETS_FILE)
@@ -148,12 +170,18 @@ def test_saving_the_clip_look_from_the_dialog_writes_a_user_preset(window, monke
 
 def test_a_user_look_applies_the_saved_effects_to_another_clip(window):
     preset = _user_look(window)
-    effects = [(effect.type, effect.params) for effect in find_clip(window.project, "intro").effects]
+    effects = [
+        (effect.type, effect.params)
+        for effect in find_clip(window.project, "intro").effects
+    ]
     _select(window, "plan_a")
 
     window.project_panel.effect_apply_requested.emit(preset.id)
 
-    assert [(effect.type, effect.params) for effect in find_clip(window.project, "plan_a").effects] == effects
+    assert [
+        (effect.type, effect.params)
+        for effect in find_clip(window.project, "plan_a").effects
+    ] == effects
     assert window.history.undo_label == i18n.translate("history.preset.effects_apply")
 
 
@@ -164,7 +192,10 @@ def test_deleting_a_user_look_asks_first_and_honours_no(window, dialogs, config_
     dialogs.answer = dialogs.answer.No
     window.project_panel.effect_preset_delete_requested.emit(preset.id)
     assert window.user_preset_store.get(preset.id) is not None
-    assert len(dialogs.of_kind("question")) == 1 and "Mon look" in dialogs.of_kind("question")[0][1]
+    assert (
+        len(dialogs.of_kind("question")) == 1
+        and "Mon look" in dialogs.of_kind("question")[0][1]
+    )
 
     dialogs.answer = dialogs.answer.Yes
     window.project_panel.effect_preset_delete_requested.emit(preset.id)
@@ -173,19 +204,28 @@ def test_deleting_a_user_look_asks_first_and_honours_no(window, dialogs, config_
 
 
 def _transition_preset(window):
-    preset = make_user_transition_preset(name="Fondu maison", description="", transition_type="crossfade",
-                                         default_duration=0.75)
+    preset = make_user_transition_preset(
+        name="Fondu maison",
+        description="",
+        transition_type="crossfade",
+        default_duration=0.75,
+    )
     window.transition_preset_store.add_user_preset(preset)
     return preset
 
 
 # Corrigé par le commit « Presets : enregistrer ou supprimer un preset n'entre plus dans l'historique » (lot 6) :
 # ce test était un xfail strict qui documentait le bogue.
-@pytest.mark.parametrize(("make", "signal"), [
-    (_user_look, "effect_preset_delete_requested"),
-    (_transition_preset, "transition_preset_delete_requested"),
-])
-def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(window, dialogs, make, signal):
+@pytest.mark.parametrize(
+    ("make", "signal"),
+    [
+        (_user_look, "effect_preset_delete_requested"),
+        (_transition_preset, "transition_preset_delete_requested"),
+    ],
+)
+def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(
+    window, dialogs, make, signal
+):
     """Un preset vit dans le dossier de l'utilisateur, pas dans le projet : sa suppression ne s'annule pas par
     Ctrl+Z, n'ajoute pas d'entrée vide, et laisse « Rétablir » disponible."""
     preset = make(window)
@@ -196,7 +236,11 @@ def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(wi
 
     getattr(window.project_panel, signal).emit(preset.id)
 
-    store = window.user_preset_store if signal.startswith("effect") else window.transition_preset_store
+    store = (
+        window.user_preset_store
+        if signal.startswith("effect")
+        else window.transition_preset_store
+    )
     lookup = store.get if signal.startswith("effect") else store.get_preset
     assert lookup(preset.id) is None, "le preset est bien supprimé"
     assert window.history.undo_label == undo_label
@@ -225,7 +269,11 @@ def test_an_audio_preset_needs_a_clip_that_can_carry_sound(window):
 
     window.project_panel.audio_effect_apply_requested.emit("normalize")
 
-    assert all(not clip.audio_effects for track in window.project.tracks for clip in track.clips)
+    assert all(
+        not clip.audio_effects
+        for track in window.project.tracks
+        for clip in track.clips
+    )
     assert not window.history.can_undo
 
 
@@ -238,11 +286,14 @@ def test_an_unknown_audio_preset_is_reported(window):
     assert find_clip(window.project, "intro").audio_effects == []
 
 
-def test_saving_an_audio_effect_as_a_preset_asks_its_name_and_writes_it(window, dialogs, config_dir):
+def test_saving_an_audio_effect_as_a_preset_asks_its_name_and_writes_it(
+    window, dialogs, config_dir
+):
     _select(window, "intro")
     window.project_panel.audio_effect_preset_save_requested.emit()
     assert [text for _title, text in dialogs.of_kind("information")] == [
-        i18n.translate("dialog.preset.no_audio_effect")]
+        i18n.translate("dialog.preset.no_audio_effect")
+    ]
 
     window.project_panel.audio_effect_apply_requested.emit("compressor")
     dialogs.text_reply = ("  Voix radio  ", True)
@@ -250,7 +301,9 @@ def test_saving_an_audio_effect_as_a_preset_asks_its_name_and_writes_it(window, 
 
     [preset] = window.audio_effect_preset_store.all_user_presets()
     assert preset.name == "Voix radio" and not preset.builtin
-    assert preset.effect_type == find_clip(window.project, "intro").audio_effects[0].type
+    assert (
+        preset.effect_type == find_clip(window.project, "intro").audio_effects[0].type
+    )
     assert "Voix radio" in _saved(config_dir, AUDIO_EFFECT_PRESETS_FILE)
 
 
@@ -264,7 +317,9 @@ def test_a_cancelled_audio_preset_name_saves_nothing(window, dialogs):
     assert window.audio_effect_preset_store.all_user_presets() == []
 
 
-def test_deleting_audio_presets_spares_builtins_and_asks_for_user_ones(window, dialogs, config_dir):
+def test_deleting_audio_presets_spares_builtins_and_asks_for_user_ones(
+    window, dialogs, config_dir
+):
     _select(window, "intro")
     window.project_panel.audio_effect_apply_requested.emit("compressor")
     dialogs.text_reply = ("Voix radio", True)
@@ -273,12 +328,16 @@ def test_deleting_audio_presets_spares_builtins_and_asks_for_user_ones(window, d
 
     window.project_panel.audio_effect_preset_delete_requested.emit("normalize")
     assert window.audio_effect_preset_store.get_preset("normalize") is not None
-    assert dialogs.of_kind("question") == [], "un preset intégré n'est même pas proposé à la suppression"
+    assert dialogs.of_kind("question") == [], (
+        "un preset intégré n'est même pas proposé à la suppression"
+    )
 
     dialogs.answer = dialogs.answer.No
     window.project_panel.audio_effect_preset_delete_requested.emit(preset.id)
     assert len(dialogs.of_kind("question")) == 1
-    assert window.audio_effect_preset_store.get_preset(preset.id) is not None, "« Non » garde le preset"
+    assert window.audio_effect_preset_store.get_preset(preset.id) is not None, (
+        "« Non » garde le preset"
+    )
 
     dialogs.answer = dialogs.answer.Yes
     window.project_panel.audio_effect_preset_delete_requested.emit(preset.id)
@@ -306,7 +365,9 @@ def test_a_transition_preset_goes_between_the_two_selected_clips_of_a_track(wind
     assert (transition.from_clip_id, transition.to_clip_id) == ("intro", "plan_a")
     assert transition.duration == pytest.approx(0.5)
     assert _status(window) == i18n.translate(
-        "status.transition.added_named", name=i18n.translate("transitions.preset.crossfade.name"))
+        "status.transition.added_named",
+        name=i18n.translate("transitions.preset.crossfade.name"),
+    )
     assert window.history.undo_label == i18n.translate("history.transition.add")
     window.undo_last()
     assert window.project.transitions == []
@@ -319,7 +380,10 @@ def test_the_legacy_library_signal_adds_the_same_transition(window):
     window.project_panel.add_transition_requested.emit("fade_black", 1.0)
 
     [transition] = window.project.transitions
-    assert transition.type.value == window.transition_preset_store.get_preset("fade_black").transition_type.value
+    assert (
+        transition.type.value
+        == window.transition_preset_store.get_preset("fade_black").transition_type.value
+    )
     assert transition.duration == pytest.approx(1.0)
 
 
@@ -329,14 +393,19 @@ def test_clips_that_do_not_touch_refuse_a_transition_and_say_why(window):
     window.project_panel.transition_apply_requested.emit("crossfade", 0.5)
 
     assert window.project.transitions == []
-    assert _status(window).startswith(i18n.translate("status.transition.refused", error="").rstrip())
+    assert _status(window).startswith(
+        i18n.translate("status.transition.refused", error="").rstrip()
+    )
     assert not window.history.can_undo
 
 
-@pytest.mark.parametrize(("selection", "message_key"), [
-    (("intro",), "transitions.library.two_clips_required"),
-    (("intro", "b_roll"), "status.transition.same_track"),
-])
+@pytest.mark.parametrize(
+    ("selection", "message_key"),
+    [
+        (("intro",), "transitions.library.two_clips_required"),
+        (("intro", "b_roll"), "status.transition.same_track"),
+    ],
+)
 def test_a_transition_needs_two_clips_of_the_same_track(window, selection, message_key):
     _make_intro_and_plan_a_adjacent(window)
     _select(window, *selection)
@@ -347,7 +416,9 @@ def test_a_transition_needs_two_clips_of_the_same_track(window, selection, messa
 
     window.statusBar().clearMessage()
     window.project_panel.transition_preset_save_requested.emit()
-    assert _status(window) == i18n.translate(message_key), "l'enregistrement applique la même règle"
+    assert _status(window) == i18n.translate(message_key), (
+        "l'enregistrement applique la même règle"
+    )
     assert window.transition_preset_store.all_user_presets() == []
     assert not window.history.can_undo
 
@@ -362,11 +433,15 @@ def test_an_unknown_transition_preset_is_reported(window):
     assert _status(window) == i18n.translate("transitions.library.no_results")
 
 
-def test_saving_a_transition_preset_prefills_from_the_clips_and_writes_it(window, monkeypatch, qtbot, config_dir):
+def test_saving_a_transition_preset_prefills_from_the_clips_and_writes_it(
+    window, monkeypatch, qtbot, config_dir
+):
     _make_intro_and_plan_a_adjacent(window)
     _select(window, "intro", "plan_a")
     window.project_panel.transition_apply_requested.emit("fade_black", 1.25)
-    _select(window, "intro", "plan_a")          # poser la transition l'a sélectionnée : on reprend les deux clips
+    _select(
+        window, "intro", "plan_a"
+    )  # poser la transition l'a sélectionnée : on reprend les deux clips
     proposed: list[tuple[str, float]] = []
 
     def fill(dialog):
@@ -378,20 +453,30 @@ def test_saving_a_transition_preset_prefills_from_the_clips_and_writes_it(window
         window.project_panel.transition_preset_save_requested.emit()
 
     assert not exceptions, [str(error) for _type, error, _tb in exceptions]
-    intro, plan_a = (find_clip(window.project, clip_id).label or "Plan" for clip_id in ("intro", "plan_a"))
-    assert proposed == [(f"{intro} → {plan_a}", pytest.approx(1.25))], "nom et durée repris des clips et de la transition"
+    intro, plan_a = (
+        find_clip(window.project, clip_id).label or "Plan"
+        for clip_id in ("intro", "plan_a")
+    )
+    assert proposed == [(f"{intro} → {plan_a}", pytest.approx(1.25))], (
+        "nom et durée repris des clips et de la transition"
+    )
     [preset] = window.transition_preset_store.all_user_presets()
-    assert preset.name == "Fondu maison" and preset.default_duration == pytest.approx(1.25)
+    assert preset.name == "Fondu maison" and preset.default_duration == pytest.approx(
+        1.25
+    )
     assert "Fondu maison" in _saved(config_dir, TRANSITION_PRESETS_FILE)
 
 
-def test_deleting_transition_presets_locks_builtins_and_confirms_user_ones(window, dialogs, config_dir):
+def test_deleting_transition_presets_locks_builtins_and_confirms_user_ones(
+    window, dialogs, config_dir
+):
     preset = _transition_preset(window)
 
     window.project_panel.transition_preset_delete_requested.emit("crossfade")
     assert window.transition_preset_store.get_preset("crossfade") is not None
     assert [text for _t, text in dialogs.of_kind("information")] == [
-        i18n.translate("transitions.library.user_builtin_lock")]
+        i18n.translate("transitions.library.user_builtin_lock")
+    ]
 
     dialogs.answer = dialogs.answer.No
     window.project_panel.transition_preset_delete_requested.emit(preset.id)
@@ -406,7 +491,9 @@ def test_deleting_transition_presets_locks_builtins_and_confirms_user_ones(windo
 def test_a_transition_favorite_is_toggled_and_persisted(window, config_dir):
     window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert "wipe_left" in window.transition_preset_store.favorites()
-    assert "wipe_left" in json.dumps(json.loads(_saved(config_dir, TRANSITION_PRESETS_FILE)))
+    assert "wipe_left" in json.dumps(
+        json.loads(_saved(config_dir, TRANSITION_PRESETS_FILE))
+    )
 
     window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert "wipe_left" not in window.transition_preset_store.favorites()
@@ -419,13 +506,19 @@ def test_toggling_a_favorite_says_so_instead_of_claiming_a_transition_was_added(
 
     window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert window.project.transitions == []
-    assert _status(window) == i18n.translate("status.transition.favorite_added", name=name)
+    assert _status(window) == i18n.translate(
+        "status.transition.favorite_added", name=name
+    )
 
     window.project_panel.transition_favorite_toggled.emit("wipe_left")
-    assert _status(window) == i18n.translate("status.transition.favorite_removed", name=name)
+    assert _status(window) == i18n.translate(
+        "status.transition.favorite_removed", name=name
+    )
 
 
-def test_favorite_messages_name_builtins_in_the_interface_language_and_users_as_typed(window):
+def test_favorite_messages_name_builtins_in_the_interface_language_and_users_as_typed(
+    window,
+):
     """Revue de la PR #51 : en anglais, un intégré s'appelait encore « Balayage gauche » (nom français du cœur)."""
     previous = i18n.current_language()
     i18n.set_language("en")
@@ -450,7 +543,9 @@ def test_a_text_template_restyles_the_selected_subtitle_and_undo_restores_it(win
     window.project_panel.preset_apply_requested.emit("lower_third")
 
     assert find_clip(window.project, "subtitle_01").text_style == preset.style
-    assert window.history.undo_label == i18n.translate("history.subtitle.apply_template")
+    assert window.history.undo_label == i18n.translate(
+        "history.subtitle.apply_template"
+    )
     window.undo_last()
     assert find_clip(window.project, "subtitle_01").text_style == before
 
@@ -477,12 +572,22 @@ def test_a_text_template_without_any_visible_subtitle_explains_where_to_click(wi
 
 def test_a_text_template_can_create_a_styled_subtitle_at_the_playhead(window):
     preset = next(p for p in builtin_text_presets() if p.id == "title")
-    subtitles_before = {clip.id for t in window.project.tracks if t.type == "subtitle" for clip in t.clips}
+    subtitles_before = {
+        clip.id
+        for t in window.project.tracks
+        if t.type == "subtitle"
+        for clip in t.clips
+    }
 
     window.project_panel.preset_new_clip_requested.emit("title")
 
-    created = [clip for t in window.project.tracks if t.type == "subtitle" for clip in t.clips
-               if clip.id not in subtitles_before]
+    created = [
+        clip
+        for t in window.project.tracks
+        if t.type == "subtitle"
+        for clip in t.clips
+        if clip.id not in subtitles_before
+    ]
     assert len(created) == 1
     assert created[0].text == (preset.default_text or preset.name)
     assert created[0].text_style == preset.style
@@ -497,7 +602,9 @@ def test_saving_and_deleting_a_user_text_template(window, dialogs, config_dir):
     [preset] = window.text_preset_store.all()
     assert preset.name == "Sous-titre jaune" and preset.default_text == "Bonjour"
     assert dialogs.inputs[-1][1] == "Proposé", "le dialogue propose le nom reçu"
-    assert _status(window) == i18n.translate("status.template.saved", name="Sous-titre jaune")
+    assert _status(window) == i18n.translate(
+        "status.template.saved", name="Sous-titre jaune"
+    )
     assert "Sous-titre jaune" in _saved(config_dir, TEXT_PRESETS_FILE)
 
     dialogs.answer = dialogs.answer.No
@@ -513,14 +620,18 @@ def test_saving_and_deleting_a_user_text_template(window, dialogs, config_dir):
 def test_a_builtin_text_template_cannot_be_deleted(window, dialogs):
     window.project_panel.preset_delete_requested.emit("standard_subtitle")
 
-    assert any(p.id == "standard_subtitle" for p in window.text_preset_store.all_presets())
+    assert any(
+        p.id == "standard_subtitle" for p in window.text_preset_store.all_presets()
+    )
     assert dialogs.of_kind("question") == []
 
 
 def test_a_cancelled_text_template_name_saves_nothing(window, dialogs, config_dir):
     dialogs.text_reply = ("Sous-titre jaune", False)
 
-    window.project_panel.preset_save_requested.emit("Proposé", "", find_clip(window.project, "subtitle_01").text_style, "")
+    window.project_panel.preset_save_requested.emit(
+        "Proposé", "", find_clip(window.project, "subtitle_01").text_style, ""
+    )
 
     assert window.text_preset_store.all() == []
     assert not (config_dir / TEXT_PRESETS_FILE).exists()

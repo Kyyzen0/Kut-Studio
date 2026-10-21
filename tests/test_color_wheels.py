@@ -20,7 +20,12 @@ from core.color_grading import (
     _dict_to_grade,
     _grade_to_dict,
 )
-from core.color_wheels import PUCK_REACH, puck_from_wheel, wheel_from_puck, wheels_filter
+from core.color_wheels import (
+    PUCK_REACH,
+    puck_from_wheel,
+    wheel_from_puck,
+    wheels_filter,
+)
 from core.export_engine import _build_color_grade_filters
 from core.gpu_grade import DOMAIN_RGB, atlas_array, bake_grade_lut
 from core.project_io import load_project, save_project
@@ -39,12 +44,17 @@ def _exact(grade: ColorGrade, levels: np.ndarray) -> np.ndarray:
     """La formule avant arrondi, en niveaux 0..255 (non bornée en haut)."""
     out = np.empty(levels.shape, dtype=float)
     for index in range(3):
+
         def part(wheel: Wheel) -> float:
             return (wheel.r, wheel.g, wheel.b)[index] + wheel.y
+
         lift, gain = 0.25 * part(grade.lift), max(0.0, 1.0 + part(grade.gain))
         gamma, offset = 2.0 ** part(grade.gamma), 0.25 * part(grade.offset)
         x = levels[..., index] / 255.0
-        out[..., index] = np.power(np.maximum(0.0, (gain - lift) * x + lift + offset), 1.0 / gamma) * 255.0
+        out[..., index] = (
+            np.power(np.maximum(0.0, (gain - lift) * x + lift + offset), 1.0 / gamma)
+            * 255.0
+        )
     return out
 
 
@@ -53,8 +63,12 @@ GRADES = {
     "gamma-extremes": ColorGrade(gamma=Wheel(1.0, -1.0, 0.0, 0.0)),
     "gain-coupe-un-canal": ColorGrade(gain=Wheel(-1.0, 0.4, 0.0, -0.2)),
     "offset-negatif": ColorGrade(offset=Wheel(0.0, 0.0, 0.5, -0.4)),
-    "les-quatre": ColorGrade(lift=Wheel(y=-0.2), gamma=Wheel(0.1, -0.05, -0.05, 0.3), gain=Wheel(-0.1, 0.0, 0.1, 0.25),
-                             offset=Wheel(0.05, 0.0, -0.05, 0.0)),
+    "les-quatre": ColorGrade(
+        lift=Wheel(y=-0.2),
+        gamma=Wheel(0.1, -0.05, -0.05, 0.3),
+        gain=Wheel(-0.1, 0.0, 0.1, 0.25),
+        offset=Wheel(0.05, 0.0, -0.05, 0.0),
+    ),
 }
 
 
@@ -64,7 +78,9 @@ GRADES = {
 def test_neutral_wheels_are_the_identity_and_add_nothing_to_the_chain():
     grade = ColorGrade()
     assert grade.is_identity() and grade.wheels_are_neutral()
-    assert wheels_filter(grade) == "" and "lutrgb" not in _build_color_grade_filters(grade)
+    assert wheels_filter(grade) == "" and "lutrgb" not in _build_color_grade_filters(
+        grade
+    )
     moved = grade.with_wheel("gamma", Wheel(y=0.1))
     assert not moved.is_identity() and moved.gamma.y == 0.1 and grade.gamma.is_neutral()
 
@@ -80,12 +96,26 @@ def test_the_wheels_come_after_colorbalance_and_before_the_curves():
     from core.color_grading import ColorCurve, ColorCurves
 
     bent = ColorCurve(points=((0.0, 0.0), (0.5, 0.6), (1.0, 1.0)))
-    grade = ColorGrade(exposure=0.2, contrast=0.1, hue=5.0, shadows=0.1, temperature=20.0,
-                       curves=ColorCurves(master=bent), gain=Wheel(y=0.2))
+    grade = ColorGrade(
+        exposure=0.2,
+        contrast=0.1,
+        hue=5.0,
+        shadows=0.1,
+        temperature=20.0,
+        curves=ColorCurves(master=bent),
+        gain=Wheel(y=0.2),
+    )
     chain = _build_color_grade_filters(grade)
     # L'exposition (un premier ``lutrgb``) ouvre la chaîne, les molettes (le dernier) viennent avant les courbes.
-    stages = [chain.index("lutrgb="), chain.index("eq="), chain.index("hue="), chain.index("colorbalance="),
-              chain.index("colorchannelmixer="), chain.rindex("lutrgb="), chain.index("curves=")]
+    stages = [
+        chain.index("lutrgb="),
+        chain.index("eq="),
+        chain.index("hue="),
+        chain.index("colorbalance="),
+        chain.index("colorchannelmixer="),
+        chain.rindex("lutrgb="),
+        chain.index("curves="),
+    ]
     assert stages[0] != stages[5], "deux tables : l'exposition, puis les molettes"
     assert stages == sorted(stages)
 
@@ -99,10 +129,34 @@ def test_the_wheels_stage_is_the_formula_for_every_input_level(name):
     """Une rampe des 256 niveaux, chaque canal décalé des autres : la table de FFmpeg est la formule, au niveau près."""
     grade = GRADES[name]
     levels = np.arange(256)
-    ramp = np.stack((levels, (levels + 85) % 256, (levels + 170) % 256), axis=-1).astype(np.uint8)
-    done = subprocess.run(["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "256x1", "-i", "-",
-                           "-vf", wheels_filter(grade), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-                          input=ramp.tobytes(), capture_output=True, check=True)
+    ramp = np.stack(
+        (levels, (levels + 85) % 256, (levels + 170) % 256), axis=-1
+    ).astype(np.uint8)
+    done = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "256x1",
+            "-i",
+            "-",
+            "-vf",
+            wheels_filter(grade),
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ],
+        input=ramp.tobytes(),
+        capture_output=True,
+        check=True,
+    )
     graded = np.frombuffer(done.stdout, np.uint8).reshape(256, 3).astype(float)
     exact = _exact(grade, ramp.astype(float))
     # Un résultat tombé pile sur un demi-niveau (181,5) s'arrondit d'un côté ou de l'autre selon l'ordre des calculs
@@ -125,13 +179,26 @@ def test_lift_moves_the_blacks_gain_the_whites_and_gamma_neither():
 
 
 def _rendered(tmp_path, color: str, grade: ColorGrade | None) -> np.ndarray:
-    media = lavfi_video(tmp_path / f"{color}.mp4", f"color=c={color}", size=(W, H), seconds=1.0)
-    project = Project("p", width=W, height=H, fps=25.0,
-                      media_assets=[MediaAsset("v", str(media), "v", 1.0, W, H, 25.0, "video")],
-                      tracks=[Track("V1", "V1", "video", clips=[Clip("c", "v", "V1", 0.0, 0.0, 1.0)])])
+    media = lavfi_video(
+        tmp_path / f"{color}.mp4", f"color=c={color}", size=(W, H), seconds=1.0
+    )
+    project = Project(
+        "p",
+        width=W,
+        height=H,
+        fps=25.0,
+        media_assets=[MediaAsset("v", str(media), "v", 1.0, W, H, 25.0, "video")],
+        tracks=[
+            Track("V1", "V1", "video", clips=[Clip("c", "v", "V1", 0.0, 0.0, 1.0)])
+        ],
+    )
     project.tracks[0].clips[0].color_grade = grade
     frame = render_frame(build_render_plan(project), W, H, 0.3).astype(float)
-    return frame[H // 2 - 4:H // 2 + 4, W // 2 - 4:W // 2 + 4].reshape(-1, 3).mean(axis=0)
+    return (
+        frame[H // 2 - 4 : H // 2 + 4, W // 2 - 4 : W // 2 + 4]
+        .reshape(-1, 3)
+        .mean(axis=0)
+    )
 
 
 @needs_ffmpeg
@@ -141,7 +208,9 @@ def test_an_exported_clip_takes_the_wheels(tmp_path):
     grey = _rendered(tmp_path, "0x707070", None)
     brighter = _rendered(tmp_path, "0x707070", ColorGrade(gamma=Wheel(y=0.5)))
     assert (brighter - grey).min() > 15, (grey, brighter)
-    bluer = _rendered(tmp_path, "0x707070", ColorGrade(gain=wheel_from_puck(240.0, 1.0)))
+    bluer = _rendered(
+        tmp_path, "0x707070", ColorGrade(gain=wheel_from_puck(240.0, 1.0))
+    )
     assert bluer[2] > grey[2] + 15 and bluer[0] < grey[0] - 5, (grey, bluer)
     assert abs(bluer.mean() - grey.mean()) < 3
 
@@ -157,7 +226,7 @@ def test_the_monitor_lut_carries_the_wheels():
     c0, c1, c2 = np.meshgrid(codes, codes, codes, indexing="ij")
     lattice = np.stack((c0, c1, c2), axis=-1).astype(float)
     baked = np.rint(atlas_array(bake_grade_lut(grade, domain=DOMAIN_RGB)) * 255.0)
-    shown = baked.reshape(n, n, n, 3).transpose(0, 2, 1, 3)               # atlas[c₀, c₂·N + c₁]
+    shown = baked.reshape(n, n, n, 3).transpose(0, 2, 1, 3)  # atlas[c₀, c₂·N + c₁]
     error = np.abs(shown - _exact(grade, lattice).clip(0, 255))
     assert error.max() <= 0.51 and error.mean() < 0.3, (error.mean(), error.max())
 
@@ -169,17 +238,45 @@ def test_five_serial_nodes_drift_by_no_more_than_their_own_roundings():
     6 au plus ; mesuré ensuite 0,50 et 2."""
     from core.color_nodes import ColorNode, ColorNodeGraph
 
-    grades = [ColorGrade(gain=Wheel(0.05, 0.0, -0.05, 0.1)), ColorGrade(gamma=Wheel(y=0.15)),
-              ColorGrade(lift=Wheel(y=0.05)), ColorGrade(gain=Wheel(y=-0.08)),
-              ColorGrade(gamma=Wheel(-0.03, 0.02, 0.01, -0.1))]
+    grades = [
+        ColorGrade(gain=Wheel(0.05, 0.0, -0.05, 0.1)),
+        ColorGrade(gamma=Wheel(y=0.15)),
+        ColorGrade(lift=Wheel(y=0.05)),
+        ColorGrade(gain=Wheel(y=-0.08)),
+        ColorGrade(gamma=Wheel(-0.03, 0.02, 0.01, -0.1)),
+    ]
     image = np.random.default_rng(3).integers(0, 256, (32, 48, 3), dtype=np.uint8)
     ideal = image.astype(float)
     for grade in grades:
         ideal = _exact(grade, ideal).clip(0, 255)
-    graph = ColorNodeGraph.serial(ColorNode(f"n{index + 1}", grade) for index, grade in enumerate(grades))
-    done = subprocess.run(["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "48x32", "-i", "-",
-                           "-vf", _build_color_grade_filters(graph), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-                          input=image.tobytes(), capture_output=True, check=True)
+    graph = ColorNodeGraph.serial(
+        ColorNode(f"n{index + 1}", grade) for index, grade in enumerate(grades)
+    )
+    done = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "48x32",
+            "-i",
+            "-",
+            "-vf",
+            _build_color_grade_filters(graph),
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ],
+        input=image.tobytes(),
+        capture_output=True,
+        check=True,
+    )
     error = np.abs(np.frombuffer(done.stdout, np.uint8).reshape(32, 48, 3) - ideal)
     assert error.mean() < 0.7 and error.max() <= 2.5, (error.mean(), error.max())
     assert "eq=" not in _build_color_grade_filters(graph)
@@ -193,7 +290,9 @@ def test_the_puck_moves_the_colour_not_the_level_and_reads_back(hue):
     wheel = wheel_from_puck(hue, 0.6, master=-0.25)
     assert abs(wheel.r + wheel.g + wheel.b) < 1e-9 and wheel.y == -0.25
     back_hue, back_radius = puck_from_wheel(wheel)
-    assert back_radius == pytest.approx(0.6) and (back_hue - hue + 180.0) % 360.0 - 180.0 == pytest.approx(0.0)
+    assert back_radius == pytest.approx(0.6) and (
+        back_hue - hue + 180.0
+    ) % 360.0 - 180.0 == pytest.approx(0.0)
 
 
 def test_pushing_the_puck_towards_red_raises_red():
@@ -206,19 +305,41 @@ def test_pushing_the_puck_towards_red_raises_red():
 # --- fichiers -------------------------------------------------------------------------------------------------------
 
 
-def test_moved_wheels_survive_a_save_and_neutral_ones_leave_the_file_as_before(tmp_path):
+def test_moved_wheels_survive_a_save_and_neutral_ones_leave_the_file_as_before(
+    tmp_path,
+):
     grade = GRADES["les-quatre"]
-    project = Project("p", width=W, height=H, fps=25.0,
-                      media_assets=[MediaAsset("v", str(tmp_path / "v.mp4"), "v", 1.0, W, H, 25.0, "video")],
-                      tracks=[Track("V1", "V1", "video", clips=[Clip("c", "v", "V1", 0.0, 0.0, 1.0),
-                                                                 Clip("d", "v", "V1", 1.0, 0.0, 1.0)])])
+    project = Project(
+        "p",
+        width=W,
+        height=H,
+        fps=25.0,
+        media_assets=[
+            MediaAsset("v", str(tmp_path / "v.mp4"), "v", 1.0, W, H, 25.0, "video")
+        ],
+        tracks=[
+            Track(
+                "V1",
+                "V1",
+                "video",
+                clips=[
+                    Clip("c", "v", "V1", 0.0, 0.0, 1.0),
+                    Clip("d", "v", "V1", 1.0, 0.0, 1.0),
+                ],
+            )
+        ],
+    )
     project.tracks[0].clips[0].color_grade = grade
     project.tracks[0].clips[1].color_grade = ColorGrade(exposure=0.5)
     target = tmp_path / "p.kut"
     save_project(project, str(target))
-    clips = json.loads(target.read_text(encoding="utf-8"))["project"]["sequences"][0]["tracks"][0]["clips"]
+    clips = json.loads(target.read_text(encoding="utf-8"))["project"]["sequences"][0][
+        "tracks"
+    ][0]["clips"]
     assert set(clips[0]["color_grade"]["wheels"]) == {"lift", "gamma", "gain", "offset"}
-    assert "wheels" not in clips[1]["color_grade"], "un étalonnage sans roues s'écrit comme avant"
+    assert "wheels" not in clips[1]["color_grade"], (
+        "un étalonnage sans roues s'écrit comme avant"
+    )
     loaded = load_project(str(target))
     assert loaded.tracks[0].clips[0].color_grade == grade
     assert loaded.tracks[0].clips[1].color_grade == ColorGrade(exposure=0.5)
@@ -231,4 +352,9 @@ def test_presets_keep_their_wheels_and_a_broken_wheel_is_dropped_alone():
     payload["wheels"]["lift"] = [3.0, 0.0, 0.0, 0.0]
     payload["wheels"]["gamma"] = "abîmé"
     read = _dict_to_grade(payload)
-    assert read.saturation == 1.2 and read.gain == grade.gain and read.lift.is_neutral() and read.gamma.is_neutral()
+    assert (
+        read.saturation == 1.2
+        and read.gain == grade.gain
+        and read.lift.is_neutral()
+        and read.gamma.is_neutral()
+    )

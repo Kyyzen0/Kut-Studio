@@ -7,42 +7,89 @@ import pytest
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track
 from core.time_commands import SPEED_CHOICES, TimeCommand, apply_time_command
 from core.time_ops import speed_points
-from core.time_remapping import MAX_SPEED, MIN_SPEED, FlowQuality, TimeInterpolation, TimeRemapping
+from core.time_remapping import (
+    MAX_SPEED,
+    MIN_SPEED,
+    FlowQuality,
+    TimeInterpolation,
+    TimeRemapping,
+)
 from core.timeline_operations import set_clip_freeze_frame
 
 FPS = 30.0
 
 
 def _project(remapping=None):
-    asset = MediaAsset(id="a", path="/tmp/x.mp4", name="x", duration=60.0, width=1920, height=1080, fps=FPS, media_type="video",
-                       has_audio=True)
-    clip = Clip(id="c1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=10.0,
-                time_remapping=remapping or TimeRemapping())
-    project = Project(name="p", width=1920, height=1080, fps=FPS, media_assets=[asset],
-                      tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
+    asset = MediaAsset(
+        id="a",
+        path="/tmp/x.mp4",
+        name="x",
+        duration=60.0,
+        width=1920,
+        height=1080,
+        fps=FPS,
+        media_type="video",
+        has_audio=True,
+    )
+    clip = Clip(
+        id="c1",
+        asset_id="a",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=10.0,
+        time_remapping=remapping or TimeRemapping(),
+    )
+    project = Project(
+        name="p",
+        width=1920,
+        height=1080,
+        fps=FPS,
+        media_assets=[asset],
+        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
+    )
     return project, clip
 
 
 @pytest.mark.parametrize("speed", SPEED_CHOICES)
 def test_every_speed_of_the_menu_sets_the_static_speed(speed):
     project, clip = _project()
-    assert apply_time_command(project, "c1", TimeCommand.SPEED, speed) == "history.speed.edit"
+    assert (
+        apply_time_command(project, "c1", TimeCommand.SPEED, speed)
+        == "history.speed.edit"
+    )
     assert clip.time_remapping.speed == speed
 
 
 def test_reverse_returns_the_matching_history_label():
     project, clip = _project()
-    assert apply_time_command(project, "c1", "reverse", True) == "history.clip.reverse" and clip.time_remapping.reverse
-    assert apply_time_command(project, "c1", "reverse", False) == "history.clip.unreverse" and not clip.time_remapping.reverse
+    assert (
+        apply_time_command(project, "c1", "reverse", True) == "history.clip.reverse"
+        and clip.time_remapping.reverse
+    )
+    assert (
+        apply_time_command(project, "c1", "reverse", False) == "history.clip.unreverse"
+        and not clip.time_remapping.reverse
+    )
 
 
 def test_the_interpolation_and_its_quality_are_set_independently():
     project, clip = _project()
-    assert apply_time_command(project, "c1", "interpolation", "optical_flow") == "history.time.interpolation"
-    assert apply_time_command(project, "c1", "quality", "best") == "history.time.quality"
-    assert clip.time_remapping.interpolation is TimeInterpolation.OPTICAL_FLOW and clip.time_remapping.flow_quality is FlowQuality.BEST
+    assert (
+        apply_time_command(project, "c1", "interpolation", "optical_flow")
+        == "history.time.interpolation"
+    )
+    assert (
+        apply_time_command(project, "c1", "quality", "best") == "history.time.quality"
+    )
+    assert (
+        clip.time_remapping.interpolation is TimeInterpolation.OPTICAL_FLOW
+        and clip.time_remapping.flow_quality is FlowQuality.BEST
+    )
     apply_time_command(project, "c1", "interpolation", "blending")
-    assert clip.time_remapping.flow_quality is FlowQuality.BEST                         # la qualité survit au changement de mode
+    assert (
+        clip.time_remapping.flow_quality is FlowQuality.BEST
+    )  # la qualité survit au changement de mode
 
 
 def test_the_audio_choices_do_not_change_the_clip_duration():
@@ -50,24 +97,41 @@ def test_the_audio_choices_do_not_change_the_clip_duration():
     duration = clip.duration
     apply_time_command(project, "c1", "preserve_pitch", False)
     apply_time_command(project, "c1", "remap_audio", False)
-    assert not clip.time_remapping.preserve_pitch and not clip.time_remapping.remap_audio and clip.duration == duration
+    assert (
+        not clip.time_remapping.preserve_pitch
+        and not clip.time_remapping.remap_audio
+        and clip.duration == duration
+    )
 
 
 def test_a_speed_point_is_added_at_the_playhead_snapped_to_a_frame_without_changing_the_curve():
     project, clip = _project(TimeRemapping(speed=2.0))
     before = clip.time_map.source_time(3.0)
-    assert apply_time_command(project, "c1", "add_point", local_time=1.0004, fps=FPS) == "history.time.add_point"
+    assert (
+        apply_time_command(project, "c1", "add_point", local_time=1.0004, fps=FPS)
+        == "history.time.add_point"
+    )
     points = speed_points(clip)
-    assert len(points) == 1 and points[0].time_seconds == pytest.approx(1.0) and points[0].value == 2.0
+    assert (
+        len(points) == 1
+        and points[0].time_seconds == pytest.approx(1.0)
+        and points[0].value == 2.0
+    )
     assert clip.time_map.source_time(3.0) == pytest.approx(before)
 
 
 def test_a_hold_lengthens_the_clip_and_a_preset_is_named_in_the_history():
     project, clip = _project()
     duration = clip.duration
-    assert apply_time_command(project, "c1", "hold", local_time=2.0, fps=FPS) == "history.time.hold"
+    assert (
+        apply_time_command(project, "c1", "hold", local_time=2.0, fps=FPS)
+        == "history.time.hold"
+    )
     assert clip.duration == pytest.approx(duration + 1.0)
-    assert apply_time_command(project, "c1", "preset", "slow_25") == "history.time.preset.slow_25"
+    assert (
+        apply_time_command(project, "c1", "preset", "slow_25")
+        == "history.time.preset.slow_25"
+    )
     assert clip.time_remapping.speed == 0.25 and not clip.has_speed_curve
 
 
@@ -111,13 +175,57 @@ def test_a_frozen_clip_refuses_the_interpolation_commands():
 def test_a_nested_sequence_refuses_frame_interpolation_but_accepts_sampling():
     from core.sequences import insert_sequence_clip
 
-    asset = MediaAsset(id="a", path="/tmp/x.mp4", name="x", duration=60.0, width=1280, height=720, fps=FPS, media_type="video")
-    inner = Sequence(id="inner", name="Inner", width=1280, height=720, fps=FPS, tracks=[
-        Track(id="V1", name="V1", type="video", clips=[Clip(id="i1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0,
-                                                           source_out=5.0)])])
-    main = Sequence(id="main", name="Main", width=1280, height=720, fps=FPS, tracks=[Track(id="V1", name="V1", type="video")])
-    project = Project(name="p", width=1280, height=720, fps=FPS, media_assets=[asset], sequences=[main, inner],
-                      active_sequence_id="main")
+    asset = MediaAsset(
+        id="a",
+        path="/tmp/x.mp4",
+        name="x",
+        duration=60.0,
+        width=1280,
+        height=720,
+        fps=FPS,
+        media_type="video",
+    )
+    inner = Sequence(
+        id="inner",
+        name="Inner",
+        width=1280,
+        height=720,
+        fps=FPS,
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="i1",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=5.0,
+                    )
+                ],
+            )
+        ],
+    )
+    main = Sequence(
+        id="main",
+        name="Main",
+        width=1280,
+        height=720,
+        fps=FPS,
+        tracks=[Track(id="V1", name="V1", type="video")],
+    )
+    project = Project(
+        name="p",
+        width=1280,
+        height=720,
+        fps=FPS,
+        media_assets=[asset],
+        sequences=[main, inner],
+        active_sequence_id="main",
+    )
     nested = insert_sequence_clip(project, "inner", "V1", 0.0)
     with pytest.raises(ValueError, match="séquence imbriquée"):
         apply_time_command(project, nested.id, "interpolation", "optical_flow")

@@ -16,10 +16,12 @@ produit les mêmes octets (`save_scene` est déterministe) ; les identifiants de
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import replace
 from pathlib import Path
 
 from kut3d.document_commands import Command
+from kut3d.document_validate import validate_changes
 from kut3d.document_state import (
     DocumentError,
     DocumentState,
@@ -52,6 +54,25 @@ def _stamp(path: Path) -> Stamp | None:
     )
 
 
+def _exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except (OSError, ValueError):
+        return False
+
+
+def _norm(path: Path) -> str:
+    return os.path.normcase(os.path.realpath(path))
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Même fichier sur le disque (identité du système de fichiers : liens, `..`, casse), repli sur le chemin canonique."""
+    try:
+        return os.path.samefile(a, b)
+    except (OSError, ValueError):
+        return _norm(a) == _norm(b)
+
+
 def default_scene() -> Scene:
     """La scène d'un nouveau document : caméra de face, un peu d'ambiance, un soleil ; aucun objet."""
     return Scene(
@@ -78,12 +99,9 @@ class SceneDocument:
     def __init__(
         self, scene: Scene | None = None, *, path: str | Path | None = None
     ) -> None:
-        self._entries = [
-            _Entry(
-                "État initial",
-                state_from_scene(scene if scene is not None else default_scene()),
-            )
-        ]
+        first = state_from_scene(scene if scene is not None else default_scene())
+        validate_changes(None, first)
+        self._entries = [_Entry("État initial", first)]
         self._index = 0
         self._saved_index: int | None = 0
         self._open_key: str | None = None
@@ -139,16 +157,30 @@ class SceneDocument:
         target = self._path if path is None else Path(path)
         if target is None:
             raise DocumentError("aucun fichier : donnez un chemin.")
-        if target == self._path and not overwrite and _stamp(target) != self._stamp:
-            raise DocumentConflict(
-                f"{short(target.name)} a changé sur le disque depuis sa lecture : rechargez-le, ou enregistrez en l'écrasant."
-            )
+        if not overwrite:
+            self._check_target(target)
         save_scene(self.scene(), target, allow_outside=allow_outside)
         self._path = target
         self._stamp = _stamp(target)
         self._saved_index = self._index
         self._open_key = None
         self._canonical = True
+
+    def _check_target(self, target: Path) -> None:
+        """Refuse d'écraser sans le dire : le fichier d'origine (sous n'importe quelle graphie du chemin : relatif, `..`,
+        lien symbolique, casse) doit être inchangé depuis la lecture ; tout AUTRE fichier existant est refusé."""
+        if self._path is not None and _same_file(target, self._path):
+            if (
+                _stamp(target) != self._stamp
+            ):  # modifié, remplacé ou supprimé depuis la lecture
+                raise DocumentConflict(
+                    f"{short(target.name)} a changé sur le disque depuis sa lecture : rechargez-le, ou enregistrez en l'écrasant."
+                )
+            return
+        if _exists(target):
+            raise DocumentConflict(
+                f"{short(target.name)} existe déjà : enregistrez en l'écrasant, ou choisissez un autre nom."
+            )
 
     # --- état ---------------------------------------------------------------------------------------
 
@@ -180,6 +212,9 @@ class SceneDocument:
         after = command.apply(before)
         if not isinstance(after, DocumentState):
             raise DocumentError("la commande n'a pas rendu un état de document.")
+        validate_changes(
+            before, after
+        )  # tout état atteignable est enregistrable (valeurs relues par le lecteur de fichier)
         key = command.merge_key
         merge = (
             key is not None

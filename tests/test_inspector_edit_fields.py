@@ -40,7 +40,7 @@ def _type(spin, text: str, finish) -> None:
     spin.setFocus()
     spin.selectAll()
     QTest.keyClicks(spin, text)
-    if finish == "leave":                # quitter le champ valide aussi la saisie
+    if finish == "leave":  # quitter le champ valide aussi la saisie
         spin.clearFocus()
         spin.interpretText()
     else:
@@ -50,15 +50,22 @@ def _type(spin, text: str, finish) -> None:
 @pytest.mark.parametrize("language", ["fr", "en", "es"])
 @pytest.mark.parametrize("typed", ["0,5", "0.5"])
 @pytest.mark.parametrize("finish", [Qt.Key_Return, "leave"])
-def test_typing_an_opacity_gives_that_opacity_in_every_language(window, language, typed, finish) -> None:
+def test_typing_an_opacity_gives_that_opacity_in_every_language(
+    window, language, typed, finish
+) -> None:
     i18n.set_language(language)
     _panel, spin = _opacity_spin(window)
     _type(spin, typed, finish)
     assert spin.value() == pytest.approx(0.5)
     QApplication.processEvents()
-    assert spin.value() == pytest.approx(0.5)      # après le rafraîchissement de l'inspecteur par le modèle
+    assert spin.value() == pytest.approx(
+        0.5
+    )  # après le rafraîchissement de l'inspecteur par le modèle
 
-def test_validating_a_field_keeps_its_group_open_and_the_panel_where_it_was(window) -> None:
+
+def test_validating_a_field_keeps_its_group_open_and_the_panel_where_it_was(
+    window,
+) -> None:
     i18n.set_language("fr")
     panel, spin = _opacity_spin(window)
     assert panel.movement_group.is_open
@@ -89,8 +96,12 @@ from PySide6.QtGui import QValidator  # noqa: E402
 
 from ui.properties_widgets.tolerant_spin_box import TolerantDoubleSpinBox  # noqa: E402
 
-_LOCALES = [QLocale(QLocale.French, QLocale.France), QLocale(QLocale.English, QLocale.UnitedStates),
-            QLocale(QLocale.Spanish, QLocale.Spain), QLocale.c()]
+_LOCALES = [
+    QLocale(QLocale.French, QLocale.France),
+    QLocale(QLocale.English, QLocale.UnitedStates),
+    QLocale(QLocale.Spanish, QLocale.Spain),
+    QLocale.c(),
+]
 
 
 def _spin(locale, low=0.0, high=1.0, decimals=2):
@@ -113,7 +124,9 @@ def _enter(spin, text: str) -> float:
 
 @pytest.mark.parametrize("locale", _LOCALES, ids=lambda loc: loc.name())
 @pytest.mark.parametrize("typed", ["0,5", "0.5", ",5", ".5", "0,5 ", " 0.5"])
-def test_both_separators_give_the_same_value_in_every_locale(qtbot, locale, typed) -> None:
+def test_both_separators_give_the_same_value_in_every_locale(
+    qtbot, locale, typed
+) -> None:
     spin = _spin(locale)
     qtbot.addWidget(spin)
     assert _enter(spin, typed) == pytest.approx(0.5)
@@ -125,7 +138,10 @@ def test_signs_trailing_separator_and_out_of_range(qtbot, locale) -> None:
     qtbot.addWidget(spin)
     assert _enter(spin, "-0,5") == pytest.approx(-0.5)
     assert _enter(spin, "2,") == pytest.approx(2.0)
-    for pasted in ("99,5", "-99.5"):      # collage hors intervalle : refusé, la valeur précédente (2,0) reste
+    for pasted in (
+        "99,5",
+        "-99.5",
+    ):  # collage hors intervalle : refusé, la valeur précédente (2,0) reste
         spin.lineEdit().setText(pasted)
         spin.interpretText()
         assert spin.value() == pytest.approx(2.0)
@@ -148,5 +164,8 @@ def test_large_values_show_no_thousands_separator_and_roundtrip(qtbot, locale) -
     spin = _spin(locale, -3600.0, 3600.0, 1)
     qtbot.addWidget(spin)
     spin.setValue(3600.0)
-    assert "," not in spin.text().replace(locale.decimalPoint(), "") and " " not in spin.text()
+    assert (
+        "," not in spin.text().replace(locale.decimalPoint(), "")
+        and " " not in spin.text()
+    )
     assert _enter(spin, "1234,5") == pytest.approx(1234.5)

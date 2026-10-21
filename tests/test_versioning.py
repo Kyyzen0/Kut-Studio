@@ -12,14 +12,19 @@ from core.versioning import InvalidVersion, Version
 
 def test_the_application_version_is_a_valid_release_version():
     version = Version.parse(APP_VERSION)
-    assert not version.build, "une version publiée ne porte pas de métadonnées de construction"
+    assert not version.build, (
+        "une version publiée ne porte pas de métadonnées de construction"
+    )
     assert str(version) == APP_VERSION
 
 
 @pytest.mark.parametrize(
     "older,newer",
     [
-        ("0.9.0", "0.10.0"),          # lexicographiquement « 0.9.0 » > « 0.10.0 » : l'erreur classique
+        (
+            "0.9.0",
+            "0.10.0",
+        ),  # lexicographiquement « 0.9.0 » > « 0.10.0 » : l'erreur classique
         ("1.9.9", "1.10.0"),
         ("1.2.3", "2.0.0"),
         ("1.0.0", "1.0.1"),
@@ -41,8 +46,14 @@ def test_a_string_comparison_would_have_picked_the_older_version():
 def test_the_semver_specification_precedence_example_holds():
     """Exemple de la règle 11 de SemVer 2.0, dans l'ordre exact."""
     ordered = [
-        "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta",
-        "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0",
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-alpha.beta",
+        "1.0.0-beta",
+        "1.0.0-beta.2",
+        "1.0.0-beta.11",
+        "1.0.0-rc.1",
+        "1.0.0",
     ]
     versions = [Version.parse(text) for text in ordered]
     shuffled = versions[:]
@@ -74,8 +85,28 @@ def test_prerelease_flag():
 
 @pytest.mark.parametrize(
     "text",
-    ["", "1", "1.2", "1.2.3.4", "01.2.3", "1.02.3", "1.2.03", "1.2.3-", "1.2.3-01", "1.2.3-beta..1", "1.2.3+",
-     " 1.2.3", "1.2.3 ", "V1.2.3", "vv1.2.3", "1.2.x", "-1.2.3", "1.2.3-bêta", "latest", "1" * 200 + ".0.0"],
+    [
+        "",
+        "1",
+        "1.2",
+        "1.2.3.4",
+        "01.2.3",
+        "1.02.3",
+        "1.2.03",
+        "1.2.3-",
+        "1.2.3-01",
+        "1.2.3-beta..1",
+        "1.2.3+",
+        " 1.2.3",
+        "1.2.3 ",
+        "V1.2.3",
+        "vv1.2.3",
+        "1.2.x",
+        "-1.2.3",
+        "1.2.3-bêta",
+        "latest",
+        "1" * 200 + ".0.0",
+    ],
 )
 def test_malformed_versions_are_refused_not_guessed(text):
     with pytest.raises(InvalidVersion):

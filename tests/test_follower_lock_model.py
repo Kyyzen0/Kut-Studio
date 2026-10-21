@@ -17,38 +17,91 @@ from core.beat_grid import BeatGrid
 from core.graphics import GraphicOverlay, GraphicType
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track
 from core.timeline_editing import delete_clips
-from core.timeline_operations import cut_clip, delete_clip, find_clip, ripple_delete_clip
+from core.timeline_operations import (
+    cut_clip,
+    delete_clip,
+    find_clip,
+    ripple_delete_clip,
+)
 from core.tracking_model import ClipTracking, TrackLink
 
 
 def _project() -> Project:
     return Project(
-        "Démo", width=320, height=180, fps=30.0,
-        media_assets=[MediaAsset("m", "/x/a.mp4", "a", 60.0, 320, 180, 30.0, "video", has_audio=True)],
+        "Démo",
+        width=320,
+        height=180,
+        fps=30.0,
+        media_assets=[
+            MediaAsset(
+                "m", "/x/a.mp4", "a", 60.0, 320, 180, 30.0, "video", has_audio=True
+            )
+        ],
         tracks=[
-            Track("V1", "V1", "video", clips=[Clip("a", "m", "V1", 0.0, 0.0, 4.0), Clip("b", "m", "V1", 4.0, 0.0, 3.0)]),
+            Track(
+                "V1",
+                "V1",
+                "video",
+                clips=[
+                    Clip("a", "m", "V1", 0.0, 0.0, 4.0),
+                    Clip("b", "m", "V1", 4.0, 0.0, 3.0),
+                ],
+            ),
             Track("V2", "V2", "video", clips=[Clip("f", "m", "V2", 0.0, 0.0, 2.0)]),
         ],
     )
 
 
-def _follow(project: Project, follower: str = "f", source: str = "a", *, continuation: tuple[str, ...] = (), enabled: bool = True) -> None:
+def _follow(
+    project: Project,
+    follower: str = "f",
+    source: str = "a",
+    *,
+    continuation: tuple[str, ...] = (),
+    enabled: bool = True,
+) -> None:
     clip = next(c for t in project.all_tracks() for c in t.clips if c.id == follower)
-    clip.tracking = ClipTracking(links=(
-        TrackLink(source_clip_id=source, tracker_ids=("t1",), continuation_ids=continuation, enabled=enabled),))
+    clip.tracking = ClipTracking(
+        links=(
+            TrackLink(
+                source_clip_id=source,
+                tracker_ids=("t1",),
+                continuation_ids=continuation,
+                enabled=enabled,
+            ),
+        )
+    )
 
 
 def _locked(kind: str, **link) -> Project:
     project = _project()
     if kind == "other":
-        project.sequences.append(Sequence("seq-b", "B", width=320, height=180, fps=30.0,
-                                          tracks=[Track("W1", "W1", "video", locked=True, clips=[Clip("g", "m", "W1", 0.0, 0.0, 1.0)])]))
+        project.sequences.append(
+            Sequence(
+                "seq-b",
+                "B",
+                width=320,
+                height=180,
+                fps=30.0,
+                tracks=[
+                    Track(
+                        "W1",
+                        "W1",
+                        "video",
+                        locked=True,
+                        clips=[Clip("g", "m", "W1", 0.0, 0.0, 1.0)],
+                    )
+                ],
+            )
+        )
         _follow(project, "g", **link)
         return project
     _follow(project, **link)
     if kind == "layer":
         clip = find_clip(project, "f")
-        clip.graphic = replace(clip.graphic or GraphicOverlay(type=GraphicType.TEXT), locked=True)
+        clip.graphic = replace(
+            clip.graphic or GraphicOverlay(type=GraphicType.TEXT), locked=True
+        )
     else:
         project.tracks[1].locked = True
     return project
@@ -61,30 +114,48 @@ def _refused(project: Project, call, fragment: str = "verrouillé") -> None:
     before = copy.deepcopy(project)
     with pytest.raises(ValueError) as error:
         call(project)
-    assert fragment in str(error.value) and project == before, "refus avant la première écriture"
+    assert fragment in str(error.value) and project == before, (
+        "refus avant la première écriture"
+    )
 
 
 @pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("enabled", [True, False])
 def test_cutting_a_source_with_a_locked_follower_is_refused_by_the_model(kind, enabled):
-    _refused(_locked(kind, enabled=enabled), lambda p: cut_clip(p, "a", 2.0), "le clip verrouillé")
+    _refused(
+        _locked(kind, enabled=enabled),
+        lambda p: cut_clip(p, "a", 2.0),
+        "le clip verrouillé",
+    )
 
 
 @pytest.mark.parametrize("kind", KINDS)
-@pytest.mark.parametrize("call", [
-    lambda p: delete_clip(p, "a"), lambda p: ripple_delete_clip(p, "a"), lambda p: delete_clips(p, ["a"]),
-    lambda p: delete_clips(p, ["a"], ripple=True),
-], ids=["delete", "ripple", "delete_clips", "delete_clips_ripple"])
-def test_deleting_a_source_whose_locked_follower_would_be_rewritten_is_refused(kind, call):
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda p: delete_clip(p, "a"),
+        lambda p: ripple_delete_clip(p, "a"),
+        lambda p: delete_clips(p, ["a"]),
+        lambda p: delete_clips(p, ["a"], ripple=True),
+    ],
+    ids=["delete", "ripple", "delete_clips", "delete_clips_ripple"],
+)
+def test_deleting_a_source_whose_locked_follower_would_be_rewritten_is_refused(
+    kind, call
+):
     _refused(_locked(kind, continuation=("b",)), call)
 
 
 def test_a_guard_only_refuses_what_the_operation_would_really_change():
-    plain = _locked("layer")                                           # aucune prolongation : la suppression ne réécrit pas la liaison
+    plain = _locked(
+        "layer"
+    )  # aucune prolongation : la suppression ne réécrit pas la liaison
     before = copy.deepcopy(find_clip(plain, "f").tracking)
     delete_clip(plain, "a")
     assert find_clip(plain, "f").tracking == before
-    other = _locked("layer", source="b")                                # suit une autre source : la coupe de « a » ne le touche pas
+    other = _locked(
+        "layer", source="b"
+    )  # suit une autre source : la coupe de « a » ne le touche pas
     cut_clip(other, "a", 2.0)
     assert find_clip(other, "f").tracking.links[0].source_clip_id == "b"
     free = _project()
@@ -98,12 +169,16 @@ def test_the_follower_deleted_in_the_same_operation_does_not_block():
     project.tracks[1].locked = False
     _follow(project, continuation=("b",))
     delete_clips(project, ["a", "f"])
-    assert [c.id for c in project.tracks[0].clips] == ["b"] and not project.tracks[1].clips
+    assert [c.id for c in project.tracks[0].clips] == ["b"] and not project.tracks[
+        1
+    ].clips
 
 
 def test_delete_clips_checks_everything_before_the_first_deletion():
     project = _locked("layer", continuation=("b",))
-    _refused(project, lambda p: delete_clips(p, ["b", "a"]))            # « b » seul aurait pu partir avant « a »
+    _refused(
+        project, lambda p: delete_clips(p, ["b", "a"])
+    )  # « b » seul aurait pu partir avant « a »
 
 
 def test_cutting_several_clips_on_beats_is_atomic():
@@ -111,7 +186,11 @@ def test_cutting_several_clips_on_beats_is_atomic():
     project.active_sequence.beat_grid = BeatGrid(120.0)
     _follow(project, "f", "b")
     find_clip(project, "f").graphic = GraphicOverlay(type=GraphicType.TEXT, locked=True)
-    _refused(project, lambda p: cut_clips_on_beats(p, ["a", "b"], p.active_sequence.beat_grid), "le clip verrouillé")
+    _refused(
+        project,
+        lambda p: cut_clips_on_beats(p, ["a", "b"], p.active_sequence.beat_grid),
+        "le clip verrouillé",
+    )
 
 
 def test_a_locked_follower_of_the_right_half_is_still_covered_after_a_free_cut():
@@ -123,20 +202,36 @@ def test_a_locked_follower_of_the_right_half_is_still_covered_after_a_free_cut()
 
 
 def test_updating_a_leaderboard_refuses_before_removing_anything_when_a_locked_follower_would_be_rewritten():
-    from core.leaderboard import Leaderboard, LeaderboardRow, build_leaderboard, update_leaderboard
+    from core.leaderboard import (
+        Leaderboard,
+        LeaderboardRow,
+        build_leaderboard,
+        update_leaderboard,
+    )
 
     project = _project()
-    board = Leaderboard((LeaderboardRow("1", "A", "9"),), start=0.0, duration=3.0, id="lb1")
+    board = Leaderboard(
+        (LeaderboardRow("1", "A", "9"),), start=0.0, duration=3.0, id="lb1"
+    )
     clips = build_leaderboard(project, board)
-    layers = [clip.id for clip in project.active_sequence.tracks[-1].clips] if clips else []
+    layers = (
+        [clip.id for clip in project.active_sequence.tracks[-1].clips] if clips else []
+    )
     assert layers
     # Un clip verrouillé suit le premier calque ET une moitié qui le prolonge : sa liaison serait réécrite.
-    _follow(project, "f", layers[0], continuation=(layers[1],) if len(layers) > 1 else ("b",))
+    _follow(
+        project,
+        "f",
+        layers[0],
+        continuation=(layers[1],) if len(layers) > 1 else ("b",),
+    )
     find_clip(project, "f").graphic = GraphicOverlay(type=GraphicType.TEXT, locked=True)
     _refused(project, lambda p: update_leaderboard(p, board))
 
 
 @pytest.mark.parametrize("ripple", [False, True])
 def test_a_follower_on_a_locked_track_selected_with_its_source_is_not_exempt(ripple):
-    project = _locked("track", continuation=("b",))                   # « f » ne peut pas être supprimé (piste verrouillée) : il serait réécrit
+    project = _locked(
+        "track", continuation=("b",)
+    )  # « f » ne peut pas être supprimé (piste verrouillée) : il serait réécrit
     _refused(project, lambda p: delete_clips(p, ["a", "f"], ripple=ripple))

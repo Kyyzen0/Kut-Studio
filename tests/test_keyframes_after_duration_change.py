@@ -24,22 +24,60 @@ INSTANTS = (0.0, 0.4, 0.75, 1.3, 1.9, 2.5)
 
 
 def _project():
-    asset = MediaAsset(id="a", path="/tmp/a.mp4", name="a", duration=60.0, width=1920, height=1080, fps=25.0,
-                       media_type="video", has_audio=False)
-    clip = Clip(id="c", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=6.0)
+    asset = MediaAsset(
+        id="a",
+        path="/tmp/a.mp4",
+        name="a",
+        duration=60.0,
+        width=1920,
+        height=1080,
+        fps=25.0,
+        media_type="video",
+        has_audio=False,
+    )
+    clip = Clip(
+        id="c",
+        asset_id="a",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=6.0,
+    )
     clip.transform = ClipTransform()
-    clip.transform_keyframes = [TransformKeyframe("scale", 0.0, 1.0), TransformKeyframe("scale", 6.0, 2.0),
-                                TransformKeyframe("opacity", 0.0, 0.2), TransformKeyframe("opacity", 5.0, 1.0)]
-    project = Project(name="p", width=1920, height=1080, fps=25.0, media_assets=[asset],
-                      tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
+    clip.transform_keyframes = [
+        TransformKeyframe("scale", 0.0, 1.0),
+        TransformKeyframe("scale", 6.0, 2.0),
+        TransformKeyframe("opacity", 0.0, 0.2),
+        TransformKeyframe("opacity", 5.0, 1.0),
+    ]
+    project = Project(
+        name="p",
+        width=1920,
+        height=1080,
+        fps=25.0,
+        media_assets=[asset],
+        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
+    )
     return project, clip
 
 
 def _visible(clip, instants=INSTANTS):
     """Animation visible : ``(scale, opacity)`` à chaque instant, évaluée comme l'aperçu."""
     return [
-        (round(evaluate_transform(clip.transform, clip.transform_keyframes, t, clip.duration).scale, 6),
-         round(evaluate_transform(clip.transform, clip.transform_keyframes, t, clip.duration).opacity, 6))
+        (
+            round(
+                evaluate_transform(
+                    clip.transform, clip.transform_keyframes, t, clip.duration
+                ).scale,
+                6,
+            ),
+            round(
+                evaluate_transform(
+                    clip.transform, clip.transform_keyframes, t, clip.duration
+                ).opacity,
+                6,
+            ),
+        )
         for t in instants
     ]
 
@@ -51,7 +89,9 @@ def _no_keyframe_after_the_end(clip):
 def test_a_faster_clip_keeps_the_visible_animation():
     project, clip = _project()
     before = _visible(clip)
-    set_clip_speed(project, "c", 2.0)                       # durée 6 s → 3 s : keyframes à 6 s et 5 s hors du clip
+    set_clip_speed(
+        project, "c", 2.0
+    )  # durée 6 s → 3 s : keyframes à 6 s et 5 s hors du clip
     assert clip.duration == pytest.approx(3.0)
     assert _no_keyframe_after_the_end(clip)
     assert _visible(clip) == pytest.approx(before)
@@ -69,9 +109,9 @@ def test_a_shorter_freeze_keeps_the_visible_animation():
 
 def test_removing_a_freeze_or_resetting_a_slow_clip_keeps_the_visible_animation():
     project, clip = _project()
-    set_clip_speed(project, "c", 0.5)                       # 12 s : les keyframes (6 s, 5 s) y tiennent
+    set_clip_speed(project, "c", 0.5)  # 12 s : les keyframes (6 s, 5 s) y tiennent
     before = _visible(clip)
-    reset_clip_time_remapping(project, "c")                 # retour à ×1 : 6 s
+    reset_clip_time_remapping(project, "c")  # retour à ×1 : 6 s
     assert clip.duration == pytest.approx(6.0)
     assert _no_keyframe_after_the_end(clip)
     assert _visible(clip) == pytest.approx(before)

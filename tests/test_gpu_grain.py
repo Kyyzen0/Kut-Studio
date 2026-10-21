@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 
 from core.gpu_backend import shader_dir
-from core.gpu_grain import grain_cell_counts, grain_index, grain_uniforms, reference_grain
+from core.gpu_grain import (
+    grain_cell_counts,
+    grain_index,
+    grain_uniforms,
+    reference_grain,
+)
 
 
 def test_grain_index_loops_over_eight_frames():
@@ -35,13 +40,24 @@ def test_grain_shader_artifact_is_versioned():
 
 
 def test_plan_frame_emits_grain_pass():
-    from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, plan_frame
+    from core.gpu_composite import (
+        CompositeFrame,
+        CompositeLayer,
+        VideoSource,
+        plan_frame,
+    )
     from core.gpu_effects import program_for
 
     cols, rows = grain_cell_counts(160, 90, density=2.0)
     frame = CompositeFrame(
-        160, 90, 1.0,
-        (CompositeLayer("g", (1, 0, 0, 1, 0, 0), (0, 0, 160, 90), program=program_for(())),),
+        160,
+        90,
+        1.0,
+        (
+            CompositeLayer(
+                "g", (1, 0, 0, 1, 0, 0), (0, 0, 160, 90), program=program_for(())
+            ),
+        ),
         (VideoSource("g", "grain", cols, rows, colorspace="7", color_range="2"),),
     )
     plan = plan_frame(frame)
@@ -71,16 +87,29 @@ def test_preview_panel_registers_procedural_grain(qtbot):
         def set_composite(self, frame, mattes=None):
             self.composite = frame
 
-    panel = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
+    panel = PreviewPanel(
+        lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None
+    )
     qtbot.addWidget(panel)
     fake = _FakeView()
     panel.gpu_view = fake
     panel._canvas_size = (160, 90)
-    panel.set_blend_layers([(
-        "grain:1:0:32x18", None, BlendMode.OVERLAY,
-        (1.0, 0.0, 0.0, 1.0, 40.0, 20.0), 1.0, (0.0, 0.0, 48.0, 36.0),
-        1, 0, 32, 18,
-    )])
+    panel.set_blend_layers(
+        [
+            (
+                "grain:1:0:32x18",
+                None,
+                BlendMode.OVERLAY,
+                (1.0, 0.0, 0.0, 1.0, 40.0, 20.0),
+                1.0,
+                (0.0, 0.0, 48.0, 36.0),
+                1,
+                0,
+                32,
+                18,
+            )
+        ]
+    )
     assert "graphics0" in fake.sources
     assert fake.sources["graphics0"].layout == "grain"
     assert fake.sources["graphics0"].width == 32

@@ -39,9 +39,7 @@ def test_cache_store_lookup_and_invalidate_clip(tmp_path):
 def test_cache_evicts_oldest_over_budget(tmp_path):
     from core.preview_cache import DiskPreviewCache
 
-    cache = DiskPreviewCache(
-        directory=tmp_path / "c3", budget_bytes=40, ttl_seconds=0
-    )
+    cache = DiskPreviewCache(directory=tmp_path / "c3", budget_bytes=40, ttl_seconds=0)
     src = tmp_path / "seg.mp4"
     src.write_bytes(b"0123456789ABCDEF")
     import time
@@ -80,13 +78,14 @@ def test_engine_request_pump_and_cancel(tmp_path):
         produced[job.key.clip_id] = str(target)
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     _project, plan = _make_plan()
     key = PreviewSegmentKey(
-        clip_id="clip-x", start=0.0, end=2.0,
-        quality="standard", params_hash="p",
+        clip_id="clip-x",
+        start=0.0,
+        end=2.0,
+        quality="standard",
+        params_hash="p",
     )
     job = PreviewJob(key=key, plan=plan, start=0.0, duration=2.0)
     assert engine.request(job)["status"] == "pending"
@@ -118,13 +117,14 @@ def test_engine_obsolete_task_does_not_store(tmp_path):
         target.write_bytes(b"late")
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     _project, plan = _make_plan()
     key = PreviewSegmentKey(
-        clip_id="clip-o", start=0.0, end=2.0,
-        quality="standard", params_hash="p",
+        clip_id="clip-o",
+        start=0.0,
+        end=2.0,
+        quality="standard",
+        params_hash="p",
     )
     job = PreviewJob(key=key, plan=plan)
     engine.request(job)
@@ -148,13 +148,14 @@ def test_engine_paused_during_playback(tmp_path):
         target.write_bytes(b"s")
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     _project, plan = _make_plan()
     key = PreviewSegmentKey(
-        clip_id="clip-p", start=0.0, end=2.0,
-        quality="standard", params_hash="p",
+        clip_id="clip-p",
+        start=0.0,
+        end=2.0,
+        quality="standard",
+        params_hash="p",
     )
     engine.request(PreviewJob(key=key, plan=plan))
     engine.set_playing(True)
@@ -265,8 +266,6 @@ def test_invalidate_clip_keeps_other_clips_queued(tmp_path):
     assert engine.cache.lookup(key_a) is None
 
 
-
-
 def test_identical_request_during_render_does_not_cancel_it(tmp_path):
     """Un tick d'interface ne doit jamais annuler le rendu en vol."""
     from core.preview_cache import DiskPreviewCache
@@ -284,9 +283,7 @@ def test_identical_request_during_render_does_not_cancel_it(tmp_path):
         target.write_bytes(b"segment")
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     _project, plan = _make_plan()
     key = _key(clip="clip-t", params="pt")
     job = PreviewJob(key=key, plan=plan)
@@ -314,9 +311,7 @@ def test_invalidated_inflight_render_does_not_write(tmp_path):
         target.write_bytes(b"late")
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     holder["engine"] = engine
     _project, plan = _make_plan()
     key = _key(clip="clip-z", params="pz")
@@ -341,9 +336,7 @@ def test_cancelled_inflight_render_does_not_write(tmp_path):
         target.write_bytes(b"late")
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     holder["engine"] = engine
     _project, plan = _make_plan()
     key = _key(clip="clip-c", params="pc")
@@ -410,7 +403,6 @@ def test_fallback_source_prefers_topmost_layer(tmp_path):
     assert engine.fallback_source(_job_for(empty, clip="x")) == ""
 
 
-
 def test_last_error_clears_after_successful_render(tmp_path):
     """Une erreur transitoire ne reste pas collee a l'etat publie."""
     from core.preview_cache import DiskPreviewCache
@@ -427,9 +419,7 @@ def test_last_error_clears_after_successful_render(tmp_path):
         target.write_bytes(b"ok")
         return str(target)
 
-    engine = PreviewEngine(
-        task_queue=TaskQueue(), cache=cache, render_fn=fake_render
-    )
+    engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=fake_render)
     _project, plan = _make_plan()
     engine.request(_job_for(plan, clip="ko", params="p1"))
     engine.pump(4)
@@ -457,8 +447,6 @@ def test_finished_key_can_be_requested_again(tmp_path):
     assert calls == ["again-1", "again-1"]
 
 
-
-
 def test_request_stops_when_subtitles_unsupported(tmp_path, monkeypatch):
     """Sans libass, l'apercu ne relance pas un rendu voue a l'echec."""
     from dataclasses import replace
@@ -468,9 +456,7 @@ def test_request_stops_when_subtitles_unsupported(tmp_path, monkeypatch):
     from core.subtitle_io import SubtitleCue
     from core.task_queue import TaskQueue
 
-    monkeypatch.setattr(
-        "core.filter_graph.ffmpeg_supports_subtitles", lambda: False
-    )
+    monkeypatch.setattr("core.filter_graph.ffmpeg_supports_subtitles", lambda: False)
     _project, base_plan = _make_plan()
     plan = replace(
         base_plan,

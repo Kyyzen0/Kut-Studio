@@ -24,8 +24,12 @@ def window(qtbot, monkeypatch):
 
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
-    monkeypatch.setattr("ui.main_window.QMessageBox.warning", lambda *_, **__: QMessageBox.Yes)
-    monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_, **__: QMessageBox.Yes)
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.warning", lambda *_, **__: QMessageBox.Yes
+    )
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.question", lambda *_, **__: QMessageBox.Yes
+    )
     main = MainWindow()
     qtbot.addWidget(main)
     if getattr(main, "timeline_timer", None) is not None:
@@ -71,7 +75,10 @@ def test_open_nested_clip_navigates_with_breadcrumb_parent_back_forward(window):
     window.open_nested_clip(result.clip.id)
     bar = window.timeline_panel.sequence_bar
     assert window.project.active_sequence_id == result.sequence.id
-    assert bar.breadcrumb_names == [window.project.get_sequence(main_id).name, "Intro nest"]
+    assert bar.breadcrumb_names == [
+        window.project.get_sequence(main_id).name,
+        "Intro nest",
+    ]
     assert bar.active_name == "Intro nest"
     assert window.playhead_seconds == pytest.approx(1.0)  # même image dans la séquence
     assert "Intro nest" in window.project_label.text()
@@ -93,11 +100,17 @@ def test_double_click_on_a_nested_clip_opens_it(window, qtbot):
     panel._sync_mounted_clips(refresh_views=True)
     from ui.timeline_widgets.clip_widget import ClipWidget
 
-    widget = next(w for w in panel.findChildren(ClipWidget) if w.view.id == result.clip.id)
+    widget = next(
+        w for w in panel.findChildren(ClipWidget) if w.view.id == result.clip.id
+    )
     center = QPointF(widget.width() / 2, widget.height() / 2)
     event = QMouseEvent(
-        QMouseEvent.MouseButtonDblClick, center, widget.mapToGlobal(center),
-        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+        QMouseEvent.MouseButtonDblClick,
+        center,
+        widget.mapToGlobal(center),
+        Qt.LeftButton,
+        Qt.LeftButton,
+        Qt.NoModifier,
     )
     widget.mouseDoubleClickEvent(event)
     assert window.project.active_sequence_id == result.sequence.id
@@ -125,9 +138,17 @@ def test_shortening_the_source_clamps_parent_clips_in_the_same_undo_step(window)
     parent = window.project.sequences[0]
     parent_clip = next(c for t in parent.tracks for c in t.clips if c.sequence_id)
     assert parent_clip.source_out == pytest.approx(2.0)
-    assert i18n.translate("sequence.history.clamped", count=1) in window.history.undo_label
+    assert (
+        i18n.translate("sequence.history.clamped", count=1) in window.history.undo_label
+    )
     window.undo_last()
-    restored = next(c for s in window.project.sequences for t in s.tracks for c in t.clips if c.sequence_id)
+    restored = next(
+        c
+        for s in window.project.sequences
+        for t in s.tracks
+        for c in t.clips
+        if c.sequence_id
+    )
     assert restored.source_out == pytest.approx(4.0)
 
 
@@ -180,14 +201,17 @@ def test_dropping_a_sequence_on_a_track_inserts_a_nested_clip(window, qtbot):
     window.show()
     track_index = next(i for i, t in enumerate(window.project.tracks) if t.id == "V2")
     grid_point = panel.timeline_grid.mapTo(
-        panel, QPoint(
+        panel,
+        QPoint(
             int(panel.left_margin + 3.0 * panel.pixels_per_second * panel.zoom) + 1,
             panel.row_top(track_index) + 5,
-        )
+        ),
     )
     mime = QMimeData()
     mime.setData("application/x-kut-studio-sequence-id", created.id.encode("utf-8"))
-    event = QDropEvent(QPointF(grid_point), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+    event = QDropEvent(
+        QPointF(grid_point), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier
+    )
     panel.dropEvent(event)
     clip = _nested_clip(window)
     assert clip.sequence_id == created.id and clip.track_id == "V2"
@@ -217,7 +241,11 @@ def test_render_queue_job_remembers_the_sequence(window, tmp_path):
 
 def test_sequence_translations_are_complete():
     keys = [key for key in i18n._TRANSLATIONS if key.startswith("sequence.")]
-    keys += [key for key in i18n._TRANSLATIONS if key.startswith("shortcuts.command.sequence_")]
+    keys += [
+        key
+        for key in i18n._TRANSLATIONS
+        if key.startswith("shortcuts.command.sequence_")
+    ]
     assert len(keys) > 40
     for key in keys:
         entry = i18n._TRANSLATIONS[key]
@@ -230,7 +258,10 @@ def test_sequence_shortcuts_are_bound_to_menu_actions(window):
 
     sequence_commands = [c.id for c in COMMANDS if c.category is Category.SEQUENCES]
     assert set(sequence_commands) >= {
-        "sequence_nest_selection", "sequence_parent", "sequence_back", "sequence_forward",
+        "sequence_nest_selection",
+        "sequence_parent",
+        "sequence_back",
+        "sequence_forward",
     }
     assert window.shortcuts.missing_handlers() == []
     assert window.nest_selection_action.shortcut().toString() == "Ctrl+Shift+N"
@@ -240,18 +271,25 @@ def test_sequence_widgets_follow_the_language(window):
     try:
         i18n.set_language("en")
         window._retranslate_ui()
-        assert window.timeline_panel.sequence_bar.sequences_button.text() == "Sequences ▾"
+        assert (
+            window.timeline_panel.sequence_bar.sequences_button.text() == "Sequences ▾"
+        )
         assert window.project_panel.sequence_view.title.text() == "PROJECT SEQUENCES"
     finally:
         i18n.set_language("fr")
 
 
-@pytest.mark.parametrize(("language", "plain", "nested"), [
-    ("fr", "Séquence", "Séquence imbriquée"),
-    ("en", "Sequence", "Nested sequence"),
-    ("es", "Secuencia", "Secuencia anidada"),
-])
-def test_default_sequence_names_are_offered_in_the_current_language(window, monkeypatch, language, plain, nested):
+@pytest.mark.parametrize(
+    ("language", "plain", "nested"),
+    [
+        ("fr", "Séquence", "Séquence imbriquée"),
+        ("en", "Sequence", "Nested sequence"),
+        ("es", "Secuencia", "Secuencia anidada"),
+    ],
+)
+def test_default_sequence_names_are_offered_in_the_current_language(
+    window, monkeypatch, language, plain, nested
+):
     """Le nom proposé dans la boîte de dialogue suit la langue (il était écrit en dur en français)."""
     offered = []
 

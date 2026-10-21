@@ -30,7 +30,9 @@ RULES = frozenset({"except-pass", "except-silent", "assert"})
 
 
 def _production_files() -> list[Path]:
-    files = sorted(path for package in ("core", "ui") for path in (ROOT / package).rglob("*.py"))
+    files = sorted(
+        path for package in ("core", "ui") for path in (ROOT / package).rglob("*.py")
+    )
     return files + [ROOT / "main.py", ROOT / "build.py"]
 
 
@@ -38,14 +40,19 @@ def _is_broad(handler: ast.ExceptHandler) -> bool:
     if handler.type is None:
         return True
     names = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-    return any(isinstance(name, ast.Name) and name.id in BROAD_EXCEPTIONS for name in names)
+    return any(
+        isinstance(name, ast.Name) and name.id in BROAD_EXCEPTIONS for name in names
+    )
 
 
 def _does_nothing(body: list[ast.stmt]) -> bool:
     return all(
         isinstance(statement, ast.Pass)
-        or (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant)
-            and statement.value.value is Ellipsis)
+        or (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and statement.value.value is Ellipsis
+        )
         for statement in body
     )
 
@@ -55,7 +62,12 @@ def _is_silent(handler: ast.ExceptHandler) -> bool:
     nodes = [node for statement in handler.body for node in ast.walk(statement)]
     if any(isinstance(node, (ast.Call, ast.Raise)) for node in nodes):
         return False
-    return not (handler.name and any(isinstance(node, ast.Name) and node.id == handler.name for node in nodes))
+    return not (
+        handler.name
+        and any(
+            isinstance(node, ast.Name) and node.id == handler.name for node in nodes
+        )
+    )
 
 
 class _Scanner(ast.NodeVisitor):
@@ -64,9 +76,13 @@ class _Scanner(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
         self.scope: list[str] = []
-        self.found: list[tuple[str, str, str, int]] = []   # (chemin, règle, portée, ligne)
+        self.found: list[
+            tuple[str, str, str, int]
+        ] = []  # (chemin, règle, portée, ligne)
 
-    def _visit_scoped(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> None:
+    def _visit_scoped(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+    ) -> None:
         self.scope.append(node.name)
         self.generic_visit(node)
         self.scope.pop()
@@ -74,7 +90,9 @@ class _Scanner(ast.NodeVisitor):
     visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _visit_scoped
 
     def _record(self, rule: str, node: ast.AST) -> None:
-        self.found.append((self.path, rule, ".".join(self.scope) or "<module>", node.lineno))
+        self.found.append(
+            (self.path, rule, ".".join(self.scope) or "<module>", node.lineno)
+        )
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if _is_broad(node) and _does_nothing(node.body):
@@ -97,7 +115,9 @@ def _scan_source(source: str, path: str = "<test>") -> list[tuple[str, str, str,
 def _violations() -> list[tuple[str, str, str, int]]:
     found: list[tuple[str, str, str, int]] = []
     for path in _production_files():
-        found += _scan_source(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix())
+        found += _scan_source(
+            path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix()
+        )
     return found
 
 
@@ -120,14 +140,16 @@ def test_no_broad_except_swallows_an_error_silently():
         f"{len(found)} « except » large(s) au corps vide (pass / ...) : l'erreur disparaît sans trace.\n"
         f"{_report(found)}\n"
         "Gardez la tolérance mais journalisez ce qui a échoué et la conséquence : "
-        "LOGGER.debug(\"…\", exc_info=True) pour une tolérance voulue, LOGGER.warning pour un échec à voir. "
+        'LOGGER.debug("…", exc_info=True) pour une tolérance voulue, LOGGER.warning pour un échec à voir. '
         "Sinon, ajoutez le site à tests/silent_failures_allowlist.json avec sa raison."
     )
 
 
 def test_no_broad_except_hides_an_error_behind_a_default_value():
     allowed = _allowed_keys()
-    found = [v for v in _violations() if v[1] == "except-silent" and v[:3] not in allowed]
+    found = [
+        v for v in _violations() if v[1] == "except-silent" and v[:3] not in allowed
+    ]
     assert not found, (
         f"{len(found)} « except » large(s) qui renvoient une valeur par défaut sans rien journaliser.\n"
         f"{_report(found)}\n"
@@ -150,11 +172,17 @@ def test_no_assert_statement_in_production_code():
 
 def test_every_allowlist_entry_is_complete_and_still_needed():
     entries = _allowlist()
-    keys = [(entry.get("path"), entry.get("rule"), entry.get("scope")) for entry in entries]
-    assert len(keys) == len(set(keys)), "doublon dans tests/silent_failures_allowlist.json"
+    keys = [
+        (entry.get("path"), entry.get("rule"), entry.get("scope")) for entry in entries
+    ]
+    assert len(keys) == len(set(keys)), (
+        "doublon dans tests/silent_failures_allowlist.json"
+    )
     current = {v[:3] for v in _violations()}
     for entry in entries:
-        assert set(entry) == {"path", "rule", "scope", "reason"}, f"entrée incomplète ou inconnue : {entry}"
+        assert set(entry) == {"path", "rule", "scope", "reason"}, (
+            f"entrée incomplète ou inconnue : {entry}"
+        )
         assert entry["rule"] in RULES, f"règle inconnue : {entry}"
         assert str(entry["reason"]).strip(), f"raison obligatoire : {entry}"
         assert (entry["path"], entry["rule"], entry["scope"]) in current, (
@@ -165,7 +193,7 @@ def test_every_allowlist_entry_is_complete_and_still_needed():
 
 def test_the_detector_sees_what_it_must_and_only_that():
     """Le garde ne doit ni rater un cas (il passerait à vide) ni crier sur un bloc qui journalise."""
-    source = '''
+    source = """
 import logging
 LOGGER = logging.getLogger(__name__)
 
@@ -235,7 +263,7 @@ class Panel:
 
 def check(value):
     assert value is not None
-'''
+"""
     found = _scan_source(source)
     assert [(rule, scope) for _path, rule, scope, _line in found] == [
         ("except-pass", "Panel.bare"),

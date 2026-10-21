@@ -52,13 +52,25 @@ def test_a_gpu_failure_and_the_session_wide_disable_reach_the_log_file(journal):
 
 
 def test_a_hardware_decode_failure_and_the_ban_reach_the_log_file(journal):
-    from core.decode_policy import FAILURES_BEFORE_BLOCK, DecodeChoice, DecodeHealth, DecodePurpose
+    from core.decode_policy import (
+        FAILURES_BEFORE_BLOCK,
+        DecodeChoice,
+        DecodeHealth,
+        DecodePurpose,
+    )
     from core.hardware_decoding import DecodeMode
 
     health = DecodeHealth()
-    choice = DecodeChoice(requested=DecodeMode.VIDEOTOOLBOX, used=DecodeMode.VIDEOTOOLBOX, codec="h264", reason="test")
+    choice = DecodeChoice(
+        requested=DecodeMode.VIDEOTOOLBOX,
+        used=DecodeMode.VIDEOTOOLBOX,
+        codec="h264",
+        reason="test",
+    )
     for _ in range(FAILURES_BEFORE_BLOCK):
-        health.record_failure(choice, DecodePurpose.SEGMENT, "VideoToolbox : erreur de décodeur")
+        health.record_failure(
+            choice, DecodePurpose.SEGMENT, "VideoToolbox : erreur de décodeur"
+        )
 
     text = journal()
     assert "repli CPU" in text and "VideoToolbox : erreur de décodeur" in text
@@ -77,20 +89,32 @@ def test_a_failed_tracking_analysis_is_logged_with_its_traceback(journal, monkey
         raise RuntimeError("corrélation impossible")
 
     monkeypatch.setattr(engine, "_analyze", boom)
-    start = TrackData.from_samples(30.0, {0: Sample(10.0, 10.0, 1.0, SampleStatus.MANUAL)}, source_size=(320, 180))
+    start = TrackData.from_samples(
+        30.0, {0: Sample(10.0, 10.0, 1.0, SampleStatus.MANUAL)}, source_size=(320, 180)
+    )
     request = TrackingRequest(
-        clip_id="v", media_path="/absent.mp4", media_size=(320, 180), rate=30.0,
-        trackers=(Tracker(id="t1", data=start),), start_index=0, end_index=5,
+        clip_id="v",
+        media_path="/absent.mp4",
+        media_size=(320, 180),
+        rate=30.0,
+        trackers=(Tracker(id="t1", data=start),),
+        start_index=0,
+        end_index=5,
     )
 
     result = run_tracking(request)
 
     assert result.state == "failed"
     text = journal()
-    assert "Tracking : l'analyse a échoué" in text and "RuntimeError: corrélation impossible" in text
+    assert (
+        "Tracking : l'analyse a échoué" in text
+        and "RuntimeError: corrélation impossible" in text
+    )
 
 
-def test_a_tracking_binding_that_cannot_be_derived_is_logged_not_swallowed(journal, monkeypatch):
+def test_a_tracking_binding_that_cannot_be_derived_is_logged_not_swallowed(
+    journal, monkeypatch
+):
     import core.tracking_bindings as bindings
     from core.project_model import Clip, MediaAsset, Project, Track
     from core.tracking_model import ClipTracking, TrackLink
@@ -100,14 +124,20 @@ def test_a_tracking_binding_that_cannot_be_derived_is_logged_not_swallowed(journ
 
     monkeypatch.setattr(bindings, "_compute_state", boom)
     project = Project(name="P", width=320, height=180, fps=30.0)
-    project.media_assets.append(MediaAsset("m", "/absent.mp4", "m", 1.0, 320, 180, 30.0, "video"))
+    project.media_assets.append(
+        MediaAsset("m", "/absent.mp4", "m", 1.0, 320, 180, 30.0, "video")
+    )
     follower = Clip("f", "m", "V1", 0.0, 0.0, 1.0)
-    follower.tracking = ClipTracking(links=(TrackLink(source_clip_id="v", tracker_ids=("t1",)),))
+    follower.tracking = ClipTracking(
+        links=(TrackLink(source_clip_id="v", tracker_ids=("t1",)),)
+    )
     project.tracks.insert(0, Track("V1", "V1", "video", clips=[follower]))
 
     state = bindings.effective_clip_state(follower, bindings.TrackingContext(project))
 
-    assert state.warnings and "matrice singulière" in state.warnings[0]            # le rendu continue, sans suivi
+    assert (
+        state.warnings and "matrice singulière" in state.warnings[0]
+    )  # le rendu continue, sans suivi
     text = journal()
     assert "impossible à dériver" in text and "ValueError: matrice singulière" in text
 
@@ -122,14 +152,20 @@ def test_a_cache_file_that_cannot_be_deleted_is_logged(journal, tmp_path, monkey
     victim = cache.directory / "segment.mp4"
     victim.parent.mkdir(parents=True, exist_ok=True)
     victim.write_bytes(b"x")
-    monkeypatch.setattr(Path, "unlink", lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("fichier ouvert")))
+    monkeypatch.setattr(
+        Path,
+        "unlink",
+        lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("fichier ouvert")),
+    )
 
     assert cache._unlink("segment.mp4") is False
 
     assert "impossible à supprimer" in journal() and "fichier ouvert" in journal()
 
 
-def test_a_corrupt_tracking_cache_entry_is_logged_and_ignored(journal, tmp_path, monkeypatch):
+def test_a_corrupt_tracking_cache_entry_is_logged_and_ignored(
+    journal, tmp_path, monkeypatch
+):
     from core.tracking_engine import TrackingCache
 
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
@@ -146,12 +182,14 @@ def test_a_corrupt_tracking_cache_entry_is_logged_and_ignored(journal, tmp_path,
     assert "forme inattendue" in journal()
 
 
-def test_an_unreadable_hardware_cache_is_logged_but_a_missing_one_is_not(journal, tmp_path):
+def test_an_unreadable_hardware_cache_is_logged_but_a_missing_one_is_not(
+    journal, tmp_path
+):
     from core.hardware_cache import CapabilityService
 
     absent = CapabilityService(cache_path=tmp_path / "absent.json", validate=False)
     assert absent._read_disk() is None
-    assert "Cache des capacités" not in journal()                              # premier démarrage : rien d'anormal
+    assert "Cache des capacités" not in journal()  # premier démarrage : rien d'anormal
 
     broken = tmp_path / "broken.json"
     broken.write_text('{"schema": 2, "encoders": 5}', encoding="utf-8")
@@ -161,7 +199,7 @@ def test_an_unreadable_hardware_cache_is_logged_but_a_missing_one_is_not(journal
 
 PRINT_ALLOWED = {
     "core/cli.py": "la ligne de commande écrit sur la sortie standard et la sortie d'erreur : c'est son rôle, et son contrat "
-                   "(``--json``, codes de sortie) ; le journal de l'application ne remplace pas ce qu'un script lit sur le terminal",
+    "(``--json``, codes de sortie) ; le journal de l'application ne remplace pas ce qu'un script lit sur le terminal",
 }
 """Les seuls fichiers qui peuvent appeler ``print``, chacun avec sa raison."""
 
@@ -174,8 +212,11 @@ def _print_calls(root: Path) -> dict[str, list[int]]:
         for path in (root / folder).rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             lines = [
-                node.lineno for node in ast.walk(tree)
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"
+                node.lineno
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "print"
             ]
             if lines:
                 calls[path.relative_to(root).as_posix()] = lines
@@ -185,7 +226,12 @@ def _print_calls(root: Path) -> dict[str, list[int]]:
 def test_no_print_remains_in_core_or_ui():
     """Un ``print`` est invisible dans l'application empaquetée : tout passe par le journal (hors la ligne de commande)."""
     root = Path(__file__).resolve().parent.parent
-    offenders = [f"{name}:{line}" for name, lines in _print_calls(root).items() if name not in PRINT_ALLOWED for line in lines]
+    offenders = [
+        f"{name}:{line}"
+        for name, lines in _print_calls(root).items()
+        if name not in PRINT_ALLOWED
+        for line in lines
+    ]
     assert not offenders, f"print() dans le code de l'application : {offenders}"
 
 
@@ -194,4 +240,6 @@ def test_a_file_allowed_to_print_still_prints():
     root = Path(__file__).resolve().parent.parent
     printing = _print_calls(root)
     for name, reason in PRINT_ALLOWED.items():
-        assert reason.strip() and name in printing, f"{name} n'appelle plus print : retirer l'entrée de PRINT_ALLOWED"
+        assert reason.strip() and name in printing, (
+            f"{name} n'appelle plus print : retirer l'entrée de PRINT_ALLOWED"
+        )

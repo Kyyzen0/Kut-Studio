@@ -14,8 +14,20 @@ import pytest
 
 from core import time_commands
 from core.composition_ops import CompositionError, convert_to_composition
-from core.graphics import GraphicOverlay, GraphicType, add_graphic_clip, graphic_defaults, update_graphic
-from core.mograph_layers import LayerError, group_layers, layer_tree, scene_for_project, set_layer_locked
+from core.graphics import (
+    GraphicOverlay,
+    GraphicType,
+    add_graphic_clip,
+    graphic_defaults,
+    update_graphic,
+)
+from core.mograph_layers import (
+    LayerError,
+    group_layers,
+    layer_tree,
+    scene_for_project,
+    set_layer_locked,
+)
 from core.mograph_presets import save_preset
 from core.project_io import load_project, save_project
 from core.render_plan import build_render_plan
@@ -24,12 +36,22 @@ from core.scripting import ScriptInvalid, Session, apply_script, parse_script
 from core.scripting.verbs import VERBS
 from core.sequences import create_sequence_from_selection
 from core.time_ops import (
-    add_speed_point, clear_speed_curve, insert_hold, set_clip_interpolation, set_clip_preserve_pitch, set_clip_remap_audio,
+    add_speed_point,
+    clear_speed_curve,
+    insert_hold,
+    set_clip_interpolation,
+    set_clip_preserve_pitch,
+    set_clip_remap_audio,
 )
 from core.time_presets import TimePreset, apply_preset
 from core.time_remapping import TimeRemapping
 from core.timeline_operations import (
-    find_clip, remove_clip_freeze_frame, reset_clip_time_remapping, set_clip_freeze_duration, set_clip_freeze_frame, set_clip_reverse,
+    find_clip,
+    remove_clip_freeze_frame,
+    reset_clip_time_remapping,
+    set_clip_freeze_duration,
+    set_clip_freeze_frame,
+    set_clip_reverse,
     set_clip_speed,
 )
 from core.tracking_ops import TrackingError, set_stabilization
@@ -48,10 +70,20 @@ def test_adding_a_scene_makes_a_graphic_clip_with_a_technical_media(tmp_path):
     project, clip, scene = project_with_scene(tmp_path, duration=4.0)
     track = next(t for t in project.tracks if t.id == clip.track_id)
     assert track.type == "graphics" and clip in track.clips
-    assert (clip.label, clip.duration, clip.source_in, clip.source_out) == ("scene", 4.0, 0.0, 4.0)
+    assert (clip.label, clip.duration, clip.source_in, clip.source_out) == (
+        "scene",
+        4.0,
+        0.0,
+        4.0,
+    )
     graphic = clip.graphic
-    assert graphic.type is GraphicType.SCENE3D and graphic.source_path == str(scene.resolve())
-    assert (graphic.width, graphic.height) == (project.width, project.height)            # taille de rendu = taille du projet
+    assert graphic.type is GraphicType.SCENE3D and graphic.source_path == str(
+        scene.resolve()
+    )
+    assert (graphic.width, graphic.height) == (
+        project.width,
+        project.height,
+    )  # taille de rendu = taille du projet
     asset = next(a for a in project.media_assets if a.id == clip.asset_id)
     assert asset.media_type == "graphic" and asset.path == str(scene.resolve())
     assert graphic.fill_color and not graphic.background_enabled
@@ -61,7 +93,9 @@ def test_a_prepared_graphic_is_accepted_and_its_path_is_normalised(tmp_path):
     project = base_project()
     scene = write_scene(tmp_path)
     prepared = graphic_defaults(GraphicType.SCENE3D, source_path=str(scene))
-    clip = add_graphic_clip(project, "scene3d", timeline_start=0.0, graphic=prepared, clip_id="x")
+    clip = add_graphic_clip(
+        project, "scene3d", timeline_start=0.0, graphic=prepared, clip_id="x"
+    )
     assert clip.graphic.source_path == str(scene.resolve())
 
 
@@ -70,15 +104,28 @@ def test_a_missing_or_wrong_file_is_refused_and_leaves_nothing_behind(tmp_path, 
     project = base_project()
     before_tracks, before_assets = len(project.tracks), len(project.media_assets)
     with pytest.raises(Scene3DError):
-        add_graphic_clip(project, GraphicType.SCENE3D, timeline_start=0.0, source_path=str(tmp_path / name))
-    assert (len(project.tracks), len(project.media_assets)) == (before_tracks, before_assets)
+        add_graphic_clip(
+            project,
+            GraphicType.SCENE3D,
+            timeline_start=0.0,
+            source_path=str(tmp_path / name),
+        )
+    assert (len(project.tracks), len(project.media_assets)) == (
+        before_tracks,
+        before_assets,
+    )
 
 
 def test_an_unreadable_scene_is_refused(tmp_path):
     bad = tmp_path / "bad.kut3d"
     bad.write_text("{ pas du json", encoding="utf-8")
     with pytest.raises(Scene3DError):
-        add_graphic_clip(base_project(), GraphicType.SCENE3D, timeline_start=0.0, source_path=str(bad))
+        add_graphic_clip(
+            base_project(),
+            GraphicType.SCENE3D,
+            timeline_start=0.0,
+            source_path=str(bad),
+        )
 
 
 def test_a_scene_without_a_file_cannot_exist():
@@ -96,7 +143,9 @@ def test_the_file_of_a_scene_cannot_be_swapped(tmp_path):
     other = write_scene(tmp_path / "other")
     with pytest.raises(ValueError, match="ne se change pas"):
         update_graphic(clip, "source_path", str(other))
-    assert update_graphic(clip, "source_path", clip.graphic.source_path) is clip.graphic        # inchangé : pas un refus
+    assert (
+        update_graphic(clip, "source_path", clip.graphic.source_path) is clip.graphic
+    )  # inchangé : pas un refus
     update_graphic(clip, "visible", False)
     assert clip.graphic.visible is False
 
@@ -104,7 +153,14 @@ def test_the_file_of_a_scene_cannot_be_swapped(tmp_path):
 def test_a_script_cannot_add_a_scene_graphic_without_a_file():
     assert "scene3d" not in VERBS["add_graphic"].params[0].choices
     with pytest.raises(ScriptInvalid):
-        parse_script({"kut_script": 1, "ops": [{"op": "add_graphic", "graphic": "scene3d", "at": 0, "duration": 1}]})
+        parse_script(
+            {
+                "kut_script": 1,
+                "ops": [
+                    {"op": "add_graphic", "graphic": "scene3d", "at": 0, "duration": 1}
+                ],
+            }
+        )
 
 
 def test_a_scene_is_not_animatable_in_size(tmp_path):
@@ -141,7 +197,10 @@ def test_a_nested_sequence_keeps_the_scene(tmp_path):
     result = create_sequence_from_selection(project, [clip.id], "Imbriquée")
     nested = next(s for s in project.sequences if s.id == result.clip.sequence_id)
     moved = next(c for t in nested.tracks for c in t.clips if c.id == clip.id)
-    assert moved.graphic.source_path == str(scene.resolve()) and moved.graphic.type is GraphicType.SCENE3D
+    assert (
+        moved.graphic.source_path == str(scene.resolve())
+        and moved.graphic.type is GraphicType.SCENE3D
+    )
 
 
 # --- Refus : vitesse et remappage du temps -----------------------------------------------------------------------------
@@ -160,12 +219,24 @@ def _speed_edits(project, clip_id):
         "interpolation": lambda: set_clip_interpolation(project, clip_id, "blending"),
         "pitch": lambda: set_clip_preserve_pitch(project, clip_id, False),
         "audio": lambda: set_clip_remap_audio(project, clip_id, False),
-        "preset": lambda: apply_preset(project, clip_id, TimePreset.SLOW_50, local_time=1.0, fps=25.0),
-        "command_speed": lambda: time_commands.apply_time_command(project, clip_id, "speed", 2.0),
-        "command_reverse": lambda: time_commands.apply_time_command(project, clip_id, "reverse", True),
-        "command_hold": lambda: time_commands.apply_time_command(project, clip_id, "hold", local_time=1.0, fps=25.0),
-        "command_add_point": lambda: time_commands.apply_time_command(project, clip_id, "add_point", local_time=1.0, fps=25.0),
-        "command_pitch": lambda: time_commands.apply_time_command(project, clip_id, "preserve_pitch", False),
+        "preset": lambda: apply_preset(
+            project, clip_id, TimePreset.SLOW_50, local_time=1.0, fps=25.0
+        ),
+        "command_speed": lambda: time_commands.apply_time_command(
+            project, clip_id, "speed", 2.0
+        ),
+        "command_reverse": lambda: time_commands.apply_time_command(
+            project, clip_id, "reverse", True
+        ),
+        "command_hold": lambda: time_commands.apply_time_command(
+            project, clip_id, "hold", local_time=1.0, fps=25.0
+        ),
+        "command_add_point": lambda: time_commands.apply_time_command(
+            project, clip_id, "add_point", local_time=1.0, fps=25.0
+        ),
+        "command_pitch": lambda: time_commands.apply_time_command(
+            project, clip_id, "preserve_pitch", False
+        ),
         "_clip": clip,
     }
 
@@ -191,9 +262,13 @@ def test_resetting_the_speed_of_a_scene_is_harmless(tmp_path):
 
 def test_the_speed_of_a_text_layer_is_not_affected_by_the_new_guard():
     project = base_project()
-    title = add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=3.0)
+    title = add_graphic_clip(
+        project, GraphicType.TEXT, timeline_start=0.0, duration=3.0
+    )
     ensure_fixed_speed(title)
-    assert not is_scene3d_clip(title) and not is_scene3d_clip(SimpleNamespace(graphic=None))
+    assert not is_scene3d_clip(title) and not is_scene3d_clip(
+        SimpleNamespace(graphic=None)
+    )
     set_clip_speed(project, title.id, 2.0)
     assert title.time_remapping.speed == 2.0
 
@@ -203,7 +278,12 @@ def test_every_time_script_verb_refuses_a_scene(tmp_path):
     samples = [
         {"op": "set_clip_speed", "clip": clip.id, "speed": 2.0},
         {"op": "set_clip_reverse", "clip": clip.id, "reverse": True},
-        {"op": "set_clip_freeze_frame", "clip": clip.id, "source_time": 0.5, "duration": 1.0},
+        {
+            "op": "set_clip_freeze_frame",
+            "clip": clip.id,
+            "source_time": 0.5,
+            "duration": 1.0,
+        },
         {"op": "reset_clip_time_remapping", "clip": clip.id},
         {"op": "add_speed_point", "clip": clip.id, "at": 1.0, "value": 2.0},
         {"op": "insert_hold", "clip": clip.id, "at": 1.0},
@@ -215,7 +295,9 @@ def test_every_time_script_verb_refuses_a_scene(tmp_path):
     before = _snapshot(project)
     for operation in samples:
         session = Session(project)
-        report = apply_script(session, parse_script({"kut_script": 1, "ops": [operation]}))
+        report = apply_script(
+            session, parse_script({"kut_script": 1, "ops": [operation]})
+        )
         assert not report.ok, operation
         assert _snapshot(project) == before, operation
 
@@ -225,16 +307,22 @@ def test_every_time_script_verb_refuses_a_scene(tmp_path):
 
 def test_a_scene_cannot_be_saved_as_a_preset(tmp_path):
     project, clip, _scene = project_with_scene(tmp_path)
-    title = add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=3.0)
+    title = add_graphic_clip(
+        project, GraphicType.TEXT, timeline_start=0.0, duration=3.0
+    )
     settings = tmp_path / "settings"
     for ids in ([clip.id], [title.id, clip.id]):
         with pytest.raises(LayerError, match="preset"):
             save_preset(project, ids, "Ma scène", settings_dir=settings)
-    assert not (settings / "mograph_presets").exists() or not list((settings / "mograph_presets").iterdir())
-    group = group_layers(project, [clip.id])                                   # un groupe emporte son contenu
+    assert not (settings / "mograph_presets").exists() or not list(
+        (settings / "mograph_presets").iterdir()
+    )
+    group = group_layers(project, [clip.id])  # un groupe emporte son contenu
     with pytest.raises(LayerError, match="preset"):
         save_preset(project, [group.id], "Groupe", settings_dir=settings)
-    assert save_preset(project, [title.id], "Titre", settings_dir=settings).name == "Titre"      # les autres calques : inchangé
+    assert (
+        save_preset(project, [title.id], "Titre", settings_dir=settings).name == "Titre"
+    )  # les autres calques : inchangé
 
 
 def test_a_scene_cannot_enter_a_composition(tmp_path):
@@ -249,7 +337,9 @@ def test_a_scene_has_no_stabilization_nor_transition(tmp_path):
     project, clip, _scene = project_with_scene(tmp_path)
     with pytest.raises(TrackingError):
         set_stabilization(project, clip.id)
-    other = add_graphic_clip(project, GraphicType.TEXT, timeline_start=6.0, duration=2.0)
+    other = add_graphic_clip(
+        project, GraphicType.TEXT, timeline_start=6.0, duration=2.0
+    )
     with pytest.raises(ValueError, match="vidéo"):
         add_transition(project, clip.id, other.id)
     assert clip.tracking is None and project.transitions == []
@@ -260,11 +350,18 @@ def test_a_scene_has_no_stabilization_nor_transition(tmp_path):
 
 def test_a_project_with_a_scene_builds_a_render_plan_that_draws_it(tmp_path):
     project, clip, scene = project_with_scene(tmp_path)
-    title = add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=3.0, clip_id="title")
+    title = add_graphic_clip(
+        project, GraphicType.TEXT, timeline_start=0.0, duration=3.0, clip_id="title"
+    )
     plan = build_render_plan(project)
-    assert sorted(layer.clip_id for layer in plan.graphics_layers) == sorted([title.id, clip.id])
+    assert sorted(layer.clip_id for layer in plan.graphics_layers) == sorted(
+        [title.id, clip.id]
+    )
     layer = next(item for item in plan.graphics_layers if item.clip_id == clip.id)
-    assert layer.graphic.type is GraphicType.SCENE3D and layer.graphic.source_path == str(scene.resolve())
+    assert (
+        layer.graphic.type is GraphicType.SCENE3D
+        and layer.graphic.source_path == str(scene.resolve())
+    )
     assert plan.warnings == () and plan.missing_media == ()
 
 
@@ -274,7 +371,9 @@ def test_a_loaded_version_22_project_builds_its_plan(tmp_path):
     save_project(project, path)
     assert json.loads(path.read_text(encoding="utf-8"))["version"] == 22
     plan = build_render_plan(load_project(path))
-    assert [layer.clip_id for layer in plan.graphics_layers] == [clip.id] and plan.warnings == ()
+    assert [layer.clip_id for layer in plan.graphics_layers] == [
+        clip.id
+    ] and plan.warnings == ()
 
 
 def test_a_hidden_track_or_a_disabled_clip_gives_no_warning(tmp_path):
@@ -291,5 +390,6 @@ def test_a_scene_inside_a_nested_sequence_does_not_break_the_plan(tmp_path):
     create_sequence_from_selection(project, [clip.id], "Imbriquée")
     plan = build_render_plan(project)
     assert plan.warnings == () and plan.missing_media == ()
-    assert plan.nested_sequences and any(sub.plan.graphics_layers for sub in plan.nested_sequences)
-
+    assert plan.nested_sequences and any(
+        sub.plan.graphics_layers for sub in plan.nested_sequences
+    )

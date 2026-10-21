@@ -26,24 +26,36 @@ def test_the_public_names_are_frozen():
 
 def test_versions_are_major_dot_minor_and_describe_version_is_an_integer():
     assert re.fullmatch(r"\d+\.\d+", api.API_VERSION)
-    assert isinstance(api.DESCRIBE_VERSION, int) and api.DESCRIBE_VERSION == describe_module.DESCRIBE_VERSION >= 1
+    assert (
+        isinstance(api.DESCRIBE_VERSION, int)
+        and api.DESCRIBE_VERSION == describe_module.DESCRIBE_VERSION >= 1
+    )
 
 
 def test_the_signatures_are_frozen():
-    assert str(inspect.signature(api.describe)) == "(project: 'Project', *, check_media: 'bool' = False) -> 'dict[str, Any]'"
+    assert (
+        str(inspect.signature(api.describe))
+        == "(project: 'Project', *, check_media: 'bool' = False) -> 'dict[str, Any]'"
+    )
     assert str(inspect.signature(api.describe_json)) == (
-        "(project: 'Project', *, check_media: 'bool' = False, indent: 'int | None' = 2) -> 'str'")
+        "(project: 'Project', *, check_media: 'bool' = False, indent: 'int | None' = 2) -> 'str'"
+    )
 
 
 def test_every_public_callable_is_documented():
     for name in api.__all__:
         value = getattr(api, name)
         if callable(value):
-            assert (inspect.getdoc(value) or "").strip(), f"api.{name} n'a pas de docstring"
+            assert (inspect.getdoc(value) or "").strip(), (
+                f"api.{name} n'a pas de docstring"
+            )
 
 
 def test_the_session_exposes_describe_with_the_same_defaults():
     from core.scripting.session import Session
 
     parameters = inspect.signature(Session.describe).parameters
-    assert list(parameters) == ["self", "check_media"] and parameters["check_media"].default is False
+    assert (
+        list(parameters) == ["self", "check_media"]
+        and parameters["check_media"].default is False
+    )

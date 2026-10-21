@@ -26,7 +26,12 @@ def media(tmp_path):
 
 def key(media, frame=3, **overrides):
     engine = OpticalFlowEngine(FlowQuality.BALANCED)
-    values = {"width": W, "height": H, "conformation": "scale=160:90", "identity": engine.identity}
+    values = {
+        "width": W,
+        "height": H,
+        "conformation": "scale=160:90",
+        "identity": engine.identity,
+    }
     values.update(overrides)
     return cache_key(media, frame, **values)
 
@@ -43,16 +48,22 @@ def real_pair() -> tuple[OpticalFlowEngine, np.ndarray, np.ndarray, PairAnalysis
 # ---------------------------------------------------------------------------
 
 
-def test_the_key_is_stable_and_depends_on_everything_that_changes_the_result(media, tmp_path):
+def test_the_key_is_stable_and_depends_on_everything_that_changes_the_result(
+    media, tmp_path
+):
     base = key(media)
     assert key(media) == base
-    assert key(media, 4) != base                                                    # une autre paire
-    assert key(media, width=320, height=180) != base                                # une autre grille de travail
-    assert key(media, conformation="scale=160:90,pad=160:90:0:0") != base           # un autre cadrage
-    assert key(media, identity=OpticalFlowEngine(FlowQuality.BEST).identity) != base  # un autre moteur ou réglage
+    assert key(media, 4) != base  # une autre paire
+    assert key(media, width=320, height=180) != base  # une autre grille de travail
+    assert (
+        key(media, conformation="scale=160:90,pad=160:90:0:0") != base
+    )  # un autre cadrage
+    assert (
+        key(media, identity=OpticalFlowEngine(FlowQuality.BEST).identity) != base
+    )  # un autre moteur ou réglage
     other = tmp_path / "other.mp4"
     other.write_bytes(b"0" * 1000)
-    assert key(str(other)) != base                                                  # un autre média (un proxy, par exemple)
+    assert key(str(other)) != base  # un autre média (un proxy, par exemple)
 
 
 def test_a_modified_media_file_changes_the_key(media):
@@ -67,7 +78,12 @@ def test_the_key_never_depends_on_the_speed_or_the_clip(media):
     import inspect
 
     assert set(inspect.signature(cache_key).parameters) == {
-        "media_path", "first_frame", "width", "height", "conformation", "identity"
+        "media_path",
+        "first_frame",
+        "width",
+        "height",
+        "conformation",
+        "identity",
     }
 
 
@@ -85,7 +101,9 @@ def test_a_pair_comes_back_identical_and_makes_the_same_image(tmp_path, media):
     assert restored is not None and restored.status is Fallback.NONE
     cold = engine.interpolator.interpolate(frame_a, frame_b, pair, 0.5)
     warm = engine.interpolator.interpolate(frame_a, frame_b, restored, 0.5)
-    assert np.array_equal(cold.pixels, warm.pixels)                                 # le cache ne change jamais le rendu
+    assert np.array_equal(
+        cold.pixels, warm.pixels
+    )  # le cache ne change jamais le rendu
 
 
 @pytest.mark.parametrize("status", [Fallback.SCENE_CUT, Fallback.IDENTICAL])
@@ -93,7 +111,9 @@ def test_a_cut_or_identical_pair_is_cached_without_any_field(tmp_path, media, st
     cache = FlowCache(tmp_path / "flow")
     cache.store(key(media), PairAnalysis(status))
     restored = cache.load(key(media))
-    assert restored is not None and restored.status is status and restored.forward is None
+    assert (
+        restored is not None and restored.status is status and restored.forward is None
+    )
     assert cache.stats()["bytes"] < 2000
 
 
@@ -110,7 +130,9 @@ def test_an_entry_with_an_inconsistent_shape_is_discarded(tmp_path, media):
     (tmp_path / "flow").mkdir()
     path = tmp_path / "flow" / f"pair-{key(media)}.npz"
     with open(path, "wb") as handle:
-        np.savez(handle, flow=np.zeros((2, 4, 4), np.float16), status=np.array([0], np.int8))
+        np.savez(
+            handle, flow=np.zeros((2, 4, 4), np.float16), status=np.array([0], np.int8)
+        )
     assert cache.load(key(media)) is None and not path.exists()
 
 
@@ -123,22 +145,28 @@ def test_a_write_is_atomic_and_leaves_no_temporary_file(tmp_path, media, monkeyp
         raise OSError("disque plein")
 
     monkeypatch.setattr(os, "replace", failing)
-    cache.store(key(media), pair)                                                   # l'échec d'écriture est ignoré
+    cache.store(key(media), pair)  # l'échec d'écriture est ignoré
     monkeypatch.setattr(os, "replace", real_replace)
-    assert list((tmp_path / "flow").iterdir()) == []                                # ni entrée partielle ni ``.tmp``
+    assert list((tmp_path / "flow").iterdir()) == []  # ni entrée partielle ni ``.tmp``
     assert cache.load(key(media)) is None
 
 
-def test_cleanup_removes_writes_abandoned_by_a_killed_process_but_never_a_live_one(tmp_path):
+def test_cleanup_removes_writes_abandoned_by_a_killed_process_but_never_a_live_one(
+    tmp_path,
+):
     cache = FlowCache(tmp_path / "flow")
     (tmp_path / "flow").mkdir()
     abandoned = tmp_path / "flow" / ".pair-abc.123.tmp.npz"
     live = tmp_path / "flow" / ".frames-def.456.tmp.mkv"
     for item in (abandoned, live):
         item.write_bytes(b"partial")
-    os.utime(abandoned, (1000, 1000))                                               # intact depuis très longtemps
-    assert cache.cleanup_orphans() == 1 and not abandoned.exists() and live.exists()   # l'écriture vivante d'une autre instance reste
-    assert cache.purge() >= 0 and list((tmp_path / "flow").iterdir()) == []         # une purge explicite emporte tout
+    os.utime(abandoned, (1000, 1000))  # intact depuis très longtemps
+    assert (
+        cache.cleanup_orphans() == 1 and not abandoned.exists() and live.exists()
+    )  # l'écriture vivante d'une autre instance reste
+    assert (
+        cache.purge() >= 0 and list((tmp_path / "flow").iterdir()) == []
+    )  # une purge explicite emporte tout
 
 
 # ---------------------------------------------------------------------------
@@ -151,11 +179,17 @@ def test_eviction_removes_the_least_recently_used_entries_first(tmp_path, media)
     pair = real_pair()[3]
     for frame in range(3):
         cache.store(key(media, frame), pair)
-        path = next(item for item in (tmp_path / "flow").glob("pair-*.npz") if item.name == f"pair-{key(media, frame)}.npz")
+        path = next(
+            item
+            for item in (tmp_path / "flow").glob("pair-*.npz")
+            if item.name == f"pair-{key(media, frame)}.npz"
+        )
         os.utime(path, (1000 + frame, 1000 + frame))
     size = cache.stats()["bytes"] // 3
     assert cache.stats()["entries"] == 3
-    assert cache.load(key(media, 0)) is not None                                    # la plus ancienne vient d'être lue : la plus récente
+    assert (
+        cache.load(key(media, 0)) is not None
+    )  # la plus ancienne vient d'être lue : la plus récente
     freed = cache.evict_bytes(size)
     assert freed >= size and cache.stats()["entries"] == 2
     assert cache.load(key(media, 1)) is None and cache.load(key(media, 0)) is not None
@@ -181,7 +215,9 @@ def test_two_threads_writing_the_same_key_never_share_a_temporary_file(tmp_path,
     import threading
 
     cache = FlowCache(tmp_path / "flow")
-    assert cache.stream_temporary("k") != cache.stream_temporary("k")                  # un nom par appel, pas par processus
+    assert cache.stream_temporary("k") != cache.stream_temporary(
+        "k"
+    )  # un nom par appel, pas par processus
     pair, errors = real_pair()[3], []
 
     def write():
@@ -197,18 +233,26 @@ def test_two_threads_writing_the_same_key_never_share_a_temporary_file(tmp_path,
     for thread in threads:
         thread.join()
     assert not errors
-    assert cache.load(key(media)) is not None                                          # l'entrée finale est complète et lisible
-    assert [item.name for item in (tmp_path / "flow").iterdir()] == [f"pair-{key(media)}.npz"]    # aucun ``.tmp`` oublié
+    assert cache.load(key(media)) is not None  # l'entrée finale est complète et lisible
+    assert [item.name for item in (tmp_path / "flow").iterdir()] == [
+        f"pair-{key(media)}.npz"
+    ]  # aucun ``.tmp`` oublié
 
 
-def test_promoting_the_same_stream_twice_from_two_writers_keeps_both_writers_files_apart(tmp_path):
+def test_promoting_the_same_stream_twice_from_two_writers_keeps_both_writers_files_apart(
+    tmp_path,
+):
     cache = FlowCache(tmp_path / "flow")
     first, second = cache.stream_temporary("k"), cache.stream_temporary("k")
     first.write_bytes(b"a")
     second.write_bytes(b"b")
     cache.promote_stream(first, "k", {})
-    cache.promote_stream(second, "k", {})                                              # ne lève pas : son fichier n'a pas disparu
-    assert cache.stream_path("k").read_bytes() == b"b" and not first.exists() and not second.exists()
+    cache.promote_stream(second, "k", {})  # ne lève pas : son fichier n'a pas disparu
+    assert (
+        cache.stream_path("k").read_bytes() == b"b"
+        and not first.exists()
+        and not second.exists()
+    )
 
 
 def test_a_purge_removes_a_write_whose_timestamp_is_ahead_of_the_clock(tmp_path):

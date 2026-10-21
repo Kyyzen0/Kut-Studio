@@ -14,16 +14,29 @@ import pytest
 
 import kut3d
 from core import cli, mograph_stream, scene3d
-from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest, check_export_request
+from core.export_engine import (
+    ExportEngine,
+    ExportFormat,
+    ExportPreset,
+    ExportRequest,
+    check_export_request,
+)
 from core.export_runner import ExportStatus, run_export
 from core.mograph_ffmpeg import prepare_graphics_streams
 from core.project_io import save_project
 from core.render_plan import build_render_plan
 from core.scene3d_check import export_problems
-from tests.scene3d_render_samples import FPS, SIZE, project_with_background, write_animated_scene, write_static_scene
+from tests.scene3d_render_samples import (
+    FPS,
+    SIZE,
+    project_with_background,
+    write_animated_scene,
+    write_static_scene,
+)
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="FFmpeg absent"
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="FFmpeg absent",
 )
 
 W, H = SIZE
@@ -45,8 +58,13 @@ def _cache(tmp_path) -> Path:
 
 
 def _request(plan, path: Path) -> ExportRequest:
-    return ExportRequest(render_plan=plan, output_path=str(path), format=ExportFormat.MP4_H264,
-                         preset=ExportPreset(name="t", resolution=SIZE, crf=30, audio_bitrate="64k"), fps=int(FPS))
+    return ExportRequest(
+        render_plan=plan,
+        output_path=str(path),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(name="t", resolution=SIZE, crf=30, audio_bitrate="64k"),
+        fps=int(FPS),
+    )
 
 
 def _failing_render(monkeypatch, *, on_call: int = 3):
@@ -68,20 +86,26 @@ def _failing_render(monkeypatch, *, on_call: int = 3):
 # (a) texture illisible ⇒ export refusé avant tout rendu long -----------------------------------------------------------------
 
 
-def test_a_corrupt_texture_refuses_the_export_before_any_rendering(tmp_path, monkeypatch):
+def test_a_corrupt_texture_refuses_the_export_before_any_rendering(
+    tmp_path, monkeypatch
+):
     scene = write_static_scene(tmp_path, textured=True)
     (tmp_path / "tex.png").write_bytes(BAD_PNG)
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
-    assert plan.missing_media == () and plan.warnings == ()                       # la lecture ne décode pas : le plan l'accepte
+    assert (
+        plan.missing_media == () and plan.warnings == ()
+    )  # la lecture ne décode pas : le plan l'accepte
     calls = _failing_render(monkeypatch, on_call=10_000)
-    with pytest.raises(ValueError, match=r"Scène 3D non rendable.*static\.kut3d.*texture"):
+    with pytest.raises(
+        ValueError, match=r"Scène 3D non rendable.*static\.kut3d.*texture"
+    ):
         check_export_request(_request(plan, tmp_path / "out.mp4"))
-    assert calls == []                                                            # aucun rendu à taille réelle
+    assert calls == []  # aucun rendu à taille réelle
     result = run_export(_request(plan, tmp_path / "out.mp4"))
     assert result.status is ExportStatus.FAILED and "static.kut3d" in result.message
     assert not (tmp_path / "out.mp4").exists() and not list(tmp_path.glob("out.mp4*"))
-    assert list(_cache(tmp_path).glob("*.ffconcat")) == []                        # rien n'a été rastérisé
+    assert list(_cache(tmp_path).glob("*.ffconcat")) == []  # rien n'a été rastérisé
 
 
 def test_the_refusal_message_is_bounded_and_names_the_clip(tmp_path):
@@ -90,7 +114,9 @@ def test_the_refusal_message_is_bounded_and_names_the_clip(tmp_path):
     project, clip = project_with_background(tmp_path, scene, clip_id="mon_clip")
     clip.label = "L" * 5000
     problems = export_problems(build_render_plan(project))
-    assert len(problems) == 1 and "static.kut3d" in problems[0] and len(problems[0]) < 400
+    assert (
+        len(problems) == 1 and "static.kut3d" in problems[0] and len(problems[0]) < 400
+    )
 
 
 # (b) rendu d'essai en erreur ⇒ export refusé ----------------------------------------------------------------------------------
@@ -102,29 +128,41 @@ def test_a_scene_beyond_the_engine_limits_refuses_the_export(tmp_path, monkeypat
     scene = write_static_scene(tmp_path)
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
-    monkeypatch.setattr(assemble, "MAX_TRIANGLES", 1)                             # le cube (12 triangles) dépasse la borne
+    monkeypatch.setattr(
+        assemble, "MAX_TRIANGLES", 1
+    )  # le cube (12 triangles) dépasse la borne
     with pytest.raises(ValueError, match=r"static\.kut3d.*trop lourde"):
         check_export_request(_request(plan, tmp_path / "out.mp4"))
-    assert run_export(_request(plan, tmp_path / "out.mp4")).status is ExportStatus.FAILED
+    assert (
+        run_export(_request(plan, tmp_path / "out.mp4")).status is ExportStatus.FAILED
+    )
 
 
-def test_a_valid_scene_passes_the_check_and_probes_once_per_scene(tmp_path, monkeypatch):
+def test_a_valid_scene_passes_the_check_and_probes_once_per_scene(
+    tmp_path, monkeypatch
+):
     scene = write_static_scene(tmp_path, textured=True)
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
     seen: list = []
     real = kut3d.render_frame
-    monkeypatch.setattr(kut3d, "render_frame", lambda *a, **k: seen.append(k.get("size")) or real(*a, **k))
+    monkeypatch.setattr(
+        kut3d,
+        "render_frame",
+        lambda *a, **k: seen.append(k.get("size")) or real(*a, **k),
+    )
     check_export_request(_request(plan, tmp_path / "out.mp4"))
     assert export_problems(plan) == []
-    assert seen == [(16, 16), (16, 16)]                                           # un rendu d'essai minuscule par appel
+    assert seen == [(16, 16), (16, 16)]  # un rendu d'essai minuscule par appel
 
 
 # (c) échec pendant l'export ⇒ l'export échoue ---------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("animated", [True, False])
-def test_a_render_failure_during_the_export_fails_it_without_an_output_file(tmp_path, monkeypatch, animated):
+def test_a_render_failure_during_the_export_fails_it_without_an_output_file(
+    tmp_path, monkeypatch, animated
+):
     scene = write_animated_scene(tmp_path) if animated else write_static_scene(tmp_path)
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
@@ -134,35 +172,45 @@ def test_a_render_failure_during_the_export_fails_it_without_an_output_file(tmp_
     assert result.status is ExportStatus.FAILED
     assert "Scène 3D" in result.message and "mémoire insuffisante" in result.message
     assert len(calls) >= (3 if animated else 1)
-    assert not output.exists() and not list(tmp_path.glob("film.mp4*"))           # ni sortie, ni .partial
-    assert list(_cache(tmp_path).glob("*.ffconcat")) == []                        # aucune liste orpheline
+    assert not output.exists() and not list(
+        tmp_path.glob("film.mp4*")
+    )  # ni sortie, ni .partial
+    assert list(_cache(tmp_path).glob("*.ffconcat")) == []  # aucune liste orpheline
 
 
-def test_the_graphics_preparation_does_not_cache_an_empty_image_for_the_export(tmp_path, monkeypatch):
+def test_the_graphics_preparation_does_not_cache_an_empty_image_for_the_export(
+    tmp_path, monkeypatch
+):
     scene = write_animated_scene(tmp_path)
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
     _failing_render(monkeypatch, on_call=1)
-    assert prepare_graphics_streams(plan, W, H, FPS) is False                     # non fatal pour l'appelant, mais rien d'écrit
+    assert (
+        prepare_graphics_streams(plan, W, H, FPS) is False
+    )  # non fatal pour l'appelant, mais rien d'écrit
     assert list(_cache(tmp_path).glob("*.ffconcat")) == []
 
 
 # (d) le même échec à l'écran reste toléré --------------------------------------------------------------------------------------
 
 
-def test_the_same_failure_on_screen_draws_nothing_and_logs_without_raising(tmp_path, monkeypatch, caplog):
+def test_the_same_failure_on_screen_draws_nothing_and_logs_without_raising(
+    tmp_path, monkeypatch, caplog
+):
     from PySide6.QtGui import QImage, QPainter
 
     scene = write_static_scene(tmp_path)
     _failing_render(monkeypatch, on_call=1)
     from core.graphics import GraphicOverlay, GraphicType
 
-    graphic = GraphicOverlay(type=GraphicType.SCENE3D, source_path=str(scene), width=W, height=H)
+    graphic = GraphicOverlay(
+        type=GraphicType.SCENE3D, source_path=str(scene), width=W, height=H
+    )
     canvas = QImage(W, H, QImage.Format.Format_ARGB32_Premultiplied)
     canvas.fill(0)
     painter = QPainter(canvas)
     with caplog.at_level(logging.WARNING, logger="kut_studio.scene3d"):
-        scene3d.draw_scene(painter, graphic, W, H)                                # ne lève jamais
+        scene3d.draw_scene(painter, graphic, W, H)  # ne lève jamais
     painter.end()
     assert max(canvas.pixelColor(x, y).alpha() for x in range(W) for y in range(H)) == 0
     assert "non rendue" in caplog.text
@@ -173,19 +221,27 @@ def test_a_preview_segment_graph_tolerates_a_failing_scene(tmp_path, monkeypatch
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
     _failing_render(monkeypatch, on_call=1)
-    graph, video, _audio, _inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None, quality="draft")   # ne lève pas
+    graph, video, _audio, _inputs = ExportEngine._build_filter_complex(
+        plan, W, H, FPS, None, quality="draft"
+    )  # ne lève pas
     assert graph and video
 
 
-def test_an_empty_image_cached_by_the_screen_never_serves_the_export(tmp_path, monkeypatch):
+def test_an_empty_image_cached_by_the_screen_never_serves_the_export(
+    tmp_path, monkeypatch
+):
     scene = write_animated_scene(tmp_path)
     project, _clip = project_with_background(tmp_path, scene)
     plan = build_render_plan(project)
     monkeypatch.setattr(kut3d, "render_frame", _raise_always(kut3d.render_frame))
     # L'extraction d'une image (scopes) construit le graphe avec la qualité « export » : mêmes noms d'images que l'export.
-    ExportEngine._build_filter_complex(plan, W, H, FPS, None, horizon=100.0)     # écran : tolérant, images vides au cache
+    ExportEngine._build_filter_complex(
+        plan, W, H, FPS, None, horizon=100.0
+    )  # écran : tolérant, images vides au cache
     assert any(_cache(tmp_path).glob("f-*.png"))
-    result = run_export(_request(plan, tmp_path / "film.mp4"))                  # l'export refait le rendu : il échoue franchement
+    result = run_export(
+        _request(plan, tmp_path / "film.mp4")
+    )  # l'export refait le rendu : il échoue franchement
     assert result.status is ExportStatus.FAILED and "Scène 3D" in result.message
     assert not (tmp_path / "film.mp4").exists()
 
@@ -210,7 +266,11 @@ def test_the_application_engine_and_the_command_line_refuse_too(tmp_path, capsys
     errors: list[str] = []
     engine.failed.connect(errors.append)
     engine.start(_request(build_render_plan(project), tmp_path / "app.mp4"))
-    assert len(errors) == 1 and "static.kut3d" in errors[0] and not (tmp_path / "app.mp4").exists()
+    assert (
+        len(errors) == 1
+        and "static.kut3d" in errors[0]
+        and not (tmp_path / "app.mp4").exists()
+    )
 
     kut = tmp_path / "p.kut"
     save_project(project, str(kut))
@@ -235,5 +295,9 @@ def test_a_plan_without_a_scene_is_not_probed(tmp_path, monkeypatch):
     project, _clip = project_with_background(tmp_path, write_static_scene(tmp_path))
     project.tracks = [track for track in project.tracks if track.type != "graphics"]
     plan = build_render_plan(project)
-    monkeypatch.setattr(kut3d, "render_frame", lambda *a, **k: pytest.fail("aucun rendu pour un plan sans 3D"))
+    monkeypatch.setattr(
+        kut3d,
+        "render_frame",
+        lambda *a, **k: pytest.fail("aucun rendu pour un plan sans 3D"),
+    )
     assert export_problems(plan) == []

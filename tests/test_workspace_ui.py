@@ -9,7 +9,6 @@ rattacher doit rendre exactement le même objet, sinon deux timelines
 divergeraient — ce qui est explicitement interdit.
 """
 
-
 import logging
 
 import pytest
@@ -273,9 +272,7 @@ def test_opening_mixer_reserves_both_panel_minimum_heights(window, qtbot):
     """Timeline et mixeur restent réellement utilisables dès l'ouverture."""
     manager = window.workspace
     manager.set_panel_visible(PanelId.MIXER, True)
-    qtbot.waitUntil(
-        lambda: window.height() >= window.minimumHeight(), timeout=1000
-    )
+    qtbot.waitUntil(lambda: window.height() >= window.minimumHeight(), timeout=1000)
     qtbot.wait(20)
 
     zone = manager._zones[DockArea.BOTTOM]
@@ -297,9 +294,15 @@ def test_shutdown_releases_windows(window):
 
 @pytest.mark.parametrize(
     ("panel", "gesture"),
-    [(PanelId.INSPECTOR, "hide"), (PanelId.INSPECTOR, "float"), (PanelId.VIEWER, "hide")],
+    [
+        (PanelId.INSPECTOR, "hide"),
+        (PanelId.INSPECTOR, "float"),
+        (PanelId.VIEWER, "hide"),
+    ],
 )
-def test_closing_keeps_hidden_and_floating_panels_alive_for_the_shutdown_steps(window, caplog, panel, gesture):
+def test_closing_keeps_hidden_and_floating_panels_alive_for_the_shutdown_steps(
+    window, caplog, panel, gesture
+):
     """Masqué ou détaché, l'hôte d'un panneau n'a plus de parent Qt : ``shutdown`` le rend à la fenêtre au lieu de le
     détruire, car les étapes d'arrêt suivantes s'en servent encore (flux optique : l'inspecteur ; moniteur Multicam :
     le viewer)."""
@@ -311,7 +314,11 @@ def test_closing_keeps_hidden_and_floating_panels_alive_for_the_shutdown_steps(w
     content = manager._panels[panel]
     with caplog.at_level(logging.ERROR, logger="ui.main_window"):
         assert window.close()
-    assert [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR] == []
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.ERROR
+    ] == []
     assert shiboken6.isValid(content) and window.isAncestorOf(content)
 
 
@@ -362,9 +369,7 @@ def test_context_menu_offers_detach_and_attach(window):
 def test_context_menu_offers_every_dock_area(window):
     manager = window.workspace
     move_menus = [
-        a
-        for a in manager.build_actions(PanelId.TIMELINE)
-        if isinstance(a, QMenu)
+        a for a in manager.build_actions(PanelId.TIMELINE) if isinstance(a, QMenu)
     ]
     assert len(move_menus) == 1
     areas = [entry.text() for entry in move_menus[0].actions()]
@@ -512,14 +517,28 @@ def language_reset():
 
 
 def _flat_labels(manager, panel):
-    return [a.text() for a in manager.build_actions(panel) if not isinstance(a, QMenu) and not a.isSeparator()]
+    return [
+        a.text()
+        for a in manager.build_actions(panel)
+        if not isinstance(a, QMenu) and not a.isSeparator()
+    ]
 
 
-@pytest.mark.parametrize(("language", "detach", "attach", "move_to", "media", "left_area"), [
-    ("en", "Detach panel", "Attach", "Move to…", "Media", "Left area"),
-    ("es", "Desacoplar panel", "Acoplar", "Mover a…", "Medios", "Zona izquierda"),
-    ("fr", "Détacher le panneau", "Rattacher", "Déplacer vers…", "Médias", "Zone gauche"),
-])
+@pytest.mark.parametrize(
+    ("language", "detach", "attach", "move_to", "media", "left_area"),
+    [
+        ("en", "Detach panel", "Attach", "Move to…", "Media", "Left area"),
+        ("es", "Desacoplar panel", "Acoplar", "Mover a…", "Medios", "Zona izquierda"),
+        (
+            "fr",
+            "Détacher le panneau",
+            "Rattacher",
+            "Déplacer vers…",
+            "Médias",
+            "Zone gauche",
+        ),
+    ],
+)
 def test_panel_menus_and_floating_windows_follow_the_language(
     language_reset, window, language, detach, attach, move_to, media, left_area
 ):
@@ -527,17 +546,25 @@ def test_panel_menus_and_floating_windows_follow_the_language(
     manager = window.workspace
     manager.float_panel(PanelId.TIMELINE)
     manager.dock_panel(PanelId.TIMELINE)
-    manager.build_actions(PanelId.MEDIA)                  # actions mises en cache dans la langue d'origine
-    i18n.set_language("es" if language == "en" else "en")  # une langue autre que la cible, puis la cible
+    manager.build_actions(
+        PanelId.MEDIA
+    )  # actions mises en cache dans la langue d'origine
+    i18n.set_language(
+        "es" if language == "en" else "en"
+    )  # une langue autre que la cible, puis la cible
     window._retranslate_ui()
     i18n.set_language(language)
     with i18n.strict_translations():
         window._retranslate_ui()
     assert detach in _flat_labels(manager, PanelId.MEDIA)
-    move_menu = next(a for a in manager.build_actions(PanelId.MEDIA) if isinstance(a, QMenu))
+    move_menu = next(
+        a for a in manager.build_actions(PanelId.MEDIA) if isinstance(a, QMenu)
+    )
     assert move_menu.title() == move_to
     assert left_area in [a.text() for a in move_menu.actions()]
-    panel_names = [a.text() for a in window.window_menu.findChild(QMenu, "panels_menu").actions()]
+    panel_names = [
+        a.text() for a in window.window_menu.findChild(QMenu, "panels_menu").actions()
+    ]
     assert media in panel_names
     manager.float_panel(PanelId.TIMELINE)
     assert attach in _flat_labels(manager, PanelId.TIMELINE)
@@ -557,12 +584,23 @@ def test_a_floating_window_is_retranslated_while_it_is_open(language_reset, wind
     assert floating._title_label.text() == "Mixer"
 
 
-def test_saving_a_workspace_asks_and_confirms_in_the_current_language(language_reset, window, monkeypatch):
+def test_saving_a_workspace_asks_and_confirms_in_the_current_language(
+    language_reset, window, monkeypatch
+):
     texts = []
-    monkeypatch.setattr("ui.main_window_mixins.workspace_actions.QInputDialog.getText",
-                        lambda _parent, title, label, *a, **k: (texts.append((title, label)) or ("Mon espace", True)))
-    monkeypatch.setattr("ui.main_window.QMessageBox.information",
-                        lambda _parent, title, message, *a, **k: texts.append((title, message)))
+    monkeypatch.setattr(
+        "ui.main_window_mixins.workspace_actions.QInputDialog.getText",
+        lambda _parent, title, label, *a, **k: (
+            texts.append((title, label)) or ("Mon espace", True)
+        ),
+    )
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.information",
+        lambda _parent, title, message, *a, **k: texts.append((title, message)),
+    )
     i18n.set_language("en")
     window.save_workspace_as()
-    assert texts == [("Workspace", "Workspace name:"), ("Workspace", "Layout saved as “Mon espace”.")]
+    assert texts == [
+        ("Workspace", "Workspace name:"),
+        ("Workspace", "Layout saved as “Mon espace”."),
+    ]

@@ -19,7 +19,14 @@ import pytest
 
 import build
 from core.app_version import APP_VERSION
-from core.release_assets import CHECKSUMS_FILE, RELEASE_TARGETS, Architecture, OperatingSystem, Target, parse_checksums
+from core.release_assets import (
+    CHECKSUMS_FILE,
+    RELEASE_TARGETS,
+    Architecture,
+    OperatingSystem,
+    Target,
+    parse_checksums,
+)
 from tools.release import __main__ as cli
 from tools.release.packaging import (
     ReleaseError,
@@ -49,7 +56,15 @@ def test_a_tag_equal_to_the_application_version_is_published():
     assert beta.prerelease and beta.publish
 
 
-@pytest.mark.parametrize("ref", ["refs/tags/v1.2.4", "refs/tags/1.2.3", "refs/tags/v1.2.3-rc.1", "refs/tags/v01.2.3"])
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "refs/tags/v1.2.4",
+        "refs/tags/1.2.3",
+        "refs/tags/v1.2.3-rc.1",
+        "refs/tags/v01.2.3",
+    ],
+)
 def test_a_tag_different_from_the_application_version_stops_everything(ref):
     with pytest.raises(ReleaseError, match="APP_VERSION"):
         check_tag(ref, "1.2.3")
@@ -71,7 +86,10 @@ def test_the_check_tag_command_writes_github_outputs(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     assert cli.main(["check-tag", "--ref", f"refs/tags/v{APP_VERSION}"]) == 0
     assert output.read_text(encoding="utf-8").splitlines() == [
-        f"version={APP_VERSION}", "prerelease=false", "publish=true"]
+        f"version={APP_VERSION}",
+        "prerelease=false",
+        "publish=true",
+    ]
     assert cli.main(["check-tag", "--ref", "refs/tags/v999.0.0"]) == 1
 
 
@@ -105,8 +123,10 @@ def _fake_onedir(dist: Path) -> Path:
     return folder
 
 
-@pytest.mark.skipif(sys.platform == "win32",
-                    reason="droits POSIX et liens symboliques : l'archive Linux se construit sous Linux (et macOS)")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="droits POSIX et liens symboliques : l'archive Linux se construit sous Linux (et macOS)",
+)
 def test_the_linux_archive_keeps_execute_permissions_and_symlinks(tmp_path):
     _fake_onedir(tmp_path / "dist")
     archive = create_archive(tmp_path / "dist", tmp_path / "out", "1.2.3", LINUX_X64)
@@ -126,7 +146,10 @@ def test_the_windows_archive_contains_the_application_folder(tmp_path):
     archive = create_archive(tmp_path / "dist", tmp_path / "out", "1.2.3", WIN_X64)
     assert archive.name == "Kut-Studio-1.2.3-windows-x64.zip"
     with zipfile.ZipFile(archive) as bundle:
-        assert sorted(bundle.namelist()) == ["Kut-Studio/Kut-Studio.exe", "Kut-Studio/_internal/python311.dll"]
+        assert sorted(bundle.namelist()) == [
+            "Kut-Studio/Kut-Studio.exe",
+            "Kut-Studio/_internal/python311.dll",
+        ]
 
 
 def test_a_missing_build_is_reported(tmp_path):
@@ -134,7 +157,9 @@ def test_a_missing_build_is_reported(tmp_path):
         create_archive(tmp_path / "dist", tmp_path / "out", "1.2.3", LINUX_X64)
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="ditto (archive macOS) n'existe que sur macOS")
+@pytest.mark.skipif(
+    sys.platform != "darwin", reason="ditto (archive macOS) n'existe que sur macOS"
+)
 def test_the_macos_archive_is_made_with_ditto_and_keeps_symlinks(tmp_path):
     app = tmp_path / "dist" / "Kut-Studio.app" / "Contents"
     (app / "MacOS").mkdir(parents=True)
@@ -145,7 +170,9 @@ def test_the_macos_archive_is_made_with_ditto_and_keeps_symlinks(tmp_path):
     assert archive.name == "Kut-Studio-1.2.3-macos-arm64.zip"
     with zipfile.ZipFile(archive) as bundle:
         info = bundle.getinfo("Kut-Studio.app/Contents/Frameworks/Current")
-        assert stat.S_ISLNK(info.external_attr >> 16), "ditto conserve les liens (zipfile les aurait suivis)"
+        assert stat.S_ISLNK(info.external_attr >> 16), (
+            "ditto conserve les liens (zipfile les aurait suivis)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +190,16 @@ def _release_dir(tmp_path: Path, version: str = "1.2.3") -> Path:
     return folder
 
 
-def test_checksums_are_written_in_the_convention_and_read_back_by_the_application(tmp_path):
+def test_checksums_are_written_in_the_convention_and_read_back_by_the_application(
+    tmp_path,
+):
     folder = _release_dir(tmp_path)
     (folder / "README.txt").write_text("pas un paquet", encoding="utf-8")
     path = write_checksums(folder)
     entries = parse_checksums(path.read_text(encoding="utf-8"))
-    assert sorted(entries) == sorted(p.name for p in folder.iterdir() if p.name.startswith("Kut-Studio-"))
+    assert sorted(entries) == sorted(
+        p.name for p in folder.iterdir() if p.name.startswith("Kut-Studio-")
+    )
     for name, digest in entries.items():
         assert digest == hashlib.sha256((folder / name).read_bytes()).hexdigest()
 
@@ -184,15 +215,22 @@ def test_verification_refuses_every_inconsistency(tmp_path):
     folder = _release_dir(tmp_path)
     assert "SHA256SUMS.txt manquant" in verify_release_directory(folder, "1.2.3")
     write_checksums(folder)
-    (folder / "Kut-Studio-1.2.3-linux-x64.tar.gz").write_bytes(b"modifie apres empreinte")
+    (folder / "Kut-Studio-1.2.3-linux-x64.tar.gz").write_bytes(
+        b"modifie apres empreinte"
+    )
     (folder / "Kut-Studio-1.2.3-windows-x64.zip").unlink()
     (folder / "installeur.exe").write_bytes(b"?")
     problems = verify_release_directory(folder, "1.2.3")
     assert "empreinte fausse pour Kut-Studio-1.2.3-linux-x64.tar.gz" in problems
     assert "paquet manquant pour windows-x64" in problems
     assert "fichier hors convention : installeur.exe" in problems
-    assert f"{CHECKSUMS_FILE} cite un fichier absent : Kut-Studio-1.2.3-windows-x64.zip" in problems
-    assert any("version" in problem for problem in verify_release_directory(folder, "1.2.4"))
+    assert (
+        f"{CHECKSUMS_FILE} cite un fichier absent : Kut-Studio-1.2.3-windows-x64.zip"
+        in problems
+    )
+    assert any(
+        "version" in problem for problem in verify_release_directory(folder, "1.2.4")
+    )
     assert cli.main(["verify", str(folder), "--version", "1.2.3"]) == 1
 
 
@@ -208,23 +246,41 @@ def test_an_extra_target_is_refused(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("status,phrase", [
-    ("notarized", "notarisé par Apple"),
-    ("signed", "**non notarisé**"),
-    ("adhoc", "**non signé et non notarisé**"),
-])
+@pytest.mark.parametrize(
+    "status,phrase",
+    [
+        ("notarized", "notarisé par Apple"),
+        ("signed", "**non notarisé**"),
+        ("adhoc", "**non signé et non notarisé**"),
+    ],
+)
 def test_release_notes_state_the_real_macos_signature(status, phrase):
     notes = release_notes("1.2.3", status, "## What's Changed\n* PR")
     assert phrase in notes
     assert "Kut-Studio-1.2.3-macos-arm64.zip" in notes and "SHA256SUMS.txt" in notes
-    assert "pas qui l'a publié" in notes, "l'empreinte n'est pas présentée comme une preuve d'authenticité"
+    assert "pas qui l'a publié" in notes, (
+        "l'empreinte n'est pas présentée comme une preuve d'authenticité"
+    )
     assert notes.rstrip().endswith("* PR")
 
 
 def test_release_notes_refuse_an_unknown_signing_status(tmp_path):
     with pytest.raises(ReleaseError):
         release_notes("1.2.3", "probably-fine")
-    assert cli.main(["notes", "--signing", "adhoc", "--version", "1.2.3", "--out", str(tmp_path / "n.md")]) == 0
+    assert (
+        cli.main(
+            [
+                "notes",
+                "--signing",
+                "adhoc",
+                "--version",
+                "1.2.3",
+                "--out",
+                str(tmp_path / "n.md"),
+            ]
+        )
+        == 0
+    )
     assert "Kut-Studio 1.2.3" in (tmp_path / "n.md").read_text(encoding="utf-8")
 
 
@@ -237,9 +293,17 @@ def test_the_macos_bundle_gets_the_application_version_and_is_resigned(tmp_path)
     app = tmp_path / "Kut-Studio.app"
     (app / "Contents").mkdir(parents=True)
     with (app / "Contents" / "Info.plist").open("wb") as stream:
-        plistlib.dump({"CFBundleShortVersionString": "0.0.0", "CFBundleIdentifier": "com.kutstudio.app"}, stream)
+        plistlib.dump(
+            {
+                "CFBundleShortVersionString": "0.0.0",
+                "CFBundleIdentifier": "com.kutstudio.app",
+            },
+            stream,
+        )
     commands: list[list[str]] = []
-    build.finalize_macos_bundle(app, version="2.0.0-beta.3", run=lambda command: commands.append(list(command)))
+    build.finalize_macos_bundle(
+        app, version="2.0.0-beta.3", run=lambda command: commands.append(list(command))
+    )
     with (app / "Contents" / "Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
     assert info["CFBundleShortVersionString"] == "2.0.0-beta.3"
@@ -252,7 +316,10 @@ def test_the_macos_bundle_gets_the_application_version_and_is_resigned(tmp_path)
     ]
 
 
-@pytest.mark.parametrize(("platform_name", "suffix"), [("darwin", ".icns"), ("win32", ".ico"), ("linux", ".png")])
+@pytest.mark.parametrize(
+    ("platform_name", "suffix"),
+    [("darwin", ".icns"), ("win32", ".ico"), ("linux", ".png")],
+)
 def test_every_platform_build_gets_an_icon_that_exists(platform_name, suffix):
     """``_icon_for`` rend ``None`` pour un fichier absent : le build sortait alors sans icône, sans bruit.
 
@@ -260,24 +327,41 @@ def test_every_platform_build_gets_an_icon_that_exists(platform_name, suffix):
     (``python -m tools.make_icons``).
     """
     icon = build._icon_for(platform_name)
-    assert icon is not None and icon.is_file(), f"Icône introuvable pour {platform_name}"
+    assert icon is not None and icon.is_file(), (
+        f"Icône introuvable pour {platform_name}"
+    )
     assert icon.suffix == suffix
     command = build.build_command(platform_name=platform_name, environment={})
     assert command[command.index("--icon") + 1] == str(icon)
 
 
-def test_a_developer_id_identity_signs_with_the_hardened_runtime_and_entitlements(tmp_path):
+def test_a_developer_id_identity_signs_with_the_hardened_runtime_and_entitlements(
+    tmp_path,
+):
     identity = "Developer ID Application: Test (TEAM123456)"
-    command = build.build_command(platform_name="darwin", environment={build.CODESIGN_IDENTITY_ENV: identity})
+    command = build.build_command(
+        platform_name="darwin", environment={build.CODESIGN_IDENTITY_ENV: identity}
+    )
     assert command[command.index("--codesign-identity") + 1] == identity
-    assert command[command.index("--osx-entitlements-file") + 1] == str(build.ENTITLEMENTS)
+    assert command[command.index("--osx-entitlements-file") + 1] == str(
+        build.ENTITLEMENTS
+    )
     assert build.ENTITLEMENTS.is_file()
-    resign = build.codesign_command(Path("Kut-Studio.app"), identity, build.ENTITLEMENTS)
+    resign = build.codesign_command(
+        Path("Kut-Studio.app"), identity, build.ENTITLEMENTS
+    )
     assert resign[:4] == ["codesign", "--force", "--sign", identity]
-    assert "--options" in resign and resign[resign.index("--options") + 1] == "runtime" and "--timestamp" in resign
-    assert "--codesign-identity" not in build.build_command(platform_name="darwin", environment={})
+    assert (
+        "--options" in resign
+        and resign[resign.index("--options") + 1] == "runtime"
+        and "--timestamp" in resign
+    )
     assert "--codesign-identity" not in build.build_command(
-        platform_name="linux", environment={build.CODESIGN_IDENTITY_ENV: identity})
+        platform_name="darwin", environment={}
+    )
+    assert "--codesign-identity" not in build.build_command(
+        platform_name="linux", environment={build.CODESIGN_IDENTITY_ENV: identity}
+    )
 
 
 def test_the_entitlements_are_minimal_and_valid():
@@ -295,6 +379,10 @@ def test_the_signing_script_is_valid_bash_and_never_prints_secrets():
     assert os.access(script, os.X_OK) or sys.platform == "win32"
     text = script.read_text(encoding="utf-8")
     assert "set -euo pipefail" in text
-    for secret in ("MACOS_CERTIFICATE_P12_BASE64", "MACOS_CERTIFICATE_PASSWORD", "APPLE_API_KEY_P8_BASE64"):
+    for secret in (
+        "MACOS_CERTIFICATE_P12_BASE64",
+        "MACOS_CERTIFICATE_PASSWORD",
+        "APPLE_API_KEY_P8_BASE64",
+    ):
         assert f'echo "${secret}' not in text and f"echo ${secret}" not in text
     assert "set -x" not in text, "un mode trace afficherait les secrets"

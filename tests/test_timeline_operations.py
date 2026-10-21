@@ -183,9 +183,7 @@ def test_move_clip_targets_correct_track_in_multi_track_project() -> None:
 def test_move_clip_does_not_affect_other_clips() -> None:
     project = _make_project()
     initial = {
-        clip.id: clip.timeline_start
-        for track in project.tracks
-        for clip in track.clips
+        clip.id: clip.timeline_start for track in project.tracks for clip in track.clips
     }
     move_clip(project, "v1-a", 10.0)
 
@@ -466,11 +464,17 @@ def test_cut_clip_preserves_audio_and_transform_metadata() -> None:
     assert (right.fade_in, right.fade_out) == pytest.approx((0.0, 1.0))
     # La coupe ne change pas l'animation : la partie gauche finit sur la valeur
     # interpolée à la coupe au lieu de rester figée sur son dernier keyframe.
-    assert [keyframe.time_seconds for keyframe in left.transform_keyframes] == [1.0, 2.0]
+    assert [keyframe.time_seconds for keyframe in left.transform_keyframes] == [
+        1.0,
+        2.0,
+    ]
     assert evaluate_transform(
         left.transform, left.transform_keyframes, 2.0, left.duration
     ).scale == pytest.approx(0.65)
-    assert [keyframe.time_seconds for keyframe in right.transform_keyframes] == [0.0, 1.0]
+    assert [keyframe.time_seconds for keyframe in right.transform_keyframes] == [
+        0.0,
+        1.0,
+    ]
     assert evaluate_transform(
         right.transform, right.transform_keyframes, 0.0, right.duration
     ).scale == pytest.approx(0.65)
@@ -561,8 +565,14 @@ def test_split_ids_are_unique_across_every_sequence() -> None:
     project = _make_project()
     other = create_sequence(project, "Autre")
     other.tracks[0].clips.append(
-        Clip(id="v1-a-split-2", asset_id="asset-a", track_id=other.tracks[0].id,
-             timeline_start=0.0, source_in=0.0, source_out=1.0)
+        Clip(
+            id="v1-a-split-2",
+            asset_id="asset-a",
+            track_id=other.tracks[0].id,
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=1.0,
+        )
     )
     _left, right = cut_clip(project, "v1-a", 2.0)
     ids = [c.id for track in project.all_tracks() for c in track.clips]
@@ -575,18 +585,22 @@ def test_ripple_delete_leaves_a_locked_track_where_it_is() -> None:
     locked = project.tracks[1]
     locked.clips[0].timeline_start = 8.0
     locked.locked = True
-    deleted = project.tracks[0].clips[0]                 # v1-a, 4 s
+    deleted = project.tracks[0].clips[0]  # v1-a, 4 s
     moved = ripple_delete_clip(project, deleted.id)
     assert locked.clips[0].timeline_start == 8.0
     assert locked.clips[0].id not in moved
-    assert project.tracks[0].clips[0].timeline_start == pytest.approx(0.0)   # v1-b est bien remonté
+    assert project.tracks[0].clips[0].timeline_start == pytest.approx(
+        0.0
+    )  # v1-b est bien remonté
 
 
 def test_ripple_delete_removes_the_transitions_of_the_deleted_clip() -> None:
     from core.transitions import Transition, TransitionType
 
     project = _make_project()
-    project.transitions.append(Transition("t1", "v1-a", "v1-b", TransitionType.CROSSFADE, 0.5))
+    project.transitions.append(
+        Transition("t1", "v1-a", "v1-b", TransitionType.CROSSFADE, 0.5)
+    )
     ripple_delete_clip(project, "v1-a")
     assert project.transitions == []
 
@@ -748,9 +762,7 @@ def test_add_clip_to_track_rejects_unknown_track() -> None:
     """Une piste inconnue lève ``KeyError`` et ne modifie pas le projet."""
     project = _make_project()
     assets_before = list(project.media_assets)
-    clips_per_track = {
-        track.id: list(track.clips) for track in project.tracks
-    }
+    clips_per_track = {track.id: list(track.clips) for track in project.tracks}
 
     with pytest.raises(KeyError, match="V999"):
         add_clip_to_track(project, "asset-a", "V999", 0.0)
@@ -875,7 +887,10 @@ def _make_project_with_subtitle_track() -> Project:
     )
     return Project(
         name="Sub",
-        tracks=[Track(id="V1", name="V1", type="video"), Track(id="S1", name="S1", type="subtitle")],
+        tracks=[
+            Track(id="V1", name="V1", type="video"),
+            Track(id="S1", name="S1", type="subtitle"),
+        ],
         media_assets=[asset_video],
     )
 
@@ -933,7 +948,9 @@ def test_add_subtitle_clip_rejects_wrong_track():
     project = _make_project_with_subtitle_track()
     # Track inexistante.
     with pytest.raises(KeyError):
-        add_subtitle_clip(project, "x", timeline_start=0.0, duration=1.0, track_id="NOPE")
+        add_subtitle_clip(
+            project, "x", timeline_start=0.0, duration=1.0, track_id="NOPE"
+        )
     # Mauvais type.
     with pytest.raises(ValueError, match="sous-titre"):
         add_subtitle_clip(project, "x", timeline_start=0.0, duration=1.0, track_id="V1")
@@ -947,19 +964,40 @@ def test_subtitle_cues_from_project_returns_sorted_active_cues():
     s1 = find_track(project, "S1")
     # Trois clips : un désactivé, deux actifs.
     s1.clips.append(
-        Clip(id="a", asset_id="asset-sub-1", track_id="S1",
-             timeline_start=5.0, source_in=0.0, source_out=2.0, enabled=True,
-             text="Fin")
+        Clip(
+            id="a",
+            asset_id="asset-sub-1",
+            track_id="S1",
+            timeline_start=5.0,
+            source_in=0.0,
+            source_out=2.0,
+            enabled=True,
+            text="Fin",
+        )
     )
     s1.clips.append(
-        Clip(id="b", asset_id="asset-sub-2", track_id="S1",
-             timeline_start=1.0, source_in=0.0, source_out=1.0, enabled=True,
-             text="Début")
+        Clip(
+            id="b",
+            asset_id="asset-sub-2",
+            track_id="S1",
+            timeline_start=1.0,
+            source_in=0.0,
+            source_out=1.0,
+            enabled=True,
+            text="Début",
+        )
     )
     s1.clips.append(
-        Clip(id="off", asset_id="asset-sub-3", track_id="S1",
-             timeline_start=2.0, source_in=0.0, source_out=1.0, enabled=False,
-             text="Off")
+        Clip(
+            id="off",
+            asset_id="asset-sub-3",
+            track_id="S1",
+            timeline_start=2.0,
+            source_in=0.0,
+            source_out=1.0,
+            enabled=False,
+            text="Off",
+        )
     )
 
     cues = subtitle_cues_from_project(project)
@@ -973,9 +1011,16 @@ def test_subtitle_cues_excludes_empty_text():
     project = _make_project_with_subtitle_track()
     s1 = find_track(project, "S1")
     s1.clips.append(
-        Clip(id="blank", asset_id="x", track_id="S1",
-             timeline_start=0.0, source_in=0.0, source_out=1.0, enabled=True,
-             text="   ")
+        Clip(
+            id="blank",
+            asset_id="x",
+            track_id="S1",
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=1.0,
+            enabled=True,
+            text="   ",
+        )
     )
     assert subtitle_cues_from_project(project) == []
 
@@ -991,9 +1036,17 @@ def test_duplicate_clip_default_position_at_end_of_source():
     # On vide la piste pour partir d'un état connu.
     v1.clips.clear()
     v1.clips.append(
-        Clip(id="orig", asset_id="asset-a", track_id="V1",
-             timeline_start=0.0, source_in=1.0, source_out=4.0,
-             label="Original", text="Hello", enabled=True),
+        Clip(
+            id="orig",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=1.0,
+            source_out=4.0,
+            label="Original",
+            text="Hello",
+            enabled=True,
+        ),
     )
     dup = duplicate_clip(project, "orig")
     # Par défaut, juste après la fin du clip source.
@@ -1017,8 +1070,14 @@ def test_duplicate_clip_unique_ids():
     v1 = find_track(project, "V1")
     v1.clips.clear()
     v1.clips.append(
-        Clip(id="orig", asset_id="asset-a", track_id="V1",
-             timeline_start=0.0, source_in=0.0, source_out=2.0),
+        Clip(
+            id="orig",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=2.0,
+        ),
     )
     ids = {duplicate_clip(project, "orig").id for _ in range(5)}
     assert len(ids) == 5
@@ -1029,8 +1088,14 @@ def test_duplicate_clip_with_explicit_position():
     v1 = find_track(project, "V1")
     v1.clips.clear()
     v1.clips.append(
-        Clip(id="orig", asset_id="asset-a", track_id="V1",
-             timeline_start=0.0, source_in=0.0, source_out=2.0),
+        Clip(
+            id="orig",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=2.0,
+        ),
     )
     dup = duplicate_clip(project, "orig", timeline_start=10.0)
     assert dup.timeline_start == pytest.approx(10.0)
@@ -1045,9 +1110,15 @@ def test_duplicate_clip_preserves_metadata():
     v1.clips.clear()
     v1.clips.append(
         Clip(
-            id="orig", asset_id="asset-a", track_id="V1",
-            timeline_start=0.0, source_in=0.5, source_out=2.5,
-            enabled=False, label="Perso", text="Sous-titre",
+            id="orig",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=0.5,
+            source_out=2.5,
+            enabled=False,
+            label="Perso",
+            text="Sous-titre",
         ),
     )
     dup = duplicate_clip(project, "orig")
@@ -1062,9 +1133,15 @@ def test_set_clip_enabled_toggles_state():
     project = _make_project()
     v1 = find_track(project, "V1")
     v1.clips.append(
-        Clip(id="c", asset_id="asset-a", track_id="V1",
-             timeline_start=0.0, source_in=0.0, source_out=2.0,
-             enabled=True),
+        Clip(
+            id="c",
+            asset_id="asset-a",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=2.0,
+            enabled=True,
+        ),
     )
     updated = set_clip_enabled(project, "c", False)
     assert updated.enabled is False
@@ -1076,22 +1153,65 @@ def test_ripple_delete_clip_pulls_following_clips_left():
     project = Project(
         name="Ripple",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v1-a", asset_id="asset-a", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0),
-                Clip(id="v1-b", asset_id="asset-a", track_id="V1",
-                     timeline_start=2.0, source_in=0.0, source_out=2.0),
-                Clip(id="v1-c", asset_id="asset-a", track_id="V1",
-                     timeline_start=5.0, source_in=0.0, source_out=2.0),
-            ]),
-            Track(id="V2", name="V2", type="video", clips=[
-                Clip(id="v2-a", asset_id="asset-a", track_id="V2",
-                     timeline_start=5.0, source_in=0.0, source_out=2.0),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v1-a",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                    Clip(
+                        id="v1-b",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=2.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                    Clip(
+                        id="v1-c",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="V2",
+                name="V2",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v2-a",
+                        asset_id="asset-a",
+                        track_id="V2",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
         ],
-        media_assets=[MediaAsset(id="asset-a", path="/tmp/a.mp4", name="A",
-                                  duration=10.0, width=1920, height=1080, fps=30.0,
-                                  media_type="video")],
+        media_assets=[
+            MediaAsset(
+                id="asset-a",
+                path="/tmp/a.mp4",
+                name="A",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            )
+        ],
     )
     moved = ripple_delete_clip(project, "v1-b")
     assert set(moved) == {"v1-c", "v2-a"}
@@ -1107,14 +1227,34 @@ def test_ripple_delete_clip_keeps_assets():
     project = Project(
         name="RippleAssets",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="c", asset_id="asset-a", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
         ],
-        media_assets=[MediaAsset(id="asset-a", path="/tmp/a.mp4", name="A",
-                                  duration=10.0, width=1920, height=1080, fps=30.0,
-                                  media_type="video")],
+        media_assets=[
+            MediaAsset(
+                id="asset-a",
+                path="/tmp/a.mp4",
+                name="A",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            )
+        ],
     )
     asset_count_before = len(project.media_assets)
     ripple_delete_clip(project, "c")
@@ -1125,30 +1265,86 @@ def test_ripple_delete_clip_shifts_audio_and_subtitles():
     project = Project(
         name="RippleSync",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="vid", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0),
-            ]),
-            Track(id="A1", name="A1", type="audio", clips=[
-                Clip(id="aud", asset_id="asset-audio", track_id="A1",
-                     timeline_start=3.0, source_in=0.0, source_out=2.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="sub", asset_id="asset-sub", track_id="S1",
-                     timeline_start=5.0, source_in=0.0, source_out=2.0,
-                     text="Hi"),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="vid",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="aud",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=3.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="sub",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                        text="Hi",
+                    ),
+                ],
+            ),
         ],
         media_assets=[
-            MediaAsset(id="asset-v", path="/tmp/v.mp4", name="V",
-                       duration=10.0, width=1920, height=1080, fps=30.0,
-                       media_type="video"),
-            MediaAsset(id="asset-audio", path="/tmp/a.mp3", name="A",
-                       duration=10.0, width=0, height=0, fps=0.0,
-                       media_type="audio", has_audio=True),
-            MediaAsset(id="asset-sub", path="", name="S",
-                       duration=10.0, width=0, height=0, fps=0.0,
-                       media_type="subtitle", has_audio=False),
+            MediaAsset(
+                id="asset-v",
+                path="/tmp/v.mp4",
+                name="V",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            ),
+            MediaAsset(
+                id="asset-audio",
+                path="/tmp/a.mp3",
+                name="A",
+                duration=10.0,
+                width=0,
+                height=0,
+                fps=0.0,
+                media_type="audio",
+                has_audio=True,
+            ),
+            MediaAsset(
+                id="asset-sub",
+                path="",
+                name="S",
+                duration=10.0,
+                width=0,
+                height=0,
+                fps=0.0,
+                media_type="subtitle",
+                has_audio=False,
+            ),
         ],
     )
     moved = ripple_delete_clip(project, "vid")
@@ -1162,20 +1358,57 @@ def test_ripple_delete_clip_never_creates_negative_position():
     project = Project(
         name="NoNegative",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="c", asset_id="asset-a", track_id="V1",
-                     timeline_start=5.0, source_in=0.0, source_out=3.0),
-                Clip(id="right_after", asset_id="asset-a", track_id="V1",
-                     timeline_start=8.05, source_in=0.0, source_out=1.0),
-            ]),
-            Track(id="V2", name="V2", type="video", clips=[
-                Clip(id="well_after", asset_id="asset-a", track_id="V2",
-                     timeline_start=20.0, source_in=0.0, source_out=2.0),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=3.0,
+                    ),
+                    Clip(
+                        id="right_after",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=8.05,
+                        source_in=0.0,
+                        source_out=1.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="V2",
+                name="V2",
+                type="video",
+                clips=[
+                    Clip(
+                        id="well_after",
+                        asset_id="asset-a",
+                        track_id="V2",
+                        timeline_start=20.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            ),
         ],
-        media_assets=[MediaAsset(id="asset-a", path="/tmp/a.mp4", name="A",
-                                  duration=10.0, width=1920, height=1080, fps=30.0,
-                                  media_type="video")],
+        media_assets=[
+            MediaAsset(
+                id="asset-a",
+                path="/tmp/a.mp4",
+                name="A",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            )
+        ],
     )
     ripple_delete_clip(project, "c")
     # Tous les clips déplacés ont une position >= 0.
@@ -1201,7 +1434,10 @@ def test_snap_to_timeline_start():
 def test_snap_to_playhead():
     project = Project(name="Snap", tracks=[Track(id="V1", name="V1", type="video")])
     snapped = snap_timeline_position(
-        project, 5.4, threshold_seconds=0.5, playhead_seconds=5.0,
+        project,
+        5.4,
+        threshold_seconds=0.5,
+        playhead_seconds=5.0,
     )
     assert snapped == pytest.approx(5.0)
 
@@ -1209,38 +1445,91 @@ def test_snap_to_playhead():
 def test_snap_to_clip_start_and_end():
     project = Project(
         name="Snap",
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="anchor", asset_id="asset-a", track_id="V1",
-                 timeline_start=10.0, source_in=0.0, source_out=3.0),
-        ])],
-        media_assets=[MediaAsset(id="asset-a", path="/tmp/a.mp4", name="A",
-                                  duration=10.0, width=1920, height=1080, fps=30.0,
-                                  media_type="video")],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="anchor",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=10.0,
+                        source_in=0.0,
+                        source_out=3.0,
+                    ),
+                ],
+            )
+        ],
+        media_assets=[
+            MediaAsset(
+                id="asset-a",
+                path="/tmp/a.mp4",
+                name="A",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            )
+        ],
     )
     # Proche du début (10.0) → snap sur 10.0.
     assert snap_timeline_position(
-        project, 9.7, threshold_seconds=0.5, excluded_clip_id="other",
+        project,
+        9.7,
+        threshold_seconds=0.5,
+        excluded_clip_id="other",
     ) == pytest.approx(10.0)
     # Proche de la fin (13.0) → snap sur 13.0.
     assert snap_timeline_position(
-        project, 12.6, threshold_seconds=0.5, excluded_clip_id="other",
+        project,
+        12.6,
+        threshold_seconds=0.5,
+        excluded_clip_id="other",
     ) == pytest.approx(13.0)
 
 
 def test_snap_no_match_outside_threshold():
     project = Project(
         name="SnapFar",
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="anchor", asset_id="asset-a", track_id="V1",
-                 timeline_start=10.0, source_in=0.0, source_out=2.0),
-        ])],
-        media_assets=[MediaAsset(id="asset-a", path="/tmp/a.mp4", name="A",
-                                  duration=10.0, width=1920, height=1080, fps=30.0,
-                                  media_type="video")],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="anchor",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=10.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            )
+        ],
+        media_assets=[
+            MediaAsset(
+                id="asset-a",
+                path="/tmp/a.mp4",
+                name="A",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            )
+        ],
     )
     # Très loin du candidat : aucun snap.
     assert snap_timeline_position(
-        project, 5.0, threshold_seconds=0.5, excluded_clip_id="other",
+        project,
+        5.0,
+        threshold_seconds=0.5,
+        excluded_clip_id="other",
     ) == pytest.approx(5.0)
 
 
@@ -1248,24 +1537,58 @@ def test_snap_excludes_dragged_clip():
     """Le snap ne s'accroche pas au clip en cours de déplacement."""
     project = Project(
         name="SnapExclude",
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="moving", asset_id="asset-a", track_id="V1",
-                 timeline_start=10.0, source_in=0.0, source_out=2.0),
-            Clip(id="other", asset_id="asset-a", track_id="V1",
-                 timeline_start=14.0, source_in=0.0, source_out=2.0),
-        ])],
-        media_assets=[MediaAsset(id="asset-a", path="/tmp/a.mp4", name="A",
-                                  duration=10.0, width=1920, height=1080, fps=30.0,
-                                  media_type="video")],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="moving",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=10.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                    Clip(
+                        id="other",
+                        asset_id="asset-a",
+                        track_id="V1",
+                        timeline_start=14.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            )
+        ],
+        media_assets=[
+            MediaAsset(
+                id="asset-a",
+                path="/tmp/a.mp4",
+                name="A",
+                duration=10.0,
+                width=1920,
+                height=1080,
+                fps=30.0,
+                media_type="video",
+            )
+        ],
     )
     # Sans exclusion, le snap s'accrocherait à 10.0.
     # Avec exclusion de "moving", on regarde 14.0 : trop loin.
     snapped = snap_timeline_position(
-        project, 9.6, threshold_seconds=0.5, excluded_clip_id="moving",
+        project,
+        9.6,
+        threshold_seconds=0.5,
+        excluded_clip_id="moving",
     )
     assert snapped == pytest.approx(9.6)
     # Avec un candidat plus proche (autre clip), le snap fonctionne.
     snapped2 = snap_timeline_position(
-        project, 13.7, threshold_seconds=0.5, excluded_clip_id="moving",
+        project,
+        13.7,
+        threshold_seconds=0.5,
+        excluded_clip_id="moving",
     )
     assert snapped2 == pytest.approx(14.0)

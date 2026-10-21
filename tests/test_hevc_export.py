@@ -45,7 +45,13 @@ def test_hevc_presets_are_mp4_hevc_and_say_so_in_their_summary():
 def test_cpu_hevc_uses_libx265_with_the_preset_quality_plus_four_and_hvc1_tag():
     # Le CRF du preset (20) donne un CRF HEVC de 24 : le même rendu que H.264 à 20, à débit plus faible.
     choice = resolve_video_encoder(
-        "hevc", speed_preset="medium", quality=20, hardware="cpu", width=1920, height=1080, fps=30.0,
+        "hevc",
+        speed_preset="medium",
+        quality=20,
+        hardware="cpu",
+        width=1920,
+        height=1080,
+        fps=30.0,
     )
     assert choice.encoder == "libx265"
     assert choice.args[:2] == ("-c:v", "libx265")
@@ -54,16 +60,35 @@ def test_cpu_hevc_uses_libx265_with_the_preset_quality_plus_four_and_hvc1_tag():
 
 
 def _encoders(ffmpeg: str) -> str:
-    return subprocess.run([ffmpeg, "-hide_banner", "-encoders"], capture_output=True, text=True, check=True).stdout
+    return subprocess.run(
+        [ffmpeg, "-hide_banner", "-encoders"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
 
 def _probe_video_stream(ffprobe: str, path: Path) -> dict[str, str]:
     result = subprocess.run(
-        [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,codec_tag_string",
-         "-of", "default=noprint_wrappers=1", str(path)],
-        check=True, capture_output=True, text=True,
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,codec_tag_string",
+            "-of",
+            "default=noprint_wrappers=1",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
-    return dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    return dict(
+        line.split("=", 1) for line in result.stdout.splitlines() if "=" in line
+    )
 
 
 def test_real_hevc_export_writes_hevc_tagged_hvc1_of_the_right_duration(tmp_path):
@@ -76,15 +101,24 @@ def test_real_hevc_export_writes_hevc_tagged_hvc1_of_the_right_duration(tmp_path
     plan = build_render_plan(_build_overlap_project(red, blue))
     output = tmp_path / "hevc.mp4"
     request = ExportRequest(
-        render_plan=plan, output_path=str(output), format=ExportFormat.MP4_HEVC,
-        preset=ExportPreset(name="T", resolution=(160, 90), crf=28, audio_bitrate="96k"),
-        fps=15, hardware="cpu",
+        render_plan=plan,
+        output_path=str(output),
+        format=ExportFormat.MP4_HEVC,
+        preset=ExportPreset(
+            name="T", resolution=(160, 90), crf=28, audio_bitrate="96k"
+        ),
+        fps=15,
+        hardware="cpu",
     )
     engine = ExportEngine()
-    finished, failed = _wait_for_export(engine, timeout_ms=60000, start=lambda: engine.start(request))
+    finished, failed = _wait_for_export(
+        engine, timeout_ms=60000, start=lambda: engine.start(request)
+    )
 
     assert failed == [] and finished, "l'export HEVC doit aboutir"
     stream = _probe_video_stream(ffprobe, output)
     assert stream["codec_name"] == "hevc"
-    assert stream["codec_tag_string"] == "hvc1"  # sans cette étiquette, QuickTime et Safari n'ouvrent pas le MP4
+    assert (
+        stream["codec_tag_string"] == "hvc1"
+    )  # sans cette étiquette, QuickTime et Safari n'ouvrent pas le MP4
     assert abs(_probe_duration(ffprobe, output) - 4.0) < 0.5

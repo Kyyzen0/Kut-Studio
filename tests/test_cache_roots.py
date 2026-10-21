@@ -32,5 +32,11 @@ def test_mograph_and_tracking_caches_live_under_the_native_cache_folder(native_c
 
 def test_the_environment_override_still_wins(tmp_path, monkeypatch):
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "forcé"))
-    assert mograph_stream.cache_directory() == tmp_path / "forcé" / mograph_stream.CACHE_KIND
-    assert tracking_engine.cache_directory() == tmp_path / "forcé" / tracking_engine.CACHE_KIND
+    assert (
+        mograph_stream.cache_directory()
+        == tmp_path / "forcé" / mograph_stream.CACHE_KIND
+    )
+    assert (
+        tracking_engine.cache_directory()
+        == tmp_path / "forcé" / tracking_engine.CACHE_KIND
+    )

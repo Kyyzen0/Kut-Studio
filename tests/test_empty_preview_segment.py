@@ -19,7 +19,9 @@ from core.task_queue import TaskQueue
 
 
 def _key() -> PreviewSegmentKey:
-    return PreviewSegmentKey(clip_id="clip-a", start=0.0, end=2.0, quality="standard", params_hash="p")
+    return PreviewSegmentKey(
+        clip_id="clip-a", start=0.0, end=2.0, quality="standard", params_hash="p"
+    )
 
 
 def test_the_cache_refuses_an_empty_segment(tmp_path):
@@ -36,27 +38,44 @@ def test_an_engine_whose_render_wrote_nothing_caches_nothing_and_says_why(tmp_pa
 
     def render(job, token):
         target = tmp_path / "out.mp4"
-        target.write_bytes(b"")                         # FFmpeg « a réussi » sans rien écrire
+        target.write_bytes(b"")  # FFmpeg « a réussi » sans rien écrire
         return str(target)
 
     engine = PreviewEngine(task_queue=TaskQueue(), cache=cache, render_fn=render)
-    job = PreviewJob(key=_key(), plan=build_render_plan(create_default_project()), start=0.0, duration=2.0)
+    job = PreviewJob(
+        key=_key(),
+        plan=build_render_plan(create_default_project()),
+        start=0.0,
+        duration=2.0,
+    )
     assert engine.request(job)["status"] == "pending"
     engine.pump(4)
 
     assert cache.lookup(_key()) is None
     assert engine.state().cached_segments == 0
     assert "vide" in engine.state().last_error
-    assert engine.request(job)["status"] == "pending"   # pas servi comme « en cache » : il sera refait
+    assert (
+        engine.request(job)["status"] == "pending"
+    )  # pas servi comme « en cache » : il sera refait
 
 
-def test_the_default_render_rejects_a_zero_exit_code_without_output(tmp_path, monkeypatch):
+def test_the_default_render_rejects_a_zero_exit_code_without_output(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    monkeypatch.setattr("core.preview_engine._run_cancellable", lambda command, token, *, timeout: (0, ""))
+    monkeypatch.setattr(
+        "core.preview_engine._run_cancellable",
+        lambda command, token, *, timeout: (0, ""),
+    )
     engine = PreviewEngine(cache=None)
-    job = PreviewJob(key=_key(), plan=build_render_plan(create_default_project()), start=0.0, duration=2.0)
+    job = PreviewJob(
+        key=_key(),
+        plan=build_render_plan(create_default_project()),
+        start=0.0,
+        duration=2.0,
+    )
 
     with pytest.raises(RuntimeError, match="aucun fichier"):
         engine._default_render(job, None)
 
-    assert not list(tmp_path.glob("kut-preview-*"))      # aucun temporaire ne reste
+    assert not list(tmp_path.glob("kut-preview-*"))  # aucun temporaire ne reste

@@ -159,18 +159,30 @@ def test_build_command_shifts_layer_by_timeline_start(engine, tmp_path):
     """Le filter_complex doit décaler la couche à sa position de timeline."""
     # V1 clip placé à t=2s.
     asset = MediaAsset(
-        id="a", path=str(tmp_path / "source.mp4"), name="A",
-        duration=10.0, width=1920, height=1080, fps=30.0, media_type="video",
+        id="a",
+        path=str(tmp_path / "source.mp4"),
+        name="A",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
     )
     project = Project(
         name="Shift",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="c", asset_id="a", track_id="V1",
-                        timeline_start=2.0, source_in=0.0, source_out=3.0,
+                        id="c",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=2.0,
+                        source_in=0.0,
+                        source_out=3.0,
                     ),
                 ],
             ),
@@ -209,11 +221,15 @@ def test_animated_transform_uses_filter_specific_time_variables(engine, tmp_path
     # Chaque filtre reçoit la courbe exprimée dans SA variable de temps, et
     # l'expression calcule la même valeur que le moteur Python.
     rotation = filter_complex.split("rotate=a='", 1)[1].split("*0.0174", 1)[0]
-    assert "T" not in rotation and evaluate_expression(rotation, t=0.5) == pytest.approx(22.5)
+    assert "T" not in rotation and evaluate_expression(
+        rotation, t=0.5
+    ) == pytest.approx(22.5)
     scale = filter_complex.split("scale=w='trunc(iw*(", 1)[1].split(")*1920.0/iw", 1)[0]
     assert evaluate_expression(scale, t=0.5) == pytest.approx(1.25)
     opacity = filter_complex.split("geq=", 1)[1].split("a='", 1)[1].split("'", 1)[0]
-    assert "t," not in opacity and evaluate_expression(opacity, T=0.5) == pytest.approx(0.75)
+    assert "t," not in opacity and evaluate_expression(opacity, T=0.5) == pytest.approx(
+        0.75
+    )
 
 
 def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_path):
@@ -239,9 +255,14 @@ def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_pat
     filter_complex = command[command.index("-filter_complex") + 1]
 
     # Calque centré (comme l'aperçu), puis décalé de position × largeur d'export.
-    assert "x='round((W-w)/2+(" in filter_complex and "y='round((H-h)/2+(" in filter_complex
-    x_expression = filter_complex.split("x='round((W-w)/2+(", 1)[1].split(")*320.0", 1)[0]
-    assert "(t-2.0)" in x_expression                                # temps local au clip
+    assert (
+        "x='round((W-w)/2+(" in filter_complex
+        and "y='round((H-h)/2+(" in filter_complex
+    )
+    x_expression = filter_complex.split("x='round((W-w)/2+(", 1)[1].split(")*320.0", 1)[
+        0
+    ]
+    assert "(t-2.0)" in x_expression  # temps local au clip
     assert evaluate_expression(x_expression, t=2.5) == pytest.approx(0.25)
     assert "*320.0" in filter_complex
     assert "*1920.0" not in filter_complex
@@ -249,9 +270,7 @@ def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_pat
 
 def test_build_command_v2_overlays_after_v1(engine, tmp_path):
     """V2 doit être appliqué après V1 dans la chaîne d'overlays."""
-    project = _make_project_with_video(
-        str(tmp_path / "source.mp4"), v2_clip=(2.0, 5.0)
-    )
+    project = _make_project_with_video(str(tmp_path / "source.mp4"), v2_clip=(2.0, 5.0))
     plan = build_render_plan(project)
     request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
 
@@ -276,18 +295,30 @@ def test_build_command_v2_overlays_after_v1(engine, tmp_path):
 def test_build_command_respects_trim(engine, tmp_path):
     """Les trims ``source_in`` / ``source_out`` doivent apparaître dans le filtre."""
     asset = MediaAsset(
-        id="a", path=str(tmp_path / "source.mp4"), name="A",
-        duration=10.0, width=1920, height=1080, fps=30.0, media_type="video",
+        id="a",
+        path=str(tmp_path / "source.mp4"),
+        name="A",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
     )
     project = Project(
         name="Trim",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="c", asset_id="a", track_id="V1",
-                        timeline_start=0.0, source_in=2.0, source_out=5.5,
+                        id="c",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=2.0,
+                        source_out=5.5,
                     ),
                 ],
             ),
@@ -305,22 +336,38 @@ def test_build_command_respects_trim(engine, tmp_path):
 def test_build_command_with_gap_uses_background_duration(engine, tmp_path):
     """Un trou entre deux clips V1 ne raccourcit pas la durée totale."""
     asset = MediaAsset(
-        id="a", path=str(tmp_path / "source.mp4"), name="A",
-        duration=10.0, width=1920, height=1080, fps=30.0, media_type="video",
+        id="a",
+        path=str(tmp_path / "source.mp4"),
+        name="A",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
     )
     project = Project(
         name="Gap",
         tracks=[
             Track(
-                id="V1", name="V1", type="video",
+                id="V1",
+                name="V1",
+                type="video",
                 clips=[
                     Clip(
-                        id="first", asset_id="a", track_id="V1",
-                        timeline_start=0.0, source_in=0.0, source_out=2.0,
+                        id="first",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
                     ),
                     Clip(
-                        id="second", asset_id="a", track_id="V1",
-                        timeline_start=5.0, source_in=0.0, source_out=2.0,
+                        id="second",
+                        asset_id="a",
+                        track_id="V1",
+                        timeline_start=5.0,
+                        source_in=0.0,
+                        source_out=2.0,
                     ),
                 ],
             ),
@@ -378,9 +425,15 @@ def test_build_layer_filter_includes_required_chain():
     from core.render_plan import RenderLayer
 
     layer = RenderLayer(
-        clip_id="c", asset_id="a", track_id="V1", track_index=0,
-        source_path="/tmp/x.mp4", source_in=1.0, source_out=4.0,
-        timeline_start=2.5, timeline_end=5.5,
+        clip_id="c",
+        asset_id="a",
+        track_id="V1",
+        track_index=0,
+        source_path="/tmp/x.mp4",
+        source_in=1.0,
+        source_out=4.0,
+        timeline_start=2.5,
+        timeline_end=5.5,
     )
     filter_str = _build_layer_filter(0, layer, 0, 640, 360, 30)
 
@@ -388,7 +441,9 @@ def test_build_layer_filter_includes_required_chain():
     assert "trim=start=1.0:end=4.0" in filter_str
     assert "setpts=PTS-STARTPTS" in filter_str
     assert "scale=640:360:force_original_aspect_ratio=decrease" in filter_str
-    assert "pad=640:360:floor((ow-iw)/4)*2:floor((oh-ih)/4)*2:black" in filter_str   # bandes paires
+    assert (
+        "pad=640:360:floor((ow-iw)/4)*2:floor((oh-ih)/4)*2:black" in filter_str
+    )  # bandes paires
     assert "fps=30" in filter_str
     assert "setpts=PTS+2.5/TB" in filter_str
     assert filter_str.endswith("[v0]")
@@ -397,7 +452,10 @@ def test_build_layer_filter_includes_required_chain():
 def test_build_filter_complex_returns_output_labels_and_inputs():
     """Le filter_complex doit déclarer les labels vidéo + audio + les inputs."""
     plan = RenderPlan(
-        width=320, height=240, fps=30.0, duration=4.0,
+        width=320,
+        height=240,
+        fps=30.0,
+        duration=4.0,
         video_layers=(),
     )
     filter_complex, video_label, audio_label, input_paths = (
@@ -417,7 +475,10 @@ def test_build_filter_complex_returns_output_labels_and_inputs():
 def test_export_request_validates_fps(engine, tmp_path):
     """Un ``fps`` nul ou négatif doit être rejeté."""
     plan = RenderPlan(
-        width=1920, height=1080, fps=30.0, duration=4.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        duration=4.0,
         video_layers=(),
     )
     with pytest.raises(ValueError, match="fréquence"):
@@ -433,7 +494,10 @@ def test_export_request_validates_fps(engine, tmp_path):
 def test_export_request_validates_resolution(engine, tmp_path):
     """Une résolution nulle ou négative doit être rejetée."""
     plan = RenderPlan(
-        width=0, height=0, fps=30.0, duration=4.0,
+        width=0,
+        height=0,
+        fps=30.0,
+        duration=4.0,
         video_layers=(),
     )
     with pytest.raises(ValueError, match="résolution"):
@@ -498,7 +562,10 @@ def test_start_emits_failed_when_plan_has_no_layers(engine, tmp_path, monkeypatc
     engine.failed.connect(failed_messages.append)
 
     plan = RenderPlan(
-        width=1920, height=1080, fps=30.0, duration=0.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        duration=0.0,
         video_layers=(),
     )
     request = ExportRequest(
@@ -511,7 +578,9 @@ def test_start_emits_failed_when_plan_has_no_layers(engine, tmp_path, monkeypatc
     engine.start(request)
 
     assert failed_messages, "failed doit être émis quand le plan est vide."
-    assert "média" in failed_messages[0].lower() or "video" in failed_messages[0].lower()
+    assert (
+        "média" in failed_messages[0].lower() or "video" in failed_messages[0].lower()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -519,7 +588,9 @@ def test_start_emits_failed_when_plan_has_no_layers(engine, tmp_path, monkeypatc
 # ---------------------------------------------------------------------------
 
 
-def _audio_asset(asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", duration: float = 30.0):
+def _audio_asset(
+    asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", duration: float = 30.0
+):
     """Construit un ``MediaAsset`` audio conforme à la validation."""
     return MediaAsset(
         id=asset_id,
@@ -534,7 +605,9 @@ def _audio_asset(asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", dur
     )
 
 
-def _video_with_audio_asset(asset_id: str = "asset-vid", path: str = "/tmp/clip.mp4", duration: float = 5.0):
+def _video_with_audio_asset(
+    asset_id: str = "asset-vid", path: str = "/tmp/clip.mp4", duration: float = 5.0
+):
     """Construit un ``MediaAsset`` vidéo avec ``has_audio=True``."""
     return MediaAsset(
         id=asset_id,
@@ -554,10 +627,23 @@ def test_filter_complex_contains_silent_source(engine, tmp_path):
     asset = _video_with_audio_asset(path=str(tmp_path / "v.mp4"))
     project = Project(
         name="Silent",
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="c", asset_id="asset-vid", track_id="V1",
-                 timeline_start=0.0, source_in=0.0, source_out=5.0),
-        ])],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c",
+                        asset_id="asset-vid",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=5.0,
+                    ),
+                ],
+            )
+        ],
         media_assets=[asset],
     )
     plan = build_render_plan(project)
@@ -575,10 +661,23 @@ def test_filter_complex_includes_audio_layer_filters(engine, tmp_path):
     audio = _audio_asset(path=str(tmp_path / "song.mp3"), duration=20.0)
     project = Project(
         name="Audio",
-        tracks=[Track(id="A1", name="A1", type="audio", clips=[
-            Clip(id="music", asset_id="asset-audio", track_id="A1",
-                 timeline_start=2.0, source_in=1.0, source_out=6.0),
-        ])],
+        tracks=[
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="music",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=2.0,
+                        source_in=1.0,
+                        source_out=6.0,
+                    ),
+                ],
+            )
+        ],
         media_assets=[audio],
     )
     plan = build_render_plan(project)
@@ -611,16 +710,35 @@ def test_command_no_longer_uses_an(engine, tmp_path):
 def test_export_without_audio_still_has_silent_audio_track(engine, tmp_path):
     """Une vidéo sans flux audio produit une piste audio silencieuse."""
     asset_no_audio = MediaAsset(
-        id="v", path=str(tmp_path / "silent.mp4"), name="V",
-        duration=4.0, width=1920, height=1080, fps=30.0,
-        media_type="video", has_audio=False,
+        id="v",
+        path=str(tmp_path / "silent.mp4"),
+        name="V",
+        duration=4.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=False,
     )
     project = Project(
         name="NoAudio",
-        tracks=[Track(id="V1", name="V1", type="video", clips=[
-            Clip(id="c", asset_id="v", track_id="V1",
-                 timeline_start=0.0, source_in=0.0, source_out=4.0),
-        ])],
+        tracks=[
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c",
+                        asset_id="v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            )
+        ],
         media_assets=[asset_no_audio],
     )
     plan = build_render_plan(project)
@@ -662,10 +780,23 @@ def test_audio_layer_shift_via_setpts(engine, tmp_path):
     audio = _audio_asset(path=str(tmp_path / "song.mp3"), duration=10.0)
     project = Project(
         name="Shift",
-        tracks=[Track(id="A1", name="A1", type="audio", clips=[
-            Clip(id="late", asset_id="asset-audio", track_id="A1",
-                 timeline_start=3.5, source_in=0.0, source_out=2.0),
-        ])],
+        tracks=[
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="late",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=3.5,
+                        source_in=0.0,
+                        source_out=2.0,
+                    ),
+                ],
+            )
+        ],
         media_assets=[audio],
     )
     plan = build_render_plan(project)
@@ -684,14 +815,36 @@ def test_audio_and_video_share_same_duration(engine, tmp_path):
     project = Project(
         name="SameDuration",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-vid", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="A1", name="A1", type="audio", clips=[
-                Clip(id="a", asset_id="asset-audio", track_id="A1",
-                     timeline_start=0.0, source_in=0.0, source_out=10.0),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-vid",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="A1",
+                name="A1",
+                type="audio",
+                clips=[
+                    Clip(
+                        id="a",
+                        asset_id="asset-audio",
+                        track_id="A1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=10.0,
+                    ),
+                ],
+            ),
         ],
         media_assets=[video, audio],
     )
@@ -748,15 +901,37 @@ def test_filter_complex_includes_subtitles_filter(engine, tmp_path):
     project = Project(
         name="Sub",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="s", asset_id="asset-sub", track_id="S1",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0,
-                     text="Bonjour"),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="s",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                        text="Bonjour",
+                    ),
+                ],
+            ),
         ],
         media_assets=[video, sub],
     )
@@ -818,15 +993,37 @@ def test_temporary_srt_file_is_cleaned_up_after_start_failure(
     project = Project(
         name="Boom",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="s", asset_id="asset-sub", track_id="S1",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0,
-                     text="Hello"),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="s",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                        text="Hello",
+                    ),
+                ],
+            ),
         ],
         media_assets=[video, sub],
     )
@@ -839,7 +1036,9 @@ def test_temporary_srt_file_is_cleaned_up_after_start_failure(
 
     # On force la commande à échouer (dossier de sortie invalide).
     request = make_request(
-        plan, tmp_path / "no_such_dir" / "out.mp4", ExportFormat.MP4_H264,
+        plan,
+        tmp_path / "no_such_dir" / "out.mp4",
+        ExportFormat.MP4_H264,
     )
 
     # ``start`` doit lever via ``failed`` (synchrone) et nettoyer.
@@ -850,8 +1049,7 @@ def test_temporary_srt_file_is_cleaned_up_after_start_failure(
 
     leftover = list(tmp_path.glob("kut-studio-subtitles-*.srt"))
     assert leftover == [], (
-        "Aucun SRT temporaire ne doit subsister après un échec : "
-        f"{leftover}"
+        f"Aucun SRT temporaire ne doit subsister après un échec : {leftover}"
     )
 
 
@@ -866,18 +1064,46 @@ def test_srt_temporary_file_contains_formatted_cues(engine, tmp_path, monkeypatc
     project = Project(
         name="SubCues",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="s1", asset_id="asset-sub", track_id="S1",
-                     timeline_start=0.0, source_in=0.0, source_out=1.0,
-                     text="Bonjour"),
-                Clip(id="s2", asset_id="asset-sub", track_id="S1",
-                     timeline_start=2.0, source_in=0.0, source_out=1.0,
-                     text="Au revoir"),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="s1",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                        text="Bonjour",
+                    ),
+                    Clip(
+                        id="s2",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=2.0,
+                        source_in=0.0,
+                        source_out=1.0,
+                        text="Au revoir",
+                    ),
+                ],
+            ),
         ],
         media_assets=[video, sub],
     )
@@ -905,9 +1131,7 @@ def test_start_emits_failed_when_ffmpeg_lacks_subtitles_filter(
         ExportRequest,
     )
 
-    monkeypatch.setattr(
-        engine_module, "_ffmpeg_supports_subtitles", lambda: False
-    )
+    monkeypatch.setattr(engine_module, "_ffmpeg_supports_subtitles", lambda: False)
     monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg")
 
     sub = _subtitle_asset()
@@ -915,15 +1139,37 @@ def test_start_emits_failed_when_ffmpeg_lacks_subtitles_filter(
     project = Project(
         name="NoLibass",
         tracks=[
-            Track(id="V1", name="V1", type="video", clips=[
-                Clip(id="v", asset_id="asset-v", track_id="V1",
-                     timeline_start=0.0, source_in=0.0, source_out=4.0),
-            ]),
-            Track(id="S1", name="S1", type="subtitle", clips=[
-                Clip(id="s", asset_id="asset-sub", track_id="S1",
-                     timeline_start=0.0, source_in=0.0, source_out=2.0,
-                     text="Bonjour"),
-            ]),
+            Track(
+                id="V1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="v",
+                        asset_id="asset-v",
+                        track_id="V1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="s",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                        text="Bonjour",
+                    ),
+                ],
+            ),
         ],
         media_assets=[video, sub],
     )

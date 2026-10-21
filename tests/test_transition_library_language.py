@@ -6,10 +6,16 @@ import dataclasses
 
 import pytest
 
-from core.transition_presets import builtin_transition_presets, make_user_transition_preset
+from core.transition_presets import (
+    builtin_transition_presets,
+    make_user_transition_preset,
+)
 from core.transitions import TRANSITION_FAMILIES, TransitionType, transition_type_values
 from ui import i18n
-from ui.project_panel_widgets.transition_library import SaveTransitionPresetDialog, TransitionLibraryView
+from ui.project_panel_widgets.transition_library import (
+    SaveTransitionPresetDialog,
+    TransitionLibraryView,
+)
 from ui.properties_panel import PropertiesPanel
 
 
@@ -27,7 +33,9 @@ def _expected(value: str, language: str, part: str) -> str:
 def _view(qtbot, presets=None) -> TransitionLibraryView:
     view = TransitionLibraryView()
     qtbot.addWidget(view)
-    view.set_presets(list(presets if presets is not None else builtin_transition_presets()))
+    view.set_presets(
+        list(presets if presets is not None else builtin_transition_presets())
+    )
     return view
 
 
@@ -40,20 +48,31 @@ def test_the_43_cards_show_the_interface_language(qtbot, language):
         assert card._title.text() == _expected(preset_id, language, "name")
         description = _expected(preset_id, language, "description")
         shown = card._description.text()
-        assert shown == (description if len(description) <= 80 else description[:79].rstrip() + "…")
+        assert shown == (
+            description if len(description) <= 80 else description[:79].rstrip() + "…"
+        )
 
 
 def test_the_english_cards_are_not_in_french(qtbot):
     i18n.set_language("en")
     view = _view(qtbot)
     french = {p.id: p.name for p in builtin_transition_presets()}
-    assert {pid: card._title.text() for pid, card in view._cards.items() if card._title.text() == french[pid]} == {}
+    assert {
+        pid: card._title.text()
+        for pid, card in view._cards.items()
+        if card._title.text() == french[pid]
+    } == {}
 
 
-@pytest.mark.parametrize(("language", "needle", "expected"), [
-    ("en", "Cover left", "cover_left"), ("es", "Cubrir a la izquierda", "cover_left"),
-    ("fr", "Recouvrement gauche", "cover_left"), ("en", "Crossfade", "crossfade"),
-])
+@pytest.mark.parametrize(
+    ("language", "needle", "expected"),
+    [
+        ("en", "Cover left", "cover_left"),
+        ("es", "Cubrir a la izquierda", "cover_left"),
+        ("fr", "Recouvrement gauche", "cover_left"),
+        ("en", "Crossfade", "crossfade"),
+    ],
+)
 def test_search_uses_the_displayed_name(qtbot, language, needle, expected):
     i18n.set_language(language)
     view = _view(qtbot)
@@ -63,12 +82,16 @@ def test_search_uses_the_displayed_name(qtbot, language, needle, expected):
 
 def test_a_user_preset_is_shown_as_typed_and_never_modified(qtbot):
     i18n.set_language("en")
-    user = make_user_transition_preset("Mon effet", "Ma description", TransitionType.CROSSFADE, 0.5)
+    user = make_user_transition_preset(
+        "Mon effet", "Ma description", TransitionType.CROSSFADE, 0.5
+    )
     original = dataclasses.replace(user)
     view = _view(qtbot, [*builtin_transition_presets(), user])
     assert view._cards[user.id]._title.text() == "Mon effet"
     assert user == original
-    assert builtin_transition_presets()[0].name == "Fondu enchaîné"      # le contenu de core reste en français
+    assert (
+        builtin_transition_presets()[0].name == "Fondu enchaîné"
+    )  # le contenu de core reste en français
 
 
 @pytest.mark.parametrize("member", list(TransitionType), ids=lambda t: t.value)
@@ -90,6 +113,10 @@ def test_the_inspector_offers_the_43_types(qtbot, monkeypatch, tmp_path):
     panel = PropertiesPanel(lambda *_: None)
     qtbot.addWidget(panel)
     combo = panel.transition_type_combo
-    assert [combo.itemData(i) for i in range(combo.count())] == list(transition_type_values())
+    assert [combo.itemData(i) for i in range(combo.count())] == list(
+        transition_type_values()
+    )
     for i in range(combo.count()):
-        assert combo.itemText(i) == i18n.translate(f"transitions.preset.{combo.itemData(i)}.name")
+        assert combo.itemText(i) == i18n.translate(
+            f"transitions.preset.{combo.itemData(i)}.name"
+        )

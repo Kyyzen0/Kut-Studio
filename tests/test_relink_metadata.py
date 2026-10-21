@@ -13,28 +13,68 @@ from dataclasses import replace
 
 import pytest
 
-from core.library_organization import LibraryError, LibraryOrganization, relink_differences
+from core.library_organization import (
+    LibraryError,
+    LibraryOrganization,
+    relink_differences,
+)
 from core.media_probe import probe_media
 from core.project_model import MediaAsset, Project
 
-pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")
+pytestmark = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None, reason="FFmpeg indisponible"
+)
 
 
 def _ffmpeg(*arguments: str) -> None:
-    completed = subprocess.run(["ffmpeg", "-v", "error", "-y", *arguments], capture_output=True, text=True, timeout=60)
+    completed = subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert completed.returncode == 0, completed.stderr[-500:]
 
 
 @pytest.fixture
 def files(tmp_path):
-    big = tmp_path / "big.mp4"          # 640×360, 30 i/s, 5 s, avec audio
-    small = tmp_path / "small.mp4"      # 320×180, 25 i/s, 2 s, sans audio
+    big = tmp_path / "big.mp4"  # 640×360, 30 i/s, 5 s, avec audio
+    small = tmp_path / "small.mp4"  # 320×180, 25 i/s, 2 s, sans audio
     sound = tmp_path / "sound.wav"
-    _ffmpeg("-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:d=5", "-f", "lavfi", "-i", "sine=d=5",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(big))
-    _ffmpeg("-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:d=2", "-pix_fmt", "yuv420p", str(small))
+    _ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=640x360:rate=30:d=5",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=d=5",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-shortest",
+        str(big),
+    )
+    _ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x180:rate=25:d=2",
+        "-pix_fmt",
+        "yuv420p",
+        str(small),
+    )
     _ffmpeg("-f", "lavfi", "-i", "sine=d=1", str(sound))
-    return {"big": str(big), "small": str(small), "sound": str(sound), "text": str(tmp_path / "notes.txt")}
+    return {
+        "big": str(big),
+        "small": str(small),
+        "sound": str(sound),
+        "text": str(tmp_path / "notes.txt"),
+    }
 
 
 def _project(files) -> tuple[Project, MediaAsset]:
@@ -48,9 +88,16 @@ def test_relinking_to_a_different_file_refreshes_every_metadata(files):
     LibraryOrganization(project).relink_asset(asset.id, files["small"])
     real = probe_media(files["small"])
     assert asset.path == files["small"]
-    assert (asset.width, asset.height, asset.fps, asset.has_audio) == (320, 180, 25.0, False)
+    assert (asset.width, asset.height, asset.fps, asset.has_audio) == (
+        320,
+        180,
+        25.0,
+        False,
+    )
     assert asset.duration == pytest.approx(real.duration)
-    assert asset.id == project.media_assets[0].id and asset.name == name            # l'identité du média reste
+    assert (
+        asset.id == project.media_assets[0].id and asset.name == name
+    )  # l'identité du média reste
 
 
 def test_an_unreadable_file_is_refused_and_the_asset_keeps_its_old_path(files):
@@ -60,7 +107,9 @@ def test_an_unreadable_file_is_refused_and_the_asset_keeps_its_old_path(files):
     with pytest.raises(LibraryError, match="ne peut pas être relié"):
         LibraryOrganization(project).relink_asset(asset.id, files["text"])
     with pytest.raises(LibraryError):
-        LibraryOrganization(project).relink_asset(asset.id, files["small"].replace("small", "absent"))
+        LibraryOrganization(project).relink_asset(
+            asset.id, files["small"].replace("small", "absent")
+        )
     assert asset == before
 
 
@@ -103,7 +152,9 @@ def test_the_relink_dialog_tells_the_user_what_changed(qtbot, monkeypatch, files
     asset = probe_media(files["big"])
     window.project.media_assets.append(asset)
     monkeypatch.setattr(
-        main_window.QFileDialog, "getOpenFileName", staticmethod(lambda *args, **kwargs: (files["small"], ""))
+        main_window.QFileDialog,
+        "getOpenFileName",
+        staticmethod(lambda *args, **kwargs: (files["small"], "")),
     )
     window.statusBar().clearMessage()
 

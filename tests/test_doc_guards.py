@@ -41,7 +41,9 @@ def check_changelog(text: str) -> list[str]:
             errors.append(f"[{v}] : lien inattendu {url}")
     expected = f"{REPO}/compare/v{versions[-1]}...HEAD"
     if links.get("Unreleased") != expected:
-        errors.append(f"[Unreleased] doit valoir {expected}, trouvé {links.get('Unreleased')}")
+        errors.append(
+            f"[Unreleased] doit valoir {expected}, trouvé {links.get('Unreleased')}"
+        )
     return errors
 
 
@@ -61,11 +63,15 @@ def _fake_changelog() -> str:
 def test_changelog_guard_detects_missing_reference_and_stale_unreleased() -> None:
     text = _fake_changelog()
     assert check_changelog(text) == []
-    no_ref = "\n".join(line for line in text.splitlines() if not line.startswith("[0.2.0]: "))
+    no_ref = "\n".join(
+        line for line in text.splitlines() if not line.startswith("[0.2.0]: ")
+    )
     assert any("0.2.0" in e for e in check_changelog(no_ref))
     stale = text.replace("compare/v0.2.0...HEAD", "compare/v0.1.1...HEAD")
     assert any("Unreleased" in e for e in check_changelog(stale))
-    new_section = text.replace("## [0.2.0] - ", "## [0.3.0] - 2026-03-01\n\n## [0.2.0] - ", 1)
+    new_section = text.replace(
+        "## [0.2.0] - ", "## [0.3.0] - 2026-03-01\n\n## [0.2.0] - ", 1
+    )
     assert check_changelog(new_section)
 
 
@@ -84,7 +90,10 @@ def test_no_hardcoded_verb_count_in_live_docs() -> None:
         if p.exists()
         for m in _HARD_COUNT.finditer(p.read_text(encoding="utf-8"))
     ]
-    assert found == [], "nombre de verbes en dur (dis « les verbes », sans chiffre) : " + ", ".join(found)
+    assert found == [], (
+        "nombre de verbes en dur (dis « les verbes », sans chiffre) : "
+        + ", ".join(found)
+    )
 
 
 def _with_prerelease(text: str) -> str:
@@ -107,12 +116,20 @@ def test_prerelease_order_is_semver() -> None:
 def test_changelog_guard_handles_prereleases() -> None:
     good = _with_prerelease(_fake_changelog())
     assert check_changelog(good) == []
-    no_link = "\n".join(x for x in good.splitlines() if not x.startswith("[0.3.0-beta.1]: "))
+    no_link = "\n".join(
+        x for x in good.splitlines() if not x.startswith("[0.3.0-beta.1]: ")
+    )
     assert any("0.3.0-beta.1" in e for e in check_changelog(no_link))
     stale = good.replace("compare/v0.3.0-rc.1...HEAD", "compare/v0.2.0...HEAD")
     assert any("Unreleased" in e for e in check_changelog(stale))
     # Stable publiée après ses préversions : [Unreleased] compare depuis elle, et elle suit la rc.
-    stable = good.replace("## [0.3.0-rc.1] - ", "## [0.3.0] - 2026-03-05\n\n## [0.3.0-rc.1] - ", 1)
+    stable = good.replace(
+        "## [0.3.0-rc.1] - ", "## [0.3.0] - 2026-03-05\n\n## [0.3.0-rc.1] - ", 1
+    )
     stable = stable.replace("compare/v0.3.0-rc.1...HEAD", "compare/v0.3.0...HEAD")
-    stable = stable.replace("[0.3.0-rc.1]: ", f"[0.3.0]: {REPO}/compare/v0.3.0-rc.1...v0.3.0\n[0.3.0-rc.1]: ", 1)
+    stable = stable.replace(
+        "[0.3.0-rc.1]: ",
+        f"[0.3.0]: {REPO}/compare/v0.3.0-rc.1...v0.3.0\n[0.3.0-rc.1]: ",
+        1,
+    )
     assert check_changelog(stable) == []

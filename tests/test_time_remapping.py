@@ -181,48 +181,85 @@ class TestSourceToTimelineTime:
     def test_normal_speed(self):
         # source_in=0, source_out=10, speed=1.0
         # source_time=5.0 -> timeline_time=5.0
-        assert source_to_timeline_time(5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0) == 5.0
+        assert (
+            source_to_timeline_time(
+                5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0
+            )
+            == 5.0
+        )
 
     def test_double_speed(self):
         # source_in=0, source_out=10, speed=2.0
         # source_time=5.0 -> timeline_time=2.5 (le clip passe 2x plus vite)
-        assert source_to_timeline_time(5.0, 0.0, 10.0, 2.0, False, FreezeFrameMode.NONE, 0.0) == 2.5
+        assert (
+            source_to_timeline_time(
+                5.0, 0.0, 10.0, 2.0, False, FreezeFrameMode.NONE, 0.0
+            )
+            == 2.5
+        )
 
     def test_half_speed(self):
         # source_in=0, source_out=10, speed=0.5
         # source_time=5.0 -> timeline_time=10.0
-        assert source_to_timeline_time(5.0, 0.0, 10.0, 0.5, False, FreezeFrameMode.NONE, 0.0) == 10.0
+        assert (
+            source_to_timeline_time(
+                5.0, 0.0, 10.0, 0.5, False, FreezeFrameMode.NONE, 0.0
+            )
+            == 10.0
+        )
 
     def test_reverse(self):
         # source_in=0, source_out=10, speed=1.0, reverse=True
         # source_time=2.0 -> timeline_time=8.0 (inversé: 10-2=8)
-        assert source_to_timeline_time(2.0, 0.0, 10.0, 1.0, True, FreezeFrameMode.NONE, 0.0) == 8.0
+        assert (
+            source_to_timeline_time(
+                2.0, 0.0, 10.0, 1.0, True, FreezeFrameMode.NONE, 0.0
+            )
+            == 8.0
+        )
 
     def test_reverse_with_speed(self):
         # source_in=0, source_out=10, speed=2.0, reverse=True
         # source_time=2.0 -> relative=2, reversed=8, timeline=8/2=4
-        assert source_to_timeline_time(2.0, 0.0, 10.0, 2.0, True, FreezeFrameMode.NONE, 0.0) == 4.0
+        assert (
+            source_to_timeline_time(
+                2.0, 0.0, 10.0, 2.0, True, FreezeFrameMode.NONE, 0.0
+            )
+            == 4.0
+        )
 
     def test_freeze_frame(self):
         # En freeze, tout donne 0.0
-        assert source_to_timeline_time(
-            5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.FREEZE, 5.0
-        ) == 0.0
+        assert (
+            source_to_timeline_time(
+                5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.FREEZE, 5.0
+            )
+            == 0.0
+        )
 
     def test_freeze_frame_wrong_source_time(self):
         with pytest.raises(ValueError) as exc_info:
-            source_to_timeline_time(3.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.FREEZE, 5.0)
+            source_to_timeline_time(
+                3.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.FREEZE, 5.0
+            )
         assert "source_time doit être" in str(exc_info.value)
 
     def test_out_of_bounds_source_time(self):
         with pytest.raises(ValueError) as exc_info:
-            source_to_timeline_time(-1.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0)
+            source_to_timeline_time(
+                -1.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0
+            )
         assert "source_time" in str(exc_info.value)
 
     def test_source_in_not_zero(self):
         # source_in=5, source_out=15, speed=1.0
         # source_time=10.0 -> relative=5, timeline=5.0
-        assert source_to_timeline_time(10.0, 5.0, 15.0, 1.0, False, FreezeFrameMode.NONE, 0.0) == 5.0
+        assert (
+            source_to_timeline_time(
+                10.0, 5.0, 15.0, 1.0, False, FreezeFrameMode.NONE, 0.0
+            )
+            == 5.0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -232,29 +269,45 @@ class TestSourceToTimelineTime:
 
 class TestTimelineToSourceTime:
     def test_normal_speed(self):
-        assert timeline_to_source_time(5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0) == 5.0
+        assert (
+            timeline_to_source_time(
+                5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0
+            )
+            == 5.0
+        )
 
     def test_double_speed(self):
         # timeline_time=5.0, speed=2.0 -> source_time=10.0
-        assert timeline_to_source_time(5.0, 0.0, 10.0, 2.0, False, FreezeFrameMode.NONE, 0.0) == pytest.approx(10.0)
+        assert timeline_to_source_time(
+            5.0, 0.0, 10.0, 2.0, False, FreezeFrameMode.NONE, 0.0
+        ) == pytest.approx(10.0)
 
     def test_half_speed(self):
         # timeline_time=10.0, speed=0.5 -> source_time=5.0
-        assert timeline_to_source_time(10.0, 0.0, 10.0, 0.5, False, FreezeFrameMode.NONE, 0.0) == pytest.approx(5.0)
+        assert timeline_to_source_time(
+            10.0, 0.0, 10.0, 0.5, False, FreezeFrameMode.NONE, 0.0
+        ) == pytest.approx(5.0)
 
     def test_reverse(self):
         # timeline_time=8.0, reverse=True -> relative=8, reversed=2, source=2.0
-        assert timeline_to_source_time(8.0, 0.0, 10.0, 1.0, True, FreezeFrameMode.NONE, 0.0) == pytest.approx(2.0)
+        assert timeline_to_source_time(
+            8.0, 0.0, 10.0, 1.0, True, FreezeFrameMode.NONE, 0.0
+        ) == pytest.approx(2.0)
 
     def test_freeze_frame(self):
         # En freeze, tout donne freeze_source_time
-        assert timeline_to_source_time(
-            5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.FREEZE, 7.5
-        ) == 7.5
+        assert (
+            timeline_to_source_time(
+                5.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.FREEZE, 7.5
+            )
+            == 7.5
+        )
 
     def test_out_of_bounds_timeline_time(self):
         with pytest.raises(ValueError) as exc_info:
-            timeline_to_source_time(20.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0)
+            timeline_to_source_time(
+                20.0, 0.0, 10.0, 1.0, False, FreezeFrameMode.NONE, 0.0
+            )
         assert "timeline_time" in str(exc_info.value)
 
 
@@ -265,24 +318,32 @@ class TestTimelineToSourceTime:
 
 class TestComputeTimelineDuration:
     def test_normal_speed(self):
-        assert compute_timeline_duration(0.0, 10.0, 1.0, FreezeFrameMode.NONE, 0.0) == 10.0
+        assert (
+            compute_timeline_duration(0.0, 10.0, 1.0, FreezeFrameMode.NONE, 0.0) == 10.0
+        )
 
     def test_double_speed(self):
         # source_duration=10, speed=2 -> timeline_duration=5
-        assert compute_timeline_duration(0.0, 10.0, 2.0, FreezeFrameMode.NONE, 0.0) == 5.0
+        assert (
+            compute_timeline_duration(0.0, 10.0, 2.0, FreezeFrameMode.NONE, 0.0) == 5.0
+        )
 
     def test_half_speed(self):
         # source_duration=10, speed=0.5 -> timeline_duration=20
-        assert compute_timeline_duration(0.0, 10.0, 0.5, FreezeFrameMode.NONE, 0.0) == 20.0
+        assert (
+            compute_timeline_duration(0.0, 10.0, 0.5, FreezeFrameMode.NONE, 0.0) == 20.0
+        )
 
     def test_freeze_frame(self):
         # En freeze, la durée timeline = freeze_duration
-        assert compute_timeline_duration(
-            0.0, 10.0, 1.0, FreezeFrameMode.FREEZE, 5.0
-        ) == 5.0
-        assert compute_timeline_duration(
-            0.0, 10.0, 2.0, FreezeFrameMode.FREEZE, 3.0
-        ) == 3.0
+        assert (
+            compute_timeline_duration(0.0, 10.0, 1.0, FreezeFrameMode.FREEZE, 5.0)
+            == 5.0
+        )
+        assert (
+            compute_timeline_duration(0.0, 10.0, 2.0, FreezeFrameMode.FREEZE, 3.0)
+            == 3.0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +490,10 @@ class TestCreateFreezeFrame:
     def test_freeze_source_time_out_of_bounds(self):
         with pytest.raises(ValueError) as exc_info:
             create_freeze_frame(
-                source_in=0.0, source_out=10.0, freeze_source_time=15.0, freeze_duration=2.0
+                source_in=0.0,
+                source_out=10.0,
+                freeze_source_time=15.0,
+                freeze_duration=2.0,
             )
         assert "doit être dans" in str(exc_info.value)
 
@@ -493,7 +557,9 @@ class TestComputeSourceDuration:
 
     def test_with_speed(self):
         # timeline_duration=10, speed=2 -> source_duration=20
-        assert compute_source_duration(0.0, 10.0, 2.0, FreezeFrameMode.NONE) == pytest.approx(20.0)
+        assert compute_source_duration(
+            0.0, 10.0, 2.0, FreezeFrameMode.NONE
+        ) == pytest.approx(20.0)
 
     def test_freeze(self):
         # En freeze, source_duration=0
@@ -609,15 +675,23 @@ class TestGetFfmpegFreezeFilter:
     def test_freeze_filter(self):
         filters = get_ffmpeg_freeze_filter(freeze_source_time=5.0, asset_fps=30.0)
         # Image 150 (5,0 × 30) : une demi-image avant, pour ne jamais retenir sa voisine.
-        assert filters == ["trim=start=4.983333", "setpts=PTS-STARTPTS", "trim=end_frame=1"]
+        assert filters == [
+            "trim=start=4.983333",
+            "setpts=PTS-STARTPTS",
+            "trim=end_frame=1",
+        ]
 
     def test_the_instant_is_counted_from_the_clip_in_point(self):
-        filters = get_ffmpeg_freeze_filter(freeze_source_time=5.0, asset_fps=25.0, source_in=2.0)
-        assert filters[0] == "trim=start=2.980000"          # 3,0 s depuis l'entrée = image 75
+        filters = get_ffmpeg_freeze_filter(
+            freeze_source_time=5.0, asset_fps=25.0, source_in=2.0
+        )
+        assert filters[0] == "trim=start=2.980000"  # 3,0 s depuis l'entrée = image 75
 
     def test_the_first_frame_and_a_zero_fps_are_safe(self):
         assert get_ffmpeg_freeze_filter(0.0, 30.0)[0] == "trim=start=0.000000"
-        assert get_ffmpeg_freeze_filter(1.0, 0.0)[0] == "trim=start=0.983333"      # 30 i/s par défaut
+        assert (
+            get_ffmpeg_freeze_filter(1.0, 0.0)[0] == "trim=start=0.983333"
+        )  # 30 i/s par défaut
 
     def test_no_filter_contains_a_comma(self):
         """Une virgule interne casse un filter_complex (« No such filter: '75)' »)."""
@@ -631,18 +705,36 @@ class TestGetFfmpegFreezeFilter:
 
 class TestEstimateFfmpegMemoryUsage:
     def test_no_media(self):
-        assert estimate_ffmpeg_memory_usage(
-            source_duration=100.0, has_audio=False, has_video=False, width=1920, height=1080, fps=30.0
-        ) == 0
+        assert (
+            estimate_ffmpeg_memory_usage(
+                source_duration=100.0,
+                has_audio=False,
+                has_video=False,
+                width=1920,
+                height=1080,
+                fps=30.0,
+            )
+            == 0
+        )
 
     def test_video_only(self):
         usage = estimate_ffmpeg_memory_usage(
-            source_duration=10.0, has_audio=False, has_video=True, width=1920, height=1080, fps=30.0
+            source_duration=10.0,
+            has_audio=False,
+            has_video=True,
+            width=1920,
+            height=1080,
+            fps=30.0,
         )
         assert usage > 0
 
     def test_audio_only(self):
         usage = estimate_ffmpeg_memory_usage(
-            source_duration=10.0, has_audio=True, has_video=False, width=0, height=0, fps=0.0
+            source_duration=10.0,
+            has_audio=True,
+            has_video=False,
+            width=0,
+            height=0,
+            fps=0.0,
         )
         assert usage > 0

@@ -156,7 +156,8 @@ def test_automation_point_rejects_negative_fade() -> None:
 def test_automation_point_rejects_too_long_fade() -> None:
     with pytest.raises(AudioAutomationRangeError):
         AutomationPoint(
-            time_seconds=1.0, gain_db=0.0,
+            time_seconds=1.0,
+            gain_db=0.0,
             fade_seconds=MAX_POINT_FADE_SECONDS + 0.01,
         )
 
@@ -303,12 +304,22 @@ def test_gain_at_is_continuous_in_the_hold(probe) -> None:
     Avant, un maintien nul sautait au gain d'arrivée juste après le point précédent, alors qu'un maintien de 1 µs
     donnait presque la ligne droite : la courbe changeait du tout au tout pour une différence inaudible.
     """
-    def curve(hold: float) -> TrackAutomation:
-        return TrackAutomation(track_id="T1", points=[AutomationPoint(2.0, -6.0), AutomationPoint(4.0, 0.0, hold)])
 
-    assert curve(1e-6).gain_at(probe) == pytest.approx(curve(0.0).gain_at(probe), abs=1e-4)
-    assert curve(2.0 - 1e-6).gain_at(probe) == pytest.approx(curve(2.0).gain_at(probe), abs=1e-4)
-    assert curve(2.0).gain_at(probe) == -6.0, "un maintien qui atteint le point : saut à l'instant du point"
+    def curve(hold: float) -> TrackAutomation:
+        return TrackAutomation(
+            track_id="T1",
+            points=[AutomationPoint(2.0, -6.0), AutomationPoint(4.0, 0.0, hold)],
+        )
+
+    assert curve(1e-6).gain_at(probe) == pytest.approx(
+        curve(0.0).gain_at(probe), abs=1e-4
+    )
+    assert curve(2.0 - 1e-6).gain_at(probe) == pytest.approx(
+        curve(2.0).gain_at(probe), abs=1e-4
+    )
+    assert curve(2.0).gain_at(probe) == -6.0, (
+        "un maintien qui atteint le point : saut à l'instant du point"
+    )
 
 
 def test_gain_at_with_fade_keeps_previous_gain_during_fade() -> None:
@@ -348,11 +359,23 @@ def test_gain_at_empty_automation_returns_zero() -> None:
     assert automation.gain_at(2.0) == 0.0
 
 
-@pytest.mark.parametrize("points", [
-    [AutomationPoint(1.0, -3.0)],
-    [AutomationPoint(0.0, 0.0), AutomationPoint(2.0, -12.0), AutomationPoint(3.0, -12.0), AutomationPoint(5.0, 4.0)],
-    [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -12.0, 0.5), AutomationPoint(4.0, -6.0, 3.0)],
-])
+@pytest.mark.parametrize(
+    "points",
+    [
+        [AutomationPoint(1.0, -3.0)],
+        [
+            AutomationPoint(0.0, 0.0),
+            AutomationPoint(2.0, -12.0),
+            AutomationPoint(3.0, -12.0),
+            AutomationPoint(5.0, 4.0),
+        ],
+        [
+            AutomationPoint(1.0, 0.0),
+            AutomationPoint(2.0, -12.0, 0.5),
+            AutomationPoint(4.0, -6.0, 3.0),
+        ],
+    ],
+)
 def test_the_pieces_trace_exactly_the_curve_of_gain_at(points) -> None:
     """Les morceaux (tracé de la timeline, expression de l'export) donnent ``gain_at`` en tout instant."""
     curve = TrackAutomation(track_id="T1", points=list(points))
@@ -366,24 +389,35 @@ def test_the_pieces_trace_exactly_the_curve_of_gain_at(points) -> None:
 
 
 def test_moving_a_point_keeps_its_hold_and_the_order() -> None:
-    curve = TrackAutomation(track_id="T1", points=[
-        AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0, 0.5), AutomationPoint(3.0, 0.0),
-    ])
+    curve = TrackAutomation(
+        track_id="T1",
+        points=[
+            AutomationPoint(1.0, 0.0),
+            AutomationPoint(2.0, -6.0, 0.5),
+            AutomationPoint(3.0, 0.0),
+        ],
+    )
     moved = curve.move_point(2.0, 3.5, -9.0)
     assert moved == AutomationPoint(3.5, -9.0, 0.5)
     assert [p.time_seconds for p in curve.points] == [1.0, 3.0, 3.5]
-    assert curve.move_point(3.5, 3.5, -3.0).gain_db == -3.0, "un geste vertical garde l'instant"
+    assert curve.move_point(3.5, 3.5, -3.0).gain_db == -3.0, (
+        "un geste vertical garde l'instant"
+    )
 
 
 def test_a_point_cannot_be_moved_onto_another_or_from_nowhere() -> None:
-    curve = TrackAutomation(track_id="T1", points=[AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0)])
+    curve = TrackAutomation(
+        track_id="T1", points=[AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0)]
+    )
     with pytest.raises(AudioAutomationOverlapError):
         curve.move_point(2.0, 1.0, -6.0)
     with pytest.raises(AudioAutomationUnknownIdError):
         curve.move_point(1.5, 1.7, 0.0)
     with pytest.raises(AudioAutomationRangeError):
         curve.move_point(2.0, -1.0, 0.0)
-    assert curve.points == [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0)], "un refus ne touche à rien"
+    assert curve.points == [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0)], (
+        "un refus ne touche à rien"
+    )
 
 
 def test_the_service_moves_a_point_of_an_audio_track() -> None:
@@ -606,7 +640,9 @@ def test_roundtrip_preserves_roles_automation_and_ducking(tmp_path) -> None:
     service.add_automation_point(project, "M1", 0.0, -6.0, 0.5)
     service.add_automation_point(project, "M1", 2.0, -3.0, 1.0)
     service.add_ducking_sidechain(
-        project, "M1", "V1",
+        project,
+        "M1",
+        "V1",
         DuckingConfig(threshold_db=-25.0, reduction_db=10.0),
     )
 
@@ -684,8 +720,10 @@ def test_ducking_with_unknown_track_is_dropped(tmp_path) -> None:
             "music_track_id": "M1",
             "voice_track_id": "V-missing",
             "config": {
-                "threshold_db": -20.0, "reduction_db": 10.0,
-                "attack_seconds": 0.05, "release_seconds": 0.4,
+                "threshold_db": -20.0,
+                "reduction_db": 10.0,
+                "attack_seconds": 0.05,
+                "release_seconds": 0.4,
             },
             "enabled": True,
         }
@@ -709,8 +747,10 @@ def test_ducking_with_same_music_and_voice_is_rejected(tmp_path) -> None:
             "music_track_id": "M1",
             "voice_track_id": "M1",
             "config": {
-                "threshold_db": -20.0, "reduction_db": 10.0,
-                "attack_seconds": 0.05, "release_seconds": 0.4,
+                "threshold_db": -20.0,
+                "reduction_db": 10.0,
+                "attack_seconds": 0.05,
+                "release_seconds": 0.4,
             },
             "enabled": True,
         }
@@ -767,9 +807,7 @@ def test_audio_layer_carries_a_legacy_list_assigned_to_the_track() -> None:
     """Un ancien code qui affecte une liste de points voit sa courbe normalisée par le modèle (``TrackAutomation``),
     puis transportée en tuple par le plan de rendu."""
     project = _project_with_audio_clips()
-    project.tracks[0].automation = [
-        AutomationPoint(time_seconds=0.0, gain_db=-6.0)
-    ]
+    project.tracks[0].automation = [AutomationPoint(time_seconds=0.0, gain_db=-6.0)]
     assert isinstance(project.tracks[0].automation, TrackAutomation)
 
     plan = build_render_plan(project)
@@ -799,48 +837,81 @@ def _envelope_gain(filter_str: str | None, t: float) -> float:
         return 10.0 ** (float(constant.group(1)) / 20.0)
     match = re.fullmatch(r"asetnsamples=n=256:p=0,volume='(.*)':eval=frame", filter_str)
     assert match, filter_str
-    names = {"t": t, "lte": lambda a, b: float(a <= b), "gt": lambda a, b: float(a > b), "pow": pow}
+    names = {
+        "t": t,
+        "lte": lambda a, b: float(a <= b),
+        "gt": lambda a, b: float(a > b),
+        "pow": pow,
+    }
     return eval(match.group(1), {"__builtins__": {}}, names)
 
 
 CURVES = [
     pytest.param([AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0)], id="rampe"),
-    pytest.param([AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0, 2.0)], id="saut"),
     pytest.param(
-        [AutomationPoint(0.5, 0.0), AutomationPoint(3.5, -12.0), AutomationPoint(6.5, 3.0)], id="elastique",
+        [AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0, 2.0)], id="saut"
     ),
-    pytest.param([AutomationPoint(1.0, -3.0), AutomationPoint(2.0, 0.0, 0.5)], id="fondu"),
     pytest.param(
-        [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -12.0, 0.5), AutomationPoint(4.0, -12.0),
-         AutomationPoint(5.0, 0.0, 0.5)],
+        [
+            AutomationPoint(0.5, 0.0),
+            AutomationPoint(3.5, -12.0),
+            AutomationPoint(6.5, 3.0),
+        ],
+        id="elastique",
+    ),
+    pytest.param(
+        [AutomationPoint(1.0, -3.0), AutomationPoint(2.0, 0.0, 0.5)], id="fondu"
+    ),
+    pytest.param(
+        [
+            AutomationPoint(1.0, 0.0),
+            AutomationPoint(2.0, -12.0, 0.5),
+            AutomationPoint(4.0, -12.0),
+            AutomationPoint(5.0, 0.0, 0.5),
+        ],
         id="creux",
     ),
-    pytest.param([AutomationPoint(1.0, 0.0), AutomationPoint(1.5, -9.0, 2.0)], id="fondu-plus-long-que-l-ecart"),
+    pytest.param(
+        [AutomationPoint(1.0, 0.0), AutomationPoint(1.5, -9.0, 2.0)],
+        id="fondu-plus-long-que-l-ecart",
+    ),
     pytest.param([AutomationPoint(3.0, -9.0)], id="un-seul-point"),
 ]
 
 
 @pytest.mark.parametrize("points", CURVES)
-@pytest.mark.parametrize(("timeline_start", "duration"), [(0.0, 6.0), (1.25, 3.0), (2.5, 4.0), (7.0, 2.0)])
-def test_volume_envelope_applies_gain_at_in_clip_time(points, timeline_start, duration) -> None:
+@pytest.mark.parametrize(
+    ("timeline_start", "duration"), [(0.0, 6.0), (1.25, 3.0), (2.5, 4.0), (7.0, 2.0)]
+)
+def test_volume_envelope_applies_gain_at_in_clip_time(
+    points, timeline_start, duration
+) -> None:
     """Le filtre émis donne, à chaque instant du clip, le gain de ``gain_at`` à l'instant correspondant de la timeline.
 
     Le ``t`` du filtre part de 0 au début du clip (le filtre est avant ``adelay``) : un clip posé à 2,5 s lit la courbe
     à partir de 2,5 s. Le gain est un facteur linéaire, jamais des dB lus comme un facteur.
     """
     automation = TrackAutomation(track_id="M1", points=list(points))
-    filter_str = _build_track_volume_envelope(tuple(automation.points), timeline_start, duration)
+    filter_str = _build_track_volume_envelope(
+        tuple(automation.points), timeline_start, duration
+    )
     # Échantillonné entre les instants ronds : à l'instant exact d'un saut, ``gain_at`` donne le gain d'après pour le
     # dernier point et celui d'avant pour un point intérieur, une différence qu'aucune trame audio ne peut entendre.
     for step in range(240):
         local = duration * (step + 0.5) / 240
         expected = 10.0 ** (automation.gain_at(timeline_start + local) / 20.0)
-        assert _envelope_gain(filter_str, local) == pytest.approx(expected, rel=1e-4), (local, filter_str)
+        assert _envelope_gain(filter_str, local) == pytest.approx(expected, rel=1e-4), (
+            local,
+            filter_str,
+        )
 
 
 def test_a_constant_gain_is_a_plain_db_volume() -> None:
     """Un gain qui ne bouge pas sur le clip : ``volume=<g>dB`` (un nombre nu serait un facteur : -6 deviendrait ×-6)."""
-    assert _build_track_volume_envelope((AutomationPoint(0.0, -6.0),), 0.0, 5.0) == "volume=-6.000dB"
+    assert (
+        _build_track_volume_envelope((AutomationPoint(0.0, -6.0),), 0.0, 5.0)
+        == "volume=-6.000dB"
+    )
     assert _build_track_volume_envelope((AutomationPoint(0.0, 0.0),), 0.0, 5.0) is None
 
 
@@ -858,7 +929,9 @@ def test_volume_envelope_stays_flat_with_many_points() -> None:
     assert filter_str is not None and "if(" not in filter_str
     curve = TrackAutomation(track_id="M1", points=list(points))
     for t in (0.05, 50.5, 51.05, 120.7, 199.5):
-        assert _envelope_gain(filter_str, t) == pytest.approx(10.0 ** (curve.gain_at(t) / 20.0), rel=1e-4)
+        assert _envelope_gain(filter_str, t) == pytest.approx(
+            10.0 ** (curve.gain_at(t) / 20.0), rel=1e-4
+        )
 
 
 def _options(chain: str) -> dict[str, str]:
@@ -870,54 +943,97 @@ def _options(chain: str) -> dict[str, str]:
 def _sidechain(config: DuckingConfig | None = None) -> DuckingSidechain:
     if config is None:
         return DuckingSidechain(id="duck-1", music_track_id="M1", voice_track_id="V1")
-    return DuckingSidechain(id="duck-1", music_track_id="M1", voice_track_id="V1", config=config)
+    return DuckingSidechain(
+        id="duck-1", music_track_id="M1", voice_track_id="V1", config=config
+    )
 
 
 def test_ducking_chain_takes_the_voice_on_its_second_input() -> None:
     """``sidechaincompress`` n'a pas d'option ``sidechain`` : la clé est son entrée 1, la musique son entrée 0."""
     chain = _build_ducking_chain(
         _sidechain(DuckingConfig(threshold_db=-25.0, reduction_db=10.0)),
-        voice_label="av0", main_label="a0", output_label="a0_duck", key_label="a0_sc0", duration=6.0,
+        voice_label="av0",
+        main_label="a0",
+        output_label="a0_duck",
+        key_label="a0_sc0",
+        duration=6.0,
     )
     key, music, compressor = chain.split(";")
     assert key.startswith("[av0]aeval=") and key.endswith(",apad[a0_sc0]")
     assert music == "[a0]apad[a0_duck_scin]"
-    assert compressor.startswith("[a0_duck_scin][a0_sc0]sidechaincompress=") and compressor.endswith(",atrim=end=6.0[a0_duck]")
+    assert compressor.startswith(
+        "[a0_duck_scin][a0_sc0]sidechaincompress="
+    ) and compressor.endswith(",atrim=end=6.0[a0_duck]")
     assert "sidechain=" not in chain
 
 
 def test_ducking_keeps_the_end_of_the_music_whatever_input_ends_first() -> None:
     """``sidechaincompress`` s'arrête dès que l'une de ses entrées s'arrête : la fin de la musique était coupée au hasard
     (multithread FFmpeg). Les deux entrées sont prolongées et la sortie coupée à la durée de la timeline."""
-    chain = _build_ducking_chain(_sidechain(), voice_label="v", main_label="m", output_label="o", key_label="k",
-                                 duration=12.5)
-    assert ",apad[k]" in chain and "[m]apad[o_scin]" in chain and chain.endswith("atrim=end=12.5[o]")
+    chain = _build_ducking_chain(
+        _sidechain(),
+        voice_label="v",
+        main_label="m",
+        output_label="o",
+        key_label="k",
+        duration=12.5,
+    )
+    assert (
+        ",apad[k]" in chain
+        and "[m]apad[o_scin]" in chain
+        and chain.endswith("atrim=end=12.5[o]")
+    )
 
 
 def test_ducking_chain_speaks_ffmpeg_units() -> None:
     """Seuil en amplitude linéaire, attaque et relâchement en millisecondes, pas de gain de compensation."""
-    options = _options(_build_ducking_chain(
-        _sidechain(), voice_label="av0", main_label="a0", output_label="o", key_label="k", duration=6.0,
-    ))
-    assert float(options["threshold"]) == pytest.approx(0.1, rel=1e-4)       # -20 dB
+    options = _options(
+        _build_ducking_chain(
+            _sidechain(),
+            voice_label="av0",
+            main_label="a0",
+            output_label="o",
+            key_label="k",
+            duration=6.0,
+        )
+    )
+    assert float(options["threshold"]) == pytest.approx(0.1, rel=1e-4)  # -20 dB
     assert float(options["ratio"]) == pytest.approx(20.0)
-    assert float(options["attack"]) == pytest.approx(50.0)                    # 0,05 s
-    assert float(options["release"]) == pytest.approx(400.0)                  # 0,4 s
+    assert float(options["attack"]) == pytest.approx(50.0)  # 0,05 s
+    assert float(options["release"]) == pytest.approx(400.0)  # 0,4 s
     assert float(options["makeup"]) == 1.0
 
 
-@pytest.mark.parametrize("config", [
-    DuckingConfig(),
-    DuckingConfig(threshold_db=MIN_DUCKING_THRESHOLD_DB, reduction_db=MAX_DUCKING_REDUCTION_DB,
-                  attack_seconds=MAX_DUCKING_ATTACK_S, release_seconds=MAX_DUCKING_RELEASE_S),
-    DuckingConfig(threshold_db=MAX_DUCKING_THRESHOLD_DB, reduction_db=MIN_DUCKING_REDUCTION_DB,
-                  attack_seconds=MIN_DUCKING_ATTACK_S, release_seconds=MIN_DUCKING_RELEASE_S),
-])
+@pytest.mark.parametrize(
+    "config",
+    [
+        DuckingConfig(),
+        DuckingConfig(
+            threshold_db=MIN_DUCKING_THRESHOLD_DB,
+            reduction_db=MAX_DUCKING_REDUCTION_DB,
+            attack_seconds=MAX_DUCKING_ATTACK_S,
+            release_seconds=MAX_DUCKING_RELEASE_S,
+        ),
+        DuckingConfig(
+            threshold_db=MAX_DUCKING_THRESHOLD_DB,
+            reduction_db=MIN_DUCKING_REDUCTION_DB,
+            attack_seconds=MIN_DUCKING_ATTACK_S,
+            release_seconds=MIN_DUCKING_RELEASE_S,
+        ),
+    ],
+)
 def test_every_ducking_setting_stays_inside_ffmpeg_ranges(config) -> None:
     """Une option hors bornes refuse le graphe entier : ``ffmpeg -h filter=sidechaincompress``."""
-    options = _options(_build_ducking_chain(
-        _sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k", duration=6.0,
-    ))
+    options = _options(
+        _build_ducking_chain(
+            _sidechain(config),
+            voice_label="av0",
+            main_label="a0",
+            output_label="o",
+            key_label="k",
+            duration=6.0,
+        )
+    )
     assert 0.000976563 <= float(options["threshold"]) <= 1.0
     assert 1.0 <= float(options["ratio"]) <= 20.0
     assert 0.01 <= float(options["attack"]) <= 2000.0
@@ -929,12 +1045,18 @@ def test_the_key_is_clipped_where_the_reduction_reaches_its_maximum() -> None:
     """Le compresseur atténue de ``dépassement * (1 - 1/ratio)`` : écrêter la clé à ``seuil + R*ratio/(ratio-1)``
     plafonne l'atténuation à ``reduction_db`` exactement."""
     config = DuckingConfig(threshold_db=-20.0, reduction_db=12.0)
-    chain = _build_ducking_chain(_sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k",
-                                 duration=6.0)
+    chain = _build_ducking_chain(
+        _sidechain(config),
+        voice_label="av0",
+        main_label="a0",
+        output_label="o",
+        key_label="k",
+        duration=6.0,
+    )
     ceiling = float(re.search(r"clip\(val\(0\),-([\d.]+),", chain).group(1))
     overshoot = 20.0 * math.log10(ceiling / 0.1)
     assert overshoot * (1.0 - 1.0 / config.ratio) == pytest.approx(12.0, abs=1e-3)
-    assert "clip(val(1)," in chain                                         # les deux canaux
+    assert "clip(val(1)," in chain  # les deux canaux
 
 
 def test_volume_envelope_and_ducking_chain_compose_without_errors() -> None:
@@ -1037,9 +1159,7 @@ def test_undo_redo_for_add_ducking_sidechain() -> None:
 def test_undo_redo_for_remove_ducking_sidechain() -> None:
     project = _project_with_music_and_voice()
     service = AudioAutomationService()
-    sidechain = service.add_ducking_sidechain(
-        project, "M1", "V1", DuckingConfig()
-    )
+    sidechain = service.add_ducking_sidechain(project, "M1", "V1", DuckingConfig())
 
     history = ProjectHistory()
     history.reset(project)

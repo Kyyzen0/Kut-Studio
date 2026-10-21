@@ -80,7 +80,7 @@ def test_stop_on_failing_source_is_survivable():
 
     recorder = AudioRecorder(source=_Failing())
     recorder.start()
-    pcm, _rate, _channels = recorder.stop()   # ne doit pas lever
+    pcm, _rate, _channels = recorder.stop()  # ne doit pas lever
     assert isinstance(pcm, bytes)
     assert recorder.is_recording is False
 
@@ -180,7 +180,7 @@ def test_recording_take_can_be_placed_on_armed_track(tmp_path):
     clip.set_fade_in(min(0.2, duration / 2))
     assert clip.fade_in > 0.0
     clip.gain_db = -6.0
-    assert plan.audio_layers[0].total_gain_db == 0.0              # le plan est un instantané
+    assert plan.audio_layers[0].total_gain_db == 0.0  # le plan est un instantané
     updated = build_render_plan(project).audio_layers[0]
     assert updated.total_gain_db == pytest.approx(-6.0)
     assert updated.fade_in == pytest.approx(clip.fade_in)

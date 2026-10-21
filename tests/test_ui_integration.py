@@ -52,7 +52,9 @@ def _build_window(qtbot, monkeypatch):
     )
     window = MainWindow()
     qtbot.addWidget(window)
-    window.properties_panel.set_usage_level("advanced")     # ces tests lisent tout l'inspecteur (une installation neuve est en Simple) ; rien n'est écrit sur disque
+    window.properties_panel.set_usage_level(
+        "advanced"
+    )  # ces tests lisent tout l'inspecteur (une installation neuve est en Simple) ; rien n'est écrit sur disque
     # Le timer interne de l'horloge de timeline continue à émettre des
     # events toutes les 40 ms tant que la fenêtre existe ; cumulé sur
     # plusieurs tests successifs, il peut bloquer la boucle d'événements
@@ -136,7 +138,9 @@ def test_main_window_delete_modifies_project(qtbot, monkeypatch) -> None:
     assert "b_roll" not in rendered_ids
 
 
-def test_main_window_adds_persistent_transition_from_library(qtbot, monkeypatch) -> None:
+def test_main_window_adds_persistent_transition_from_library(
+    qtbot, monkeypatch
+) -> None:
     """La bibliothèque crée une transition métier, pas un simple aperçu."""
     window = _build_window(qtbot, monkeypatch)
     incoming = find_clip(window.project, "plan_a")
@@ -158,7 +162,9 @@ def test_transition_library_renders_four_builtin_cards(qtbot, monkeypatch) -> No
     view = window.project_panel.transition_view
     # Tâche 26 : 18 transitions natives (4 historiques + 14 ajoutées) ; catalogue élargi : 25 de plus.
     assert view.preset_count() == 43
-    assert {card.preset_id for card in view._cards.values()} == {t.value for t in TransitionType}
+    assert {card.preset_id for card in view._cards.values()} == {
+        t.value for t in TransitionType
+    }
     assert {card.preset_id for card in view._cards.values()} >= {
         "crossfade",
         "fade_black",
@@ -289,9 +295,7 @@ def test_transition_favorite_toggle_roundtrip(qtbot, monkeypatch, tmp_path) -> N
     assert window.transition_preset_store.is_favorite("crossfade") is False
 
 
-def test_text_library_lists_the_six_builtin_presets(
-    qtbot, monkeypatch
-) -> None:
+def test_text_library_lists_the_six_builtin_presets(qtbot, monkeypatch) -> None:
     """La bibliothèque Texte propose les six modèles documentés."""
     window = _build_window(qtbot, monkeypatch)
     view = window.project_panel.subtitle_view.preset_view
@@ -306,9 +310,7 @@ def test_text_library_lists_the_six_builtin_presets(
     }
 
 
-def test_text_preset_apply_updates_clip_style_and_preview(
-    qtbot, monkeypatch
-) -> None:
+def test_text_preset_apply_updates_clip_style_and_preview(qtbot, monkeypatch) -> None:
     """Appliquer un modèle pose le style sur le clip et l'overlay du preview."""
     from core.text_style import TextAlignment
     from core.timeline_operations import add_subtitle_clip, find_clip
@@ -316,9 +318,7 @@ def test_text_preset_apply_updates_clip_style_and_preview(
 
     window = _build_window(qtbot, monkeypatch)
     track = add_track(window.project, "subtitle")
-    clip = add_subtitle_clip(
-        window.project, "Contenu", 0.0, 3.0, track_id=track.id
-    )
+    clip = add_subtitle_clip(window.project, "Contenu", 0.0, 3.0, track_id=track.id)
     window.timeline_panel.set_project(window.project)
     window.on_clip_selected(clip.id)
     window.seek_to_position(1.0)
@@ -347,9 +347,7 @@ def test_text_preset_new_clip_creates_a_subtitle_at_playhead(
 
     window.on_text_preset_new_clip_requested("lower_third")
 
-    subtitle_tracks = [
-        t for t in window.project.tracks if t.type == "subtitle"
-    ]
+    subtitle_tracks = [t for t in window.project.tracks if t.type == "subtitle"]
     clips = [c for track in subtitle_tracks for c in track.clips]
     assert len(clips) > before
     new_clip = clips[-1]
@@ -366,9 +364,7 @@ def test_subtitle_style_edit_is_undoable(qtbot, monkeypatch) -> None:
 
     window = _build_window(qtbot, monkeypatch)
     track = add_track(window.project, "subtitle")
-    clip = add_subtitle_clip(
-        window.project, "Sous-titre", 0.0, 2.0, track_id=track.id
-    )
+    clip = add_subtitle_clip(window.project, "Sous-titre", 0.0, 2.0, track_id=track.id)
     window.timeline_panel.set_project(window.project)
     window.on_clip_selected(clip.id)
     # L'ajout du clip doit être dans l'historique : sinon l'undo du
@@ -385,9 +381,7 @@ def test_subtitle_style_edit_is_undoable(qtbot, monkeypatch) -> None:
     assert len(window.history) == before + 1
 
     window.undo_last()
-    assert (
-        find_clip(window.project, clip.id).text_style == default_text_style()
-    )
+    assert find_clip(window.project, clip.id).text_style == default_text_style()
 
     window.redo_last()
     assert find_clip(window.project, clip.id).text_style == new_style
@@ -406,9 +400,7 @@ def test_subtitle_style_reset_restores_default_and_is_undoable(
 
     window = _build_window(qtbot, monkeypatch)
     track = add_track(window.project, "subtitle")
-    clip = add_subtitle_clip(
-        window.project, "Sous-titre", 0.0, 2.0, track_id=track.id
-    )
+    clip = add_subtitle_clip(window.project, "Sous-titre", 0.0, 2.0, track_id=track.id)
     custom = default_text_style().with_updates(
         alignment=TextAlignment.TOP_LEFT,
     )
@@ -420,9 +412,7 @@ def test_subtitle_style_reset_restores_default_and_is_undoable(
 
     window.on_subtitle_style_reset(clip.id)
 
-    assert (
-        find_clip(window.project, clip.id).text_style == default_text_style()
-    )
+    assert find_clip(window.project, clip.id).text_style == default_text_style()
     assert len(window.history) == before + 1
     window.undo_last()
     assert find_clip(window.project, clip.id).text_style == custom
@@ -445,9 +435,7 @@ def test_text_preset_user_model_persists_across_restart(
     new_preset = make_user_text_preset(
         name="Mon modèle",
         description="Test",
-        style=default_text_style().with_updates(
-            alignment=TextAlignment.MIDDLE_RIGHT
-        ),
+        style=default_text_style().with_updates(alignment=TextAlignment.MIDDLE_RIGHT),
         default_text="Bandeau",
     )
     window.text_preset_store.add(new_preset)
@@ -504,9 +492,7 @@ def test_srt_export_keeps_text_and_timing_only(qtbot, monkeypatch, tmp_path) -> 
 
     window = _build_window(qtbot, monkeypatch)
     track = add_track(window.project, "subtitle")
-    clip = add_subtitle_clip(
-        window.project, "Bonjour", 1.0, 2.0, track_id=track.id
-    )
+    clip = add_subtitle_clip(window.project, "Bonjour", 1.0, 2.0, track_id=track.id)
     clip.text_style = default_text_style().with_updates(
         alignment=TextAlignment.TOP_CENTER, font_size=99.0
     )
@@ -576,9 +562,7 @@ def _project_with_styled_subtitle(default_style_only: bool = False):
 
     style = default_text_style()
     if not default_style_only:
-        style = style.with_updates(
-            alignment=TextAlignment.TOP_CENTER, font_size=72.0
-        )
+        style = style.with_updates(alignment=TextAlignment.TOP_CENTER, font_size=72.0)
     track = Track(
         id="T1",
         name="Titres",
@@ -643,7 +627,9 @@ def test_transition_marker_inspector_edit_and_removal(qtbot, monkeypatch) -> Non
     assert find_clip(window.project, "plan_a") is not None
 
 
-def test_main_window_subtitle_editor_updates_project(qtbot, tmp_path, monkeypatch) -> None:
+def test_main_window_subtitle_editor_updates_project(
+    qtbot, tmp_path, monkeypatch
+) -> None:
     """Éditer le sous-titre dans l'inspecteur met à jour Clip.text et la vue.
 
     Aucun fichier ``.srt`` n'est écrit automatiquement pendant la
@@ -772,10 +758,7 @@ def test_new_project_resyncs_library_and_mixer(qtbot, monkeypatch) -> None:
     window.new_project()
 
     fresh = create_default_project()
-    library_ids = {
-        asset.id
-        for asset in window.project_panel.bin_videos.all_assets()
-    }
+    library_ids = {asset.id for asset in window.project_panel.bin_videos.all_assets()}
     library_ids.update(
         asset.id for asset in window.project_panel.bin_audios.all_assets()
     )
@@ -814,7 +797,9 @@ def test_save_as_creates_a_valid_kut_file(qtbot, tmp_path, monkeypatch) -> None:
     assert loaded.name == window.project.name
     assert [t.id for t in loaded.tracks] == [t.id for t in window.project.tracks]
     # Les clips et sous-titres sont conservés.
-    src_sub = next(c for t in window.project.tracks for c in t.clips if c.id == "subtitle_01")
+    src_sub = next(
+        c for t in window.project.tracks for c in t.clips if c.id == "subtitle_01"
+    )
     dst_sub = next(c for t in loaded.tracks for c in t.clips if c.id == "subtitle_01")
     assert dst_sub.text == src_sub.text
 
@@ -835,9 +820,7 @@ def test_save_as_adds_kut_extension_if_missing(qtbot, tmp_path, monkeypatch) -> 
     assert window.current_project_path == str(tmp_path / "no_extension.kut")
 
 
-def test_save_project_file_reuses_existing_path(
-    qtbot, tmp_path, monkeypatch
-) -> None:
+def test_save_project_file_reuses_existing_path(qtbot, tmp_path, monkeypatch) -> None:
     """``save_project_file`` n'ouvre pas de dialogue si un chemin est déjà connu."""
     from core.project_io import load_project
 
@@ -858,13 +841,12 @@ def test_save_project_file_reuses_existing_path(
     assert window.project_dirty is True
 
     dialog_calls = []
+
     def fail_dialog(*args, **kwargs):
         dialog_calls.append(args)
         return _fake_save_dialog(str(target))
 
-    monkeypatch.setattr(
-        "ui.main_window.QFileDialog.getSaveFileName", fail_dialog
-    )
+    monkeypatch.setattr("ui.main_window.QFileDialog.getSaveFileName", fail_dialog)
 
     window.save_project_file()
 
@@ -957,6 +939,7 @@ def test_open_structurally_invalid_kut_keeps_current_project(
     # On capture les appels à ``QMessageBox.critical`` pour vérifier
     # que le mécanisme d'erreur en place a bien été déclenché.
     critical_calls: list[tuple] = []
+
     def fake_critical(parent, title, message, *args, **kwargs):
         critical_calls.append((title, message))
 
@@ -1100,7 +1083,9 @@ def test_import_video_adds_media_asset_to_project(qtbot, tmp_path, monkeypatch) 
     assert imported.media_type == "video"
 
 
-def test_import_video_updates_library_with_asset_name(qtbot, tmp_path, monkeypatch) -> None:
+def test_import_video_updates_library_with_asset_name(
+    qtbot, tmp_path, monkeypatch
+) -> None:
     """La bibliothèque ProjectPanel reflète le nom du MediaAsset importé."""
     window = _build_window(qtbot, monkeypatch)
     video_path = tmp_path / "mon_super_clip.mov"
@@ -1142,6 +1127,7 @@ def test_import_video_refuses_duplicate_by_normalized_path(
     video_path.write_bytes(b"\x00")
 
     probe_calls: list[str] = []
+
     def fake_probe(path):
         probe_calls.append(path)
         return _fake_probe()(path)
@@ -1186,6 +1172,7 @@ def test_import_video_failure_keeps_project_and_library_unchanged(
     monkeypatch.setattr("ui.main_window.probe_media", failing_probe)
 
     critical_calls: list[tuple] = []
+
     def fake_critical(parent, title, message, *args, **kwargs):
         critical_calls.append((title, message))
 
@@ -1361,7 +1348,10 @@ def test_added_clip_is_selected_and_visible_in_inspector(
 
     window.add_asset_to_v1(asset_id)
     new_clip = next(
-        c for t in window.project.tracks if t.id == "V1" for c in t.clips
+        c
+        for t in window.project.tracks
+        if t.id == "V1"
+        for c in t.clips
         if c.asset_id == asset_id
     )
 
@@ -1375,9 +1365,7 @@ def test_added_clip_is_selected_and_visible_in_inspector(
     assert selected_view.label == asset_name
 
 
-def test_add_asset_to_v1_marks_project_as_dirty(
-    qtbot, tmp_path, monkeypatch
-) -> None:
+def test_add_asset_to_v1_marks_project_as_dirty(qtbot, tmp_path, monkeypatch) -> None:
     """Ajouter un média à la timeline passe le projet en « Non enregistré »."""
     window = _build_window(qtbot, monkeypatch)
     video_path = tmp_path / "clip.mp4"
@@ -1456,9 +1444,9 @@ def test_added_media_and_clip_survive_save_and_load(
 
     # Le média importé est bien présent dans le projet rechargé.
     reloaded_assets = fresh.project.media_assets
-    assert any(a.id == asset_id and a.name == "roundtrip.mp4" for a in reloaded_assets), (
-        "Le média importé devrait être conservé après le rechargement."
-    )
+    assert any(
+        a.id == asset_id and a.name == "roundtrip.mp4" for a in reloaded_assets
+    ), "Le média importé devrait être conservé après le rechargement."
 
     # Le clip ajouté sur V1 est bien conservé.
     v1 = next(t for t in fresh.project.tracks if t.id == "V1")
@@ -1509,9 +1497,7 @@ def test_click_on_add_to_timeline_button_triggers_add_asset_to_v1(
     assert button.isEnabled() is True
 
     window.timeline_panel.playhead_seconds = 0.0
-    v1_clips_before = list(
-        next(t for t in window.project.tracks if t.id == "V1").clips
-    )
+    v1_clips_before = list(next(t for t in window.project.tracks if t.id == "V1").clips)
 
     # Clic sur le bouton : équivalent à l'événement utilisateur.
     button.click()
@@ -2036,9 +2022,7 @@ def test_library_preview_does_not_modify_project(qtbot, monkeypatch) -> None:
     assert window.preview_panel.is_library_preview() is True
 
 
-def test_timeline_duration_label_reflects_timeline_duration(
-    qtbot, monkeypatch
-) -> None:
+def test_timeline_duration_label_reflects_timeline_duration(qtbot, monkeypatch) -> None:
     """Le label de durée totale suit ``timeline_duration(project)`` après chaque mutation."""
     window = _build_window(qtbot, monkeypatch)
     _isolate_video_timeline(window)
@@ -2060,9 +2044,7 @@ def test_timeline_duration_label_reflects_timeline_duration(
     assert "00:01" in window.timeline_panel.total_time_label.text()
 
 
-def test_duration_updates_on_new_project_and_open(
-    qtbot, tmp_path, monkeypatch
-) -> None:
+def test_duration_updates_on_new_project_and_open(qtbot, tmp_path, monkeypatch) -> None:
     """``new_project`` et ``open_project_file`` réinitialisent la durée affichée."""
     from core.project_io import save_project
     from core.project_factory import create_default_project
@@ -2137,7 +2119,9 @@ def test_no_setPlaybackPosition_call_in_update_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _audio_asset(asset_id: str = "asset-song", name: str = "Song.mp3", duration: float = 30.0):
+def _audio_asset(
+    asset_id: str = "asset-song", name: str = "Song.mp3", duration: float = 30.0
+):
     """Construit un ``MediaAsset`` audio conforme à la validation."""
     return MediaAsset(
         id=asset_id,
@@ -2167,7 +2151,9 @@ def test_project_panel_filters_audios_in_audio_tab(qtbot, monkeypatch) -> None:
     # Le titre statique est désormais partagé ; on vérifie plutôt que
     # le compteur reflète bien la sélection courante.
     assert "média" in panel.media_count.text().lower()
-    assert "Song" not in {panel.bin_videos.item(r).text() for r in range(panel.bin_videos.count())}
+    assert "Song" not in {
+        panel.bin_videos.item(r).text() for r in range(panel.bin_videos.count())
+    }
 
     # Onglet Audio : ne montre que l'asset audio.
     panel.select_section("audio")
@@ -2179,7 +2165,9 @@ def test_project_panel_filters_audios_in_audio_tab(qtbot, monkeypatch) -> None:
     assert any("Song" in name for name in audio_names)
 
 
-def test_global_navigation_changes_library_without_duplicate_local_tabs(qtbot, monkeypatch) -> None:
+def test_global_navigation_changes_library_without_duplicate_local_tabs(
+    qtbot, monkeypatch
+) -> None:
     """Le rail et la barre supérieure pilotent la bibliothèque seuls."""
     window = _build_window(qtbot, monkeypatch)
     panel = window.project_panel
@@ -2304,9 +2292,7 @@ def test_add_asset_to_timeline_routes_video_to_v1(qtbot, monkeypatch) -> None:
     assert len(v1.clips) == initial_v1_count + 1
 
 
-def test_add_asset_to_timeline_rejects_missing_target_track(
-    qtbot, monkeypatch
-) -> None:
+def test_add_asset_to_timeline_rejects_missing_target_track(qtbot, monkeypatch) -> None:
     """L'ajout d'un asset audio sur un projet sans A1 est refusé."""
     window = _build_window(qtbot, monkeypatch)
     # Retirer A1 du projet pour simuler un ancien projet.
@@ -2468,7 +2454,9 @@ def test_toggle_clip_history_label_describes_the_action(qtbot, monkeypatch) -> N
     assert window.history.undo_label == "Activer le clip"
 
 
-@pytest.mark.usefixtures("restore_global_theme")   # le test passe en thème clair : le test suivant du worker ne doit pas en hériter
+@pytest.mark.usefixtures(
+    "restore_global_theme"
+)  # le test passe en thème clair : le test suivant du worker ne doit pas en hériter
 def test_settings_changes_preserve_master_and_runtime_preferences(
     qtbot, monkeypatch
 ) -> None:
@@ -2654,7 +2642,9 @@ def test_drag_drop_video_asset_on_v1_creates_clip(qtbot, monkeypatch) -> None:
     v1_after = len(next(t for t in window.project.tracks if t.id == "V1").clips)
     assert v1_after == v1_before + 1
     window.undo_last()
-    assert len(next(t for t in window.project.tracks if t.id == "V1").clips) == v1_before
+    assert (
+        len(next(t for t in window.project.tracks if t.id == "V1").clips) == v1_before
+    )
 
 
 def test_drag_drop_audio_asset_on_a1_creates_clip(qtbot, monkeypatch) -> None:
@@ -2694,9 +2684,15 @@ def test_import_media_then_undo_removes_asset(qtbot, tmp_path, monkeypatch) -> N
     monkeypatch.setattr(
         "ui.main_window.probe_media",
         lambda path: MediaAsset(
-            id=asset_id, path=path, name="Test",
-            duration=4.0, width=1920, height=1080, fps=30.0,
-            media_type="video", has_audio=False,
+            id=asset_id,
+            path=path,
+            name="Test",
+            duration=4.0,
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_type="video",
+            has_audio=False,
         ),
     )
     video_path = tmp_path / "v.mp4"
@@ -2713,7 +2709,8 @@ def test_import_subtitles_then_undo_removes_clips(qtbot, tmp_path, monkeypatch) 
     window = _build_window(qtbot, monkeypatch)
     srt_path = tmp_path / "subs.srt"
     srt_path.write_text(
-        "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n\n", encoding="utf-8",
+        "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n\n",
+        encoding="utf-8",
     )
     initial_s1 = len(next(t for t in window.project.tracks if t.id == "S1").clips)
     window.import_subtitles_from_path(str(srt_path))
@@ -2721,7 +2718,9 @@ def test_import_subtitles_then_undo_removes_clips(qtbot, tmp_path, monkeypatch) 
     assert s1_after == initial_s1 + 1
 
     window.undo_last()
-    assert len(next(t for t in window.project.tracks if t.id == "S1").clips) == initial_s1
+    assert (
+        len(next(t for t in window.project.tracks if t.id == "S1").clips) == initial_s1
+    )
 
 
 def test_subtitle_text_edit_groups_into_single_history_entry(
@@ -2734,7 +2733,9 @@ def test_subtitle_text_edit_groups_into_single_history_entry(
 
     # Plusieurs frappes rapides dans l'éditeur.
     for char in "ABC":
-        window.properties_panel.subtitle_editor.content_editor.setPlainText(f"Hello {char}")
+        window.properties_panel.subtitle_editor.content_editor.setPlainText(
+            f"Hello {char}"
+        )
         # Le MainWindow écoute ``textChanged`` : il met à jour le clip
         # et programme un debounce.
         window.update_subtitle_from_editor()

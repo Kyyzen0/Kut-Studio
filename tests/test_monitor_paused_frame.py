@@ -35,7 +35,9 @@ def _release(panel) -> None:
 
 @pytest.fixture
 def panel(qtbot):
-    widget = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
+    widget = PreviewPanel(
+        lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None
+    )
     qtbot.addWidget(widget)
     yield widget
     _release(widget)
@@ -68,15 +70,20 @@ def _wait(predicate, deadline: float = DEADLINE) -> bool:
 
 
 def _media(tmp_path, name: str):
-    return lavfi_video(tmp_path / name, "testsrc2=d=2", size=(64, 36), fps=25, seconds=2.0)
+    return lavfi_video(
+        tmp_path / name, "testsrc2=d=2", size=(64, 36), fps=25, seconds=2.0
+    )
 
 
 def test_preview_at_without_play_delivers_a_frame_and_pauses(panel, tmp_path):
     count = _counter(panel)
     panel.preview_at(str(_media(tmp_path, "a.mp4")), 1.0)
     if not _wait(lambda: count[0] >= 1):
-        pytest.skip("QtMultimedia ne décode pas dans cet environnement") if panel.player.error() != QMediaPlayer.NoError \
-            else pytest.fail("aucune image livrée après preview_at sans lecture")
+        pytest.skip(
+            "QtMultimedia ne décode pas dans cet environnement"
+        ) if panel.player.error() != QMediaPlayer.NoError else pytest.fail(
+            "aucune image livrée après preview_at sans lecture"
+        )
     assert panel.player.playbackState() == QMediaPlayer.PausedState
 
 
@@ -84,8 +91,14 @@ def test_each_step_of_a_source_change_delivers_a_frame(panel, tmp_path):
     count = _counter(panel)
     a, b = str(_media(tmp_path, "a.mp4")), str(_media(tmp_path, "b.mp4"))
     seen = 0
-    for step, action in enumerate((lambda: panel.preview_at(a, 0.5), lambda: panel.preview_at(b, 0.5),
-                                   panel.show_empty, lambda: panel.preview_at(a, 0.5))):
+    for step, action in enumerate(
+        (
+            lambda: panel.preview_at(a, 0.5),
+            lambda: panel.preview_at(b, 0.5),
+            panel.show_empty,
+            lambda: panel.preview_at(a, 0.5),
+        )
+    ):
         action()
         if step == 2:  # show_empty : pas d'image attendue
             continue
@@ -124,9 +137,14 @@ def test_missing_source_is_never_paused(panel, tmp_path, monkeypatch):
     assert calls == []
 
 
-def test_paused_preview_keeps_transport_state_in_the_window(qtbot, monkeypatch, tmp_path):
+def test_paused_preview_keeps_transport_state_in_the_window(
+    qtbot, monkeypatch, tmp_path
+):
     window = _window(qtbot, monkeypatch, tmp_path)
-    tooltip, icon = window.preview_panel.play_button.toolTip(), window.preview_panel.play_button.icon().cacheKey()
+    tooltip, icon = (
+        window.preview_panel.play_button.toolTip(),
+        window.preview_panel.play_button.icon().cacheKey(),
+    )
     window.preview_panel.preview_at(str(_media(tmp_path, "a.mp4")), 0.5)
     for _ in range(20):
         QApplication.processEvents()

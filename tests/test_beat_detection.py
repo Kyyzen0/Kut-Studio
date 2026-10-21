@@ -36,7 +36,9 @@ def _hat(rng, rate: int = RATE) -> np.ndarray:
     return np.diff(rng.normal(0, 0.3, t.size + 1)) * np.exp(-t / 0.012)
 
 
-def drum_loop(bpm: float, offset: float, seconds: float, *, seed: int = 3) -> np.ndarray:
+def drum_loop(
+    bpm: float, offset: float, seconds: float, *, seed: int = 3
+) -> np.ndarray:
     """4/4 : grosse caisse sur 1 et sur le « et » de 2, caisse claire sur 2 et 4, charleston en croches ; premier
     temps à ``offset``. La grosse caisse n'est pas symétrique (comme dans un vrai rythme) : le 1 est reconnaissable."""
     rng = np.random.default_rng(seed)
@@ -48,17 +50,19 @@ def drum_loop(bpm: float, offset: float, seconds: float, *, seed: int = 3) -> np
         t = offset + index * beat / 2
         start = int(round(t * RATE))
         hat = _hat(rng)
-        out[start:start + hat.size] += 0.35 * hat
+        out[start : start + hat.size] += 0.35 * hat
         eighth = index % 8
         if eighth in (0, 3):
-            out[start:start + kick.size] += 0.8 * kick
+            out[start : start + kick.size] += 0.8 * kick
         if eighth in (2, 6):
-            out[start:start + snare.size] += 0.8 * snare
+            out[start : start + snare.size] += 0.8 * snare
         index += 1
     return np.clip(out[: int(seconds * RATE)], -1, 1)
 
 
-@pytest.mark.parametrize(("bpm", "offset"), [(90.0, 0.31), (120.0, 0.05), (128.0, 0.4), (140.0, 0.12)])
+@pytest.mark.parametrize(
+    ("bpm", "offset"), [(90.0, 0.31), (120.0, 0.05), (128.0, 0.4), (140.0, 0.12)]
+)
 def test_tempo_and_downbeat_of_a_drum_loop(bpm, offset):
     estimate = estimate_tempo(drum_loop(bpm, offset, 30.0))
     assert estimate.bpm == pytest.approx(bpm, abs=0.5)
@@ -97,9 +101,28 @@ def test_detection_reads_a_real_file_through_ffmpeg(tmp_path):
 
     raw = tmp_path / "loop.wav"
     write_wav(raw, drum_loop(120.0, 0.25, 20.0))
-    music = tmp_path / "loop.m4a"                       # un vrai format compressé, rééchantillonné à la lecture
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), "-ar", "48000", "-c:a", "aac", "-b:a", "128k",
-                    str(music)], check=True, timeout=60)
+    music = (
+        tmp_path / "loop.m4a"
+    )  # un vrai format compressé, rééchantillonné à la lecture
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(raw),
+            "-ar",
+            "48000",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            str(music),
+        ],
+        check=True,
+        timeout=60,
+    )
     estimate = detect_tempo(str(music), start=2.0)
     assert estimate.bpm == pytest.approx(120.0, abs=0.5)
     phase = (estimate.downbeat - 0.25) % 2.0
@@ -133,7 +156,9 @@ def test_a_tempo_job_measures_a_real_file(tmp_path):
     snapshot = job.snapshot()
     assert snapshot.state == "finished" and snapshot.result is not None
     assert snapshot.result.bpm == pytest.approx(120.0, abs=0.5)
-    phase = (snapshot.result.downbeat - 0.25) % 2.0              # en temps du média, malgré le départ à 1 s
+    phase = (
+        snapshot.result.downbeat - 0.25
+    ) % 2.0  # en temps du média, malgré le départ à 1 s
     assert min(phase, 2.0 - phase) <= 0.03
 
 
@@ -150,7 +175,14 @@ def test_a_tempo_job_reports_an_unreadable_file(tmp_path):
 def test_only_a_clip_played_at_media_speed_can_carry_a_measured_grid():
     from core.project_model import Clip
 
-    clip = Clip(id="m", asset_id="a", track_id="A1", timeline_start=1.0, source_in=0.0, source_out=8.0)
+    clip = Clip(
+        id="m",
+        asset_id="a",
+        track_id="A1",
+        timeline_start=1.0,
+        source_in=0.0,
+        source_out=8.0,
+    )
     assert plays_at_media_speed(clip)
-    clip.sequence_id = "seq"                                     # imbriqué : ses temps ne sont pas ceux du média
+    clip.sequence_id = "seq"  # imbriqué : ses temps ne sont pas ceux du média
     assert not plays_at_media_speed(clip)

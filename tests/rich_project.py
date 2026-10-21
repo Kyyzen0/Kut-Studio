@@ -19,7 +19,12 @@ from core import tracking_ops as tracking
 from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
 from core.audio_effects_model import add_audio_effect_to_clip
 from core.canvas_guides import add_guide
-from core.color_grading import ColorGrade, ColorGradingService, Wheel, make_user_color_preset
+from core.color_grading import (
+    ColorGrade,
+    ColorGradingService,
+    Wheel,
+    make_user_color_preset,
+)
 from core.color_nodes import MixerKind
 from core.color_qualifier import Qualifier
 from core.compositing import Compositing, Mask, MaskShape
@@ -35,23 +40,59 @@ from core.tracking_model import Sample, SampleStatus
 
 
 def _video_asset(index: int) -> MediaAsset:
-    asset = MediaAsset(f"av{index}", f"/nonexistent/v{index}.mp4", f"V{index}", 20.0, 1920, 1080, 30.0, "video", True)
-    if index == 1:      # métadonnées de sonde non défaut : timecode drop-frame, bobine, caméra, création
-        asset = replace(asset, timecode="01:02:03;04", timecode_fps=30000 / 1001, reel="A001", camera="Sony A7S III",
-                        creation_time="2026-03-14T09:26:53Z")
+    asset = MediaAsset(
+        f"av{index}",
+        f"/nonexistent/v{index}.mp4",
+        f"V{index}",
+        20.0,
+        1920,
+        1080,
+        30.0,
+        "video",
+        True,
+    )
+    if (
+        index == 1
+    ):  # métadonnées de sonde non défaut : timecode drop-frame, bobine, caméra, création
+        asset = replace(
+            asset,
+            timecode="01:02:03;04",
+            timecode_fps=30000 / 1001,
+            reel="A001",
+            camera="Sony A7S III",
+            creation_time="2026-03-14T09:26:53Z",
+        )
     return asset
 
 
 def build_rich_project() -> Project:
     project = Project(name="Riche", width=1920, height=1080, fps=30.0)
     project.media_assets += [
-        _video_asset(1), _video_asset(2),
-        MediaAsset("aa1", "/nonexistent/a1.wav", "A1", 30.0, 0, 0, 0.0, "audio", True,
-                   time_reference=3600.5, camera="Zoom H6", creation_time="2026-03-14T09:30:00"),
+        _video_asset(1),
+        _video_asset(2),
+        MediaAsset(
+            "aa1",
+            "/nonexistent/a1.wav",
+            "A1",
+            30.0,
+            0,
+            0,
+            0.0,
+            "audio",
+            True,
+            time_reference=3600.5,
+            camera="Zoom H6",
+            creation_time="2026-03-14T09:30:00",
+        ),
         MediaAsset("as1", "", "S1", 5.0, 0, 0, 0.0, "subtitle", False),
     ]
-    project.tracks += [Track("V1", "V1", "video"), Track("V2", "V2", "video"),
-                       Track("A1", "A1", "audio"), Track("A2", "A2", "audio"), Track("S1", "S1", "subtitle")]
+    project.tracks += [
+        Track("V1", "V1", "video"),
+        Track("V2", "V2", "video"),
+        Track("A1", "A1", "audio"),
+        Track("A2", "A2", "audio"),
+        Track("S1", "S1", "subtitle"),
+    ]
     first = ops.add_clip_to_track(project, "av1", "V1", 0.0)
     second = ops.add_clip_to_track(project, "av2", "V1", 25.0)
     third = ops.add_clip_to_track(project, "av2", "V2", 2.0)
@@ -68,15 +109,30 @@ def build_rich_project() -> Project:
     ops.set_transform_keyframe(project, second.id, "pan_x", 1.5, 0.5)
     add_effect_to_clip(project, first.id, "blur")
     add_audio_effect_to_clip(project, music.id, "compressor")
-    ColorGradingService().set_grade(project, first.id, ColorGrade.identity().with_field("exposure", 0.3)
-                                    .with_wheel("lift", Wheel(0.05, 0.0, -0.05, 0.1)))
+    ColorGradingService().set_grade(
+        project,
+        first.id,
+        ColorGrade.identity()
+        .with_field("exposure", 0.3)
+        .with_wheel("lift", Wheel(0.05, 0.0, -0.05, 0.1)),
+    )
     # Étalonnage par nœuds : deux nœuds en série, un nommé, l'autre contourné ; une branche parallèle qualifiée.
-    ColorGradingService().edit_nodes(project, second.id, lambda graph: graph.with_label("n1", "Balance")
-                                     .with_node_after("n1", ColorGrade(saturation=1.2, enabled=False))[0]
-                                     .with_branch("n2", MixerKind.PARALLEL)[0]
-                                     .with_qualifier("n3", Qualifier(hue_center=30.0, hue_width=50.0, hue_soft=10.0)))
+    ColorGradingService().edit_nodes(
+        project,
+        second.id,
+        lambda graph: (
+            graph.with_label("n1", "Balance")
+            .with_node_after("n1", ColorGrade(saturation=1.2, enabled=False))[0]
+            .with_branch("n2", MixerKind.PARALLEL)[0]
+            .with_qualifier(
+                "n3", Qualifier(hue_center=30.0, hue_width=50.0, hue_soft=10.0)
+            )
+        ),
+    )
 
-    compositing = Compositing(masks=(Mask(shape=MaskShape.ELLIPSE, feather=0.1, name="m1"),))
+    compositing = Compositing(
+        masks=(Mask(shape=MaskShape.ELLIPSE, feather=0.1, name="m1"),)
+    )
     third.compositing = compositing
     mask_id = compositing.masks[0].id
     keyframes.add_keyframe(project, third.id, f"mask.{mask_id}.feather", 0.0, 0.1)
@@ -87,14 +143,18 @@ def build_rich_project() -> Project:
     for moment, speed in ((0.0, 1.0), (2.0, 1.0), (3.0, 0.25), (6.0, 0.25), (7.0, 2.0)):
         time_ops.add_speed_point(project, ramp.id, moment, speed)
     time_ops.set_clip_interpolation(project, ramp.id, "blending", "draft")
-    time_ops.set_clip_preserve_pitch(project, ramp.id, False)   # effet bande : la hauteur suit la vitesse
+    time_ops.set_clip_preserve_pitch(
+        project, ramp.id, False
+    )  # effet bande : la hauteur suit la vitesse
     time_ops.set_clip_remap_audio(project, ramp.id, False)
 
     audio = AudioAutomationService()
     audio.set_track_role(project, "A1", TrackRole.MUSIC)
     audio.set_track_role(project, "A2", TrackRole.VOICE)
     audio.add_automation_point(project, "A1", 1.0, -6.0, 0.2)
-    audio.add_automation_point(project, "V1", 2.0, -3.0)         # le son embarqué d'une piste vidéo s'automatise aussi
+    audio.add_automation_point(
+        project, "V1", 2.0, -3.0
+    )  # le son embarqué d'une piste vidéo s'automatise aussi
     audio.add_ducking_sidechain(project, "A1", "A2", config=DuckingConfig())
 
     title = layers.add_layer(project, "text", at=1.0, duration=4.0)
@@ -105,12 +165,21 @@ def build_rich_project() -> Project:
     layers.group_layers(project, [shape.id], name="G")
     adjustment.effects = [create_effect("blur")]
 
-    tracker = tracking.add_tracker(project, first.id, timeline_time=0.0, x=500.0, y=300.0)
-    samples = {i: Sample(500.0 + 2 * i, 300.0 + i, 0.9, SampleStatus.TRACKED) for i in range(1, 60)}
+    tracker = tracking.add_tracker(
+        project, first.id, timeline_time=0.0, x=500.0, y=300.0
+    )
+    samples = {
+        i: Sample(500.0 + 2 * i, 300.0 + i, 0.9, SampleStatus.TRACKED)
+        for i in range(1, 60)
+    }
     clip = tracking.find_clip_and_track(project, first.id)[0]
-    tracking._put_tracker(clip, replace(tracker, data=tracker.data.with_samples(samples)))
+    tracking._put_tracker(
+        clip, replace(tracker, data=tracker.data.with_samples(samples))
+    )
     tracking.add_link(project, title.id, first.id, [tracker.id], timeline_time=0.0)
-    tracking.set_stabilization(project, first.id, enabled=True, tracker_ids=(tracker.id,))
+    tracking.set_stabilization(
+        project, first.id, enabled=True, tracker_ids=(tracker.id,)
+    )
 
     project.markers.append(Marker("m-1", 3.0, "M", "todo"))
     add_guide(project.active_sequence, "vertical", 0.5)
@@ -121,12 +190,30 @@ def build_rich_project() -> Project:
     source = create_multicam_source(
         project,
         [
-            AngleSpec(asset_id="av1", offset=0.0, name="Wide", sync_method=SyncMethod.AUDIO,
-                      sync_status=SyncStatus.EXCELLENT, sync_confidence=0.93),
-            AngleSpec(asset_id="av2", offset=1.25, name="Close-up", sync_method=SyncMethod.AUDIO,
-                      sync_status=SyncStatus.GOOD, sync_confidence=0.61),
-            AngleSpec(asset_id="aa1", offset=0.5, name="Recorder", sync_method=SyncMethod.AUDIO,
-                      sync_status=SyncStatus.UNCERTAIN, sync_confidence=0.34),
+            AngleSpec(
+                asset_id="av1",
+                offset=0.0,
+                name="Wide",
+                sync_method=SyncMethod.AUDIO,
+                sync_status=SyncStatus.EXCELLENT,
+                sync_confidence=0.93,
+            ),
+            AngleSpec(
+                asset_id="av2",
+                offset=1.25,
+                name="Close-up",
+                sync_method=SyncMethod.AUDIO,
+                sync_status=SyncStatus.GOOD,
+                sync_confidence=0.61,
+            ),
+            AngleSpec(
+                asset_id="aa1",
+                offset=0.5,
+                name="Recorder",
+                sync_method=SyncMethod.AUDIO,
+                sync_status=SyncStatus.UNCERTAIN,
+                sync_confidence=0.34,
+            ),
         ],
         name="Concert",
         sync_method=SyncMethod.AUDIO,
@@ -137,9 +224,15 @@ def build_rich_project() -> Project:
     # Vidéo sociale : grille rythmique, emplacement de template vide, marqueur de couverture, classement généré.
     project.active_sequence.beat_grid = BeatGrid(120.0, 0.25)
     next(track for track in project.tracks if track.id == "V1").clips.append(
-        Clip("slot-01", "", "V1", 60.0, 0.0, 1.0, label="01", template_slot="slot-01"))
+        Clip("slot-01", "", "V1", 60.0, 0.0, 1.0, label="01", template_slot="slot-01")
+    )
     project.markers.append(Marker("m-cover", 4.0, "C", "cover"))
-    build_leaderboard(project, Leaderboard((LeaderboardRow("1", "A", "9 PTS"),), start=20.0, duration=3.0, id="lb-rich"))
+    build_leaderboard(
+        project,
+        Leaderboard(
+            (LeaderboardRow("1", "A", "9 PTS"),), start=20.0, duration=3.0, id="lb-rich"
+        ),
+    )
     # Version de format : une séquence liée à sa séquence d'origine (``Sequence.format_source``).
     version = create_sequence(project, "Version 1:1", width=1080, height=1080)
     version.format_source = project.active_sequence.id
@@ -149,6 +242,11 @@ def build_rich_project() -> Project:
     tag = library.create_tag("T")
     library.move_asset("av1", folder.id)
     library.add_tag_to_asset("av1", tag.id)
-    project.color_presets.append(make_user_color_preset(
-        name="P", description="d", grade=ColorGrade(contrast=0.2, gain=Wheel(y=-0.1))))
+    project.color_presets.append(
+        make_user_color_preset(
+            name="P",
+            description="d",
+            grade=ColorGrade(contrast=0.2, gain=Wheel(y=-0.1)),
+        )
+    )
     return project
