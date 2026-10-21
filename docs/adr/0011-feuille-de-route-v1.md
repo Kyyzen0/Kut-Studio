@@ -1,6 +1,6 @@
 # ADR-0011 : la feuille de route vers la v1 — des portes de sortie, pas des dates
 
-**Statut :** Accepté le 2026-10-21. **Décisions 3, 4, 5 et 6 tranchées par l'utilisateur ce jour** (machines et Windows, intelligence, page signature, contenus embarqués). **Décisions 1 (recette avant moteur), 2 (mesurer avant de trancher le natif) et 7 (publication directe hors v1) : recommandations retenues par défaut faute d'objection, à confirmer.** Aucune phase n'est lancée.
+**Statut :** Accepté le 2026-10-21. **Les sept décisions sont tranchées ou confirmées par l'utilisateur ce jour** (1 recette avant moteur, 2 mesurer avant de trancher le natif, 3 machines et Windows, 4 intelligence, 5 page signature, 6 contenus embarqués, 7 publication directe hors v1). **Prochaine étape décidée : le banc de recette scripté (phase 1).** Aucune phase n'est lancée.
 **Date :** 2026-10-21
 **Décideurs :** mainteneur de Kut-Studio
 **S'appuie sur :** [ADR-0001](0001-moteur-unifie-gpu-adaptatif.md) (moteur GPU adaptatif), [ADR-0003](0003-native-engine-language-and-boundary.md) et [ADR-0004](0004-native-engine-language-cpp-vs-rust.md) (moteur natif), [ADR-0005](0005-mode-script-frontiere-de-securite.md) (scripts), [ADR-0006](0006-composition-visuelle-progressive.md) (composition), [ADR-0007](0007-modele-d-intentions.md) (intentions), [ADR-0008](0008-animation-etalonnage-et-effets.md) (animation), [ADR-0009](0009-kut3d-moteur-3d-scriptable.md) et [ADR-0010](0010-page-3d-edition-scene.md) (Kut-3D).
@@ -30,7 +30,8 @@ La version publiée est la 0.8.0 (`core/app_version.py`) ; l'animation de l'éta
 4. **Parallélisme limité à 4 chantiers** et seulement sur des fichiers disjoints (§ « Parallélisation ») ; deux chantiers ne touchent jamais en même temps le même registre de dette ni la même ligne de `CHANGELOG.md`.
 5. **Machines et plates-formes (décision 3) :** la v1 est garantie sur macOS Apple Silicon (M1 Air comme plancher, M4 mini comme référence) ; Windows est validé par la CI et une bêta, sans promesse de lecture 4K ni de GPU ; Linux = smoke test CI ; pas de Mac Intel (§ « Risque assumé »).
 6. **Le bond en avant se mesure** (§ « Comment on mesure le bond en avant ») : couverture des attentes par public, temps d'export et de lecture, plantages par heure de session. Un chiffre mesuré sur médias réels, jamais un seuil de durée dans un test unitaire.
-7. **Enveloppe totale estimée : environ 130 à 190 PR de ≈ 500 lignes** (tailles S / M / L ci-dessous), à lire comme un ordre de grandeur, pas comme un engagement.
+7. **Les sept décisions sont prises (2026-10-21) ; la prochaine étape est le banc de recette scripté de la phase 1.**
+8. **Enveloppe totale estimée : environ 130 à 190 PR de ≈ 500 lignes** (tailles S / M / L ci-dessous), à lire comme un ordre de grandeur, pas comme un engagement.
 
 ---
 
@@ -175,13 +176,13 @@ Combinaisons recommandées (sans conflit de fichiers) :
 
 Liste courte, avec ma recommandation chiffrée.
 
-1. **Ordre des phases : recette (1) avant le moteur (2) ?** *Recommandation : oui.* La recette coûte ≈ 8 PR et deux semaines de machines ; elle donne la référence de la phase 2 et évite de reconstruire sur un socle fragile.
-2. **Moteur natif C++ : le tenter ou rester Python + GPU + FFmpeg ?** *Recommandation : mesurer d'abord (≈ 4 PR de bancs sur les trois montages types), puis trancher. Prior : natif seulement si l'export ne dépasse pas ×1,5 sans lui* (le spike GPU a donné ×1,5, ADR-0001), *car la cible de la porte est ×2 et le natif coûte 20 à 30 PR et une dépendance LGPL.*
+1. **Ordre des phases : recette (1) avant le moteur (2) ?** **CONFIRMÉE (2026-10-21) :** oui. La recette coûte ≈ 8 PR et deux semaines de machines ; elle donne la référence de la phase 2 et évite de reconstruire sur un socle fragile.
+2. **Moteur natif C++ : le tenter ou rester Python + GPU + FFmpeg ?** **CONFIRMÉE (2026-10-21) :** mesurer d'abord (≈ 4 PR de bancs sur les trois montages types), puis trancher. Prior : natif seulement si l'export ne dépasse pas ×1,5 sans lui (le spike GPU a donné ×1,5, ADR-0001), *car la cible de la porte est ×2 et le natif coûte 20 à 30 PR et une dépendance LGPL.*
 3. **Plates-formes et machines : TRANCHÉE par l'utilisateur (2026-10-21).** *macOS d'abord, Windows validé par la CI + bêta.* La v1 est **garantie sur macOS Apple Silicon (M1 Air et M4 mini)** ; il n'y a pas de Mac Intel, de Windows ni de GPU NVIDIA à disposition. Windows est livré et validé par la CI et des bêta-testeurs, **sans promesse de lecture 4K ni de performance GPU** ; Linux = smoke test CI. Le certificat Authenticode n'est plus une porte (souhaitable, ≈ 200 à 400 €/an, à confirmer).
 4. **Intelligence : TRANCHÉE.** *Dans la v1 : suivi automatique de sujet (3 à 6 PR, modèle léger).* **Hors v1 : détourage / suppression de fond par IA** (après la phase 2, dans le backlog ; modèle et licences à choisir alors), **TTS et IA générative**. La transcription « fournie » reste au backlog (non tranchée ce jour).
 5. **Page signature : TRANCHÉE.** *Suivi automatique de sujet d'abord (3 à 6 PR), puis page 3D (12 à 18 PR).* Justification honnête : le suivi sert deux publics (courts et longs) et la page 3D un seul (motion design + 3D ; rien dans l'audit ni le dépôt n'établit qu'un autre public l'utilise) ; la règle de priorité par public place donc le suivi en premier, et la page 3D passe ensuite parce que son plan est chiffré (9 lots) et son document livré (ADR-0010 lot 0). **Le moteur d'intentions (ADR-0007) est un candidat ultérieur, hors v1.**
 6. **Contenus embarqués : TRANCHÉE.** *Plafond de 100 Mo de contenus embarqués (LUT, transitions, polices, quelques stickers libres), le reste en téléchargement à la demande, sans compte ; paquet macOS visé sous environ 160 Mo.* Base mesurée : assets de la v0.8.0 (publiée le 2026-10-20, `gh release view v0.8.0`) : macOS arm64 57 012 059 octets (≈ 54,4 Mo), Windows x64 76 583 879 (≈ 73,0 Mo), Linux x64 111 668 466 (≈ 106,5 Mo). Un plafond de 150 Mo a été écarté (paquet macOS ≈ 205 Mo). Le 53 Mo d'ADR-0003 est l'historique de la v0.4.0.
-7. **Publication directe (TikTok / Reels / YouTube) :** *Recommandation : hors v1.* Elle dépend d'API tierces, de comptes et d'une revue des plateformes que l'application ne contrôle pas ; en échange, la phase 3 ajoute les chapitres et la sortie multi-format, qui couvrent 80 % du besoin sans compte.
+7. **Publication directe (TikTok / Reels / YouTube) :** **CONFIRMÉE (2026-10-21) :** hors v1. Elle dépend d'API tierces, de comptes et d'une revue des plateformes que l'application ne contrôle pas ; en échange, la phase 3 ajoute les chapitres et la sortie multi-format, qui couvrent 80 % du besoin sans compte.
 
 ## Comment on mesure le bond en avant
 
