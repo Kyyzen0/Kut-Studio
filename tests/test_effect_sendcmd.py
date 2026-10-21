@@ -21,6 +21,7 @@ import pytest
 from core.animation import InterpolationType, Keyframe
 from core.effect_sendcmd import (
     MAX_COMMAND_LINES,
+    MAX_EFFECT_COMMANDS,
     command_files,
     command_plan,
     context_for,
@@ -219,6 +220,68 @@ def test_the_frame_count_is_bounded_before_any_text_is_built():
     with pytest.raises(ValueError, match="trop longue") as raised:
         command_plan(effect, [kf("fx.e.intensity", 0.0, 3.0)], huge, "gblur@x", 1.0)
     assert len(str(raised.value)) < 120
+
+
+@pytest.mark.parametrize("kind, name", VEHICLES[:2])        # l'aberration chromatique est entière : au plus quelques dizaines de valeurs distinctes
+def test_a_plan_over_the_command_ceiling_is_refused_before_any_file_with_a_clear_message(kind, name):
+    """Mesure (ADR-0008) : FFmpeg 6.1 / 7.1 gardent ~25 Ko par commande ; au-delà de MAX_EFFECT_COMMANDS (deux par valeur) le plan est refusé
+    avant d'écrire un fichier, avec la marche à suivre et sans recopier la moindre donnée."""
+    effect = create_effect(kind, effect_id="e", params={"threshold": 0.5} if kind is EffectType.GLOW else {})
+    spec = next(s for s in EFFECT_PARAMETER_SPECS[kind] if s.name == name)
+    prop = fx_property_id("e", name)
+    hi = min(spec.maximum, 14.0)
+    duration = MAX_EFFECT_COMMANDS / 2 / 30 + 60                   # une valeur nouvelle à chaque image, un peu plus que le plafond
+    animation = [kf(prop, 0.0, spec.minimum), kf(prop, duration, hi)]
+    written: list[str] = []
+    with command_files(written):
+        with pytest.raises(ValueError, match="trop longue") as raised:
+            _build_clip_effect_filters((effect,), 1.0, "v0fx", animation=tuple(animation), sendcmd=context_for(30, 0.0, duration))
+    assert written == []
+    message = str(raised.value)
+    assert "raccourcissez" in message and "valeur fixe" in message and "découpez" in message and len(message) < 200
+    assert "images clés" not in message, "moins d'images clés ne réduit pas les commandes : ce n'est pas un remède"
+
+
+def test_a_plan_under_the_ceiling_is_accepted():
+    effect = create_effect(EffectType.BLUR, effect_id="e")
+    duration = MAX_EFFECT_COMMANDS / 2 / 30 - 60
+    plan = command_plan(effect, [kf("fx.e.intensity", 0.0, 1.0), kf("fx.e.intensity", duration, 20.0)],
+                        context_for(30, 0.0, duration), "gblur@x", 1.0)
+    assert plan is not None and 0.9 * MAX_EFFECT_COMMANDS < plan.lines * 2 <= MAX_EFFECT_COMMANDS
+
+
+def test_a_short_plan_is_one_file_identical_to_the_plan_text():
+    effect = create_effect(EffectType.BLUR, effect_id="e")
+    animation = [kf("fx.e.intensity", 0.0, 1.0), kf("fx.e.intensity", 2.0, 9.0)]
+    written: list[str] = []
+    with command_files(written):
+        chain = _build_clip_effect_filters((effect,), 1.0, "v0fx", animation=tuple(animation), sendcmd=context_for(30, 0.0, 2.0))
+    try:
+        plan = command_plan(effect, animation, context_for(30, 0.0, 2.0), "gblur@v0fx0", 1.0)
+        assert len(written) == 1 and chain.count("sendcmd=") == 1
+        assert open(written[0], encoding="utf-8").read() == plan.text
+    finally:
+        for path in written:
+            os.remove(path)
+
+
+def test_a_long_plan_is_cut_into_windows_without_gap_or_overlap(monkeypatch):
+    import core.effect_sendcmd as module
+
+    monkeypatch.setattr(module, "WINDOW_BYTES", 600)
+    effect = create_effect(EffectType.BLUR, effect_id="e")
+    animation = [kf("fx.e.intensity", 0.0, 1.0), kf("fx.e.intensity", 2.0, 9.0)]
+    written: list[str] = []
+    with command_files(written):
+        chain = _build_clip_effect_filters((effect,), 1.0, "v0fx", animation=tuple(animation), sendcmd=context_for(30, 0.0, 2.0))
+    try:
+        plan = command_plan(effect, animation, context_for(30, 0.0, 2.0), "gblur@v0fx0", 1.0)
+        assert len(written) >= 4 and chain.count("sendcmd=") == len(written)
+        assert "".join(open(path, encoding="utf-8").read() for path in written) == plan.text
+        assert all(os.path.getsize(path) <= 600 for path in written)
+    finally:
+        for path in written:
+            os.remove(path)
 
 
 def test_the_registry_routes_each_parameter_to_exactly_one_renderer():
@@ -594,6 +657,32 @@ def test_each_animated_frame_equals_the_static_export_at_the_evaluated_value(kin
         static = _run_frames(static_chain, raw, count=1)[0]
         assert int(np.abs(animated[index].astype(int) - static.astype(int)).max()) == 0, (kind, index)
     assert int(np.abs(animated[-1].astype(int) - animated[0].astype(int)).max()) > 4, "l'effet doit varier"
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("kind, name", VEHICLES)
+def test_a_plan_cut_into_several_windows_renders_the_same_bytes_as_one_file(kind, name, monkeypatch):
+    """Les fenêtres ne changent pas le rendu (frontières de fenêtre comprises) : octet pour octet, une fenêtre contre plusieurs."""
+    import core.effect_sendcmd as module
+
+    np = pytest.importorskip("numpy")
+    params = {"threshold": 0.5, "intensity": 1.5} if kind is EffectType.GLOW else {}
+    effect = create_effect(kind, effect_id="e", params=params)
+    top = 14.0 if kind is EffectType.CHROMATIC_ABERRATION else 20.0
+    prop = fx_property_id("e", name)
+    animation = [kf(prop, 0.0, 1.0, L), kf(prop, FRAMES / RATE, top, L)]
+    _codes, raw = _source()
+    outputs = []
+    for budget in (module.WINDOW_BYTES, 140):
+        monkeypatch.setattr(module, "WINDOW_BYTES", budget)
+        chain, files = _real_chain([effect], animation, context_for(RATE, 0.0, FRAMES / RATE))
+        try:
+            outputs.append((len(files), _run_frames(chain, raw, count=FRAMES)))
+        finally:
+            for path in files:
+                os.remove(path)
+    assert outputs[0][0] == 1 and outputs[1][0] >= 3
+    assert np.array_equal(outputs[0][1], outputs[1][1])
 
 
 @needs_ffmpeg

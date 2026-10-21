@@ -209,7 +209,7 @@ def test_a_long_plan_is_cut_into_windows_each_read_by_its_own_sendcmd():
 
 
 def test_a_window_never_exceeds_the_budget_unless_a_single_line_does():
-    from core.grade_render import _windows
+    from core.effect_sendcmd import windows as _windows
 
     assert list(_windows(["a" * 10, "b" * 10, "c" * 10], 25)) == [["a" * 10, "b" * 10], ["c" * 10]]
     assert list(_windows(["a" * 100], 25)) == [["a" * 100]]

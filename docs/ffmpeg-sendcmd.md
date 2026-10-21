@@ -174,15 +174,30 @@ L'expression en `n` compte à partir de la première image que reçoit **ce** fi
 8. **`sendcmd` devant le filtre** (c'est la seule disposition mesurée) : il envoie la commande en traitant l'image,
    avant de la transmettre au filtre.
 
-9. **La mémoire de `sendcmd` sur FFmpeg 6.1 et 7.1** (trouvé à l'étape 6, mesuré sur 6.1.1 et 7.1.5, `docs/adr/0008-*.md`). Un fichier de
-   commandes est lu en entier à l'initialisation avec une mémoire de l'ordre de **1000 fois sa taille** (pic) : 800 lignes de 4,7 Ko
-   (3,7 Mo) font monter FFmpeg 7.1.5 à **4,4 Go avant la première image** (6.1.1 : pareil ; 9.0.2 : 19 Mo). Deux conséquences :
-   (a) la mémoire du pic est **rendue** après la lecture de chaque fichier : couper les commandes en fenêtres (un `sendcmd` par fenêtre,
-   `core/grade_render.py`) ramène le pic de 4,4 Go à 164 Mo (8 fenêtres de 100 lignes) ; (b) il reste, après lecture, ~40 à 45 fois la
-   taille des fichiers en mémoire résidente (7.1.5 : 1,98 Go pour 41,8 Mo de commandes ; 9.0.2 : 124 Mo). L'étalonnage animé borne donc le
-   total à 32 Mo. Les fichiers courts (flou, aberration chromatique, rayon du Bloom : une instruction de ~60 octets par image) coûtent
-   ~50 Ko de mémoire par instruction sur 6.1 / 7.1 (7 200 instructions : 427 Mo sur 7.1.5, 413 Mo sur 6.1.1) : un flou animé de dix minutes
-   approcherait le gigaoctet sur ces versions, sans fenêtres (non traité à l'étape 6).
+9. **La mémoire de `sendcmd` sur FFmpeg 6.1 et 7.1** (trouvé à l'étape 6, complété par le correctif de l'étape 5 ; mesuré sur 6.1.1, 7.1.5 et
+   9.0.2, `docs/adr/0008-*.md`). Deux coûts distincts, qui ne se soignent pas pareil :
+   (a) **Lignes longues (étalonnage animé)** : un fichier est lu avec une mémoire transitoire de l'ordre de **1000 fois sa taille**, croissante
+   plus vite que lui (800 lignes de 4,7 Ko : 4,4 Go sur 7.1.5 avant la première image ; 9.0.2 : 19 Mo). Cette mémoire est **rendue** après la
+   lecture de chaque fichier : couper en fenêtres de 192 Ko (un `sendcmd` par fenêtre, `core/effect_sendcmd.py`, `load_filters`) ramène le pic
+   à 164 Mo. Les fenêtres soignent ce coût-là ; le total de l'étalonnage est borné à 32 Mo.
+   (b) **Nombre de commandes (effets : flou, aberration chromatique, rayon du Bloom)** : chaque commande lue garde **~25 Ko** de mémoire tant que
+   le filtre vit, quelle que soit la taille de la ligne, et **les fenêtres n'y changent rien** (mesuré : le pic est le même, à 2 % près, avec un
+   fichier ou plusieurs ; le même fichier lu par cinq `sendcmd` cumule cinq fois). Le pic est atteint à l'initialisation. Flou en rampe linéaire
+   (une valeur nouvelle à chaque image, deux commandes `sigma` / `sigmaV`), 320x180 à 30 i/s, pic de mémoire résidente (Mo),
+   `tools/measure_sendcmd_memory.py` :
+
+   | Durée (commandes) | 6.1.1 un fichier | 6.1.1 fenêtres | 7.1.5 un fichier | 7.1.5 fenêtres | 9.0.2 un fichier | 9.0.2 fenêtres |
+   |---|---|---|---|---|---|---|
+   | 1 min (3 600) | 146 | 146 | 156 | 156 | 18 | 18 |
+   | 5 min (18 000) | 506 | 496 | 514 | 517 | 28 | 29 |
+   | 10 min (36 000) | 959 | 939 | 971 | 969 | 44 | 43 |
+
+   Référence sans `sendcmd` : 69 Mo. La 9.0.2 n'est pas concernée. **Parade retenue** : un plafond de **40 000 commandes** par effet
+   (`MAX_EFFECT_COMMANDS`, ≈ 1 Go de pic sur 6.1 / 7.1), refusé avec un message clair avant d'écrire un fichier : jamais un rendu faux.
+   **Piste non confirmée** : une partie de ce coût ressemble à de la fragmentation de `malloc` (avec `MALLOC_ARENA_MAX=1`,
+   `MALLOC_MMAP_THRESHOLD_=4096`, `MALLOC_TRIM_THRESHOLD_=0`, 3 000 lignes passent de 220 à 142 Mo sur 7.1.5 ; glibc seulement, non essayé sur 6.1.1,
+   sans équivalent sur Windows ni macOS). **Évolution possible, non faite** : découper le rendu d'un clip en tranches de temps (plusieurs
+   invocations de FFmpeg), seule voie qui borne vraiment la mémoire d'une animation arbitrairement longue.
 
 ## Méthode à utiliser
 

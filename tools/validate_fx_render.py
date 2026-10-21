@@ -65,6 +65,11 @@ def _cases() -> dict[str, dict]:
             Keyframe("fx.bl.intensity", 1.5, 14.0, InterpolationType.HOLD),
             Keyframe("fx.bl.intensity", 3.0, 3.0, InterpolationType.LINEAR)]},
         "sendcmd_glow_radius": {"effects": [gl], "animation": ramp(gl, "radius", 2.0, 30.0, ease)},
+        # Plans coupés en plusieurs fenêtres (un ``sendcmd`` par fichier, ``window_bytes`` de ``gen`` : quelques lignes par fichier), dont une
+        # frontière de fenêtre posée sur une image clé (9 / 10 images : la rampe change à chaque image, la fenêtre de 200 octets en tient trois).
+        "sendcmd_blur_windows": {"effects": [bl], "animation": ramp(bl, "intensity", 0.0, 12.0), "window_bytes": 200},
+        "sendcmd_glow_radius_windows": {"effects": [gl], "animation": ramp(gl, "radius", 2.0, 30.0, ease), "window_bytes": 200},
+        "sendcmd_chromatic_windows": {"effects": [ca], "animation": ramp(ca, "intensity", 2.0, 14.0), "window_bytes": 90},
         "sendcmd_chromatic": {"effects": [ca], "animation": ramp(ca, "intensity", 2.0, 14.0)},
         # Une image à décalage 0 garde la conversion RVB aller-retour (le rendu statique à 0 n'a pas de filtre) : <= 2 niveaux.
         "sendcmd_chromatic_from_zero": {"effects": [ca], "animation": ramp(ca, "intensity", 0.0, 9.0), "tolerance": 2},
@@ -192,8 +197,12 @@ def cmd_gen(args: argparse.Namespace) -> int:
         graph = (text + "," if text else "") + "format=rgba"
         return f"setpts=PTS-STARTPTS,fps={RATE},setpts=PTS-STARTPTS,{siting_before_rgb(graph)}"
 
+    import core.effect_sendcmd as effect_sendcmd
+
+    default_window = effect_sendcmd.WINDOW_BYTES
     cases = {}
     for name, case in _cases().items():
+        effect_sendcmd.WINDOW_BYTES = case.get("window_bytes", default_window)
         if "grade" in case:
             clip = _Clip()
             clip.color_grade, clip.animation = case["grade"], case["animation"]
@@ -215,6 +224,7 @@ def cmd_gen(args: argparse.Namespace) -> int:
             statics[str(n)] = text + f",select='eq(n,{n})'"
         cases[name] = {"animated": chain(case["effects"], case["animation"], layer_space), "static": statics,
                        "tolerance": case.get("tolerance", TOLERANCE)}
+    effect_sendcmd.WINDOW_BYTES = default_window
     cases["__tables__"] = _table_cases()
     (work / "cases.json").write_text(json.dumps(cases, indent=1), encoding="utf-8")
     print(f"{len(cases) - 1} cas et {len(cases['__tables__'])} tables écrits dans {work}")

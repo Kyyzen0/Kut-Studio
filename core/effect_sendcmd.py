@@ -50,6 +50,29 @@ MAX_COMMAND_LINES = 2_000_000
 """Instructions au plus par fichier (un clip de plus de 5 h à 100 i/s n'y tient pas) : borne posée **avant** d'allouer le texte.
 Au-delà, :func:`command_plan` lève ``ValueError`` (message sans donnée de l'utilisateur)."""
 
+MAX_COMMAND_BYTES = 32 * 1024 * 1024
+"""Taille maximale du texte de commandes d'**une** animation (un effet, ou l'étalonnage d'un clip : tous fichiers). Mesuré (ADR-0008,
+étapes 5 et 6) : FFmpeg 6.1.1 et 7.1.5 lisent un fichier de commandes avec une mémoire de l'ordre de 1000 fois sa taille ; les fenêtres
+(:data:`WINDOW_BYTES`) bornent le pic, ce plafond borne le disque et le temps de lecture. Au-delà, ``ValueError`` (message sans donnée
+de l'utilisateur) : le fichier partiel est supprimé avec les autres temporaires de l'export. Une table de 256 points de l'étalonnage
+pèse ~4,7 Ko par image ; une instruction d'effet ~60 octets (plus de trois heures à 30 i/s, jamais atteint en pratique)."""
+
+MAX_EFFECT_COMMANDS = 40_000
+"""Commandes ``sendcmd`` au plus pour **un** effet animé (un flou ou un rayon de lueur en écrit deux par valeur, ``sigma`` et ``sigmaV`` ;
+l'aberration chromatique, deux aussi, ``rh`` et ``bh``) : soit ~20 000 images, un peu plus de onze minutes à 30 i/s si la valeur change à
+chaque image. Mesuré (ADR-0008, correctif de l'étape 5 ; ``tools/measure_sendcmd_memory.py``) : FFmpeg 6.1.1 et 7.1.5 gardent ~25 Ko de
+mémoire **par commande**, tant que le filtre vit, quelle que soit la taille du fichier et même coupé en fenêtres (flou animé de dix minutes,
+36 000 commandes : 959 Mo sur 6.1.1, 971 Mo sur 7.1.5, 44 Mo sur 9.0.2). 40 000 commandes restent donc autour du gigaoctet sur ces versions.
+Au-delà, :func:`command_plan` lève ``ValueError`` avec la marche à suivre : un refus clair, jamais un rendu faux. Calculé au fil des
+instructions **avant** d'écrire le moindre fichier."""
+
+WINDOW_BYTES = 192 * 1024
+"""Taille maximale du texte d'**un** fichier de commandes. Mesuré (ADR-0008, étapes 5 et 6 ; ``docs/ffmpeg-sendcmd.md``, piège 9) :
+FFmpeg 6.1.1 et 7.1.5 lisent un fichier de commandes avec une mémoire de l'ordre de 1000 fois sa taille et croissante plus vite que
+lui (un fichier de 3,7 Mo : 4,4 Go de mémoire résidente avant la première image ; la 9.0.2 : 19 Mo). La mémoire est **rendue** après
+la lecture de chaque fichier : un plan long s'écrit donc **une fenêtre par fichier** (autant de ``sendcmd`` à la suite, voir
+:func:`load_filters`) et le pic ne dépend plus de la durée du clip, seulement de la fenêtre."""
+
 _TEMP_PREFIX = "kut-studio-sendcmd-"
 _HALF_FRAME = Fraction(1, 2)
 _FORBIDDEN_PATH = re.compile(r"[\x00-\x1f\x7f]")
@@ -73,13 +96,20 @@ class SendcmdContext:
 
 @dataclass(frozen=True)
 class CommandPlan:
-    """Le fichier de commandes d'un effet : son texte, la valeur de la première image (celle de l'option statique du filtre)
-    et la plus grande valeur écrite (``0`` : l'effet ne fait jamais rien)."""
+    """Les commandes d'un effet : une instruction par ligne (``rows``, bornées par :data:`MAX_COMMAND_BYTES`), la valeur de la
+    première image (celle de l'option statique du filtre) et la plus grande valeur écrite (``0`` : l'effet ne fait jamais rien)."""
 
-    text: str
+    rows: tuple[str, ...]
     initial: float
     peak: float
-    lines: int
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.rows) + "\n"
+
+    @property
+    def lines(self) -> int:
+        return len(self.rows)
 
 
 def frame_rate(fps: float) -> Fraction:
@@ -154,7 +184,7 @@ def frame_count(context: SendcmdContext) -> int:
     remaining = max(0.0, context.duration - context.start)
     count = math.ceil(remaining * float(context.fps)) + 2
     if count > MAX_COMMAND_LINES:
-        raise ValueError("Animation d'effet trop longue pour l'export (trop d'images).")
+        raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la ou découpez le clip.")
     return max(2, count)
 
 
@@ -181,6 +211,9 @@ def command_plan(
     count = frame_count(context)
     fps = context.fps
     lines: list[str] = []
+    size = 0
+    commands = 0
+    per_value = 2                                  # ``sigma`` + ``sigmaV``, ou ``rh`` + ``bh``
     previous: float | None = None
     initial = 0.0
     peak = 0.0
@@ -194,8 +227,14 @@ def command_plan(
             continue
         previous = value
         instant = max(0.0, context.start + float((Fraction(index) - _HALF_FRAME) / fps))
-        lines.append(f"{instant:.9f} {_commands(effect.type, target, value)};")
-    return CommandPlan("\n".join(lines) + "\n", initial, peak, len(lines))
+        line = f"{instant:.9f} {_commands(effect.type, target, value)};"
+        size += len(line) + 1
+        commands += per_value
+        if commands > MAX_EFFECT_COMMANDS or size > MAX_COMMAND_BYTES:      # le plan complet est vérifié avant d'écrire le moindre fichier
+            raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la, gardez une valeur fixe sur une "
+                             "partie du clip ou découpez le clip.")
+        lines.append(line)
+    return CommandPlan(tuple(lines), initial, peak)
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +317,30 @@ def write_command_stream(lines: Iterable[str]) -> str:
     return path
 
 
+def windows(lines: Iterable[str], budget: int | None = None) -> Iterator[list[str]]:
+    """``lines`` découpées en fenêtres d'au plus ``budget`` octets (une ligne démesurée a sa propre fenêtre) ; jamais de fenêtre vide
+    (un plan sans aucune ligne n'écrit rien). Une seule fenêtre est en mémoire à la fois. ``budget`` : :data:`WINDOW_BYTES` par défaut."""
+    budget = WINDOW_BYTES if budget is None else budget
+    current: list[str] = []
+    size = 0
+    for line in lines:
+        if current and size + len(line) + 1 > budget:
+            yield current
+            current, size = [], 0
+        current.append(line)
+        size += len(line) + 1
+    if current:
+        yield current
+
+
+def load_filters(lines: Iterable[str]) -> str:
+    """Les filtres ``sendcmd`` (séparés par des virgules) qui lisent ``lines``, une **fenêtre** de :data:`WINDOW_BYTES` par fichier
+    (voir cette constante) ; chaîne vide si ``lines`` est vide. Les instants restent ceux du plan entier : chaque fenêtre reçoit ses
+    lignes dans l'ordre, ``sendcmd`` envoie la commande quand ``PTS`` passe l'instant, quel que soit le fichier. Un plan qui tient
+    dans une fenêtre donne le même fichier et le même filtre qu'avant le découpage."""
+    return ",".join(sendcmd_filter(write_command_stream(window)) for window in windows(lines))
+
+
 def escape_command_path(path: str) -> str:
     """Chemin prêt à être cité entre apostrophes dans ``sendcmd=f='…'`` : séparateurs Windows en ``/``, ``:`` échappé
     (``C\\:/…`` : la lettre de lecteur n'est pas lue comme une option), apostrophe protégée (fermer, échapper, rouvrir).
@@ -303,7 +366,10 @@ def filter_name(kind: EffectType, label: str) -> str:
 
 
 __all__ = [
+    "MAX_COMMAND_BYTES",
     "MAX_COMMAND_LINES",
+    "MAX_EFFECT_COMMANDS",
+    "WINDOW_BYTES",
     "CommandPlan",
     "SendcmdContext",
     "command_files",
@@ -314,7 +380,9 @@ __all__ = [
     "filter_name",
     "frame_count",
     "frame_rate",
+    "load_filters",
     "sendcmd_filter",
+    "windows",
     "write_command_file",
     "write_command_stream",
 ]
