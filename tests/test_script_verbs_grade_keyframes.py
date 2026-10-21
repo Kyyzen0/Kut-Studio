@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import math
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -432,8 +433,11 @@ def test_a_described_color_animation_is_rewritten_by_the_verbs():
 
 def _stable(text: str, written: list[str]) -> tuple[str, list[str]]:
     """La chaîne, avec les noms des fichiers de commandes (temporaires, au hasard) remplacés par leur rang, et le contenu de ces fichiers."""
-    for rank, path in enumerate(written):
-        text = text.replace(path, f"<fichier {rank}>")
+    # Le chemin écrit dans la chaîne est échappé pour FFmpeg (`C\\:/Users/…` sous Windows) : il ne ressemble donc pas au chemin de la liste. On
+    # remplace chaque `f='….cmd'` par son rang, quelle que soit la plateforme ; le contenu des fichiers, lui, est comparé tel quel.
+    ranks = iter(range(10_000))
+    text = re.sub(r"f='[^']*\.cmd'", lambda _m: f"f='<fichier {next(ranks)}>'", text)
+    assert text.count("<fichier ") == len(written), (text, written)
     contents = []
     for path in written:
         with open(path, encoding="utf-8") as handle:
