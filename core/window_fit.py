@@ -36,4 +36,29 @@ def fit_rect(rect: Rect, available: Rect, *, frame: int = 0, center: bool = Fals
     return x, y, width, height
 
 
-__all__ = ["FRAME_ALLOWANCE", "fit_rect"]
+def pick_screen(rect: Rect, screens: list[Rect], preferred: Rect | None = None) -> Rect | None:
+    """Choisit l'écran (zone utilisable, coordonnées logiques) où restaurer ``rect``.
+
+    Celui qui recouvre le plus le rectangle enregistré gagne (égalité : le premier de la liste) : un panneau enregistré sur
+    un moniteur secondaire toujours branché y reste. Si le rectangle ne rencontre plus aucun écran (moniteur débranché),
+    repli sur ``preferred`` (l'écran de la fenêtre principale) puis sur le premier écran. Liste vide : ``None`` (l'appelant
+    garde alors le rectangle tel quel, sans lever).
+    """
+    if not screens:
+        return None
+    x, y, width, height = (int(value) for value in rect)
+    best: Rect | None = None
+    best_area = 0
+    for screen in screens:
+        sx, sy, sw, sh = screen
+        overlap_w = min(x + max(width, 0), sx + sw) - max(x, sx)
+        overlap_h = min(y + max(height, 0), sy + sh) - max(y, sy)
+        area = overlap_w * overlap_h if overlap_w > 0 and overlap_h > 0 else 0
+        if area > best_area:
+            best, best_area = screen, area
+    if best is not None:
+        return best
+    return preferred if preferred is not None else screens[0]
+
+
+__all__ = ["FRAME_ALLOWANCE", "fit_rect", "pick_screen"]

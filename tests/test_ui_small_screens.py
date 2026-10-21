@@ -275,3 +275,54 @@ def test_window_minimum_height_includes_the_side_rail(screen_window, button_heig
         rail.layout().invalidate()
         window.workspace._sync_window_minimum_height()
         audit.settle(window)
+
+
+# ---------------------------------------------------------------------------
+# Choix de l'écran de restauration (fonction pure, sans Qt)
+# ---------------------------------------------------------------------------
+
+_A = (0, 25, 1440, 875)               # écran principal
+_RIGHT = (1440, 0, 1920, 1055)        # secondaire à droite, taille différente
+_LEFT = (-1280, 0, 1280, 775)         # secondaire à gauche (coordonnées négatives)
+_ABOVE = (0, -800, 1440, 775)         # secondaire au-dessus
+
+
+@pytest.mark.parametrize(
+    ("rect", "screens", "expected"),
+    [
+        ((100, 100, 800, 600), [_A], _A),                                    # un seul écran
+        ((1500, 100, 800, 600), [_A, _RIGHT], _RIGHT),                       # deux écrans côte à côte
+        ((-1000, 100, 600, 500), [_A, _LEFT], _LEFT),                        # secondaire à gauche
+        ((100, -700, 600, 500), [_A, _ABOVE], _ABOVE),                       # secondaire au-dessus
+        ((1200, 100, 600, 500), [_A, _RIGHT], _RIGHT),                       # à cheval : le plus grand recouvrement gagne
+        ((1000, 100, 600, 500), [_A, _RIGHT], _A),
+        ((9000, 9000, 800, 600), [_A, _RIGHT], _A),                          # écran débranché : repli sur le principal
+        ((0, 0, 3000, 2000), [_A, _RIGHT], _RIGHT),                          # énorme : le plus grand recouvrement
+        ((1500, 0, 3000, 2000), [_A, _RIGHT], _RIGHT),
+        ((9000, 9000, 800, 600), [], None),                                  # aucune liste : pas d'exception
+    ],
+)
+def test_pick_screen_prefers_the_screen_the_saved_rect_overlaps(rect, screens, expected):
+    from core.window_fit import pick_screen
+
+    assert pick_screen(rect, screens) == expected
+
+
+def test_pick_screen_falls_back_to_the_preferred_screen_when_the_monitor_is_gone():
+    from core.window_fit import pick_screen
+
+    assert pick_screen((9000, 9000, 800, 600), [_A, _RIGHT], preferred=_RIGHT) == _RIGHT
+
+
+def test_a_panel_saved_on_a_second_monitor_stays_there(screen_window):
+    """Un panneau enregistré sur un moniteur secondaire toujours branché n'est pas ramené sur l'écran principal."""
+    from ui.screen_fit import apply_fitted_geometry
+
+    window = screen_window(SCREENS[1])
+    fitted = apply_fitted_geometry(window, (1600, 100, 800, 600), screens=lambda: [_A, _RIGHT])
+    assert fitted == (1600, 100, 800, 600)           # entièrement visible sur le second écran : position conservée
+    huge = apply_fitted_geometry(window, (1500, 100, 3000, 2000), screens=lambda: [_A, _RIGHT])
+    assert huge[2] <= _RIGHT[2] and huge[0] >= _RIGHT[0]
+    gone = apply_fitted_geometry(window, (9000, 9000, 800, 600), screens=lambda: [_A])
+    assert _A[0] <= gone[0] and gone[0] + gone[2] <= _A[0] + _A[2]
+    assert apply_fitted_geometry(window, (9000, 9000, 800, 600), screens=lambda: []) == (9000, 9000, 800, 600)
