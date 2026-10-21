@@ -35,7 +35,7 @@ from ..audio_effects_model import (
 from ..color_grading import (
     CHANNELS, CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN,
     MAX_CURVE_POINTS, MAX_CURVE_VALUE, MIN_CURVE_VALUE, SATURATION_MAX, SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN,
-    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingError, ColorGradingService,
+    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGrade, ColorGradingError, ColorGradingService,
     LUTResource, Wheel,
 )
 from ..color_matrix import MATRIX_CHOICES
@@ -698,7 +698,14 @@ def _set_color_grade(a: Mapping[str, Any]) -> Operation:
 def _reset_color_grade(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id, node = _grade_clip(project, a)
-        grade = ColorGradingService().reset_grade(project, clip_id, node)
+        service = ColorGradingService()
+        if a.get("detail"):
+            # « Tout réinitialiser » de la page Couleur (`on_color_node_reset`) : réglage neutre ET ni flou ni netteté, en un seul changement du graphe.
+            target = service.get_graph(project, clip_id).node_or_first(node).id
+            service.edit_nodes(project, clip_id, lambda graph: graph.with_grade(target, ColorGrade()).with_detail(target, blur=0.0, sharpen=0.0))
+            grade = ColorGrade()
+        else:
+            grade = service.reset_grade(project, clip_id, node)          # le bouton de l'inspecteur : le réglage du nœud seul
         # Comme « Tout réinitialiser » de l'inspecteur et la remise à zéro du nœud de la page Couleur (ADR-0008, étape 8) : les images clés
         # `color.*` partent avec le réglage, dans la même étape (une seule opération du script). Un clip qui reste un graphe de nœuds ne
         # perd rien (ses clés sont ignorées au rendu) ; un graphe que la remise à zéro simplifie en réglage simple les perd. Même code que l'interface.
@@ -1557,7 +1564,8 @@ VERBS: dict[str, Verb] = {
               Param("highlights", Kind.NUMBER, "Hautes lumières.", required=False, minimum=HIGHLIGHTS_MIN, maximum=HIGHLIGHTS_MAX),
               Param("enabled", Kind.BOOLEAN, "Étalonnage actif ou neutralisé.", required=False)),
              _set_color_grade, group="color"),
-        Verb("reset_color_grade", "Remet l'étalonnage d'un nœud du clip à neutre ; retire aussi les images clés `color.*` du clip (comme l'interface), sauf si le clip reste étalonné par un graphe de nœuds.", (_CLIP, _NODE), _reset_color_grade, group="color"),
+        Verb("reset_color_grade", "Remet l'étalonnage d'un nœud du clip à neutre ; retire aussi les images clés `color.*` du clip (comme l'interface), sauf si le clip reste étalonné par un graphe de nœuds. Par défaut, comme le bouton de l'inspecteur : le réglage du nœud seul ; `detail: true` remet aussi son flou et sa netteté à 0, comme « Tout réinitialiser » de la page Couleur.",
+             (_CLIP, _NODE, Param("detail", Kind.BOOLEAN, "Remet aussi le flou et la netteté du nœud à 0 (défaut : non).", required=False)), _reset_color_grade, group="color"),
         Verb("set_color_curve", "Règle la sortie d'un point d'une courbe (index 0…15 sur la courbe à 16 points).",
              (_CLIP, _NODE, _CHANNEL,
               Param("index", Kind.INTEGER, "Index du point (0 = début).", minimum=0, maximum=MAX_CURVE_POINTS - 1),
