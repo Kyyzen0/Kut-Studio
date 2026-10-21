@@ -985,6 +985,11 @@ class WorkspaceManager(QObject):
             + root.handleWidth()
             + chrome
         )
+        # Colonnes latérales fixes (rail d'icônes) : la fenêtre n'est jamais plus petite que leur contenu, quelle que
+        # soit la hauteur des boutons (le rail à noms visibles compte 10 x 54 px).
+        rail = getattr(self._window, "side_rail", None)
+        if rail is not None and rail.isVisibleTo(self._window):
+            required = max(required, rail.minimumSizeHint().height() + chrome)
         self._window.setMinimumHeight(
             max(self._base_minimum_height, int(required))
         )

@@ -252,3 +252,26 @@ def test_shrinkable_scroll_area_hint_is_the_height_at_its_real_width(qtbot):
     qtbot.wait(10)
     width = area.viewport().width()
     assert area.sizeHint().height() == content.heightForWidth(width) + 2 * area.frameWidth()
+
+
+@pytest.mark.parametrize("button_height", [36, 44, 54])
+def test_window_minimum_height_includes_the_side_rail(screen_window, button_height):
+    """La fenêtre n'est jamais plus petite que le rail d'icônes (+ barre et menu), quelle que soit la hauteur des boutons."""
+    window = screen_window(SCREENS[1], "advanced", "edit")
+    rail = window.side_rail
+    buttons = rail.findChildren(type(rail._buttons[next(iter(rail._buttons))]))
+    original = [(button, button.height()) for button in buttons]
+    try:
+        for button in buttons:
+            button.setFixedHeight(button_height)
+        rail.layout().invalidate()
+        audit.settle(window)
+        window.workspace._sync_window_minimum_height()
+        chrome = window.height() - window.workspace._root_splitter.height()
+        assert window.minimumHeight() >= rail.minimumSizeHint().height() + chrome
+    finally:
+        for button, height in original:
+            button.setFixedHeight(height)
+        rail.layout().invalidate()
+        window.workspace._sync_window_minimum_height()
+        audit.settle(window)
