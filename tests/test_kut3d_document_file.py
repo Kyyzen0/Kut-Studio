@@ -34,12 +34,22 @@ def authored_scene() -> kut3d.Scene:
     return kut3d.Scene(
         instances=[
             primitive_instance(
-                "sphere", radius=0.7, material=Material(base_color=(0.8, 0.2, 0.2, 1.0)), position=(1, 0, 0), name="rouge"
+                "sphere",
+                radius=0.7,
+                material=Material(base_color=(0.8, 0.2, 0.2, 1.0)),
+                position=(1, 0, 0),
+                name="rouge",
             ),
-            primitive_instance("cube", position=(-1, 0.5, 0), rotation_deg=(0, 30, 0), name="cube"),
+            primitive_instance(
+                "cube", position=(-1, 0.5, 0), rotation_deg=(0, 30, 0), name="cube"
+            ),
             primitive_instance("plane", width=8.0, depth=8.0, scale=1.0, name="sol"),
         ],
-        lights=[AmbientLight((1, 1, 1), 0.2), DirectionalLight((0.3, -1, -0.2), intensity=2.0), PointLight((2, 3, 4), intensity=5.0, range=20.0)],
+        lights=[
+            AmbientLight((1, 1, 1), 0.2),
+            DirectionalLight((0.3, -1, -0.2), intensity=2.0),
+            PointLight((2, 3, 4), intensity=5.0, range=20.0),
+        ],
         camera=Camera(position=(0, 2, 7), target=(0, 0.5, 0), fov_y_deg=45.0),
         background=(0.05, 0.05, 0.08, 1.0),
     )
@@ -59,7 +69,9 @@ def test_load_then_save_gives_the_same_bytes(saved: Path, tmp_path: Path) -> Non
     assert not doc.is_dirty
 
 
-def test_edit_then_undo_everything_gives_the_original_bytes(saved: Path, tmp_path: Path) -> None:
+def test_edit_then_undo_everything_gives_the_original_bytes(
+    saved: Path, tmp_path: Path
+) -> None:
     doc = SceneDocument.load(saved)
     first = doc.state.objects[0].id
     doc.execute(cmd.SetTransform(first, pose_matrix(position=(5, 5, 5))))
@@ -78,7 +90,9 @@ def test_a_saved_edit_loads_back_to_the_edited_scene(saved: Path) -> None:
     doc = SceneDocument.load(saved)
     first = doc.state.objects[0].id
     doc.execute(cmd.Rename(first, "Boule bleue"))
-    doc.execute(cmd.SetMaterial(first, Material(base_color=(0.1, 0.2, 0.9, 1.0), metallic=0.5)))
+    doc.execute(
+        cmd.SetMaterial(first, Material(base_color=(0.1, 0.2, 0.9, 1.0), metallic=0.5))
+    )
     doc.execute(cmd.SetBackground(None))
     doc.save()
     again = SceneDocument.load(saved)
@@ -91,7 +105,9 @@ def test_a_saved_edit_loads_back_to_the_edited_scene(saved: Path) -> None:
 def test_the_format_version_follows_the_content(tmp_path: Path) -> None:
     doc = SceneDocument()
     doc.save(tmp_path / "vide.kut3d")
-    assert json.loads((tmp_path / "vide.kut3d").read_text())["version"] == 1  # aucune forme : format 1, comme avant
+    assert (
+        json.loads((tmp_path / "vide.kut3d").read_text())["version"] == 1
+    )  # aucune forme : format 1, comme avant
     doc.execute(cmd.AddPrimitive(Cube()))
     doc.save(tmp_path / "forme.kut3d")
     assert json.loads((tmp_path / "forme.kut3d").read_text())["version"] == 2
@@ -107,15 +123,24 @@ def test_two_copies_share_one_model_entry_until_one_is_edited(tmp_path: Path) ->
     doc.save(tmp_path / "b.kut3d")
     assert len(json.loads((tmp_path / "b.kut3d").read_text())["scene"]["models"]) == 2
     again = SceneDocument.load(tmp_path / "b.kut3d")
-    assert [o.model.primitive for o in again.state.objects] == [Sphere(0.5, 16, 8), Sphere(0.9, 16, 8)]
+    assert [o.model.primitive for o in again.state.objects] == [
+        Sphere(0.5, 16, 8),
+        Sphere(0.9, 16, 8),
+    ]
 
 
 def test_imported_models_move_but_do_not_edit_by_parameters(tmp_path: Path) -> None:
     obj = write_cube_obj(tmp_path)
     doc = SceneDocument()
-    oid = doc.execute(cmd.AddModel(load_model(obj), transform=pose_matrix(position=(0, 1, 0))))[0]
+    oid = doc.execute(
+        cmd.AddModel(load_model(obj), transform=pose_matrix(position=(0, 1, 0)))
+    )[0]
     assert doc.state.find_object(oid).name == "cube"
-    doc.execute(cmd.SetTransform(oid, pose_matrix(position=(0, 2, 0), rotation_deg=(0, 45, 0), scale=2.0)))
+    doc.execute(
+        cmd.SetTransform(
+            oid, pose_matrix(position=(0, 2, 0), rotation_deg=(0, 45, 0), scale=2.0)
+        )
+    )
     for refused in (cmd.SetPrimitive(oid, Sphere()), cmd.SetMaterial(oid, Material())):
         with pytest.raises(DocumentError, match="modèle importé"):
             doc.execute(refused)
@@ -133,7 +158,9 @@ def test_a_model_without_a_source_file_is_refused_when_added() -> None:
     assert not doc.is_dirty and doc.history() == ("État initial",)
 
 
-def test_a_model_outside_the_folder_is_refused_at_save_and_the_document_is_untouched(tmp_path: Path) -> None:
+def test_a_model_outside_the_folder_is_refused_at_save_and_the_document_is_untouched(
+    tmp_path: Path,
+) -> None:
     elsewhere = tmp_path / "ailleurs"
     elsewhere.mkdir()
     folder = tmp_path / "scene"
@@ -147,7 +174,9 @@ def test_a_model_outside_the_folder_is_refused_at_save_and_the_document_is_untou
     assert not doc.is_dirty
 
 
-def test_an_animated_model_keeps_its_clip_across_edits_and_the_file(tmp_path: Path) -> None:
+def test_an_animated_model_keeps_its_clip_across_edits_and_the_file(
+    tmp_path: Path,
+) -> None:
     doc = SceneDocument()
     gltf = write_gltf(tmp_path)
     model = load_model(gltf)
@@ -155,7 +184,9 @@ def test_an_animated_model_keeps_its_clip_across_edits_and_the_file(tmp_path: Pa
     assert names, "le modèle d'essai doit avoir des animations"
     oid = doc.execute(cmd.AddModel(model))[0]
     doc.execute(cmd.SetAnimation(oid, clip=names[0], time_offset=0.25, loop=True))
-    doc.execute(cmd.SetTransform(oid, pose_matrix(position=(1, 0, 0))))  # déplacer ne touche pas l'animation
+    doc.execute(
+        cmd.SetTransform(oid, pose_matrix(position=(1, 0, 0)))
+    )  # déplacer ne touche pas l'animation
     inst = doc.state.find_object(oid).instance
     assert (inst.clip, inst.time_offset, inst.loop) == (names[0], 0.25, True)
     with pytest.raises(DocumentError, match="introuvable"):
@@ -172,7 +203,9 @@ def test_an_animated_model_keeps_its_clip_across_edits_and_the_file(tmp_path: Pa
 def test_a_changed_file_is_not_overwritten_silently(saved: Path) -> None:
     doc = SceneDocument.load(saved)
     doc.execute(cmd.Rename(doc.state.objects[0].id, "A"))
-    other = SceneDocument.load(saved)  # un autre clip (ou un autre programme) enregistre le même fichier
+    other = SceneDocument.load(
+        saved
+    )  # un autre clip (ou un autre programme) enregistre le même fichier
     other.execute(cmd.Rename(other.state.objects[1].id, "B"))
     other.save()
     before = saved.read_bytes()
@@ -185,7 +218,9 @@ def test_a_changed_file_is_not_overwritten_silently(saved: Path) -> None:
     doc.save()  # il vient d'écrire le fichier : plus de conflit
 
 
-def test_a_deleted_or_touched_file_is_a_conflict_only_when_its_content_changed(saved: Path) -> None:
+def test_a_deleted_or_touched_file_is_a_conflict_only_when_its_content_changed(
+    saved: Path,
+) -> None:
     doc = SceneDocument.load(saved)
     stat = saved.stat()
     os.utime(saved, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
@@ -199,7 +234,9 @@ def test_a_deleted_or_touched_file_is_a_conflict_only_when_its_content_changed(s
     assert saved.exists()
 
 
-def test_save_as_does_not_check_the_original_and_moves_the_document(saved: Path, tmp_path: Path) -> None:
+def test_save_as_does_not_check_the_original_and_moves_the_document(
+    saved: Path, tmp_path: Path
+) -> None:
     doc = SceneDocument.load(saved)
     saved.write_bytes(saved.read_bytes() + b" ")
     doc.save(tmp_path / "autre.kut3d")
@@ -232,7 +269,9 @@ def test_the_gesture_cost_is_a_ratio_not_a_time() -> None:
     oid = doc.execute(cmd.AddPrimitive(Sphere(0.5, 256, 128)))[0]
     model = doc.state.find_object(oid).model
     for i in range(200):
-        doc.execute(cmd.SetTransform(oid, pose_matrix(position=(i * 0.01, 0, 0)), gesture=True))
+        doc.execute(
+            cmd.SetTransform(oid, pose_matrix(position=(i * 0.01, 0, 0)), gesture=True)
+        )
     assert doc.state.find_object(oid).model is model
     assert len(doc.history()) == 3
     while doc.undo():

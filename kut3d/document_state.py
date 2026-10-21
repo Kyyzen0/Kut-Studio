@@ -15,7 +15,6 @@ un document n'est jamais dans un état que `save_scene` refuserait pour une rais
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -115,7 +114,9 @@ def state_from_scene(scene: Scene) -> DocumentState:
     for light in scene.lights:
         lights.append(LightEntry(f"l{counter}", light))
         counter += 1
-    state = DocumentState(tuple(objects), tuple(lights), scene.camera, scene.background, counter)
+    state = DocumentState(
+        tuple(objects), tuple(lights), scene.camera, scene.background, counter
+    )
     check_state(state)
     return state
 
@@ -124,9 +125,13 @@ def check_name(value: Any, what: str = "nom") -> str:
     """Un nom d'objet : texte d'au plus `MAX_NAME_CHARS` caractères. Les mêmes règles valent pour un nom saisi et pour un nom
     par défaut (jamais raccourci ni suffixé en silence)."""
     if not isinstance(value, str):
-        raise DocumentError(f"{what} : un texte est attendu (reçu {type(value).__name__}).")
+        raise DocumentError(
+            f"{what} : un texte est attendu (reçu {type(value).__name__})."
+        )
     if len(value) > MAX_NAME_CHARS:
-        raise DocumentError(f"{what} : {len(value)} caractères, maximum {MAX_NAME_CHARS}.")
+        raise DocumentError(
+            f"{what} : {len(value)} caractères, maximum {MAX_NAME_CHARS}."
+        )
     return value
 
 
@@ -151,16 +156,22 @@ def check_triangle_budget(total: int) -> None:
 def check_state(state: DocumentState) -> None:
     """Refuse un état que le fichier ne pourrait pas contenir (plafonds) ou qui n'est pas cohérent."""
     if len(state.objects) > MAX_INSTANCES:
-        raise DocumentError(f"trop d'objets ({len(state.objects)}, maximum {MAX_INSTANCES}).")
+        raise DocumentError(
+            f"trop d'objets ({len(state.objects)}, maximum {MAX_INSTANCES})."
+        )
     if len(state.lights) > MAX_LIGHTS:
-        raise DocumentError(f"trop de lumières ({len(state.lights)}, maximum {MAX_LIGHTS}).")
+        raise DocumentError(
+            f"trop de lumières ({len(state.lights)}, maximum {MAX_LIGHTS})."
+        )
     ids = state.ids()
     if len(set(ids)) != len(ids):
         raise DocumentError("identifiants en double.")
     models = [o.model for o in state.objects]
     distinct = len({id(m) for m in models})
     if distinct > MAX_MODELS:
-        raise DocumentError(f"trop de modèles distincts ({distinct}, maximum {MAX_MODELS}).")
+        raise DocumentError(
+            f"trop de modèles distincts ({distinct}, maximum {MAX_MODELS})."
+        )
     check_triangle_budget(triangle_total(models))
     for obj in state.objects:
         check_name(obj.name, "nom de l'objet")
@@ -192,7 +203,9 @@ def require_storable_material(material: Material | None) -> None:
             material.occlusion_texture,
         )
     ):
-        raise DocumentError("matériau : les textures d'une forme de base ne s'enregistrent pas encore.")
+        raise DocumentError(
+            "matériau : les textures d'une forme de base ne s'enregistrent pas encore."
+        )
 
 
 def _triple(value: Any, what: str) -> list[float]:
@@ -205,7 +218,11 @@ def _triple(value: Any, what: str) -> list[float]:
     return [float(x) for x in arr]
 
 
-def pose_matrix(position: Any = (0.0, 0.0, 0.0), rotation_deg: Any = (0.0, 0.0, 0.0), scale: Any = 1.0) -> Array:
+def pose_matrix(
+    position: Any = (0.0, 0.0, 0.0),
+    rotation_deg: Any = (0.0, 0.0, 0.0),
+    scale: Any = 1.0,
+) -> Array:
     """Matrice 4x4 d'une pose (translation, rotation X/Y/Z en degrés appliquée dans l'ordre Z, Y, X, échelle > 0) : celle des
     champs « Position / Rotation / Échelle » d'un panneau de propriétés. Même convention que `primitive_instance`."""
     pos = _triple(position, "position")
@@ -221,12 +238,16 @@ def pose_matrix(position: Any = (0.0, 0.0, 0.0), rotation_deg: Any = (0.0, 0.0, 
     return matrix
 
 
-def with_instance(state: DocumentState, object_id: str, **changes: Any) -> DocumentState:
+def with_instance(
+    state: DocumentState, object_id: str, **changes: Any
+) -> DocumentState:
     """L'état où l'instance de l'objet est reconstruite avec `changes` (revalide : NaN, matrice dégénérée, clip inconnu...)."""
     target = state.find_object(object_id)
     try:
         instance = replace(target.instance, **changes)
     except ValueError as exc:
         raise DocumentError(short(str(exc), 160)) from exc
-    objects = tuple(SceneObject(o.id, instance) if o.id == object_id else o for o in state.objects)
+    objects = tuple(
+        SceneObject(o.id, instance) if o.id == object_id else o for o in state.objects
+    )
     return replace(state, objects=objects)

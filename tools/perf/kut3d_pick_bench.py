@@ -49,8 +49,13 @@ def _scene(spheres: int) -> kut3d.Scene:
         for i in range(spheres)
     ]
     camera = kut3d.Camera(position=(0.0, 1.5, 7.0), target=(0.0, 0.0, 0.0))
-    lights = [kut3d.AmbientLight((1, 1, 1), 0.3), kut3d.DirectionalLight((-0.4, -0.6, -0.7), (1, 1, 1), 2.5)]
-    return kut3d.Scene(instances=items, lights=lights, camera=camera, background=(0.1, 0.1, 0.12, 1.0))
+    lights = [
+        kut3d.AmbientLight((1, 1, 1), 0.3),
+        kut3d.DirectionalLight((-0.4, -0.6, -0.7), (1, 1, 1), 2.5),
+    ]
+    return kut3d.Scene(
+        instances=items, lights=lights, camera=camera, background=(0.1, 0.1, 0.12, 1.0)
+    )
 
 
 def ray_hits(
@@ -76,7 +81,9 @@ def ray_hits(
     return best, float(ts[best])
 
 
-def _boxes(pos: np.ndarray, tri: np.ndarray, tri_draw: np.ndarray, draws: int) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+def _boxes(
+    pos: np.ndarray, tri: np.ndarray, tri_draw: np.ndarray, draws: int
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     out = []
     for d in range(draws):
         sel = np.nonzero(tri_draw == d)[0]
@@ -85,7 +92,9 @@ def _boxes(pos: np.ndarray, tri: np.ndarray, tri_draw: np.ndarray, draws: int) -
     return out
 
 
-def _slab(origin: np.ndarray, direction: np.ndarray, low: np.ndarray, high: np.ndarray) -> bool:
+def _slab(
+    origin: np.ndarray, direction: np.ndarray, low: np.ndarray, high: np.ndarray
+) -> bool:
     with np.errstate(divide="ignore", invalid="ignore"):
         t1, t2 = (low - origin) / direction, (high - origin) / direction
     tmin = np.nanmax(np.minimum(t1, t2))
@@ -122,15 +131,27 @@ def main() -> None:
     t_assemble = _median_ms(lambda: assemble(scene, 0.0), args.repeat)
     t_brute = _median_ms(brute, args.repeat)
     t_culled = _median_ms(culled, args.repeat)
-    t_numpy = _median_ms(lambda: kut3d.render_frame(scene, 0.0, (width, height), backend="numpy"), max(1, args.repeat // 2))
+    t_numpy = _median_ms(
+        lambda: kut3d.render_frame(scene, 0.0, (width, height), backend="numpy"),
+        max(1, args.repeat // 2),
+    )
     print(f"assemble                  {t_assemble:9.1f} ms")
-    print(f"rayon, tous les triangles {t_brute:9.1f} ms   (= {t_brute / t_numpy:5.2f} x le rendu numpy)")
-    print(f"rayon, boîtes puis détail {t_culled:9.1f} ms   (= {t_culled / t_numpy:5.3f} x le rendu numpy)")
+    print(
+        f"rayon, tous les triangles {t_brute:9.1f} ms   (= {t_brute / t_numpy:5.2f} x le rendu numpy)"
+    )
+    print(
+        f"rayon, boîtes puis détail {t_culled:9.1f} ms   (= {t_culled / t_numpy:5.3f} x le rendu numpy)"
+    )
     print(f"rendu numpy {width}x{height}     {t_numpy:9.1f} ms")
     if kut3d.backend_available("qrhi"):
         try:
-            t_gpu = _median_ms(lambda: kut3d.render_frame(scene, 0.0, (width, height), backend="qrhi"), args.repeat)
-            print(f"rendu QRhi {width}x{height}      {t_gpu:9.1f} ms   (numpy / QRhi = {t_numpy / t_gpu:5.1f})")
+            t_gpu = _median_ms(
+                lambda: kut3d.render_frame(scene, 0.0, (width, height), backend="qrhi"),
+                args.repeat,
+            )
+            print(
+                f"rendu QRhi {width}x{height}      {t_gpu:9.1f} ms   (numpy / QRhi = {t_numpy / t_gpu:5.1f})"
+            )
         except kut3d.RenderError as exc:
             print(f"rendu QRhi indisponible ici : {str(exc)[:100]}")
     else:

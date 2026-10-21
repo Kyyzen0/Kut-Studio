@@ -44,14 +44,21 @@ def _stamp(path: Path) -> Stamp | None:
         data = path.read_bytes()
     except (OSError, ValueError):
         return None
-    return (info.st_mtime_ns, info.st_size, hashlib.blake2b(data, digest_size=16).hexdigest())
+    return (
+        info.st_mtime_ns,
+        info.st_size,
+        hashlib.blake2b(data, digest_size=16).hexdigest(),
+    )
 
 
 def default_scene() -> Scene:
     """La scène d'un nouveau document : caméra de face, un peu d'ambiance, un soleil ; aucun objet."""
     return Scene(
         instances=[],
-        lights=[AmbientLight((1.0, 1.0, 1.0), 0.3), DirectionalLight((-0.4, -0.6, -0.7), (1.0, 1.0, 1.0), 2.5)],
+        lights=[
+            AmbientLight((1.0, 1.0, 1.0), 0.3),
+            DirectionalLight((-0.4, -0.6, -0.7), (1.0, 1.0, 1.0), 2.5),
+        ],
         camera=Camera(position=(0.0, 1.5, 6.0), target=(0.0, 0.5, 0.0)),
     )
 
@@ -67,12 +74,21 @@ class _Entry:
 class SceneDocument:
     """Une scène en cours d'édition. Voir le module."""
 
-    def __init__(self, scene: Scene | None = None, *, path: str | Path | None = None) -> None:
-        self._entries = [_Entry("État initial", state_from_scene(scene if scene is not None else default_scene()))]
+    def __init__(
+        self, scene: Scene | None = None, *, path: str | Path | None = None
+    ) -> None:
+        self._entries = [
+            _Entry(
+                "État initial",
+                state_from_scene(scene if scene is not None else default_scene()),
+            )
+        ]
         self._index = 0
         self._saved_index: int | None = 0
         self._open_key: str | None = None
-        self._counter = self._entries[0].state.next_id  # jamais réutilisé, même après annuler puis éditer
+        self._counter = self._entries[
+            0
+        ].state.next_id  # jamais réutilisé, même après annuler puis éditer
         self._path = None if path is None else Path(path)
         self._stamp: Stamp | None = None
         self._scene_cache: tuple[int, Scene] | None = None
@@ -94,7 +110,13 @@ class SceneDocument:
     def path(self) -> Path | None:
         return self._path
 
-    def save(self, path: str | Path | None = None, *, allow_outside: bool = False, overwrite: bool = False) -> None:
+    def save(
+        self,
+        path: str | Path | None = None,
+        *,
+        allow_outside: bool = False,
+        overwrite: bool = False,
+    ) -> None:
         """Écrit la scène (atomique, déterministe). Sans `path`, réécrit le fichier d'origine.
 
         `DocumentConflict` si ce fichier a changé sur le disque depuis qu'on l'a lu ou écrit (un autre programme, ou un autre
@@ -135,7 +157,9 @@ class SceneDocument:
     def execute(self, command: Command) -> tuple[str, ...]:
         """Applique `command`. Retourne les identifiants CRÉÉS (objet ou lumière ajoutés), dans l'ordre. Refus : rien ne change."""
         before = self.state
-        if before.next_id < self._counter:  # annuler a ramené un compteur plus ancien : les identifiants jetés ne reviennent pas
+        if (
+            before.next_id < self._counter
+        ):  # annuler a ramené un compteur plus ancien : les identifiants jetés ne reviennent pas
             before = replace(before, next_id=self._counter)
         after = command.apply(before)
         if not isinstance(after, DocumentState):
@@ -152,7 +176,9 @@ class SceneDocument:
             self._entries[self._index] = _Entry(command.label, after)
         else:
             if self._saved_index is not None and self._saved_index > self._index:
-                self._saved_index = -1  # l'état enregistré vivait dans la branche « rétablir » qu'on jette
+                self._saved_index = (
+                    -1
+                )  # l'état enregistré vivait dans la branche « rétablir » qu'on jette
             del self._entries[self._index + 1 :]
             self._entries.append(_Entry(command.label, after))
             self._index += 1
@@ -213,4 +239,11 @@ class SceneDocument:
         return tuple(e.label for e in self._entries)
 
 
-__all__ = ["MAX_UNDO", "DocumentConflict", "DocumentError", "SceneDocument", "SceneFileError", "default_scene"]
+__all__ = [
+    "MAX_UNDO",
+    "DocumentConflict",
+    "DocumentError",
+    "SceneDocument",
+    "SceneFileError",
+    "default_scene",
+]

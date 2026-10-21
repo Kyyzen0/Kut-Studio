@@ -58,7 +58,9 @@ class Command:
         raise NotImplementedError
 
 
-def _with_objects(state: DocumentState, objects: tuple[SceneObject, ...], **changes: Any) -> DocumentState:
+def _with_objects(
+    state: DocumentState, objects: tuple[SceneObject, ...], **changes: Any
+) -> DocumentState:
     return replace(state, objects=objects, **changes)
 
 
@@ -87,7 +89,9 @@ class AddPrimitive(Command):
             raise DocumentError("spec doit être une forme de kut3d.primitives.")
         name = check_name(self.spec.kind if self.name is None else self.name)
         require_storable_material(self.material)
-        check_triangle_budget(triangle_total([o.model for o in state.objects]) + self.spec.triangle_count)
+        check_triangle_budget(
+            triangle_total([o.model for o in state.objects]) + self.spec.triangle_count
+        )
         try:
             model = primitive_model(self.spec, self.material)
         except ValueError as exc:
@@ -115,7 +119,11 @@ class AddModel(Command):
         if not isinstance(self.model, Model):
             raise DocumentError("model doit être un kut3d.Model.")
         require_savable(self.model)
-        default = self.model.primitive.kind if self.model.primitive is not None else self.model.source.stem
+        default = (
+            self.model.primitive.kind
+            if self.model.primitive is not None
+            else self.model.source.stem
+        )
         name = check_name(default if self.name is None else self.name)
         matrix = np.eye(4) if self.transform is None else self.transform
         obj = SceneObject(f"o{state.next_id}", _instance(self.model, matrix, name))
@@ -139,7 +147,9 @@ class DuplicateObject(Command):
         position = state.objects.index(source) + 1
         copy = SceneObject(f"o{state.next_id}", source.instance)
         out = _with_objects(
-            state, (*state.objects[:position], copy, *state.objects[position:]), next_id=state.next_id + 1
+            state,
+            (*state.objects[:position], copy, *state.objects[position:]),
+            next_id=state.next_id + 1,
         )
         check_state(out)
         return out
@@ -155,7 +165,9 @@ class RemoveObject(Command):
 
     def apply(self, state: DocumentState) -> DocumentState:
         state.find_object(self.object_id)
-        return _with_objects(state, tuple(o for o in state.objects if o.id != self.object_id))
+        return _with_objects(
+            state, tuple(o for o in state.objects if o.id != self.object_id)
+        )
 
 
 @dataclass(frozen=True)
@@ -208,17 +220,25 @@ class SetAnimation(Command):
         if not isinstance(self.loop, bool):
             raise DocumentError("loop : un booléen est attendu.")
         return with_instance(
-            state, self.object_id, clip=self.clip, time_offset=self.time_offset, loop=self.loop
+            state,
+            self.object_id,
+            clip=self.clip,
+            time_offset=self.time_offset,
+            loop=self.loop,
         )
 
 
-def _editable_shape(state: DocumentState, object_id: str) -> tuple[SceneObject, PrimitiveSpec, Material | None]:
+def _editable_shape(
+    state: DocumentState, object_id: str
+) -> tuple[SceneObject, PrimitiveSpec, Material | None]:
     """L'objet, sa forme et son matériau, après avoir vérifié que c'est une forme de base INTACTE : un modèle importé, ou une
     forme dont on a changé le maillage à la main, n'est pas éditable par ses paramètres (refusé, jamais réécrit)."""
     obj = state.find_object(object_id)
     spec = obj.model.primitive
     if spec is None:
-        raise DocumentError("cet objet est un modèle importé : seule sa pose se modifie ici.")
+        raise DocumentError(
+            "cet objet est un modèle importé : seule sa pose se modifie ici."
+        )
     try:
         material = pristine_material(obj.model)
     except ValueError as exc:
@@ -226,7 +246,9 @@ def _editable_shape(state: DocumentState, object_id: str) -> tuple[SceneObject, 
     return obj, spec, material
 
 
-def _replace_model(state: DocumentState, obj: SceneObject, model: Model) -> DocumentState:
+def _replace_model(
+    state: DocumentState, obj: SceneObject, model: Model
+) -> DocumentState:
     # Copie à l'écriture : seul cet objet reçoit le nouveau modèle ; un autre objet qui partageait l'ancien le garde.
     root = obj.model.root_transform
     model = model.with_root_transform(root)
@@ -322,7 +344,9 @@ class SetBackground(Command):
     def apply(self, state: DocumentState) -> DocumentState:
         # Validation par la Scene elle-même (mêmes bornes que le fichier).
         try:
-            checked = Scene(instances=[], lights=[], camera=state.camera, background=self.background).background
+            checked = Scene(
+                instances=[], lights=[], camera=state.camera, background=self.background
+            ).background
         except ValueError as exc:
             raise DocumentError(str(exc)[:160]) from exc
         return replace(state, background=checked)
@@ -363,7 +387,11 @@ class SetLight(Command):
         if not isinstance(self.light, (AmbientLight, DirectionalLight, PointLight)):
             raise DocumentError("light doit être une lumière de kut3d.scene.")
         return replace(
-            state, lights=tuple(LightEntry(e.id, self.light) if e.id == self.light_id else e for e in state.lights)
+            state,
+            lights=tuple(
+                LightEntry(e.id, self.light) if e.id == self.light_id else e
+                for e in state.lights
+            ),
         )
 
 
@@ -377,7 +405,9 @@ class RemoveLight(Command):
 
     def apply(self, state: DocumentState) -> DocumentState:
         state.find_light(self.light_id)
-        return replace(state, lights=tuple(e for e in state.lights if e.id != self.light_id))
+        return replace(
+            state, lights=tuple(e for e in state.lights if e.id != self.light_id)
+        )
 
 
 @dataclass(frozen=True)
@@ -398,4 +428,3 @@ class Batch(Command):
         for command in self.commands:
             state = command.apply(state)
         return state
-
