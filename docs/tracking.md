@@ -310,6 +310,12 @@ suiveur (`TrackLink`, en temps source) n'est pas réécrite, seules ses images c
 source. Elles ne sont donc refusées ni par l'interface ni par les scripts (`move_clip`, `move_clip_to_track`, `move_clips` appliquent la même
 règle que la souris) ; seuls la coupe et la suppression, qui réécrivent des liaisons, le sont.
 
+**Éditer les données d'un tracker ne touche pas un suiveur verrouillé.** Poser, retirer ou effacer des points (`set_tracker_position`,
+`remove_correction`, `reset_tracker`) et régler ou retirer la stabilisation (`set_stabilization`, `remove_stabilization`) ne remplacent que le suivi du clip
+visé : aucune liaison de suiveur n'est écrite. Un suiveur verrouillé dont l'apparence change parce que le tracker qu'il suit change est le comportement
+attendu d'un suivi : le verrou interdit de le **réécrire**, pas de le **redessiner**. Ni l'interface ni les verbes de script ne refusent donc ces
+opérations (`tests/test_tracker_verbs_lock_parity.py`) ; seul `remove_tracker`, qui réécrit les liaisons, garde son refus.
+
 ## Undo / redo
 
 Snapshots du projet (`core.edit_history`) : `TrackData` est immuable et ses
