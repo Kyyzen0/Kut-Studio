@@ -8,6 +8,9 @@ script et les menus le partagent. Il passe AVANT la première écriture, et ne v
 (``TrackLink.after_cut`` / ``TrackLink.without_source`` donnent un résultat différent) : une liaison qui suit une autre source, ou qu'une
 suppression laisse telle quelle (aucune prolongation), ne bloque rien. Aucun Qt.
 
+Supprimer un tracker (:func:`core.tracking_ops.remove_tracker` / ``remove_trackers``) réécrit de même les liaisons qui l'utilisent (séquence
+active, comme l'écriture) : même refus, calculé par la règle d'écriture elle-même (``tracker_removal_rewrites``).
+
 Déplacer, rogner, ripple-trimmer, changer la vitesse ou dupliquer la source ne réécrit aucun suiveur (seul le rendu, qui dérive les images clés du
 suiveur de sa source, change) : aucune garde ici pour ces opérations, ni dans l'interface, ni dans les verbes (tests/test_follower_move_parity.py).
 """
@@ -71,6 +74,31 @@ def require_release_followers_unlocked(project: Project, doomed: Collection[str]
         )
 
 
+def tracker_removal_locked_followers(project: Project, clip_id: str, tracker_ids: Collection[str]) -> list[str]:
+    """Clips verrouillés dont la liaison serait réécrite par la suppression des trackers ``tracker_ids`` de ``clip_id`` (même règle que l'écriture)."""
+    from .tracking_ops import tracker_removal_rewrites
+
+    found: list[str] = []
+    for tracker_id in dict.fromkeys(tracker_ids):
+        for other in tracker_removal_rewrites(project, clip_id, tracker_id):
+            track = next((t for t in project.active_sequence.tracks if other in t.clips), None)
+            if track is not None and is_locked(track, other) and other.id not in found:
+                found.append(other.id)
+    return found
+
+
+def require_tracker_removal_unlocked(project: Project, clip_id: str, tracker_ids: Collection[str]) -> None:
+    """Refuse, AVANT d'écrire, de supprimer ces trackers si la liaison d'un clip verrouillé qui les suit serait réécrite."""
+    locked = tracker_removal_locked_followers(project, clip_id, tracker_ids)
+    if locked:
+        names = ", ".join(f"'{tracker_id}'" for tracker_id in list(dict.fromkeys(tracker_ids))[:3])
+        raise ValueError(
+            f"Impossible de supprimer le tracker {names} du clip '{clip_id}' : le clip verrouillé '{locked[0]}' le suit (suivi) et "
+            f"verrait sa liaison réécrite. Déverrouillez-le d'abord."
+        )
+
+
 __all__ = [
     "cut_locked_followers", "is_locked", "release_locked_followers", "require_cut_followers_unlocked", "require_release_followers_unlocked",
+    "require_tracker_removal_unlocked", "tracker_removal_locked_followers",
 ]

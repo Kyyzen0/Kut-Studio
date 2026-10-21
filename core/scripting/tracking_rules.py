@@ -11,7 +11,8 @@ Aucun verbe ici (comme ``layer_rules``) : des fonctions sur le projet et des ide
 - **Verrous des suiveurs** : un clip qui suit un tracker (liaison active) change d'apparence quand les données de ce tracker, ou la
   stabilisation de sa source, changent ; ce n'est PAS une écriture sur lui (sa liaison est en temps source, les images clés sont dérivées
   au rendu), donc aucun verbe de données n'est refusé pour un suiveur verrouillé, comme dans l'interface. Seul ``remove_tracker``
-  réécrit leurs liaisons : :func:`require_link_owners_editable`.
+  réécrit leurs liaisons : ce refus-là est dans le modèle (:func:`core.tracking_locks.require_tracker_removal_unlocked`, appelé par
+  ``tracking_ops.remove_tracker``), le verbe n'en a pas de copie.
 
 Pas de cycle à craindre entre liaisons : :meth:`core.tracking_bindings.TrackingContext.layer_matrix` ne lit, pour le clip source, que son
 transform saisi, ses images clés saisies et sa stabilisation, jamais ses propres liaisons ; la source d'une liaison peut donc elle-même
@@ -22,9 +23,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from ..compositing_guard import ClipEditRefused, clip_edit_refusal
 from ..project_model import Clip, Project
-from ..tracking_ops import _still_tracked_elsewhere, tracking_of
+from ..tracking_ops import tracking_of
 from .resource_limits import require_room_in
 
 MAX_TRACKERS_PER_CLIP = 32
@@ -104,30 +104,8 @@ def require_derived_size(project: Project, clip: Clip, what: str) -> None:
         raise ValueError(f"{what} : le clip '{clip.id}' compte environ {int(frames)} images, le maximum est de {MAX_DERIVED_FRAMES}.")
 
 
-def _refuse_locked(project: Project, clips: list[Clip]) -> None:
-    for other in clips:
-        code = clip_edit_refusal(project, other.id, visual_only=False)
-        if code is not None:
-            raise ClipEditRefused(code, other.id)
-
-
-def require_link_owners_editable(project: Project, source_id: str, tracker_id: str) -> None:
-    """``remove_tracker`` réécrit les liaisons des clips qui suivent le tracker (sauf s'il reste porté par une autre moitié coupée)."""
-    owners = []
-    for track in project.active_sequence.tracks:
-        for other in track.clips:
-            if other.id == source_id or other.tracking is None:
-                continue
-            if any(
-                link.follows(source_id) and tracker_id in link.tracker_ids and not _still_tracked_elsewhere(project, link, source_id, tracker_id)
-                for link in other.tracking.links
-            ):
-                owners.append(other)
-    _refuse_locked(project, owners)
-
-
 __all__ = [
     "MAX_DERIVED_FRAMES", "MAX_PROJECT_TRACK_FRAMES", "MAX_TRACKERS_IN_PROJECT", "MAX_TRACKERS_PER_CLIP", "MAX_TRACK_SPAN",
     "known_link_ids", "known_tracker_ids", "project_clips", "require_derived_size",
-    "require_link_owners_editable", "require_span", "require_tracker_room", "require_within", "tracked_frames",
+    "require_span", "require_tracker_room", "require_within", "tracked_frames",
 ]

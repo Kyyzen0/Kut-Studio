@@ -510,7 +510,7 @@ stabilisation ne stockent aucune image clé : elles sont dérivées dans le plan
   `remove_correction`, `reset_tracker`, `set_stabilization`, `remove_stabilization`) n'est **pas** refusé, verrouillé (calque, piste, piste d'une autre
   séquence) ou non : ces verbes n'écrivent que le suivi du clip visé, la liaison du suiveur (en temps source) n'est pas réécrite, seul son rendu suit,
   comme dans l'interface. Seul `remove_tracker` réécrit des liaisons : il refuse, sans rien écrire, si l'un des clips dont il réécrirait la liaison est
-  verrouillé. La source d'une liaison n'est que lue : elle peut être verrouillée.
+  verrouillé (règle du modèle, `core/tracking_locks.py`, la même que dans l'interface). La source d'une liaison n'est que lue : elle peut être verrouillée.
 - Valeurs par défaut de `set_stabilization` à la création : mode `position`, lissage `medium`, bords `zoom`, image de référence au début du clip.
 - `describe` ne lit pas encore le suivi (« Pas encore là ») : un script cite les trackers et les liaisons qu'il a créés (`id` / `as`).
 

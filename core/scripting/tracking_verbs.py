@@ -15,7 +15,7 @@ Règles communes (celles des autres verbes) :
 - **verrous** : le clip modifié (piste et calque) est vérifié. Un clip qui **suit** un tracker dont les données (ou la stabilisation de
   sa source) changent n'est PAS refusé, verrouillé ou non : sa liaison n'est pas réécrite (elle est en temps source), seul son rendu suit
   (le propos du verrou est de ne pas réécrire, pas de ne pas redessiner ; c'est la règle de l'interface). ``remove_tracker`` réécrit
-  en revanche leurs liaisons : il vérifie ceux dont il le fait, AVANT d'écrire ;
+  en revanche leurs liaisons : il refuse, AVANT d'écrire, si l'un des clips dont il le fait est verrouillé (règle du modèle, ``core.tracking_locks``) ;
 - **rien n'est ramené en silence** : instant hors du clip, point hors de l'image, réglage que le modèle écrêterait, remplacement d'une
   liaison existante, réglage ignoré (``smoothing_frames`` hors du lissage « custom ») sont refusés ;
 - **identifiants créés** : ``add_tracker`` et ``add_link`` acceptent ``id`` / ``as`` (uniques dans tout le projet).
@@ -40,7 +40,7 @@ from ..tracking_ops import (
     source_index_at, stabilization_reference, trackable_clip, tracking_of, update_tracker,
 )
 from .tracking_rules import (
-    MAX_TRACKERS_PER_CLIP, known_link_ids, known_tracker_ids, require_derived_size, require_link_owners_editable, require_span,
+    MAX_TRACKERS_PER_CLIP, known_link_ids, known_tracker_ids, require_derived_size, require_span,
     require_tracker_room, require_within,
 )
 from .resource_limits import require_keyframes_after
@@ -207,7 +207,6 @@ def _remove_tracker(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id, clip = _video_clip(project, a["clip"])
         tracker = _tracker_of(clip, a["tracker"])
-        require_link_owners_editable(project, clip_id, tracker.id)
         return remove_tracker(project, clip_id, tracker.id)
 
     return operation

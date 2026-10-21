@@ -414,17 +414,13 @@ class TrackingMixin:
             self.tracking_panel.set_state(self._tracking_panel_state())
 
     def _remove_trackers(self, ids: list) -> None:
-        from core.tracking_ops import remove_tracker
+        from core.tracking_ops import remove_trackers
 
         clip, _kind = self._tracking_selected_clip()
         if clip is None or not ids:
             return
-
-        def operation():
-            for tracker_id in ids:
-                remove_tracker(self.project, clip.id, tracker_id)
-
-        self._tracking_operation("tracking.history.remove", operation)
+        # Tout ou rien : le modèle refuse (clip suiveur verrouillé) avant la première suppression ; _tracking_operation affiche le message.
+        self._tracking_operation("tracking.history.remove", lambda: remove_trackers(self.project, clip.id, ids))
 
     def _rename_tracker(self, tracker_id: str, name: str) -> None:
         from core.tracking_ops import update_tracker

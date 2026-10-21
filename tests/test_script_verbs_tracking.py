@@ -448,7 +448,7 @@ def test_remove_tracker_refuses_before_changing_anything_when_a_dependent_is_loc
     _refused(project, _op("remove_tracker", clip="v", tracker="t1"), match="verrouillé")
     project = _link_project()
     project.tracks[3].locked = True
-    _refused(project, _op("remove_tracker", clip="v", tracker="t1"), match="verrouillée")
+    _refused(project, _op("remove_tracker", clip="v", tracker="t1"), match="verrouillé")
 
 
 def test_remove_tracker_leaves_a_locked_clip_alone_when_its_link_does_not_use_the_tracker():
