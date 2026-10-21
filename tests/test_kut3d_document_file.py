@@ -285,3 +285,27 @@ def test_dataclass_replace_of_the_state_keeps_ids(saved: Path) -> None:
     doc.execute(cmd.AddPrimitive(Cube()))
     new_ids = [o.id for o in doc.state.objects]
     assert new_ids[:2] == [ids[0], ids[2]] and new_ids[2] not in ids
+
+
+def test_a_hand_written_file_is_reported_as_rewritten_by_save(tmp_path: Path) -> None:
+    from tests.kut3d_scene_samples import minimal_document, write_doc
+
+    write_cube_obj(tmp_path, name="cube")
+    doc_json = minimal_document()
+    old = doc_json["scene"]["models"][0]["id"]
+    doc_json["scene"]["models"][0]["id"] = "ma-boite"
+    for inst in doc_json["scene"]["instances"]:
+        if inst["model"] == old:
+            inst["model"] = "ma-boite"
+    hand = write_doc(tmp_path / "main.kut3d", doc_json)
+    doc = SceneDocument.load(hand)
+    assert (
+        not doc.canonical_on_disk
+    )  # JSON compact, identifiant « ma-boite » : l'enregistrer le réécrit
+    doc.save()
+    assert doc.canonical_on_disk and SceneDocument.load(hand).canonical_on_disk
+    assert b'"ma-boite"' not in hand.read_bytes()
+
+
+def test_a_file_written_by_save_is_canonical(saved: Path) -> None:
+    assert SceneDocument.load(saved).canonical_on_disk

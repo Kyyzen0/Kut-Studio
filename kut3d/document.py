@@ -28,6 +28,7 @@ from kut3d.document_state import (
 from kut3d.errors import SceneFileError, short
 from kut3d.scene import AmbientLight, Camera, DirectionalLight, Scene
 from kut3d.scene_io import load_scene, save_scene
+from kut3d.scene_io_write import checked_bytes
 
 MAX_UNDO = 100  # éditions annulables conservées (même ordre de grandeur que `core.edit_history.MAX_HISTORY`)
 
@@ -91,6 +92,7 @@ class SceneDocument:
         ].state.next_id  # jamais réutilisé, même après annuler puis éditer
         self._path = None if path is None else Path(path)
         self._stamp: Stamp | None = None
+        self._canonical = True  # un document neuf n'a rien à réécrire
         self._scene_cache: tuple[int, Scene] | None = None
         self.revision = 0
         """Augmente à chaque changement de l'état courant (édition, annulation, rétablissement) : un affichage sait ainsi qu'il doit se redessiner."""
@@ -104,7 +106,20 @@ class SceneDocument:
         scene = load_scene(p, allow_outside=allow_outside)
         doc = cls(scene, path=p)
         doc._stamp = _stamp(p)
+        try:
+            on_disk = p.read_bytes()
+            doc._canonical = (
+                checked_bytes(scene, p.parent, allow_outside=allow_outside) == on_disk
+            )
+        except (OSError, ValueError):
+            doc._canonical = False
         return doc
+
+    @property
+    def canonical_on_disk(self) -> bool:
+        """Faux si le fichier lu n'est PAS ce que `save` écrirait de la même scène (écrit à la main : identifiants de modèles,
+        `normalize`, chiffres, clés triées...) : l'enregistrer le réécrit sous sa forme canonique. L'interface le dit avant."""
+        return self._canonical
 
     @property
     def path(self) -> Path | None:
@@ -133,6 +148,7 @@ class SceneDocument:
         self._stamp = _stamp(target)
         self._saved_index = self._index
         self._open_key = None
+        self._canonical = True
 
     # --- état ---------------------------------------------------------------------------------------
 
