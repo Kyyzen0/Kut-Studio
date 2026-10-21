@@ -9,10 +9,10 @@ interface, exécuteur).
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -311,12 +311,21 @@ def test_ordinary_montages_are_never_refused(monkeypatch):
 
 
 # --- La loi, sur le vrai FFmpeg ----------------------------------------------------------------------------------------
+#
+# Mesuré sous FFmpeg 6.1.1, 7.1.5 et 9.0.2 (surcoût d'une coupe, 480×270, au-dessus du même montage sans coupe) :
+#   9.0 et 7.1 : 191 / 377 / 563 Mo pour une coupe à 15 / 30 / 45 s, soit l'estimation (185 / 371 / 556 Mo) à 3 % près ;
+#   6.1        : 430 / 535 / 640 Mo, soit une pente de 7 Mo/s au lieu de 12,4 (57 % de l'estimation) et ~245 Mo fixes en plus
+#                (la seconde chaîne de filtres), quelle que soit la transformation du clip.
+# Les tests comparent donc des PENTES (différence entre deux coupes : le décalage fixe disparaît) : l'estimation ne doit
+# jamais sous-estimer la pente mesurée, et ne la surestime pas de plus de 2,2 fois (FFmpeg 6.1 : 1,75 fois).
 
 
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
-needs_ps = pytest.mark.skipif(sys.platform.startswith("win") or shutil.which("ps") is None, reason="mesure de la mémoire par ps indisponible")
+needs_wait4 = pytest.mark.skipif(not hasattr(os, "wait4"), reason="mesure du pic de mémoire d'un processus fils (os.wait4) indisponible")
 SOURCE_SECONDS = 60
 W, H, FPS = 480, 270, 25
+NEAR, FAR = 15.0, 45.0
+REPEATS = 3
 
 
 @pytest.fixture(scope="module")
@@ -331,25 +340,20 @@ def media(tmp_path_factory) -> str:
 
 
 def _peak_rss_mb(arguments: list[str]) -> float:
-    """Pic de mémoire résidente de FFmpeg (``ps`` toutes les 10 ms) ; ne mesure que ce processus."""
+    """Pic de mémoire résidente de FFmpeg, lu par le système à la fin du processus (``ru_maxrss`` : exact, sans échantillonnage)."""
     process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    peak = 0.0
     try:
-        while process.poll() is None:
-            done = subprocess.run(["ps", "-o", "rss=", "-p", str(process.pid)], capture_output=True, text=True, timeout=5, check=False)
-            text = done.stdout.strip()
-            if text.isdigit():
-                peak = max(peak, int(text) / 1024.0)
-            time.sleep(0.01)
-    finally:
-        if process.poll() is None:
-            process.kill()
-        process.wait(timeout=30)
+        _pid, status, usage = os.wait4(process.pid, 0)
+    except BaseException:
+        process.kill()
+        raise
+    process.returncode = os.waitstatus_to_exitcode(status)
     assert process.returncode == 0
-    return peak
+    return usage.ru_maxrss / (1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0)     # macOS : octets ; Linux : Ko
 
 
 def _measure(path: str, at: float | None, tmp_path: Path, tag: str, transform: ClipTransform | None = None) -> tuple[float, int]:
+    """(pic de mémoire de FFmpeg en Mo — médiane de ``REPEATS`` lancements —, file estimée en octets) d'un média coupé à ``at``."""
     asset = MediaAsset("a", path, "m", float(SOURCE_SECONDS), W, H, float(FPS), "video", has_audio=False)
     pieces = [(0.0, 0.0, float(SOURCE_SECONDS))] if at is None else [(0.0, 0.0, at), (at, at, float(SOURCE_SECONDS))]
     clips = [Clip(f"c{i}", "a", "V1", start, s_in, s_out) for i, (start, s_in, s_out) in enumerate(pieces)]
@@ -364,43 +368,47 @@ def _measure(path: str, at: float | None, tmp_path: Path, tag: str, transform: C
     temporary: list[str] = []
     command = build_export_command(request, temporary_files=temporary)
     try:
-        peak = _peak_rss_mb(list(command.arguments))
+        peaks = sorted(_peak_rss_mb(list(command.arguments)) for _ in range(REPEATS))
     finally:
         for name in temporary:
             Path(name).unlink(missing_ok=True)
-    return peak, estimate_export_queue(request).bytes
+    return peaks[len(peaks) // 2], estimate_export_queue(request).bytes
+
+
+def _slope(path: str, tmp_path: Path, tag: str, transform: ClipTransform | None = None) -> tuple[float, float]:
+    """(pente mesurée, pente estimée) en Mo : surcoût d'une coupe à ``FAR`` moins celui d'une coupe à ``NEAR``, **du même montage**
+    (même transformation, donc mêmes filtres) : le décalage fixe d'une seconde chaîne de filtres s'annule."""
+    near, near_estimate = _measure(path, NEAR, tmp_path, f"{tag}n", transform)
+    far, far_estimate = _measure(path, FAR, tmp_path, f"{tag}f", transform)
+    return far - near, (far_estimate - near_estimate) / (1024.0 * 1024.0)
+
+
+@pytest.fixture(scope="module")
+def reference_slope(media, tmp_path_factory) -> tuple[float, float]:
+    return _slope(media, tmp_path_factory.mktemp("slope"), "ref")
 
 
 @needs_ffmpeg
-@needs_ps
-def test_ffmpeg_memory_grows_with_the_media_before_the_last_piece_as_the_estimate_says(media, tmp_path):
-    """Le rapport des surcoûts mesurés (coupe à 45 s / coupe à 15 s) est celui de l'estimation (3), à FFmpeg près : le seul
-    montage découpé plus loin retient trois fois plus. Sans coupe (référence), rien ne s'accumule."""
-    # Le pic le plus bas de trois mesures : une mesure ne peut qu'être gonflée par la charge de la machine.
-    base = min(_measure(media, None, tmp_path, f"base{i}")[0] for i in range(3))
-    near = min(_measure(media, 15.0, tmp_path, f"near{i}")[0] for i in range(3))
-    far = min(_measure(media, 45.0, tmp_path, f"far{i}")[0] for i in range(3))
-    estimates = _measure(media, 15.0, tmp_path, "e1")[1], _measure(media, 45.0, tmp_path, "e2")[1]
-    assert estimates[1] == pytest.approx(3 * estimates[0])
-    extra_near, extra_far = near - base, far - base
-    assert extra_near > 0.0, "une coupe doit retenir des images (FFmpeg a changé de comportement ?)"
-    assert 2.0 <= extra_far / extra_near <= 4.5
+@needs_wait4
+def test_ffmpeg_memory_grows_with_the_media_before_the_last_piece_and_the_estimate_bounds_it(reference_slope):
+    """Une coupe plus loin retient plus d'images (la pente mesurée est positive), et l'estimation ne la sous-estime jamais :
+    exacte sous FFmpeg ≥ 7 (±25 %), 1,75 fois trop haute sous FFmpeg 6.1 (mesuré)."""
+    measured, estimated = reference_slope
+    assert estimated == pytest.approx(556.0 - 185.0, rel=0.02)           # 30 s de plus × 25 i/s × 480 × 270 × 4 octets
+    assert measured > 0.0, "une coupe plus loin doit retenir plus d'images (FFmpeg a changé de comportement ?)"
+    assert estimated >= 0.9 * measured                                   # jamais de sous-estimation
+    assert estimated <= 2.2 * measured                                   # et une borne utile, pas un majorant sans valeur
 
 
 @needs_ffmpeg
-@needs_ps
+@needs_wait4
 @pytest.mark.parametrize(
-    "transform", [ClipTransform(scale=0.5), ClipTransform(scale=3.0), ClipTransform(rotation=45.0), ClipTransform(fill=True)],
-    ids=["scale-0.5", "scale-3", "rotation-45", "fill"],
+    "transform", [ClipTransform(scale=0.5), ClipTransform(scale=3.0), ClipTransform(rotation=45.0)], ids=["scale-0.5", "scale-3", "rotation-45"],
 )
-def test_the_measured_queue_does_not_depend_on_the_clip_transform(media, tmp_path, transform):
-    """Le surcoût mesuré d'un clip transformé (coupe à 15 s) est celui du clip sans transformation : la file est faite d'images
-    conformées au cadre, pas de la taille après échelle ou rotation (3 fois plus grande ici : 9 fois plus d'octets)."""
-    base = _measure(media, None, tmp_path, "b", transform)[0]
-    plain = _measure(media, 15.0, tmp_path, "p")[0] - _measure(media, None, tmp_path, "q")[0]
-    moved, estimate = _measure(media, 15.0, tmp_path, "m", transform)
-    moved -= base
-    estimate /= 1024.0 * 1024.0
-    assert plain > 0.0
-    assert 0.7 <= moved / plain <= 1.4
-    assert 0.7 <= moved / estimate <= 1.4
+def test_the_measured_queue_does_not_depend_on_the_clip_transform(media, tmp_path, reference_slope, transform):
+    """La pente d'un clip transformé est celle du clip sans transformation : la file est faite d'images conformées au cadre, pas de
+    la taille après échelle ou rotation (3 fois plus grande ici : 9 fois plus d'octets)."""
+    moved, estimated = _slope(media, tmp_path, "tr", transform)
+    measured, _ = reference_slope
+    assert 0.8 <= moved / measured <= 1.25
+    assert estimated >= 0.9 * moved

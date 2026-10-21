@@ -411,6 +411,14 @@ doute à D-003 (90 clips de quelques médias) : à mesurer une fois le montage r
   dix fois la machine). Mesure impossible : la moitié de la mémoire installée ; rien du tout : 16 Go. Le message dit ce qui est mesuré
   (« mémoire disponible sur cette machine ≈ 9 Go sur 24 Go », ou « disponible non mesurée »).
 
+- **Selon la version de FFmpeg** (surcoût d'une coupe à 15 / 30 / 45 s, 480×270, médiane de 3, au-dessus du même montage sans
+  coupe ; estimé 185 / 371 / 556 Mo) : FFmpeg 9.0 et 7.1.5 donnent 191 / 377 / 563 Mo (à 3 % de l'estimation) ; **FFmpeg 6.1.1 donne
+  430 / 535 / 640 Mo** (natif arm64 et amd64 émulé : 414 / 524 / 635 Mo), c'est-à-dire une pente de 7 Mo/s au lieu de 12,4 (57 % de
+  l'estimation) et environ 245 Mo fixes en plus (la seconde chaîne de filtres), quelle que soit la transformation du clip. Sous 6.1
+  l'estimation surestime donc la pente de 1,7 fois : c'est un majorant, jamais une sous-estimation. Les tests comparent des **pentes**
+  (différence entre deux coupes du même montage : le décalage fixe disparaît) : l'estimation ne doit jamais sous-estimer la pente
+  mesurée et ne la surestime pas de plus de 2,2 fois.
+
 ### Ce que l'estimateur NE couvre PAS (sous-estimations connues)
 
 - **Clips remappés dans le temps** (vitesse, courbe, sens inverse, flux optique) : leur chaîne passe par un `TimeMap` ; ils sont
