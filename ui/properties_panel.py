@@ -122,6 +122,10 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
     color_lut_import_requested = Signal(str, str)
     color_lut_remove_requested = Signal(str)
     color_grade_reset_requested = Signal(str)
+    # Images clés de l'étalonnage (ADR-0008, étape 8) : (clip, [propriétés ``color.*``]) bascule les images clés sous la tête ;
+    # (clip) retire toute l'animation de l'étalonnage.
+    color_keys_toggled = Signal(str, object)
+    color_animation_cleared = Signal(str)
     # Fin de ``show_clip`` : la page Couleur suit le clip que montre l'inspecteur.
     clip_shown = Signal()
     # Calques graphiques (tâche 32)
@@ -162,6 +166,8 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
         self._color_value: object = None                 # ColorGrade ou graphe de nœuds du clip affiché
         self._color_node_id: str | None = None           # nœud courant (choisi sur la page Couleur)
         self._allow_color_signals = True
+        self._current_grade_keyframes: list = []         # images clés ``color.*`` du clip affiché
+        self._color_keyframe_rows: dict = {}             # champ -> rangée ‹ ◆ › du réglage de couleur
         self.color_preset_store = ColorPresetStore()
         self._level_folds: dict = {}  # groupe -> sous-blocs « Avancé » créés à la place voulue par le builder du groupe
         self._level_gates: list = []  # conteneurs de niveau d'usage créés avec les contrôles (voir usage_levels)

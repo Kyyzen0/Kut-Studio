@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from core.animation import InterpolationType
 from core.effects_model import FX_PREFIX
+from core.grade_targets import GRADE_PREFIX
 from ui import i18n
 
 from core.visual_effects import (
@@ -234,8 +235,13 @@ class KeyframesMixin:
         return best
 
     def _keyframes_of(self, property_name: str) -> list:
-        """Images clés où chercher ``property_name`` : celles des effets (``fx.*``, ADR-0008) ou celles de la transformation."""
-        return self._current_effect_keyframes if property_name.startswith(FX_PREFIX) else self._current_keyframes
+        """Images clés où chercher ``property_name`` : celles des effets (``fx.*``) ou de l'étalonnage (``color.*``, ADR-0008), sinon
+        celles de la transformation."""
+        if property_name.startswith(FX_PREFIX):
+            return self._current_effect_keyframes
+        if property_name.startswith(GRADE_PREFIX):
+            return self._current_grade_keyframes
+        return self._current_keyframes
 
     def _is_animated(self, property_name: str) -> bool:
         return any(k.property_name == property_name for k in self._keyframes_of(property_name))

@@ -341,7 +341,7 @@ changer d'option en cours de route (`sendcmd`, validé sur FFmpeg 6.1.1, 7.1.5 e
   `∫ v dt`) : `speed` reste statique. `frequency` animé fait glisser la phase de façon voulue (`Y·f(T)`), et l'export et le
   moniteur concordent (même formule, vérifiée aux seuils d'un effet statique).
 
-## Étalonnage animé : `color.*` (ADR-0008, étapes 6 et 7 : modèle, export et moniteur)
+## Étalonnage animé : `color.*` (ADR-0008, étapes 6 à 8 : modèle, export, moniteur et interface)
 
 **Pas encore dans l'interface** : pas de losange dans le panneau Couleur (étape 8), pas de verbe de script (étape 9). Ce qui existe : le
 modèle, l'**export** (donc l'aperçu fidèle, qui rend le même graphe) et, depuis l'étape 7, le **moniteur** (voir plus bas).
@@ -412,6 +412,25 @@ chaîne de l'export **pour les valeurs évaluées à cet instant**.
 - **Non touché** : l'aperçu rapide et le moniteur sans GPU montrent le média sans étalonnage animé (comme avant) ; l'aperçu fidèle suit la
   courbe (export). Les calques d'effets (graphiques) ne portent pas de cible `color.*`. Un clip étalonné par un graphe de nœuds n'est pas animé.
 
+### Pour l'utilisateur : animer l'étalonnage (étape 8)
+
+1. Sélectionnez un clip vidéo. Dans l'inspecteur, groupe **Couleur** (niveau Studio), chacun des sept réglages (exposition, contraste, saturation,
+   température, teinte, ombres, hautes lumières) a sa rangée **‹ ◆ ›**. Sur la page **Couleur**, chaque roue (Lift, Gamma, Gain, Offset) a la sienne :
+   un losange pour ses quatre canaux (palet et molette).
+2. Le losange pose une image clé **à la tête de lecture** (la valeur actuelle) ou retire celle qui s'y trouve ; ‹ et › sautent à la précédente ou suivante.
+   Plein : une clé sous la tête ; contour : animé, entre deux clés ; vide : pas animé.
+3. Une fois animé, le curseur (ou la roue) **montre la valeur à la tête de lecture** ; le modifier écrit l'image clé de cet instant. Un geste, une étape
+   d'historique (Annuler / Rétablir). Le moniteur et l'export suivent la courbe.
+4. Clic droit sur un losange : *Supprimer l'animation de l'étalonnage* (chaque réglage garde la valeur qu'il montrait) ; au niveau Avancé, interpolation,
+   copier / coller et **éditeur de courbes** (les 23 propriétés y sont listées, « Exposition », « Lift rouge »…).
+5. **Réinitialiser l'étalonnage** (inspecteur ou page Couleur) remet les réglages à zéro **et retire les images clés d'étalonnage**, dans la même étape :
+   Annuler rétablit les deux.
+6. **Étalonnage découpé en nœuds** (plusieurs nœuds, ou un nœud nommé, qualifié, fenêtré, flou ou net) : il **ne s'anime pas**. Les losanges sont grisés et un avis
+   le dit ; si le clip garde des images clés, elles sont ignorées au rendu et le bouton **Supprimer les images-clés** les retire. Revenez à un seul nœud simple pour animer.
+7. Piste ou calque **verrouillé** : tout est refusé. Appliquer un preset garde les réglages animés.
+
+Les images clés d'étalonnage ne s'affichent pas dans la timeline ; les scripts ne peuvent pas encore les écrire (étape 9).
+
 ## Limites connues
 
 - Bézier : la tangente règle la **pente**, pas l'« influence » temporelle (la
@@ -421,7 +440,7 @@ chaîne de l'export **pour les valeurs évaluées à cet instant**.
   inclinaison, miroirs), propriétés de forme et de texte (`graphic.*`) et
   masques (`mask.<id>.*`, une famille par masque) — voir
   `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
-  les couleurs de l'étalonnage sont animables dans le modèle et à l'export (voir « Étalonnage animé »), pas encore dans l'interface. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
+  les couleurs de l'étalonnage sont animables, avec interface (losanges de l'inspecteur et des roues, voir « Étalonnage animé »), mais pas encore par script. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
   (luminosité, contraste, saturation), la vignette, le flou et l'aberration chromatique (intensité) et le rayon du Bloom ; les
   autres réglages d'effets restent statiques (voir la section précédente).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.

@@ -78,6 +78,10 @@ class ColorPageMixin:
         editor.move_requested.connect(self.on_color_node_move)
         editor.reset_requested.connect(self.on_color_node_reset)
         self.color_panel.wheel_changed.connect(self.on_color_wheel_changed)
+        self.color_panel.wheel_keys_toggled.connect(self.on_color_wheel_keys_toggled)       # losanges des roues (ADR-0008, étape 8)
+        self.color_panel.wheel_keys_navigated.connect(self.on_color_wheel_keys_navigated)
+        self.color_panel.wheel_graph_requested.connect(self.on_color_wheel_graph_requested)
+        self.color_panel.grade_animation_cleared.connect(lambda: self.on_color_animation_cleared(None))
         self.color_panel.qualifier_changed.connect(self.on_color_qualifier_changed)
         self.color_panel.highlight_toggled.connect(self.on_color_highlight_toggled)
         self.color_panel.pick_toggled.connect(self.preview_panel.set_pick_mode)
@@ -213,6 +217,9 @@ class ColorPageMixin:
             return
         locked = bool(getattr(self.properties_panel.selected_clip, "locked", False))
         panel.set_target(graph, graph.node_or_first(self._color_node_id).id, editable=not locked)
+        clip = self._grade_clip(clip_id)
+        if clip is not None:
+            self._refresh_color_animation(clip)                  # losanges et roues évaluées à la tête de lecture (ADR-0008, étape 8)
         panel.set_highlight(self._color_highlight)
         panel.set_compare(self._color_compare is not None)
 
@@ -324,7 +331,7 @@ class ColorPageMixin:
         if self._color_highlight and clip_id is not None:
             self._refresh_color_monitor(clip_id)            # la sélection montrée est celle du nouveau nœud
 
-    def _edit_color_nodes(self, change, label_key: str) -> bool:
+    def _edit_color_nodes(self, change, label_key: str, *, resets_keys: bool = False) -> bool:
         """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour.
         Une fenêtre qui disparaît (elle, ou son nœud) emporte ses images-clés et ses liaisons de tracking, dans la
         même étape (avant qu'elle soit enregistrée)."""
@@ -345,11 +352,13 @@ class ColorPageMixin:
             self._report_edit_refused(exc)
             return False
         forget_windows(clip, before - window_ids(clip.color_grade))
+        removed = self._reset_grade_keys(clip_id) if resets_keys else 0      # même étape d'historique que la remise à zéro
         self.properties_panel.set_color_node(self._color_node_id)
         self._record_history(translate(label_key))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
         self._refresh_color_panel()
+        self._announce_reset_keys(removed)
         return True
 
     def on_color_node_add(self, after_id: str) -> None:
@@ -401,7 +410,7 @@ class ColorPageMixin:
         # Un nœud réinitialisé ne change plus l'image : réglage neutre, ni flou ni netteté (sa sélection, qualifieur et
         # fenêtres, reste en place).
         self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade())
-                               .with_detail(node_id, blur=0.0, sharpen=0.0), "history.color.node_reset")
+                               .with_detail(node_id, blur=0.0, sharpen=0.0), "history.color.node_reset", resets_keys=True)
 
     def on_color_qualifier_changed(self, qualifier) -> None:
         """Le qualifieur du nœud courant change : rafale regroupée en une étape, moniteur à jour."""
@@ -606,7 +615,11 @@ class ColorPageMixin:
         if clip_id is None:
             return
         try:
-            updated = self._color_grade_of(clip_id).with_wheel(name, wheel)
+            current = self._color_grade_of(clip_id)
+            wheel = self._route_grade_wheel(clip_id, name, wheel, getattr(current, name))     # canaux animés : images clés
+            if wheel is None:
+                return
+            updated = current.with_wheel(name, wheel)
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return

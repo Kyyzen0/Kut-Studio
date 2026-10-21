@@ -12,9 +12,10 @@ ou de calque. Le panneau ne lit ni ne modifie le projet : la fenêtre lui donne 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLabel, QMenu, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QPushButton, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget
 
 from core.color_grading import WHEELS
+from core.grade_keyframing import GradeAnimationInfo
 from core.color_nodes import ColorNodeGraph, MixerKind
 from ui.color_page.node_editor import NodeEditor, node_number
 from ui.color_page.qualifier import QualifierEditor
@@ -40,6 +41,10 @@ class ColorPanel(QWidget):
     detail_changed = Signal(float, float)              # flou, netteté du nœud courant
     compare_toggled = Signal(bool)                     # comparaison avant / après dans le moniteur
     shown = Signal()                                   # affiché : la fenêtre le remet sur le clip courant
+    wheel_keys_toggled = Signal(str)                   # losange d'une roue : images clés des quatre canaux (ADR-0008, étape 8)
+    wheel_keys_navigated = Signal(str, int)            # roue, -1 (précédente) ou +1 (suivante)
+    wheel_graph_requested = Signal(str)                # ouvrir l'éditeur de courbes sur la roue
+    grade_animation_cleared = Signal()                 # retirer toutes les images clés d'étalonnage du clip
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -66,9 +71,29 @@ class ColorPanel(QWidget):
         self.hint.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
         layout.addWidget(self.hint)
 
+        # Avis « étalonnage découpé en nœuds » : les images clés d'étalonnage ne s'y appliquent pas (caché tant qu'il ne sert pas).
+        self.animation_notice = QWidget()
+        notice_layout = QVBoxLayout(self.animation_notice)
+        notice_layout.setContentsMargins(Spacing.md, Spacing.xs, Spacing.md, Spacing.xs)
+        notice_layout.setSpacing(Spacing.xs)
+        self.animation_notice_label = QLabel()
+        self.animation_notice_label.setWordWrap(True)
+        set_role(self.animation_notice_label, "label-secondary")
+        notice_layout.addWidget(self.animation_notice_label)
+        self.animation_clear_button = QPushButton(translate("color.animation.clear"))
+        self.animation_clear_button.setToolTip(translate("color.animation.clear.tip"))
+        self.animation_clear_button.clicked.connect(self.grade_animation_cleared)
+        notice_layout.addWidget(self.animation_clear_button, 0, Qt.AlignLeft)
+        self.animation_notice.hide()
+        layout.addWidget(self.animation_notice)
+
         self.nodes = NodeEditor()
         self.wheels = ColorWheels()
         self.wheels.wheel_changed.connect(self.wheel_changed)
+        self.wheels.keys_toggled.connect(self.wheel_keys_toggled)
+        self.wheels.keys_navigated.connect(self.wheel_keys_navigated)
+        self.wheels.graph_requested.connect(self.wheel_graph_requested)
+        self.wheels.animation_cleared.connect(self.grade_animation_cleared)
         self.qualifier = QualifierEditor()
         self.qualifier.changed.connect(self.qualifier_changed)
         self.qualifier.highlight_toggled.connect(self.highlight_toggled)
@@ -110,6 +135,7 @@ class ColorPanel(QWidget):
         self.bypass_button.clicked.connect(self._toggle_current)
         self.reset_button.clicked.connect(lambda: self._emit_for_current(self.nodes.reset_requested))
         self.remove_button.clicked.connect(lambda: self._emit_for_current(self.nodes.remove_requested))
+        self._animation_info: GradeAnimationInfo | None = None
         self.set_target(None, None, editable=False)
 
     def _header_button(self, icon: IconName, tooltip_key: str, *, checkable: bool = False) -> IconButton:
@@ -127,8 +153,10 @@ class ColorPanel(QWidget):
         self.splitter.setVisible(graph is not None)
         active = graph is not None and editable
         for widget in (self.nodes, self.wheels, self.qualifier, self.windows, self.detail, self.add_button,
-                       self.bypass_button, self.reset_button):
+                       self.bypass_button, self.reset_button, self.animation_clear_button):
             widget.setEnabled(active)
+        if graph is None:
+            self.set_grade_animation(None)
         if graph is None or current_id is None:
             self.node_caption.clear()
             self.remove_button.setEnabled(False)
@@ -148,6 +176,20 @@ class ColorPanel(QWidget):
         self.qualifier.set_qualifier(node.qualifier)
         self.windows.set_windows(node.windows)
         self.detail.set_detail(node.blur, node.sharpen)
+
+    def set_grade_animation(self, info: GradeAnimationInfo | None) -> None:
+        """Images clés d'étalonnage du clip à la tête de lecture : losanges des roues, roues évaluées, et l'avis de nœuds quand
+        l'étalonnage n'est pas animable (``None`` : aucun clip). Ne touche pas au projet."""
+        self.wheels.set_animation(info)
+        self._animation_info = info
+        show = info is not None and not info.animatable
+        keys = info.key_count if info is not None else 0
+        text = translate("color.animation.nodes")
+        if keys:
+            text = f"{text}\n{translate('color.animation.ignored', count=keys)}"
+        self.animation_notice_label.setText(text if show else "")
+        self.animation_clear_button.setVisible(show and keys > 0)
+        self.animation_notice.setVisible(show and self.splitter.isVisibleTo(self))
 
     def editing_window(self) -> str:
         """La fenêtre que le viewer édite : celle choisie dans l'onglet *Fenêtres*, s'il est affiché ("" sinon)."""
@@ -170,6 +212,8 @@ class ColorPanel(QWidget):
     def retranslate(self) -> None:
         self.header.title_label.setText(translate("color.panel.title"))
         self.hint.setText(translate("color.panel.no_clip"))
+        self.animation_clear_button.setText(translate("color.animation.clear"))
+        self.animation_clear_button.setToolTip(translate("color.animation.clear.tip"))
         for button in (self.compare_button, self.add_button, self.bypass_button, self.reset_button,
                        self.remove_button):
             button.setToolTip(translate(str(button.property("tooltip_key"))))
@@ -187,6 +231,7 @@ class ColorPanel(QWidget):
         graph, current = self.nodes.graph, self.nodes.current_id
         self.nodes.set_graph(None, None)                          # libellés des nœuds et des bornes redessinés
         self.set_target(graph, current, editable=self.wheels.isEnabled())
+        self.set_grade_animation(self._animation_info)
 
     def showEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().showEvent(event)

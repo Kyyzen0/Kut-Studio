@@ -176,7 +176,7 @@ clés » ferait pointer les courbes vers les effets d'origine. La décision :
 5. **Effets hors expression** via `sendcmd` (fait le 2026-10-20, résultats ci-dessous) : **flou** (`gblur`, `sigma` + `sigmaV`), **aberration chromatique** (`rgbashift`, `rh` / `bh`) et **rayon de la lueur** (`gblur` du bloom) sont rendus et enregistrés ; le **gain et le seuil de la lueur** (`lutrgb`, coût) et la **netteté** (`unsharp`, ignore les commandes) restent statiques.
 6. **Cibles et rendu de l'étalonnage (fait le 2026-10-20, résultats ci-dessous)** : `color.*` (23 propriétés), `effective_grade`, export par expression (`eq`, `hue`) puis `sendcmd` pour le reste (`colorbalance`, `colorchannelmixer`, et `curves` à 256 points pour l'exposition et les roues, **pas** `lutrgb` : la mesure demandée par le plan a tranché), format 24, moteur de rendu inchangé. Le moniteur n'est pas touché (étape 7).
 7. **Moniteur fidèle d'abord** pour l'étalonnage animé, LUT cuite à l'arrêt avec les valeurs évaluées (fait le 2026-10-21, résultats ci-dessous).
-8. **Interface de l'étalonnage** : losanges dans le panneau Couleur.
+8. **Interface de l'étalonnage (faite le 2026-10-21, résultats ci-dessous)** : losanges dans l'inspecteur (sept réglages) et sur la page Couleur (une par roue), menu, éditeur de courbes, avis de nœuds, réinitialisation, niveaux d'usage.
 9. **Mode script** : verbes `fx` avec sélecteur `effect`, `color.*` dans la liste dérivée, documentation, tableau des unités.
 
 Estimation grossière (ordre de grandeur, non engagée) : effets 4 à 6 jours, étalonnage 8 à 12 jours, validation `sendcmd` incluse.
@@ -384,7 +384,7 @@ Le plan de l'ADR le disait : l'exposition et les roues sont écrites par `lutrgb
 
 **Cycle de vie et verrous.** Les images clés d'étalonnage n'ont pas d'objet auquel elles seraient liées : coupe et duplication suivent le traitement générique de `Clip.animation` (testé : `effective_grade` aux mêmes valeurs avant et après la coupe, copie identique). Conversion en composition : **refusée** (`has_live_grade_animation`) avec le message « étalonnage animé que la composition ne sait pas encore rendre », comme les effets animés : la composition rend son étalonnage fixe. Piste verrouillée : l'API d'images clés (`keyframe_editing`, seul écrivain de cette étape) refuse, rien n'est modifié (testé : ajout, valeur, suppression) ; piste audio : refus du genre de piste. Suivi et stabilisation : l'état dérivé part de `list(clip.animation)` (`tracking_bindings.py`) et ne remplace que les courbes `mask.*` : testé avec une stabilisation en mode recadrage (qui réécrit les courbes du masque) jusqu'à la couche du plan de rendu et au graphe. Séquence imbriquée, Multicam : mêmes couches du plan (`_build_layer_filter`, `layer.animation`) ; le clip entier, un segment d'aperçu et l'arrêt sur image sont testés par la même base de temps que les effets de l'étape 5.
 
-**Non fait / non vérifié.** Rien n'a été vu dans l'application réelle (ni losange, ni moniteur : étapes 7 et 8) ; le moniteur et l'aperçu rapide montrent l'étalonnage de base, seuls l'export et l'aperçu fidèle suivent la courbe. Les FFmpeg livrés avec l'application sous Windows et macOS, les entrées 10 bits, 8K et le décodage matériel ne sont pas testés. Les temps sous Docker (6.1, 7.1) sont ceux d'amd64 émulé sur arm64 : ils comparent animé et statique, pas les versions entre elles. Effacer ou réinitialiser l'étalonnage d'un clip (service de l'interface) ne retire pas ses images clés `color.*` : elles continuent d'animer le réglage neutre (comportement à décider avec l'interface, étape 8). Un clip dont l'étalonnage est découpé en plusieurs nœuds garde ses images clés, ignorées au rendu. Les écarts de pow / libm entre FFmpeg (celui de l'application) et Python (les tables) ne sont pas exclus sur une plateforme que je n'ai pas testée : le test qui compare les tables à `lutrgb` niveau par niveau échouerait.
+**Non fait / non vérifié.** Rien n'a été vu dans l'application réelle (ni losange, ni moniteur : étapes 7 et 8) ; le moniteur et l'aperçu rapide montrent l'étalonnage de base, seuls l'export et l'aperçu fidèle suivent la courbe. Les FFmpeg livrés avec l'application sous Windows et macOS, les entrées 10 bits, 8K et le décodage matériel ne sont pas testés. Les temps sous Docker (6.1, 7.1) sont ceux d'amd64 émulé sur arm64 : ils comparent animé et statique, pas les versions entre elles. Effacer ou réinitialiser l'étalonnage d'un clip (service de l'interface) ne retire pas ses images clés `color.*` : elles continuent d'animer le réglage neutre (décidé à l'étape 8 : la réinitialisation les retire aussi, voir plus bas). Un clip dont l'étalonnage est découpé en plusieurs nœuds garde ses images clés, ignorées au rendu. Les écarts de pow / libm entre FFmpeg (celui de l'application) et Python (les tables) ne sont pas exclus sur une plateforme que je n'ai pas testée : le test qui compare les tables à `lutrgb` niveau par niveau échouerait.
 
 ---
 
@@ -454,6 +454,73 @@ lissage de la LUT au bord du gamut. Le réglage de base (avant l'étape 7) s'éc
 essayés pour ce test. Pré-existant, inchangé : à la coupure entre deux clips étalonnés sur la même piste, l'emplacement (`<source>:<domaine>`)
 est partagé et la LUT du clip précédent peut rester une cuisson (≈ 0,1 s) sur le premier clip du suivant. Les 2 fils de cuisson ne sont
 pas mesurés avec le décodage de la lecture en parallèle.
+
+## Résultats de l'étape 8 (2026-10-21) : les losanges de l'étalonnage
+
+**Livré.** Aucun changement de format `.kut`, d'export ni de rendu : la PR n'ajoute que de l'interface et les fonctions pures qu'elle appelle
+(`core/grade_keyframing.py`). Les verbes de script continuent de **refuser** `color.*` (garde `refuse_grade_property` inchangée : l'étape 9).
+
+- **Inspecteur, groupe Couleur** : sous chacun des **sept réglages** (exposition, contraste, saturation, température, teinte, ombres, hautes
+  lumières) une rangée ‹ ◆ › (`ui/properties_panel_mixins/color_keyframes.py`), construite à neuf avec le groupe, dans un `LevelGate` **Studio**
+  (comme les effets ; « Afficher plus d'options » les montre depuis Simple). Même règle que les effets : sans image clé le curseur écrit la valeur
+  de **base** ; animé, il **montre la valeur évaluée** à la tête (`GradeCurves`, bornée comme le rendu) et sa saisie écrit ou met à jour l'image
+  clé de cet instant. Losange **plein** (une clé sous la tête), **contour accentué** (animé, entre deux clés), **vide** (non animé) ; ‹ › activés
+  s'il existe une clé avant / après.
+- **Page Couleur, roues** : **un losange par roue** (`ui/color_page/wheel_keys.py`, sous la roue, dans une cellule construite avec elle), qui
+  pose ou retire d'un coup les **quatre** clés `color.<roue>.<r|g|b|y>` (le palet déplace trois canaux, la molette le maître). Les quatre canaux
+  restent quatre courbes indépendantes (éditeur de courbes, collage) : le losange est **plein** si les quatre ont une clé sous la tête, **contour**
+  si l'un des canaux est animé, et **un clic retire** dès qu'une clé est sous la tête. Les roues **montrent les valeurs évaluées** (`effective_grade`).
+  Bouger une roue : les canaux **animés** reçoivent une clé à la tête (les quatre, y compris celui que le geste n'a pas changé : les clés d'une roue
+  gardent les mêmes instants), les canaux **non animés** écrivent leur base ; la base d'un canal animé n'est jamais réécrite par la valeur évaluée.
+- **Une seule destination, décidée par la fenêtre** (`ui/main_window_mixins/color_animation.py`) : le curseur et la roue émettent toujours leur signal
+  d'avant (`color_grade_field_changed`, `wheel_changed`) ; `on_color_grade_field_changed` et `on_color_wheel_changed` appellent d'abord
+  `_route_grade_field` / `_route_grade_wheel`. Un signal qui atteint le modèle suit donc la même règle que le geste de l'interface (point 12 de la revue).
+- **Historique** : le losange et « Supprimer l'animation » sont **une étape** chacun ; les saisies d'un réglage animé et les mouvements de roue
+  passent par la **session d'historique de l'étalonnage** (rafale de 400 ms = une étape, comme la saisie d'un réglage de base). Annuler / rétablir
+  restaurent clés et valeurs (testé, un projet remplacé à chaque annulation : on relit le clip).
+- **Éditeur de courbes** : `_graph_properties` passe `include_grade=True` (le paramètre existait, aucune interface ne le passait) : les 23 propriétés
+  y sont listées (« Exposition », « Lift rouge »…) pour un étalonnage animable. Le menu du losange (clic droit) offre activer / désactiver, **Supprimer
+  l'animation de l'étalonnage** (nouveau, comme « de l'effet »), et au niveau Avancé interpolation, copier / coller et éditeur de courbes ; le menu d'une
+  roue : éditeur de courbes (premier canal animé) et suppression. `_command_properties` (raccourcis d'images clés) compte maintenant une propriété
+  `color.*` active ou animée, comme une `fx.*` ; sans propriété active ni animée, les raccourcis n'en créent pas (`_animation_properties` ne les liste pas).
+- **Étalonnage découpé en nœuds** : les losanges sont **désactivés** (infobulle) et un **avis** le dit, dans l'inspecteur et en tête de la page Couleur :
+  « les images-clés d'étalonnage ne s'y appliquent pas ». Si le clip garde des clés (elles sont conservées, ignorées au rendu, étape 6), l'avis les compte
+  et un bouton **Supprimer les images-clés** les retire en une étape annulable : sans lui, des clés invisibles resteraient sans moyen de les retirer. Les
+  valeurs saisies sur un graphe restent des valeurs de base du nœud courant. Revenir à un seul nœud (sans nom, qualifieur, fenêtre, flou ni netteté)
+  réactive tout.
+- **Réinitialiser l'étalonnage (décision)** : l'étape 6 laissait la question ouverte (la remise à zéro ne retirait pas les clés, qui continuaient d'animer
+  un réglage neutre). **La réinitialisation retire aussi les images clés `color.*`**, dans la **même étape d'historique** (Annuler rétablit réglage et clés),
+  avec un message d'état (« N réglage(s) animé(s) retiré(s) (Annuler les rétablit) ») ; c'est le comportement le plus sûr : une clé qui survit à un
+  « Tout réinitialiser » produit une image que plus rien à l'écran n'explique. Choix : pas de boîte de confirmation (annuler suffit, comme pour la
+  suppression d'un effet animé). Les deux entrées sont couvertes : « Tout réinitialiser » de l'inspecteur et la remise à zéro du nœud de la page
+  Couleur. Un clip découpé en nœuds ne perd rien (ses clés sont ignorées ; leur bouton de retrait est là), sauf si la remise à zéro du nœud le ramène à
+  un réglage simple (le graphe se simplifie) : les clés sont alors retirées aussi. Appliquer un **preset** garde les clés (le preset s'applique aux réglages
+  non animés) et le dit dans la barre d'état.
+- **Verrous** : piste verrouillée, calque verrouillé, piste d'un autre genre : les rangées sont désactivées (groupe désactivé) **et** la fenêtre refuse chaque
+  entrée (losange, saisie d'un réglage animé, roue, suppression) avec le message du verrou, avant toute écriture (testé sur les trois états).
+- **Niveaux d'usage** : rangées Studio dans l'inspecteur (manifeste `tests/data/usage_level_controls.json` régénéré : 22 entrées, toutes `studio`) ; la
+  page Couleur est elle-même Studio (`PAGE_LEVELS`), ses losanges de roue n'ont donc pas d'entrée propre. Changer de niveau ne change aucune valeur (testé).
+- **Pas de widget reparenté** : les rangées, les cellules de roue et l'avis sont créés par leur builder (`build_keyframe_row`, `WheelCell`) ; la grille
+  des roues déplace les **cellules** (`removeWidget` puis `addWidget` dans le même layout, comme avant), jamais un widget d'un parent à un autre.
+  `EffectKeyframesMixin` utilise désormais le même constructeur de rangée (`ui/properties_widgets/keyframe_row.py`) : comportement identique (21 tests de
+  l'étape 4 inchangés).
+
+**Garde de complétude des verbes.** `core/grade_keyframing.py` est un module d'édition (`tools/scripting_debt.py`) : `toggle_grade_keys` est classé « interface seulement » (le geste du losange), `set_grade_keys` et `clear_grade_animation` « à faire : images clés » (promesse de l'étape 9), les trois lectures « lecture seule » (`tests/data/script_verb_debt.json`, reclassements durables resynchronisés).
+
+**Suivre la tête de lecture.** `_refresh_motion_inspector` (appelée à chaque synchronisation de l'aperçu, donc en lecture) met à jour curseurs, losanges et roues
+**seulement si le clip porte des clés d'étalonnage** (ou vient d'en perdre) : un clip sans animation d'étalonnage garde exactement le chemin d'avant.
+`TimelineClipView.grade_keyframes` (champ neuf, vide par défaut) donne à l'inspecteur les clés du clip ; la page Couleur lit le modèle à l'ouverture.
+
+**Garde-fous vérifiés.** Les bornes des curseurs sont celles du registre (test) ; une valeur hors borne que le signal apporte est ramenée à la borne du registre
+(`spec.clamp`, comme l'inspecteur) ; une valeur non finie est refusée avant la première écriture ; une clé déjà là (à 1 ms) est mise à jour **à son instant**, jamais
+doublée.
+
+**Non fait / non vu.** Rien n'a été vu dans l'application réelle ni sur un écran : seulement hors écran (vraie fenêtre, captures du panneau Couleur et de la page
+Couleur relues à l'œil pour la disposition : le visualiseur y est noir, le moniteur est lu par `_monitor_color_grade`, pas par l'image). Les clés d'étalonnage ne
+s'affichent pas dans la timeline (comme celles des effets). Pas de losange par canal de roue (le Graph Editor couvre le cas). Une garde existante, **non touchée** :
+`on_color_grade_field_changed` (réglage **non animé**) ne regarde que le verrou de la piste, pas celui d'un calque graphique porté par un clip vidéo ; le groupe
+est désactivé dans ce cas, mais le signal atteindrait le modèle. Le plafond de 32 Mo de commandes de l'export (étape 6) s'applique à ce que l'utilisateur anime
+désormais : une animation d'exposition de plus de quatre minutes sera refusée à l'export avec le message de l'étape 6.
 
 ## Décisions prises (2026-10-18, avec l'utilisateur)
 
