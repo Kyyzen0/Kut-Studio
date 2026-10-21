@@ -39,6 +39,9 @@ def _keys(clip: str, prop: str, points: list[tuple[float, float]], interpolation
             for at, value in moments]
 
 
+# NB : le ``start`` d'une animation de texte se mesure depuis le DÉBUT DU CALQUE (core/text_animations.py), jamais depuis la timeline.
+
+
 def script(scale: str, caps: Capabilities) -> dict[str, Any]:
     total = length(scale)
 
@@ -75,7 +78,7 @@ def script(scale: str, caps: Capabilities) -> dict[str, Any]:
         {"op": "add_graphic", "graphic": "text", "at": t(2.0), "duration": round(total - t(3.0), 6),
          "text": "calques animés · 3D · étalonnage", "as": "sous_titre"},
         {"op": "set_graphic", "clip": {"ref": "sous_titre"}, "font_size": 60, "fill_color": "#FFE08A"},
-        {"op": "apply_text_animation", "clip": {"ref": "sous_titre"}, "animation": "typewriter", "start": t(2.0)},
+        {"op": "apply_text_animation", "clip": {"ref": "sous_titre"}, "animation": "typewriter", "start": 0.0},
     ]
     colors = ("#E63946", "#2A9D8F", "#F4A261")
     orbit_length = round(total - t(3.0), 6)

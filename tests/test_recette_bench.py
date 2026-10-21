@@ -483,11 +483,11 @@ def test_thermal_sampling_with_a_fake_probe(tmp_path):
 
 
 def test_transcription_degrades_without_whisper_or_model(tmp_path, monkeypatch):
-    monkeypatch.setattr(whisper_check, "discover", lambda whisper, model: (None, None))
+    monkeypatch.setattr(whisper_check, "discover", lambda whisper, model, environment=None: (None, None))
     assert whisper_check.transcribe(tmp_path / "v.wav", tmp_path / "w", None, None, None, {})["status"] == "skipped_no_whisper"
-    monkeypatch.setattr(whisper_check, "discover", lambda whisper, model: ("/usr/bin/whisper-cli", None))
+    monkeypatch.setattr(whisper_check, "discover", lambda whisper, model, environment=None: ("/usr/bin/whisper-cli", None))
     assert whisper_check.transcribe(tmp_path / "v.wav", tmp_path / "w", None, None, None, {})["status"] == "skipped_no_model"
-    monkeypatch.setattr(whisper_check, "discover", lambda whisper, model: ("/usr/bin/whisper-cli", "/m/ggml-base.bin"))
+    monkeypatch.setattr(whisper_check, "discover", lambda whisper, model, environment=None: ("/usr/bin/whisper-cli", "/m/ggml-base.bin"))
     assert whisper_check.transcribe(tmp_path / "absent.wav", tmp_path / "w", None, None, None, {})["status"] == "failed"
 
 
@@ -532,3 +532,90 @@ def test_the_tiktok_script_applies_with_and_without_libass(tmp_path, caps):
     report = apply_script(Session(project), script, label="script.json", context=ScriptContext(tmp_path, allow_outside=False))
     assert report.ok, report.error
     assert len(project.sequences) == 2                                                  # la version carrée
+
+
+def test_whisper_model_discovery_honours_the_callers_variable_and_nothing_else(tmp_path, monkeypatch):
+    model = tmp_path / "ggml-faux.bin"
+    model.write_bytes(b"0")
+    explicit = tmp_path / "ggml-explicite.bin"
+    explicit.write_bytes(b"0")
+    monkeypatch.setenv("HOME", str(tmp_path / "maison"))
+    monkeypatch.setenv("KUT_STUDIO_DATA_DIR", str(tmp_path / "donnees"))            # un dossier isolé du banc ne doit pas être lu
+    (tmp_path / "donnees" / "whisper").mkdir(parents=True)
+    (tmp_path / "donnees" / "whisper" / "ggml-isole.bin").write_bytes(b"0")
+    assert whisper_check._lookup_environment({"KUT_STUDIO_WHISPER_MODEL": str(model), "KUT_STUDIO_DATA_DIR": "/x"}) == {
+        "KUT_STUDIO_WHISPER_MODEL": str(model)}
+    assert whisper_check.discover(None, None, {"KUT_STUDIO_WHISPER_MODEL": str(model)})[1] == str(model.resolve())
+    assert whisper_check.discover(None, str(explicit), {"KUT_STUDIO_WHISPER_MODEL": str(model)})[1] == str(explicit.resolve())
+    assert whisper_check.discover(None, None, {})[1] is None                         # ni variable ni modèle : skipped_no_model
+
+
+def test_text_animation_starts_are_clip_local_in_every_journey():
+    """``apply_text_animation.start`` se mesure depuis le début du calque : jamais plus que la durée du calque, et nul ici."""
+    from tools.recette.journeys import motion3d
+
+    for journey in (tiktok.script("full", Capabilities()), motion3d.script("full", Capabilities())):
+        animations = [op for op in journey["ops"] if op["op"] == "apply_text_animation"]
+        assert animations and all(op["start"] == 0.0 for op in animations)
+
+
+@needs_ffmpeg
+def test_animated_text_is_keyed_from_its_own_first_frame(tmp_path):
+    """Appliqué au modèle : la première image clé du texte animé est au début du CALQUE (une valeur de timeline la décalerait)."""
+    from core.project_model import Project, Track
+    from core.scripting import ScriptContext, Session, apply_script
+    from core.scripting.script import parse_script
+    from tools.recette.journeys import motion3d
+
+    journey = registry()["motion3d"]
+    media.generate(journey.media("full"), tmp_path, ffmpeg=FFMPEG)
+    width, height, fps = journey.base
+    project = Project(name="t", width=width, height=height, fps=fps, tracks=[Track(id=i, name=i, type=k, clips=[]) for i, k in journey.tracks])
+    report = apply_script(Session(project), parse_script(motion3d.script("full", Capabilities())), label="s.json",
+                          context=ScriptContext(tmp_path, allow_outside=False))
+    assert report.ok, report.error
+    layer = next(clip for track in project.tracks for clip in track.clips if clip.text and "calques" in clip.text)
+    assert layer.timeline_start == pytest.approx(motion3d.snap(2.0))
+    times = [key.time_seconds for key in layer.animation] + [key.time_seconds for key in layer.transform_keyframes]
+    assert times and min(times) == pytest.approx(0.0)
+
+
+@needs_ffmpeg
+def test_reused_video_is_regenerated_when_the_ffmpeg_changes(tmp_path, monkeypatch):
+    items = registry()["smoke"].media("quick")
+    first = media.generate(items, tmp_path, ffmpeg=FFMPEG)
+    assert first["generated"]
+    same = media.generate(items, tmp_path, ffmpeg=FFMPEG)
+    assert same["generated"] == []                                                   # même version : réutilisation
+    monkeypatch.setattr(media, "ffmpeg_version", lambda path: "99.0-autre")
+    other = media.generate(items, tmp_path, ffmpeg=FFMPEG)
+    assert sorted(other["generated"]) == sorted(i.key for i in items if i.kind == "video") and other["ffmpeg"] == "99.0-autre"
+    assert "music" not in other["generated"]                                         # le son ne dépend pas de FFmpeg
+    (tmp_path / media.MANIFEST_NAME).write_text("{ pas du json", encoding="utf-8")
+    repaired = media.generate(items, tmp_path, ffmpeg=FFMPEG)
+    assert sorted(repaired["generated"]) == sorted(i.key for i in items)
+    assert set(media.verify(items, tmp_path).values()) == {"ok"}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="signaux POSIX")
+def test_a_crashed_analysis_is_reported_as_a_crash(tmp_path, monkeypatch):
+    """Une analyse (tempo / synchronisation) tuée par un signal remonte jusqu'à ``summary.crashed`` ; SIGKILL simulé, jamais SIGSEGV réel."""
+    from tools.recette import pipeline
+    from tools.recette.journeys import AnalysisSpec
+
+    killed = [sys.executable, "-c", "import os, signal; os.kill(os.getpid(), signal.SIGKILL)"]
+    real = runner.run_measured
+
+    def fake(arguments, **kwargs):
+        result = real(killed, **kwargs)
+        result.crashed, result.signal_name = True, "SIGSEGV"                          # classé comme un plantage, sans en provoquer un
+        return result
+
+    monkeypatch.setattr(pipeline, "run_measured", fake)
+    options = pipeline.Options(environment=isolated_environment(tmp_path / "env"))
+    analysis = pipeline._analyses(registry()["tiktok"], "quick", tmp_path, tmp_path / "logs", options, [AnalysisSpec("tempo", {})])
+    item = analysis["items"][0]
+    assert item["crashed"] is True and item["signal"] == "SIGSEGV" and item["returncode"] == -int(signal.SIGKILL) and not analysis["ok"]
+    report = report_module.build_report({}, {}, {"tiktok": {"ok": False, "problems": [], "stages": {"analysis": analysis}}},
+                                        scale="quick", hardware="cpu", isolation={})
+    assert report["summary"]["crashed"] == ["tiktok"]

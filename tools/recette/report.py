@@ -51,6 +51,7 @@ def _crashed(journey: Mapping[str, Any]) -> bool:
     stages = journey.get("stages", {})
     runs = [stage for stage in stages.values() if isinstance(stage, dict) and "crashed" in stage]
     runs += [stage for stage in (stages.get("exports") or {}).values() if isinstance(stage, dict)]
+    runs += [item for item in (stages.get("analysis") or {}).get("items", []) if isinstance(item, dict)]
     return any(run.get("crashed") for run in runs)
 
 

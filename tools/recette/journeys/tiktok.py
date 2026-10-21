@@ -119,7 +119,7 @@ def script(scale: str, caps: Capabilities) -> dict[str, Any]:
         {"op": "apply_camera_shake", "clip": "c_h1", "start": 2.0, "length": 0.45, "amplitude": 0.01, "rotation": 1.0, "seed": 3},
         {"op": "add_flash", "at": where["h1"], "length": 0.12, "color": "#FFFFFF"},
         {"op": "apply_layer_preset", "preset": "Titre TikTok", "at": 0.2, "as": "titre"},
-        {"op": "apply_text_animation", "clip": {"ref": "titre"}, "animation": "pop_in", "start": 0.2},
+        {"op": "apply_text_animation", "clip": {"ref": "titre"}, "animation": "pop_in", "start": 0.0},
     ]
     # Sous-titres : la première moitié sur une piste de sous-titres (libass) si disponible, le reste en karaoké (Qt).
     lines = caption_lines(scale)

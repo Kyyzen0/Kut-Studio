@@ -243,7 +243,8 @@ def _analyses(journey: Journey, scale: str, folder: Path, logs: Path, options: O
             data = json.loads(Path(run.stdout_path).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
-        entry = {"kind": spec.kind, "seconds": run.elapsed_s, "peak_rss_mb": run.peak_rss_mb, "returncode": run.returncode, **data}
+        entry = {"kind": spec.kind, "seconds": run.elapsed_s, "peak_rss_mb": run.peak_rss_mb, "returncode": run.returncode, "crashed": run.crashed,
+                 "signal": run.signal_name, "aborted": run.aborted, **data}
         results["items"].append(entry)
         if not run.ok or not data.get("ok", False):
             results["ok"] = False

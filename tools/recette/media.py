@@ -104,6 +104,13 @@ def generate(
     started = time.monotonic()
     states = {item.key: "missing" for item in items} if force else verify(items, directory)
     previous = load_manifest(directory)
+    current_ffmpeg = ffmpeg_version(ffmpeg)
+    if previous and previous.get("ffmpeg") != current_ffmpeg:
+        # Autre chaîne d'outils : les vidéos déjà encodées gardent leurs octets mais pas leur provenance ; on les régénère plutôt
+        # que d'attribuer d'anciens SHA-256 à la version courante (les références sont qualifiées par version de FFmpeg).
+        for item in items:
+            if item.kind == "video" and states[item.key] == "ok":
+                states[item.key] = "toolchain"
     entries: dict[str, Any] = dict(previous.get("items", {})) if isinstance(previous.get("items"), dict) else {}
     generated: list[str] = []
     encoder = str(previous.get("video_encoder", ""))
@@ -136,7 +143,7 @@ def generate(
         say(f"  media {item.key}: généré en {entries[item.key]['seconds']} s ({entries[item.key]['bytes']} octets)")
     cache.clear()
     manifest = {
-        "generator_version": GENERATOR_VERSION, "recipe_digest": recipe_digest(items), "ffmpeg": ffmpeg_version(ffmpeg),
+        "generator_version": GENERATOR_VERSION, "recipe_digest": recipe_digest(items), "ffmpeg": current_ffmpeg,
         "video_encoder": encoder, "items": {item.key: entries[item.key] for item in items}, "generated": generated,
         "reused": [item.key for item in items if item.key not in generated],
         "generation_seconds": round(time.monotonic() - started, 3),
