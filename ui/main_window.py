@@ -69,6 +69,7 @@ from ui.workspace import WorkspaceManager
 from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
 from ui.main_window_mixins.menu_levels import MenuLevelsMixin
+from ui.main_window_mixins.command_palette import CommandPaletteMixin
 from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
@@ -189,6 +190,7 @@ class MainWindow(
     PreferencesMixin,
     UsageLevelMixin,
     MenuLevelsMixin,
+    CommandPaletteMixin,
     HistoryMixin,
     QMainWindow,
 ):
@@ -769,6 +771,7 @@ class MainWindow(
         self.shortcuts.changed.connect(self._refresh_shortcut_tooltips)
         self._refresh_shortcut_tooltips()
         self._install_menu_levels()         # niveau d'usage : entrées des menus, rail, barre et menus contextuels
+        self._install_command_palette()     # « Rechercher une fonction » : lit les menus à l'ouverture
         if os.environ.get("KUT_STUDIO_DEBUG") == "1":
             self.diagnostics_action.setChecked(True)
 
@@ -1137,6 +1140,7 @@ class MainWindow(
         saved_layout.addWidget(self.saved_indicator)
         layout.addWidget(sequence_box)
         layout.addWidget(saved_box)
+        layout.addWidget(self._build_palette_button())      # « Rechercher… » (palette de commandes)
         layout.addStretch(1)
         # --- Pages (Montage | Couleur), au centre ---------------------
         layout.addWidget(self._build_page_switcher())
@@ -1639,6 +1643,8 @@ class MainWindow(
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
         preferences_action = self._command_action("preferences", "action.preferences")
+        # Palette de commandes : une action de fenêtre sans entrée de menu (le bouton de la barre du haut l'ouvre aussi).
+        self.addAction(self._command_action("command_palette", "shortcuts.command.command_palette"))
         # On insère l'entrée dans la barre ``Fenêtre`` pour rester
         # accessible sans modifier l'ordre établi.
         self._build_usage_level_menu(window_menu)
@@ -2240,6 +2246,7 @@ class MainWindow(
             "zoom_fit": lambda: timeline().fit_timeline(),
             "toggle_scopes": self.toggle_scopes_visible,
             "preferences": self.show_preferences,
+            "command_palette": self.toggle_command_palette,
             **self._page_shortcut_handlers(),
             **self._composition_shortcut_handlers(),
             # Audio
@@ -2381,6 +2388,7 @@ class MainWindow(
         self._retranslate_update_notice()
         self._retranslate_page_switcher()
         self._retranslate_usage_level()
+        self._retranslate_command_palette()
 
     @staticmethod
     def _translate_menu_title(object_name: str | None) -> str:

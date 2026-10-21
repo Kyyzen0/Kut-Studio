@@ -158,7 +158,7 @@ def test_shortcuts_fire_at_every_level_even_when_their_menu_entry_is_gone(window
     if level is SIMPLE:
         assert {"ripple_delete", "layer_group", "multicam_viewer", "toggle_scopes", "graph_editor"} <= set(gone)
     if level is ADVANCED:
-        assert gone == []
+        assert gone == ["command_palette"]      # la palette « Rechercher une fonction » n'a volontairement aucune entrée de menu
     for command in gone:
         assert _press(window, monkeypatch, command), (level, command, "raccourci muet")
     window.hide()
