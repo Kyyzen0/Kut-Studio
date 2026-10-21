@@ -341,14 +341,37 @@ def _nested_windows(plan, origin: float) -> dict[str, list[tuple[Any, float, flo
     return windows
 
 
-def _split_nested(plan, origin: float, limit: int):
+def _weight(owner, plan, frame: tuple[int, int]) -> float:
+    """Poids d'une entrée ouverte pour la composition ``owner`` : sa taille de cadre rapportée à celle de la racine (une séquence
+    imbriquée 8K dans un projet 1080p pèse 16 entrées de la racine). Une seule source de vérité pour la décision et l'estimation."""
+    if owner is plan:
+        return 1.0
+    from .export_engine import nested_geometry
+
+    width, height, _fps = nested_geometry(owner, frame[0], frame[1], plan)
+    return float(max(1, width) * max(1, height)) / float(max(1, frame[0]) * max(1, frame[1]))
+
+
+def _instance_keys(entry_plan, bounds) -> set[tuple[str, int, float]]:
+    """Entrées positionnées **distinctes** que la commande ouvrira pour les instances ``bounds`` d'une séquence imbriquée : une par
+    fenêtre et par clip simple (les mêmes fichier, position et durée ne s'ouvrent qu'une fois, comme à la génération)."""
+    keys: set[tuple[str, int, float]] = set()
+    for start, end in bounds:
+        for layer in entry_plan.video_layers:
+            window = _video_window(layer, start, end + INSTANCE_TAIL, INSTANCE_LEAD)
+            if window is not None and window.positionable:
+                keys.add((window.path, window.seek, round(window.duration, 6)))
+    return keys
+
+
+def _split_nested(plan, origin: float, cap: float, frame: tuple[int, int]):
     """Séquences imbriquées dont la vidéo se compose par instance (voir :class:`NestedInstance`) ; lecteur -> instance ;
     ``id(couche interne) -> horodatage de la première image`` (:func:`first_frame_time`)."""
     entries = {entry.key: entry for entry in getattr(plan, "nested_sequences", ()) or ()}
     splits: dict[str, list[NestedInstance]] = {}
     readers_map: dict[int, int] = {}
     bases: dict[int, float] = {}
-    total = 0
+    used = 0.0
     for key, items in _video_readers(plan, origin).items():
         entry = entries.get(key)
         if entry is None or getattr(entry, "composition", None) is not None:
@@ -356,7 +379,11 @@ def _split_nested(plan, origin: float, limit: int):
         bounds = sorted({(start, end) for _layer, start, end in items})
         if not all(_finite(start) and _finite(end) and end > start for start, end in bounds):
             continue
-        if held_seconds(bounds) <= HOT_SECONDS or total + len(bounds) > limit:
+        if held_seconds(bounds) <= HOT_SECONDS:
+            continue
+        # Coût avant d'accepter : un compositeur par instance + chaque entrée distincte de ses clips, au poids de SA composition.
+        cost = (len(bounds) + len(_instance_keys(entry.plan, bounds))) * _weight(entry.plan, plan, frame)
+        if used + cost > cap:
             continue
         entry_bases = _instance_bases(entry.plan)
         if entry_bases is None:
@@ -366,8 +393,8 @@ def _split_nested(plan, origin: float, limit: int):
         splits[key] = [NestedInstance(f"{key}#{slot}", start, end) for slot, (start, end) in enumerate(bounds)]
         for layer, start, end in items:
             readers_map[id(layer)] = slots[(start, end)]
-        total += len(bounds)
-    return splits, readers_map, bases
+        used += cost
+    return splits, readers_map, bases, used
 
 
 @dataclass
@@ -384,14 +411,15 @@ class InputDecision:
     ``file:<chemin>`` (clips d'un même fichier gardant son entrée) ou ``nested:<clé>`` (lecteurs d'un rendu de séquence
     imbriquée qui n'est pas composé par instance) ; début et fin en secondes de ce flux."""
     pipelines: int
-    """Entrées positionnées + deux par instance : ce qui garde des images en mémoire pendant tout l'export."""
+    """Entrées positionnées + un compositeur par instance : ce qui garde des images en mémoire pendant tout l'export."""
+    resident: list[tuple[Any, int]]
+    """Les mêmes, par composition propriétaire : ``(plan, nombre)``. Chacune garde des images à la taille de SA composition."""
 
 
 def decide_inputs(plan, *, origin: float = 0.0, video: bool = True, frame: tuple[int, int] = (1920, 1080)) -> InputDecision:
     """Choisit les clips positionnés et les séquences imbriquées composées par instance (voir le module)."""
     cap = max_pipelines(*frame)
-    splits, readers_map, bases = _split_nested(plan, origin, cap // 2) if video else ({}, {}, {})
-    used = 2 * sum(len(instances) for instances in splits.values())
+    splits, readers_map, bases, used = _split_nested(plan, origin, cap, frame) if video else ({}, {}, {}, 0.0)
     # Compositions dont la vidéo lit des clips : (plan, début du rendu, limite, étiquette).
     compositions: list[tuple[Any, float, float | None, str]] = [
         (plan, float(origin) if origin and origin > 0 else 0.0, None, "")
@@ -430,17 +458,25 @@ def decide_inputs(plan, *, origin: float = 0.0, video: bool = True, frame: tuple
     chosen.sort(key=lambda item: (-item[0], -item[1]))
 
     separate: dict[tuple[int, str], _Window] = {}
-    keys: set[tuple[str, int, float]] = set()
-    budget = max(0, cap - used)
+    keys: dict[tuple[str, int, float], Any] = {}                  # entrée distincte -> composition propriétaire
+    tagged: dict[tuple[str, int, float], Any] = {}
+    weights: dict[int, float] = {}
+    count = 0
     for _held, _start, layer, tag, window in chosen:
-        if tag:
-            # L'entrée d'une instance fait partie de son coût (deux entrées comptées par instance) : toujours positionnée.
-            separate[(id(layer), tag)] = window
-            continue
         key = (window.path, window.seek, round(window.duration, 6))
-        if key not in keys and len(keys) >= budget:
+        owner = owners[(id(layer), tag)]
+        if tag:
+            # Déjà payée avec son instance (:func:`_instance_keys`) : toujours positionnée.
+            separate[(id(layer), tag)] = window
+            tagged.setdefault(key, owner)
             continue
-        keys.add(key)
+        weight = weights.setdefault(id(owner), _weight(owner, plan, frame))
+        if key not in keys:
+            if used + weight > cap or count >= MAX_PIPELINES:
+                continue
+            used += weight
+            count += 1
+            keys[key] = owner
         separate[(id(layer), tag)] = window
 
     shared: list[tuple[str, float, float, Any, Any]] = []
@@ -452,7 +488,15 @@ def decide_inputs(plan, *, origin: float = 0.0, video: bool = True, frame: tuple
         for nested_key, items in _nested_windows(plan, origin_v).items():
             if nested_key not in splits:
                 shared.extend((f"nested:{nested_key}", start, end, layer, plan) for layer, start, end in items)
-    return InputDecision(splits, readers_map, bases, compositions, separate, shared, used + len(keys))
+    resident: dict[int, list] = {}
+    for entry in getattr(plan, "nested_sequences", ()) or ():
+        instances = splits.get(entry.key)
+        if instances:
+            resident[id(entry.plan)] = [entry.plan, len(instances)]
+    for key_owner in [*keys.values(), *tagged.values()]:
+        resident.setdefault(id(key_owner), [key_owner, 0])[1] += 1
+    resident_list = [(owner, number) for owner, number in resident.values()]
+    return InputDecision(splits, readers_map, bases, compositions, separate, shared, sum(n for _o, n in resident_list), resident_list)
 
 
 def plan_inputs(plan, *, origin: float = 0.0, video: bool = True, frame: tuple[int, int] = (1920, 1080)):

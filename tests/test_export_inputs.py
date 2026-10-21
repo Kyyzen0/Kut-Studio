@@ -320,3 +320,54 @@ def test_a_generic_nested_sequence_read_twice_far_apart_is_composed_per_window(p
     assert [(item.seek_start, item.seek_duration) for item in inputs] == [(0, 21.5), (198, 23.5)]
     assert "color=c=black@0:s=320x180:r=25:d=220.5,trim=start=200.0,format=rgba[n0w1_bg]" in graph
     assert "[1:v]trim=start=1.9:end=102.0,setpts=PTS+198/TB+0.001" in graph
+
+
+# --- Comptage et géométrie des entrées des séquences imbriquées -------------------------------------------------------------
+
+
+def _generic_nested(layers: int, size: tuple[int, int], windows=((0.0, 20.0), (200.0, 220.0)), parent=(W, H)) -> Project:
+    """Une séquence imbriquée de ``size`` qui superpose ``layers`` clips d'un même fichier (points d'entrée distincts), lue par
+    deux fenêtres éloignées dans un projet de ``parent``."""
+    asset = MediaAsset("a", "/m/a.mp4", "A", 900.0, size[0], size[1], FPS, "video", has_audio=False)
+    clips = [Track(f"T{i}", f"T{i}", "video", clips=[Clip(f"r{i}", "a", f"T{i}", 0.0, i * 0.5, 300.0)]) for i in range(layers)]
+    inner = Sequence("inner", "Inner", size[0], size[1], FPS, tracks=clips)
+    main = Sequence("main", "Master", parent[0], parent[1], FPS, tracks=[Track("V1", "V1", "video")])
+    project = Project("p", media_assets=[asset], sequences=[main, inner], active_sequence_id="main")
+    at = 0.0
+    for start, end in windows:
+        insert_sequence_clip(project, "inner", "V1", at, source_in=start, source_out=end)
+        at += end - start
+    return project
+
+
+def test_every_input_of_a_split_sequence_is_counted_before_accepting_the_split(probed):
+    """20 calques x 2 fenêtres en 8K : le plafond (8) ne laisse pas scinder ; la commande n'ouvre alors aucune entrée par instance."""
+    plan = build_render_plan(_generic_nested(20, (7680, 4320), parent=(7680, 4320)))
+    decision = decide_inputs(plan, frame=(7680, 4320))
+    assert decision.splits == {}
+    graph, _v, _a, inputs = ExportEngine._build_filter_complex(plan, 7680, 4320, FPS, None)
+    assert sum(isinstance(item, SeekedPath) for item in inputs) == decision.pipelines
+
+
+def test_the_pipelines_announced_are_the_inputs_the_command_opens(probed):
+    """Trois calques x deux fenêtres : trois entrées distinctes par fenêtre + un compositeur par fenêtre ; l'égalité porte sur la
+    commande générée (les mêmes fichier, position et durée ne s'ouvrent qu'une fois)."""
+    plan = build_render_plan(_generic_nested(3, (W, H)))
+    decision = decide_inputs(plan, frame=(W, H))
+    instances = sum(len(v) for v in decision.splits.values())
+    assert instances == 2
+    _g, _v, _a, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
+    assert decision.pipelines == sum(isinstance(item, SeekedPath) for item in inputs) + instances == 8
+    assert sum(number for _owner, number in decision.resident) == decision.pipelines
+
+
+def test_the_estimate_counts_each_pipeline_at_the_size_of_its_own_composition(probed):
+    from core.export_memory import estimate_plan_queue
+    from core.export_inputs import PIPELINE_FRAMES
+
+    # 4K imbriqué dans un projet 1080p : 2 instances x (1 compositeur + 1 entrée) = 4 entrées, chacune à la taille 4K.
+    big = estimate_plan_queue(build_render_plan(_generic_nested(1, (3840, 2160), parent=(1920, 1080))), 1920, 1080, FPS)
+    assert big.pipelines == 4 and big.bytes == 4 * PIPELINE_FRAMES * 3840 * 2160 * 4
+    # Plus PETITE que le parent : 480x270 dans 1080p.
+    small = estimate_plan_queue(build_render_plan(_generic_nested(1, (480, 270), parent=(1920, 1080))), 1920, 1080, FPS)
+    assert small.pipelines == 4 and small.bytes == 4 * PIPELINE_FRAMES * 480 * 270 * 4

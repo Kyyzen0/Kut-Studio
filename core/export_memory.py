@@ -116,7 +116,11 @@ def estimate_plan_queue(plan, width: int, height: int, fps: float) -> QueueEstim
 
     decision = decide_inputs(plan, origin=0.0, video=True, frame=(width, height))
     queue_bytes, frames, holding = _file_queue(decision, plan, (width, height), float(fps))
-    resident = decision.pipelines * PIPELINE_FRAMES * float(max(1, width) * max(1, height) * _BYTES_PER_PIXEL)
+    # Chaque entrée garde des images à la taille de SA composition (une séquence 8K imbriquée dans un projet 1080p pèse 16 fois plus).
+    resident = 0.0
+    for owner, number in decision.resident:
+        owner_width, owner_height, _rate = _geometry_of(owner, plan, (width, height), float(fps))
+        resident += number * PIPELINE_FRAMES * float(max(1, owner_width) * max(1, owner_height) * _BYTES_PER_PIXEL)
     return QueueEstimate(int(queue_bytes + resident), frames, holding, decision.pipelines)
 
 
