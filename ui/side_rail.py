@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
@@ -111,14 +111,13 @@ class SideRail(QWidget):
                 icon=section.icon,
                 text=section.label,
                 tooltip=section.label,
-                size=Sizes.icon_button_lg,
+                size=RAIL_ICON_PX + 4,      # ``IconButton`` en tire sa taille d'icône interne (taille - 4) : une seule source de vérité, ``setIcon`` ne la perd plus
             )
             button.setIcon(make_icon(
                 section.icon,
                 size=RAIL_ICON_PX,
                 color=QColor(COLORS["muted_strong"]),
             ))
-            button.setIconSize(QSize(RAIL_ICON_PX, RAIL_ICON_PX))
             button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)      # le nom est TOUJOURS visible
             button.setFixedSize(RAIL_BUTTON_WIDTH, RAIL_BUTTON_HEIGHT)
             button.setCheckable(True)

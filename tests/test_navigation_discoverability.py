@@ -216,3 +216,46 @@ def test_usage_level_chip_says_what_it_is(french):
     assert chip.full_text() == "Level: Advanced"
     assert isinstance(win.settings_button.text(), str) and win.settings_button.text().strip() == "Settings"
     assert not win.settings_button.icon().isNull()
+
+
+# --- la taille de l'icône du rail ne se perd pas (Codex, PR #259) ---------------------------------------------------------
+
+def _assert_rail_icons(rail) -> None:
+    from PySide6.QtCore import QSize
+
+    from ui.side_rail import RAIL_ICON_PX
+
+    for sid, button in rail._buttons.items():
+        assert button.iconSize() == QSize(RAIL_ICON_PX, RAIL_ICON_PX), (sid, button.iconSize())
+
+
+def test_the_rail_icon_size_survives_every_icon_replacement(french):
+    from ui.side_rail import RAIL_ICON_PX
+
+    rail = french.side_rail
+    assert RAIL_ICON_PX == 20
+    _assert_rail_icons(rail)                                        # après construction
+    for section_id in ("audio", "media", "audio"):
+        rail.set_active(section_id)
+        _assert_rail_icons(rail)                                    # après activation / désactivation
+    rail.refresh_theme()
+    _assert_rail_icons(rail)                                        # après un changement de thème
+    for language in ("en", "es", "fr"):
+        i18n.set_language(language)
+        _assert_rail_icons(rail)                                    # après un changement de langue
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.2])
+def test_the_rail_label_is_not_clipped_by_the_icon(french, scale):
+    """Icône + libellé tiennent dans la hauteur du bouton, à la police du rail et à une police 20 % plus grande."""
+    from PySide6.QtGui import QFont
+
+    from ui.side_rail import RAIL_FONT_PX
+
+    french.set_usage_level("advanced")
+    rail = french.side_rail
+    font = QFont(next(iter(rail._buttons.values())).font())
+    font.setPixelSize(round(RAIL_FONT_PX * scale))
+    text_height = QFontMetrics(font).height()
+    for button in rail._buttons.values():
+        assert button.iconSize().height() + text_height <= button.height() - 4, (button.text(), button.iconSize(), button.height())
