@@ -96,7 +96,7 @@ class ColorKeyframesMixin:
             row.previous.setEnabled(enabled and state.previous)
             row.next.setEnabled(enabled and state.next)
             row.diamond.setToolTip(
-                i18n.translate("animation.diamond.tooltip", name=self._color_field_labels.get(name, name))
+                i18n.translate("animation.diamond.tooltip", name=self._color_field_label(name))
                 if animatable else tip
             )
             spin = self.color_field_spins.get(name)
@@ -168,7 +168,21 @@ class ColorKeyframesMixin:
         if self.selected_clip is not None:
             self.color_animation_cleared.emit(self.selected_clip.id)
 
+    def _color_field_label(self, name: str) -> str:
+        """Libellé du réglage dans la langue courante (jamais mis en cache : la langue change en cours d'exécution)."""
+        key = self._color_field_keys.get(name)
+        return i18n.translate(key) if key else name
+
     def _retranslate_color_keyframes(self) -> None:
+        for name, row in self._color_keyframe_rows.items():
+            label = self._color_field_label(name)
+            row.previous.setAccessibleName(i18n.translate("a11y.keyframe.previous", property=label))
+            row.diamond.setAccessibleName(i18n.translate("a11y.keyframe.toggle", property=label))
+            row.next.setAccessibleName(i18n.translate("a11y.keyframe.next", property=label))
+            field = self.color_field_spins.get(name)
+            caption = self._color_form.labelForField(field) if field is not None else None
+            if caption is not None:
+                caption.setText(label)
         self.color_animation_clear_button.setText(i18n.translate("color.animation.clear"))
         self.color_animation_clear_button.setToolTip(i18n.translate("color.animation.clear.tip"))
         self._sync_color_keyframes()

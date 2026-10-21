@@ -59,17 +59,18 @@ class ColorMixin(ColorKeyframesMixin):
         form.setSpacing(Spacing.xs)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         specs = (
-            ("exposure", translate("inspector.color.exposure"), -2.0, 2.0, 0.05, " EV"),
-            ("contrast", translate("field.contrast"), -1.0, 1.0, 0.05, ""),
-            ("saturation", translate("inspector.color.saturation"), 0.0, 2.0, 0.05, "×"),
-            ("temperature", translate("inspector.color.temperature"), -100.0, 100.0, 1.0, ""),
-            ("hue", translate("inspector.color.hue"), -180.0, 180.0, 1.0, "°"),
-            ("shadows", translate("inspector.color.shadows"), -1.0, 1.0, 0.05, ""),
-            ("highlights", translate("inspector.color.highlights"), -1.0, 1.0, 0.05, ""),
+            ("exposure", "inspector.color.exposure", -2.0, 2.0, 0.05, " EV"),
+            ("contrast", "field.contrast", -1.0, 1.0, 0.05, ""),
+            ("saturation", "inspector.color.saturation", 0.0, 2.0, 0.05, "×"),
+            ("temperature", "inspector.color.temperature", -100.0, 100.0, 1.0, ""),
+            ("hue", "inspector.color.hue", -180.0, 180.0, 1.0, "°"),
+            ("shadows", "inspector.color.shadows", -1.0, 1.0, 0.05, ""),
+            ("highlights", "inspector.color.highlights", -1.0, 1.0, 0.05, ""),
         )
         self.color_field_spins: dict[str, QDoubleSpinBox] = {}
-        self._color_field_labels: dict[str, str] = {}
-        for name, label, minimum, maximum, step, suffix in specs:
+        self._color_field_keys: dict[str, str] = {}        # champ -> clé i18n du libellé (relu à chaque langue)
+        for name, label_key, minimum, maximum, step, suffix in specs:
+            label = translate(label_key)
             spin = QDoubleSpinBox()
             spin.setRange(minimum, maximum)
             spin.setDecimals(2)
@@ -79,9 +80,10 @@ class ColorMixin(ColorKeyframesMixin):
                 lambda value, field=name: self._on_color_field_changed(field, value)
             )
             self.color_field_spins[name] = spin
-            self._color_field_labels[name] = label
+            self._color_field_keys[name] = label_key
             form.addRow(label, spin)
             self._add_color_keyframe_row(form, name, label)        # ‹ ◆ › sous chaque réglage animable (ADR-0008, étape 8)
+        self._color_form = form
         root.addLayout(form)
 
         # Courbes, préréglages et LUT 3D : réglages avancés (niveau d'usage), réunis dans un conteneur créé ici.

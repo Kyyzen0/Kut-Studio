@@ -482,3 +482,45 @@ def test_every_animation_edit_refreshes_the_inspector_by_itself(window, monkeypa
     window.graph_set_keyframe(KeyframeRef(clip.id, "color.saturation", key.id), value=1.7)
     window.on_graph_edit("Graph Editor", clip.id, record=False)
     assert _spin(window, "saturation").value() == pytest.approx(1.7)
+
+
+def test_a_language_change_retranslates_rows_tooltips_notice_and_wheels(window):
+    """Noms accessibles, infobulles, avis et bouton suivent la langue en cours d'exécution (inspecteur et page Couleur)."""
+    from core.workspace_state import PAGE_COLOR
+
+    try:                                                                  # abonnés de la fenêtre conservés : pas de reset_for_tests
+        _track, clip = _prepared(window, grade=_nodes())
+        clip.animation = [Keyframe("color.exposure", 1.0, 0.5, InterpolationType.LINEAR)]
+        window.history.reset(window.project)
+        window._reload_timeline_preserving_selection(clip.id)
+        window.on_clip_selected(clip.id)
+        window.switch_page(PAGE_COLOR)
+        panel = window.properties_panel
+        for language in ("en", "es", "fr"):
+            i18n.set_language(language)
+            window._retranslate_ui()
+            for name, row in _rows(window).items():
+                label = i18n.translate(panel._color_field_keys[name])
+                assert row.previous.accessibleName() == i18n.translate("a11y.keyframe.previous", property=label), (language, name)
+                assert row.diamond.accessibleName() == i18n.translate("a11y.keyframe.toggle", property=label)
+                assert row.next.accessibleName() == i18n.translate("a11y.keyframe.next", property=label)
+                assert row.diamond.toolTip() == i18n.translate("color.animation.disabled_tip")
+            assert panel.color_animation_label.text().startswith(i18n.translate("color.animation.nodes"))
+            assert panel.color_animation_clear_button.text() == i18n.translate("color.animation.clear")
+            page = window.color_panel
+            assert page.animation_notice_label.text().startswith(i18n.translate("color.animation.nodes"))
+            assert page.animation_clear_button.text() == i18n.translate("color.animation.clear")
+            for wheel, cell in page.wheels.cells.items():
+                title = i18n.translate(f"color.wheel.{wheel}")
+                assert cell.keys.diamond.accessibleName() == i18n.translate("a11y.keyframe.toggle", property=title)
+                assert cell.keys.diamond.toolTip() == i18n.translate("color.animation.disabled_tip")
+        clip.color_grade = ColorGrade()                                  # animable : l'infobulle nomme le réglage
+        window._reload_timeline_preserving_selection(clip.id)
+        window.on_clip_selected(clip.id)
+        for language in ("en", "es"):
+            i18n.set_language(language)
+            window._retranslate_ui()
+            assert panel._color_field_label("exposure") in _rows(window)["exposure"].diamond.toolTip()
+            assert i18n.translate("color.animation.wheel_tip", wheel="Lift") in window.color_panel.wheels.cells["lift"].keys.diamond.toolTip()
+    finally:
+        i18n.set_language("fr")
