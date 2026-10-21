@@ -127,6 +127,8 @@
               "effects": [],
               "audio_effects": [],
               "color_grade": null,
+              "color_grade_simple": true,
+              "color_animation_live": false,
               "compositing": {
                 "masks": [],
                 "chroma_key": {
@@ -217,6 +219,8 @@
               "effects": [],
               "audio_effects": [],
               "color_grade": null,
+              "color_grade_simple": true,
+              "color_animation_live": false,
               "compositing": {
                 "masks": [],
                 "chroma_key": {
@@ -327,6 +331,8 @@
               "effects": [],
               "audio_effects": [],
               "color_grade": null,
+              "color_grade_simple": true,
+              "color_animation_live": false,
               "compositing": {
                 "masks": [],
                 "chroma_key": {

@@ -33,6 +33,7 @@ import math
 import os
 from typing import Any
 
+from ..grade_targets import has_live_grade_animation, is_animatable_grade
 from ..project_model import Clip, MediaAsset, Project, Sequence, Track
 from . import describe_audio, describe_color, describe_composition, describe_shapes, describe_structure, describe_tracking
 from .describe_coverage import NOT_DESCRIBED_SECTIONS
@@ -131,6 +132,8 @@ def _clip(clip: Clip, length: float | None, lookup: describe_tracking.ClipLookup
         "transform_keyframes": describe_shapes.keyframes(clip.transform_keyframes),
         "effects": describe_shapes.effects(clip.effects), "audio_effects": describe_shapes.effects(clip.audio_effects),
         "color_grade": describe_color.color_graph(clip.color_grade),
+        "color_grade_simple": is_animatable_grade(clip.color_grade),
+        "color_animation_live": has_live_grade_animation(clip),
         "compositing": describe_shapes.compositing(clip.compositing),
         "animation": describe_shapes.keyframes(clip.animation),
         "composition": describe_composition.composition(clip.composition),

@@ -57,8 +57,7 @@ Kut-Studio describe projet.kut --json                    # lire la structure d'u
 
 ## Images clés : propriétés et unités
 
-`add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform et `graphic.*`.
-Sont exclus : `color.*` (l'étalonnage animé : **aucun** verbe qui reçoit un nom de propriété ne le crée, ne le modifie, ne le déplace, ne le retire ni ne l'active — refus « l'animation de l'étalonnage n'est pas encore disponible dans les scripts », projet inchangé — tant que l'interface et les verbes de l'étalonnage animé n'existent pas ; un projet qui en contient déjà se rend normalement), `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
+`add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform, `graphic.*` et l'étalonnage du clip `color.*` (ADR-0008, étape 9 : 23 propriétés, `color.exposure`, `color.contrast`, `color.saturation`, `color.temperature`, `color.hue`, `color.shadows`, `color.highlights` et les quatre roues canal par canal, `color.lift.r` … `color.offset.y` ; la liste est celle de `core/grade_targets.py`, relue par le schéma). Les verbes d'édition d'une image clé (`set_keyframe_value`, `set_keyframe_time`, `move_keyframes`, `set_keyframe_interpolation`, `set_keyframe_tangents`, `set_animation_enabled`) acceptent les mêmes noms, avec **exactement les mêmes refus que pour un paramètre d'effet** : piste ou calque verrouillé, clip d'une piste qui n'est pas vidéo, valeur hors bornes du réglage (jamais écrêtée), valeur ou instant non fini, instant hors du clip, déplacement qui arriverait sur une autre image clé, plafond d'images clés par clip. **Un clip étalonné par un graphe de nœuds** (plusieurs nœuds, ou un nœud nommé, qualifié, fenêtré, flou ou net) **refuse** ces propriétés (« le clip est étalonné par un graphe de nœuds ») : le rendu n'applique que les images clés du réglage simple, un script ne crée donc pas d'image clé qui serait ignorée (`describe` : `color_grade_simple`). Une image clé `color.*` restée dans un clip devenu graphe (`color_animation_live` : `false`) se retire avec `remove_keyframe` (aucune valeur n'est écrite) mais ne se modifie pas. Retirer la dernière image clé d'une propriété, ou `set_animation_enabled` avec `enabled: false`, laisse la valeur qu'elle montrait, comme dans l'interface. Les paramètres d'effet s'animent avec `add_effect_keyframe` / `remove_effect_keyframe`. Sont exclus : `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
 `remove_mask_keyframe`). Les valeurs sont dans **l'unité du modèle**, pas celle que l'inspecteur affiche ; elles doivent rester dans les bornes
 (sinon refus, jamais d'écrêtage). Un test (`tests/test_script_verbs_animation_masks.py`) relit ce tableau et le compare au registre.
 
@@ -93,6 +92,29 @@ Sont exclus : `color.*` (l'étalonnage animé : **aucun** verbe qui reçoit un n
 | `graphic.light_density` | facteur | 1 | 0.1 | 4 |
 | `graphic.glow_radius` | pixels | 0 | 0 | 400 |
 | `graphic.glow_strength` | facteur | 1 | 0 | 4 |
+| `color.contrast` | réglage du contraste (0 = neutre) | 0 | -1 | 1 |
+| `color.saturation` | facteur (1 = neutre) | 1 | 0 | 2 |
+| `color.hue` | degrés | 0 | -180 | 180 |
+| `color.exposure` | diaphragmes | 0 | -2 | 2 |
+| `color.temperature` | unité du modèle (0 = neutre) | 0 | -100 | 100 |
+| `color.shadows` | réglage (0 = neutre) | 0 | -1 | 1 |
+| `color.highlights` | réglage (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.r` | roue lift, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.g` | roue lift, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.b` | roue lift, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.y` | roue lift, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.r` | roue gamma, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.g` | roue gamma, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.b` | roue gamma, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.y` | roue gamma, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.r` | roue gain, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.g` | roue gain, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.b` | roue gain, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.y` | roue gain, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.r` | roue offset, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.g` | roue offset, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.b` | roue offset, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.y` | roue offset, canal y (0 = neutre) | 0 | -1 | 1 |
 <!-- /units -->
 
 Un masque (`add_mask_keyframe`) :
@@ -269,7 +291,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_mask_keyframe` | Pose ou remplace une image clé d'une propriété d'un masque de compositing (`clip`, `mask`, `property` = `position_x`…`opacity`, `at` relatif au clip, `value`, `interpolation`) ; refusé pour le recadrage, une fenêtre d'étalonnage, et la position d'un masque suivi |
 | `remove_mask_keyframe` | Retire l'image clé d'une propriété d'un masque à un instant (`clip`, `mask`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
-| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) |
+| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) ; retire aussi les images clés `color.*` du clip (comme l'interface), sauf s'il reste étalonné par un graphe de nœuds |
 | `apply_effect_preset` | Applique un preset d'effets **intégré** à un clip vidéo (`clip`, `preset`) |
 | `apply_color_preset` | Applique un preset d'étalonnage **intégré** à un clip (`clip`, `preset`, `node` optionnel) |
 | `set_color_curve` | Règle la sortie d'un point de courbe (`channel`, `index`, `output`) |
@@ -706,12 +728,12 @@ Ces verbes appellent les fonctions que l'inspecteur, la timeline, le Graph Edito
 leurs contrôles communs sont dans `keyframe_rules.py`.
 
 - **Une image clé se désigne par `property` + `at`** (le `property_name` et le `time_seconds` de `describe`), jamais par son identifiant, que le modèle tire au
-  hasard. `property` est le nom du registre d'animation tel que la description le donne : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`.
+  hasard. `property` est le nom du registre d'animation tel que la description le donne : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`, `color.*`.
   L'instant est comparé à la microseconde. La vitesse a ses propres verbes (ci-dessous) : `time.speed` est refusé ici.
 - **Images clés d'effet** : `add_effect_keyframe` / `remove_effect_keyframe` nomment l'effet et son paramètre séparément (comme `add_mask_keyframe` pour un
   masque). Seuls les paramètres que le modèle rend animables sont acceptés (luminosité, contraste et saturation de la correction de couleur, intensité de la
   vignette, du flou et de l'aberration chromatique, rayon du Bloom — `parameter` : `radius`) ; la netteté et le seuil ou l'intensité du Bloom restent
-  statiques et sont refusés (« pas animable ») ; les bornes sont celles du type de l'effet, et le plafond d'images clés par clip s'applique. `add_keyframe` n'accepte toujours pas `fx.*`.
+  statiques et sont refusés (« pas animable ») ; les bornes sont celles du type de l'effet, et le plafond d'images clés par clip s'applique. `add_keyframe` n'accepte pas `fx.*` (ses 23 propriétés `color.*` n'ont pas de sélecteur : elles ne dépendent que du clip).
 - **Sans aimantation** : l'interface aligne un déplacement sur une image de la timeline ; un script donne l'instant exact.
 - **Rien n'est ramené ni remplacé en silence** : valeur hors bornes, instant hors du clip, déplacement qui sortirait du clip (le modèle réduirait le décalage)
   ou arriverait sur une autre image clé (le modèle la remplacerait), image clé citée deux fois, décalage nul : refusés. Les propriétés qui ne sont pas des
@@ -840,7 +862,7 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   décrits, ou exclus avec une raison écrite : échantillons bruts du suivi, temps de scène d'un calque de lumière). La clé reste, pour qu'un
   champ futur sans décision puisse y être nommé ; la sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
 - **Les noms de clés sont ceux des champs du modèle** (`timeline_start`, `asset_id`…), en anglais ; les durées sont en **secondes**. Les
-  clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `active`, la taille du projet) sont les seules
+  clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `color_grade_simple`, `color_animation_live`, `active`, la taille du projet) sont les seules
   qui n'existent pas dans le modèle. `kind` vaut `media`, `sequence` (clip imbriqué), `composition` ou `graphic`.
 - **Valeurs** : JSON strict (une valeur non finie est `null`), nombres arrondis à 6 décimales, ordre des clés et des listes fixe (celui du
   modèle). Une chaîne vide qui veut dire « aucun » (`asset_id`, `sequence_id`, `angle_id`…) est `null`.
@@ -868,7 +890,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 | `clips[].audio_effects[]`, `tracks[].inserts[]`, `buses[].inserts[]` | même forme | `add_clip_audio_effect`, `add_track_insert`, `add_bus_insert` ; `update_*`, `set_*_enabled`, `remove_*` (`effect` / `insert` = `id`) |
 | `sequences[].buses[]`, `tracks[].bus_id` | `id`, `name`, `volume_db`, `muted`, `inserts` ; `bus_id` vaut `null` pour le Master | `add_bus`, `rename_bus`, `set_bus_volume`, `set_bus_muted`, `route_track` (`bus` = `id`) |
 | `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `set_track_role` (`audio_role`), `add_automation_point` / `update_automation_point` / `move_automation_point` / `remove_automation_point` (`at` = `time_seconds`), `set_automation_curve`, `add_ducking_sidechain` (`id`), `update_ducking_config`, `set_ducking_enabled`, `remove_ducking_sidechain` (`ducking` = `id`), `duck_music_under_voice` ; `move_track_insert` / `move_bus_insert` pour l'ordre des inserts |
-| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>`, `add_effect_keyframe` pour `fx.<effet>.<paramètre>` (`effect`, `parameter`) ; `set_keyframe_tangents` pour les pentes |
+| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>`, `add_effect_keyframe` pour `fx.<effet>.<paramètre>` (`effect`, `parameter`) ; `add_keyframe` accepte aussi `color.*` ; `set_keyframe_tangents` pour les pentes |
 | `clips[].color_grade` | `null` (jamais étalonné) ou `{nodes, links}` : un réglage seul est le nœud `n1` ; un nœud est `corrector` (`grade`, `label`, `qualifier`, `windows`, `blur`, `sharpen`) ou `mixer` (`kind`) | `set_color_grade`, `set_color_curve`, `set_color_wheel`, `set_color_qualifier`, `set_color_detail`, `rename_color_node` (`node` = `id`, absent : le premier), `add_color_window` / `set_color_window` (`window` = `id`) |
 | `clips[].compositing` | `masks[]` (forme, position, taille, `mode`, `points` / `handles`, `nodes` pour une courbe), `chroma_key`, `blend_mode` | `add_mask`, `set_mask`, `set_mask_points` (`mask` = `id`), `set_crop` |
 | `clips[].composition` | `graph.nodes[]` (`type` : `media`, `graphic`, `solid`, `transform`, `merge`, `mask`, `key`, `effects`, `grade`, `output`), `graph.links[]`, `duration`, `animation[]` | aucun (lecture seule) |

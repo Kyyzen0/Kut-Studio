@@ -35,14 +35,14 @@ from .keyframe_rules import (
     MAX_BLOCK, MAX_SLOPE, keyframe_at, require_effective_tangents, require_free_arrivals, require_value, require_within,
     resolve_keyframe_target,
 )
-from .resource_limits import require_keyframe_slot
+from .resource_limits import require_keyframe_room, require_keyframe_slot
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP
 
 _INTERPOLATIONS = tuple(item.value for item in InterpolationType)
 _PARAMETERS = tuple(dict.fromkeys(name for names in ANIMATABLE_EFFECT_PARAMS.values() for name in names))
 
 _EFFECT = Param("effect", Kind.SELECTOR, "L'effet du clip, par identifiant.", of="effect")
-_PROPERTY = Param("property", Kind.STRING, "La propriété animée, telle que `describe` la nomme (`property_name`) : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`.")
+_PROPERTY = Param("property", Kind.STRING, "La propriété animée, telle que `describe` la nomme (`property_name`) : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`, `color.<réglage>` ou `color.<roue>.<canal>` (étalonnage simple du clip).")
 _AT = Param("at", Kind.NUMBER, "Instant de l'image clé, en secondes depuis le début du clip.", minimum=0.0, maximum=MAX_TIME)
 _PARAMETER = Param("parameter", Kind.ENUM, "Le paramètre animé de l'effet (seuls ceux que le modèle rend animables).", choices=_PARAMETERS)
 
@@ -206,9 +206,11 @@ def _set_keyframe_tangents(a: Mapping[str, Any]) -> Operation:
 def _set_animation_enabled(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         name = str(a["property"])
-        clip_id, clip, _target = resolve_keyframe_target(project, a["clip"], name, "set_animation_enabled")
+        clip_id, clip, target = resolve_keyframe_target(project, a["clip"], name, "set_animation_enabled")
         at = float(a["at"])
         require_within(clip, at, "set_animation_enabled")
+        if bool(a["enabled"]) and not target.get_keyframes(clip):
+            require_keyframe_room(clip, 1, "set_animation_enabled")        # animer pose UNE image clé (le modèle n'en pose qu'à la première animation)
         set_animation_enabled(project, clip_id, name, bool(a["enabled"]), at)
         return None
 
