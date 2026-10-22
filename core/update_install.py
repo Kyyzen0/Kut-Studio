@@ -136,7 +136,10 @@ def evaluate_install(
         return InstallDecision(False, InstallRefusal.TRANSLOCATED)
     location = str(context.location) if context.location is not None else ""
     app = Path(location) if location else None
-    if app is None or app.suffix != ".app" or app.name != APP_BUNDLE_NAME or "\n" in location or not app.is_absolute():
+    # ``location`` est un chemin POSIX (``install_context`` le construit ainsi) : sous Windows, ``Path("/a/b").is_absolute()``
+    # est faux faute de lecteur, ce qui classait un chemin macOS absolu « pas un bundle » au lieu de « bundle manquant ».
+    if app is None or app.suffix != ".app" or app.name != APP_BUNDLE_NAME or "\n" in location \
+            or not (app.is_absolute() or location.startswith("/")):
         return InstallDecision(False, InstallRefusal.NOT_BUNDLE)
     if not app.is_dir() or app.is_symlink():
         return InstallDecision(False, InstallRefusal.MISSING_BUNDLE, app)
