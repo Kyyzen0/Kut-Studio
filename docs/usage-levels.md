@@ -131,6 +131,10 @@ La politique de niveaux ci-dessus ne change pas ; seule la façon de montrer ce 
 | Dossiers de la bibliothèque | tout (nouveau, sous-dossier, renommer, supprimer) | idem | idem |
 | Éditeur de nœuds Couleur / Composition | (pages absentes) | tout (page Couleur) | tout (page Composition) |
 
+### Exception voulue : la palette « Rechercher une fonction »
+
+Les menus du niveau Simple n'affichent aucun outil du niveau supérieur (comportement inchangé). La **palette de commandes** ([command-palette.md](command-palette.md)), elle, les **affiche** (découvrabilité) avec un bouton « Passer en Studio » / « Passer en Avancé » qui change le niveau (`set_usage_level`) puis lance la fonction. Rien n'est caché ni désactivé de plus ; ce n'est pas un nouveau contrôle classé (c'est une surface de recherche, le bouton de la barre du haut est Simple), donc le manifeste `usage_level_controls.json` et le test d'énumération n'ont pas changé. Le niveau de chaque résultat est lu dans les tables ci-dessus (`MENU_GATES`, `PAGE_LEVELS`, `SECTION_LEVELS`, `_group_levels`) : classer une entrée de menu la classe aussi pour la palette.
+
 ## Déplacements de contrôles et classements non précisés par la spécification
 
 Ces points ont été **acceptés par l'utilisateur** (PR #183 et #186). Ils sont aussi dans le CHANGELOG de la 0.6.4.

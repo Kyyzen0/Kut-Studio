@@ -1977,6 +1977,7 @@ from ui.i18n_history import HISTORY_TRANSLATIONS as _HISTORY  # noqa: E402
 from ui.i18n_mask_edit import MASK_EDIT_TRANSLATIONS as _MASK_EDIT  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_multicam import MULTICAM_TRANSLATIONS as _MULTICAM  # noqa: E402
+from ui.i18n_palette import PALETTE_TRANSLATIONS as _PALETTE  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_scene3d import SCENE3D_TRANSLATIONS as _SCENE3D  # noqa: E402
 from ui.i18n_social import SOCIAL_TRANSLATIONS as _SOCIAL  # noqa: E402
@@ -1992,6 +1993,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_tracking": _TRACKING,
     "ui.i18n_hardware": _HARDWARE,
     "ui.i18n_panels": _PANELS,
+    "ui.i18n_palette": _PALETTE,
     "ui.i18n_dialogs": _DIALOGS,
     "ui.i18n_history": _HISTORY,
     "ui.i18n_multicam": _MULTICAM,
