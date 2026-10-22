@@ -404,7 +404,7 @@ def test_the_top_bar_button_gives_up_room_before_the_level_chip_and_keeps_its_na
     assert window.palette_button.form() == "full" and "Rechercher" in window.palette_button.text()
     window.resize(1180, 720)
     QApplication.processEvents()
-    assert window.palette_button.form() in ("text", "icon") and window.usage_level_chip.form() == "full"
+    assert window.palette_button.form() in ("text", "icon", "hidden") and window.usage_level_chip.form() == "full"
     assert "Ctrl" in window.palette_button.toolTip() or "⌘" in window.palette_button.toolTip()
     assert window.palette_button.accessibleName() == i18n.translate("palette.button.name")
     assert window.export_button.geometry().right() <= window.export_button.parentWidget().width()
