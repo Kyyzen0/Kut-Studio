@@ -60,9 +60,9 @@ def key_id_of(public: bytes) -> str:
 
 
 UPDATE_PUBLIC_KEYS: tuple[PublicKey, ...] = (
-    # Collez ici la sortie de « python -m tools.release gen-update-key » (une ligne PublicKey.from_base64("…")).
+    PublicKey.from_base64("o8bUFHCWeytwAHMcFFrynI5H6jq6/EAjnavtRaKP7m4="),  # 2101bf3447a2a416
 )
-"""Clés acceptées, la courante en premier. Vide tant que la clé n'a pas été générée."""
+"""Clés acceptées, la courante en premier. Ajoutez la suivante ici lors d'une rotation (``docs/updates.md``)."""
 
 
 def key_ids(keys: tuple[PublicKey, ...] | None = None) -> list[str]:
