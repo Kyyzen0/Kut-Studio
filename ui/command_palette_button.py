@@ -9,8 +9,8 @@ courante de la puce (pas d'oscillation entre les deux ajusteurs).
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtWidgets import QToolButton
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtWidgets import QSizePolicy, QToolButton
 
 FULL, TEXT, ICON, HIDDEN = "full", "text", "icon", "hidden"
 _FORMS = (FULL, TEXT, ICON, HIDDEN)
@@ -24,9 +24,15 @@ class PaletteButton(QToolButton):
         self._label = ""
         self._shortcut = ""
         self._form = FULL
+        # ``Preferred`` (et non ``Minimum``) : le layout prend alors ``minimumSizeHint`` (0) pour largeur minimale.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
     def form(self) -> str:
         return self._form
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt
+        """Largeur minimale nulle : le bouton se réduit puis se cache, il n'augmente jamais le minimum de la fenêtre."""
+        return QSize(0, super().minimumSizeHint().height())
 
     def set_texts(self, label: str, shortcut: str) -> None:
         self._label, self._shortcut = label, shortcut

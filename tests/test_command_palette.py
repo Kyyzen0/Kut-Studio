@@ -404,7 +404,24 @@ def test_the_top_bar_button_gives_up_room_before_the_level_chip_and_keeps_its_na
     assert window.palette_button.form() == "full" and "Rechercher" in window.palette_button.text()
     window.resize(1180, 720)
     QApplication.processEvents()
-    assert window.palette_button.form() in ("text", "icon", "hidden") and window.usage_level_chip.form() == "full"
+    assert window.palette_button.form() in ("text", "icon", "hidden")
+    if window.usage_level_chip.form() != "full":            # polices de repli larges (Linux) : la puce n'est jamais cédée au bouton
+        assert window.palette_button.form() == "hidden"
+    assert window.palette_button.minimumSizeHint().width() == 0
     assert "Ctrl" in window.palette_button.toolTip() or "⌘" in window.palette_button.toolTip()
     assert window.palette_button.accessibleName() == i18n.translate("palette.button.name")
     assert window.export_button.geometry().right() <= window.export_button.parentWidget().width()
+
+
+def test_the_palette_button_never_raises_the_minimum_width_of_the_window(window):
+    window.set_usage_level("advanced")
+    bar = window.export_button.parentWidget()
+    window._palette_fit._busy = True                          # fige les ajusteurs : on impose les formes à la main
+    window._usage_level_fit._busy = True
+    window.palette_button.set_form("hidden")
+    QApplication.processEvents()
+    without = bar.layout().minimumSize().width()
+    window.palette_button.set_form("full")                    # pire cas : forme complète imposée (183 px de largeur idéale)
+    QApplication.processEvents()
+    assert window.palette_button.isVisible() and window.palette_button.sizeHint().width() > 100
+    assert bar.layout().minimumSize().width() <= without + bar.layout().spacing()     # seul l'espacement s'ajoute
