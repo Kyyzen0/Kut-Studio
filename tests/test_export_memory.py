@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -340,25 +341,72 @@ def media(tmp_path_factory) -> str:
 
 
 _WAIT4_HELPER = (
-    "import os, subprocess, sys\n"
-    "p = subprocess.Popen(sys.argv[1:], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
-    "_pid, status, usage = os.wait4(p.pid, 0)\n"
+    "import os, signal, subprocess, sys\n"
+    "p = subprocess.Popen(sys.argv[1:], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)\n"
+    "def stop(*_):\n"
+    "    try:\n"
+    "        os.killpg(p.pid, signal.SIGKILL)\n"
+    "    except OSError:\n"
+    "        pass\n"
+    "    os._exit(143)\n"
+    "signal.signal(signal.SIGTERM, stop)\n"
+    "try:\n"
+    "    _pid, status, usage = os.wait4(p.pid, 0)\n"
+    "except BaseException:\n"
+    "    stop()\n"
     "print(os.waitstatus_to_exitcode(status), usage.ru_maxrss)\n"
 )
 
 
-def _peak_rss_mb(arguments: list[str]) -> float:
+def _peak_rss_mb(arguments: list[str], timeout: float = 600.0) -> float:
     """Pic de mémoire résidente de FFmpeg, lu par le système à la fin du processus (``ru_maxrss`` : exact, sans échantillonnage).
 
     FFmpeg est lancé **par un petit interprète intermédiaire**, pas par le processus de test : sous Linux, ``ru_maxrss`` d'un
     fils compte aussi le pic de mémoire du processus qui l'a lancé (le noyau reprend le maximum de l'ancienne image à
     ``exec``). Lancé depuis la suite complète (plusieurs Go déjà résidents), FFmpeg se voyait donc attribuer un plancher de
-    plusieurs centaines de Mo, qui écrasait la pente mesurée (160 Mo au lieu de 371 sous FFmpeg 7.1 en CI, 350 Mo isolé)."""
-    done = subprocess.run([sys.executable, "-I", "-c", _WAIT4_HELPER, *arguments], capture_output=True, text=True, timeout=600)
-    assert done.returncode == 0, done.stderr
-    code, maxrss = done.stdout.split()
+    plusieurs centaines de Mo, qui écrasait la pente mesurée (160 Mo au lieu de 371 sous FFmpeg 7.1 en CI, 350 Mo isolé).
+
+    FFmpeg a son propre groupe de processus : sur délai dépassé, interruption ou ``SIGTERM``, l'intermédiaire tue ce groupe
+    avant de sortir (jamais de FFmpeg orphelin)."""
+    wrapper = subprocess.Popen(
+        [sys.executable, "-I", "-c", _WAIT4_HELPER, *arguments], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        out, err = wrapper.communicate(timeout=timeout)
+    except BaseException:
+        wrapper.terminate()                                          # SIGTERM : l'intermédiaire tue le groupe de FFmpeg
+        try:
+            wrapper.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            wrapper.kill()
+            wrapper.wait()
+        raise
+    assert wrapper.returncode == 0, err
+    code, maxrss = out.split()
     assert int(code) == 0
     return int(maxrss) / (1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0)     # macOS : octets ; Linux : Ko
+
+
+@needs_wait4
+def test_an_interrupted_measure_leaves_no_ffmpeg_behind(tmp_path):
+    """Un délai dépassé tue aussi le processus lancé par l'intermédiaire, pas seulement l'intermédiaire."""
+    marker = tmp_path / "pid"
+    with pytest.raises(subprocess.TimeoutExpired):
+        _peak_rss_mb(["sh", "-c", f"echo $$ > {marker}; exec sleep 60"], timeout=2.0)
+    pid = int(marker.read_text())
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        try:                                                         # mort mais non récolté (conteneur sans init) : zombie
+            if Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                return
+        except OSError:
+            pass
+        time.sleep(0.1)
+    os.kill(pid, 9)
+    pytest.fail("le processus mesuré est resté vivant après l'interruption")
 
 
 @needs_wait4
