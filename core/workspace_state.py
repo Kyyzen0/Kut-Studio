@@ -119,13 +119,18 @@ MIN_SIZE: dict[PanelId, int] = {
     PanelId.MEDIA: 220,
     PanelId.VIEWER: 320,
     PanelId.INSPECTOR: 280,
-    PanelId.TIMELINE: 240,
+    PanelId.TIMELINE: 260,
     PanelId.MIXER: 320,
     PanelId.HISTORY: 200,
     PanelId.COLOR: 340,
     PanelId.CLIPS: 118,
     PanelId.COMPOSITION: 360,
 }
+
+#: Hauteur minimale d'un panneau **empilé dans la zone basse** (timeline + mixeur ou bande des plans). Elle remplace
+#: ``MIN_SIZE`` pour les hauteurs : le mixeur défile verticalement, il n'a pas besoin de 320 px pour rester utilisable, et
+#: sa valeur d'origine portait la fenêtre de la page Audio à plus de 1000 px (plus que l'écran d'un portable).
+MIN_HEIGHT: dict[PanelId, int] = {**MIN_SIZE, PanelId.MIXER: 140, PanelId.CLIPS: 124}   # CLIPS : le minimum réel de ``ClipStrip``
 
 #: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
 DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR, PanelId.CLIPS,
@@ -755,6 +760,7 @@ __all__ = [
     "FLOATING_TITLEBAR_SIZE",
     "FloatingGeometry",
     "MIN_SIZE",
+    "MIN_HEIGHT",
     "PAGES",
     "PAGE_AUDIO",
     "PAGE_COLOR",
