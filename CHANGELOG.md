@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Mises à jour : les releases peuvent être **signées** (Ed25519, ADR-0012) : `SHA256SUMS.txt.sig` prouve que les paquets viennent du mainteneur, ce que l'empreinte seule ne faisait pas. L'application vérifie la signature avant de télécharger le paquet : fausse ou faite par une clé inconnue, elle refuse la version avec un message clair ; absente (release non signée), l'installation assistée continue comme avant ; la fenêtre de mise à jour dit si la version est signée, et Aide › À propos affiche l'identifiant des clés de confiance. Une version égale ou plus ancienne que celle installée n'est jamais téléchargée. Outils : `python -m tools.release gen-update-key` (clé créée en local, jamais affichée) et étape de signature du workflow de release (secret `UPDATE_SIGNING_KEY`). Aucune dépendance ajoutée. Voir `docs/updates.md`, section 10.
+
 ### Fixed
 
 - Export : un montage dont FFmpeg devrait garder des dizaines de gigaoctets d'images en mémoire (plusieurs morceaux d'un même média ou d'un même angle multicam séparés par un long passage, par exemple 20 min de multicam) est refusé **avant** le lancement, avec la mémoire estimée, au lieu de remplir la mémoire puis le disque (défaut D-002 de la recette). Voir `docs/performance.md`, section 11.

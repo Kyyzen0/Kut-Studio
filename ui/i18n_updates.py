@@ -391,11 +391,11 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
         "es": "Esta versión no es más reciente que la instalada: no se instalará.",
     },
     "update.ready.signature_verified": {
-        "fr": "Signature vérifiée : SHA256SUMS.txt est signé par la clé {key} de Kut-Studio, donc cette version a bien "
+        "fr": "Signature vérifiée : SHA256SUMS.txt est signé par la clé {key_id} de Kut-Studio, donc cette version a bien "
               "été publiée par le mainteneur.",
-        "en": "Signature verified: SHA256SUMS.txt is signed by Kut-Studio's key {key}, so this version was published "
+        "en": "Signature verified: SHA256SUMS.txt is signed by Kut-Studio's key {key_id}, so this version was published "
               "by the maintainer.",
-        "es": "Firma verificada: SHA256SUMS.txt está firmado por la clave {key} de Kut-Studio, por lo que esta "
+        "es": "Firma verificada: SHA256SUMS.txt está firmado por la clave {key_id} de Kut-Studio, por lo que esta "
               "versión fue publicada por el responsable.",
     },
     "update.ready.signature_absent": {

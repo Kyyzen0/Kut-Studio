@@ -55,8 +55,9 @@ def _recover_x(y: int, sign: int) -> int | None:
 
 
 _BASE_Y = 4 * pow(5, -1, _P) % _P
-_BASE_X = _recover_x(_BASE_Y, 0)
-assert _BASE_X is not None
+_BASE_X = _recover_x(_BASE_Y, 0) or 0
+if (_BASE_Y * _BASE_Y - _BASE_X * _BASE_X - 1 - _D * _BASE_X * _BASE_X * _BASE_Y * _BASE_Y) % _P:
+    raise ImportError("Ed25519 : point de base hors de la courbe")        # ne peut arriver que par corruption du module
 _BASE: Point = (_BASE_X, _BASE_Y, 1, _BASE_X * _BASE_Y % _P)
 _ZERO: Point = (0, 1, 1, 0)
 
