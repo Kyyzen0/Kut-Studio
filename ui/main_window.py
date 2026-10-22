@@ -700,7 +700,7 @@ class MainWindow(
         self._init_composition_page()
         self.workspace = WorkspaceManager(self)
         # Un niveau d'usage montre ou cache des boutons du rail : son minimum change, celui de la fenêtre le suit.
-        self.usage_level_changed.connect(lambda _level: QTimer.singleShot(0, self.workspace._sync_window_minimum_height))
+        self.usage_level_changed.connect(lambda _level: QTimer.singleShot(0, self.workspace, self.workspace._sync_window_minimum_height))
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         # Le dock « viewer » contient le viewer **et** le panneau de
         # scopes dans un splitter vertical (tâche 31) : c'est ce
@@ -857,7 +857,7 @@ class MainWindow(
         super().showEvent(event)
         workspace = getattr(self, "workspace", None)
         if workspace is not None:
-            QTimer.singleShot(0, workspace.balance_vertical_split)
+            QTimer.singleShot(0, workspace, workspace.balance_vertical_split)
 
     # -- Mixeur : pistes ------------------------------------------------
 

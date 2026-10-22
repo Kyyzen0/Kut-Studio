@@ -58,7 +58,9 @@ class SectionBox(QGroupBox):
         self._margins = None                           # marges du contenu avant le pliage
         wanted = self._remembered.get(key, open_by_default) if key else open_by_default
         if not wanted:
-            QTimer.singleShot(0, lambda: self.set_open(False))   # une fois le contenu construit
+            # Une fois le contenu construit. Lié à la section (contexte) : la fonction différée ne s'exécute jamais sur une section déjà
+            # détruite (fenêtre fermée avant le premier tour de boucle), ce qui touchait un widget libéré (voir ``tests/test_section_box_deferred.py``).
+            QTimer.singleShot(0, self, lambda: self.set_open(False))
 
     # -- état ---------------------------------------------------------------------------------------------
 
@@ -125,7 +127,7 @@ class SectionBox(QGroupBox):
         if event.type() == QEvent.Show:
             if watched not in self._folded:
                 self._folded.append(watched)
-            QTimer.singleShot(0, lambda: self._refold(watched))
+            QTimer.singleShot(0, self, lambda: self._refold(watched))
         elif event.type() == QEvent.HideToParent:
             self._folded = [w for w in self._folded if w is not watched]
         return False

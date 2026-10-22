@@ -56,9 +56,28 @@ def screen_window(tmp_path_factory):
         return window
 
     yield make
-    for window in windows.values():
+    try:
+        # Fermées **puis détruites ici**, une à une, tant que l'environnement isolé et le contournement de la confirmation de
+        # fermeture sont posés : laissées vivantes, elles étaient détruites en bloc, avec les fenêtres des autres tests, par la
+        # fixture de fin de module (``qt_cleanup.destroy_leftover_windows``), la pile des plantages natifs vus en CI.
+        _destroy_windows(list(windows.values()))
+        windows.clear()
+    finally:
+        patch.undo()
+
+
+def _destroy_windows(windows) -> None:
+    """Ferme chaque fenêtre, la détruit et livre les suppressions différées **avant** de passer à la suivante.
+
+    Une fenêtre principale à la fois : détruire plusieurs arbres de ~2 500 widgets dans la même passe de
+    ``deleteLater`` est ce qui plantait en CI (macOS, Linux). ``close()`` d'abord : l'arrêt ordonné (threads, minuteurs).
+    """
+    from qt_cleanup import deliver_deferred_deletes
+
+    for window in windows:
         window.close()
-    patch.undo()
+        window.deleteLater()
+        deliver_deferred_deletes()
 
 
 def _blocking(findings) -> list[str]:
@@ -184,13 +203,18 @@ def test_fit_rect_clamps_a_4k_geometry_to_the_laptop_screen():
 
 
 def test_main_window_opens_inside_the_usable_screen(screen_window):
-    """(d) La fenêtre d'origine (1480x920) est bornée : elle ne dépasse plus un écran plus petit qu'elle."""
+    """(d) La fenêtre d'origine (1480x920) est bornée : elle ne dépasse plus un écran plus petit qu'elle.
+
+    Cette fenêtre-ci est construite par le test : il la détruit lui-même (fermée mais vivante, elle restait avec ses threads
+    d'aperçu et d'analyse jusqu'à la fin du module, puis était détruite en bloc avec les fenêtres de la fixture).
+    """
     from PySide6.QtGui import QGuiApplication
 
     from ui.main_window import MainWindow
 
     screen_window(SCREENS[0])                               # isole la configuration avant de construire une fenêtre
     window = MainWindow()
+    window.timeline_timer.stop()
     try:
         area = QGuiApplication.primaryScreen().availableGeometry()
         geometry = window.geometry()
@@ -198,7 +222,7 @@ def test_main_window_opens_inside_the_usable_screen(screen_window):
         assert geometry.height() <= max(area.height(), window.minimumHeight())
         assert geometry.left() >= area.left() and geometry.top() >= area.top()
     finally:
-        window.close()
+        _destroy_windows([window])
 
 
 def test_a_floating_panel_saved_on_a_4k_screen_is_clamped_to_this_screen(screen_window):
