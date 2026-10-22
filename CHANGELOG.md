@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Mises à jour : les releases peuvent être **signées** (Ed25519, ADR-0012) : `SHA256SUMS.txt.sig` prouve que les paquets viennent du mainteneur, ce que l'empreinte seule ne faisait pas. L'application vérifie la signature avant de télécharger le paquet : fausse ou faite par une clé inconnue, elle refuse la version avec un message clair ; absente (release non signée), l'installation assistée continue comme avant ; la fenêtre de mise à jour dit si la version est signée, et Aide › À propos affiche l'identifiant des clés de confiance. Une version égale ou plus ancienne que celle installée n'est jamais téléchargée. Outils : `python -m tools.release gen-update-key` (clé créée en local, jamais affichée) et étape de signature du workflow de release (secret `UPDATE_SIGNING_KEY`). Aucune dépendance ajoutée. Voir `docs/updates.md`, section 10.
+
 ### Fixed
 
 - Export : couper un long clip en deux, ou monter un multicam de plusieurs minutes, ne fait plus monter la mémoire de FFmpeg avec la durée qui sépare les morceaux (130 s coupées à 12 s : 3,3 Go, à 60 s : 5,8 Go, avant ; 0,9 Go maintenant, comme un clip seul ; 20 min de multicam : plus de 200 Go). Chaque morceau d'un média et chaque segment d'angle multicam est décodé et composé pour sa seule fenêtre ; le rendu est identique image par image et échantillon par échantillon (comparé sur FFmpeg 6.1, 7.1 et 9). La mémoire dépend maintenant du nombre de morceaux ouverts à la fois (70 à 140 Mo chacun en 1080p) et le refus avant FFmpeg ne vise plus que ce qui reste coûteux (trop de morceaux ouverts à la fois pour la mémoire de la machine) (défaut D-002 de la recette). Voir `docs/performance.md`, section 11.

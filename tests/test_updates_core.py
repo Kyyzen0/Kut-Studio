@@ -522,3 +522,10 @@ def test_macos_quarantine_flag_is_really_set(tmp_path):
     assert macos_extended_attribute(path, QUARANTINE_ATTRIBUTE) is None
     assert mark_as_downloaded(path, url="https://github.com/x.zip", now=0x5F000000) is True
     assert macos_extended_attribute(path, QUARANTINE_ATTRIBUTE) == b"0081;5f000000;Kut-Studio;"
+
+
+def test_update_offer_keeps_its_positional_order_skipped_before_signature():
+    from core.updates import UpdateOffer
+
+    offer = UpdateOffer(None, None, None, None, True)       # type: ignore[arg-type]
+    assert offer.skipped is True and offer.signature is None

@@ -123,6 +123,35 @@ def test_the_help_menu_offers_the_check_and_the_version(qtbot, monkeypatch, serv
     monkeypatch.setattr("ui.main_window.QMessageBox.about", lambda _parent, title, text: shown.append(text))
     window.about_action.trigger()
     assert shown and f"Kut-Studio {APP_VERSION}" in shown[0] and "/Applications/Kut-Studio.app" in shown[0]
+    assert i18n.translate("update.about.keys", keys=i18n.translate("update.about.keys_none")) in shown[0], (
+        "sans clé configurée, « À propos » le dit"
+    )
+
+
+def test_about_shows_the_identifier_of_each_update_signing_key(qtbot, monkeypatch, server, tmp_path):
+    """Un utilisateur averti compare cet identifiant à celui annoncé par le mainteneur (ADR-0012)."""
+    from fake_update_keys import FAKE_KEY, OTHER_KEY
+
+    monkeypatch.setattr("ui.main_window_mixins.updates.key_ids", lambda: [FAKE_KEY.key_id, OTHER_KEY.key_id])
+    window = _window_for(qtbot, monkeypatch, server, tmp_path)
+    text = window.about_text()
+    assert FAKE_KEY.key_id in text and OTHER_KEY.key_id in text
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_the_ready_dialog_says_whether_the_signature_was_verified(qtbot, tmp_path, verified):
+    from core.update_signature import SignatureResult, SignatureStatus
+
+    dialog = UpdateDialog(FROZEN_MAC)
+    qtbot.addWidget(dialog)
+    status = SignatureResult(SignatureStatus.VERIFIED, key_id="0123456789abcdef") if verified else None
+    dialog.show_download_result(DownloadResult(_offer(), path=tmp_path / "Kut-Studio.zip", sha256="0" * 64,
+                                               signature=status))
+    details = dialog.details.text()
+    if verified:
+        assert "0123456789abcdef" in details
+    else:
+        assert i18n.translate("update.ready.signature_absent") in details
 
 
 def test_no_window_of_the_test_suite_schedules_an_automatic_check(qtbot, monkeypatch, server, tmp_path):

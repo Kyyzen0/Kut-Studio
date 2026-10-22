@@ -15,8 +15,9 @@ Ce module décide ; :mod:`core.update_service` transporte. Tout ce qui peut êtr
   jamais.
 
 Ce que garantit l'empreinte : le fichier reçu est complet et identique à celui que la release publie. Elle vient de la
-même release que le paquet : elle ne prouve pas *qui* l'a publié. L'authenticité repose sur les signatures vérifiées
-par le système (Developer ID et notarisation sous macOS) ; c'est pourquoi le paquet téléchargé reçoit la marque
+même release que le paquet : elle ne prouve pas *qui* l'a publié. L'authenticité repose sur la signature Ed25519 de
+``SHA256SUMS.txt`` (:mod:`core.update_signature`, ADR-0012) quand la release en porte une, et sur les signatures
+vérifiées par le système (Developer ID et notarisation sous macOS) ; c'est pourquoi le paquet téléchargé reçoit la marque
 « téléchargé d'Internet » du système (:func:`mark_as_downloaded`), comme par un navigateur, au lieu d'y échapper.
 """
 
@@ -39,6 +40,7 @@ from .platform_paths import user_cache_dir
 from .release_assets import (
     CHECKSUMS_FILE,
     MAX_CHECKSUMS_BYTES,
+    SIGNATURE_FILE,
     ChecksumFileError,
     OperatingSystem,
     Target,
@@ -81,6 +83,12 @@ class UpdateErrorKind(str, Enum):
     DISK = "disk"
     MARK_FAILED = "mark_failed"
     UNSUPPORTED = "unsupported"
+    SIGNATURE_MISSING = "signature_missing"
+    """Signature exigée (installation automatique) mais non publiée."""
+    SIGNATURE_INVALID = "signature_invalid"
+    SIGNATURE_UNKNOWN_KEY = "signature_unknown_key"
+    NOT_NEWER = "not_newer"
+    """Version égale ou plus ancienne que l'installée : jamais téléchargée (protection contre le retour en arrière)."""
 
 
 class UpdateError(Exception):
@@ -160,6 +168,11 @@ class Release:
     @property
     def checksums(self) -> ReleaseAsset | None:
         return next((asset for asset in self.assets if asset.name == CHECKSUMS_FILE), None)
+
+    @property
+    def signature(self) -> ReleaseAsset | None:
+        """Signature détachée de ``SHA256SUMS.txt`` (ADR-0012), si la release est signée."""
+        return next((asset for asset in self.assets if asset.name == SIGNATURE_FILE), None)
 
 
 def releases_api_url(repository: str = GITHUB_REPOSITORY, api_base: str = GITHUB_API) -> str:
@@ -274,6 +287,8 @@ class UpdateOffer:
     checksums: ReleaseAsset | None
     skipped: bool = False
     """L'utilisateur avait choisi d'ignorer cette version (seule une recherche manuelle la montre alors)."""
+    signature: ReleaseAsset | None = None
+    """``SHA256SUMS.txt.sig`` quand la release est signée (sinon ``None`` : installation assistée seulement)."""
 
     @property
     def version(self) -> Version:
@@ -340,6 +355,7 @@ def evaluate_releases(
         target=target,
         package=newest.package_for(target),
         checksums=newest.checksums,
+        signature=newest.signature,
         skipped=skipped,
     )
     return CheckResult(mode, current, offer=offer, hidden_prerelease=hidden_prerelease)
