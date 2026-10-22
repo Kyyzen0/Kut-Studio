@@ -213,7 +213,7 @@ class SideRail(QWidget):
         self._busy = True
         try:
             width = self._rail_width
-            for _ in range(8):
+            for _ in range(16):
                 for button in self._buttons.values():
                     button.ensurePolished()
                 widest = max((QFontMetrics(b.font()).horizontalAdvance(b.text()) for b in self._buttons.values()), default=0)
