@@ -259,3 +259,80 @@ def test_the_rail_label_is_not_clipped_by_the_icon(french, scale):
     text_height = QFontMetrics(font).height()
     for button in rail._buttons.values():
         assert button.iconSize().height() + text_height <= button.height() - 4, (button.text(), button.iconSize(), button.height())
+
+
+# --- polices plus larges que celles de macOS : un nom du rail n'est jamais coupé (CI Debian, PR #259) --------------------------
+# Le rail calcule sa largeur à partir de la police réelle de ses boutons. Ces tests la rendent plus large à volonté (sur le Mac du
+# développeur comme en CI) : taille de police du rail (RAIL_FONT_PX) plus grande, et famille « DejaVu Sans » si elle est installée.
+
+def _assert_no_name_cut(rail, label: str) -> None:
+    from ui.side_rail import RAIL_MAX_WIDTH
+
+    assert rail.rail_width() <= RAIL_MAX_WIDTH and rail.width() == rail.rail_width(), (label, rail.width())
+    for button in rail._buttons.values():
+        advance = QFontMetrics(button.font()).horizontalAdvance(button.text())
+        assert advance <= button.width() - 4, (label, button.text(), advance, button.width())
+        assert button.width() == rail.width() - 16
+
+
+@pytest.mark.parametrize("font_px", [10, 12, 14, 18])
+@LANGUAGES
+def test_the_rail_width_follows_the_widest_name_at_any_font(french, monkeypatch, language, font_px):
+    import ui.side_rail as side_rail
+
+    monkeypatch.setattr(side_rail, "RAIL_FONT_PX", font_px)
+    i18n.set_language(language)
+    rail = french.side_rail
+    rail.retranslate()
+    QApplication.processEvents()
+    _assert_no_name_cut(rail, f"{language}/{font_px}px")
+    widths = rail.rail_width()
+    assert widths >= 84
+    if font_px >= 14:
+        assert widths > 84                      # la barre s'est élargie (ou la police a baissé) : jamais d'élision
+    print(f"rail {language} {font_px}px -> {widths}px")
+
+
+def test_the_rail_widens_for_a_wider_font_family_and_follows_app_font_changes(french):
+    from PySide6.QtGui import QFont, QFontDatabase
+
+    rail = french.side_rail
+    base_font = QApplication.font()
+    families = QFontDatabase.families()
+    wide = QFont(base_font)
+    wide.setFamily("DejaVu Sans" if "DejaVu Sans" in families else base_font.family())
+    wide.setPointSizeF(max(1.0, base_font.pointSizeF()) * 1.25) if base_font.pointSizeF() > 0 else wide.setPixelSize(round(base_font.pixelSize() * 1.25))
+    try:
+        QApplication.setFont(wide)
+        QApplication.processEvents()
+        i18n.set_language("es")                                    # « Transiciones » : le plus long nom
+        QApplication.processEvents()
+        _assert_no_name_cut(rail, "police de repli plus large")
+    finally:
+        QApplication.setFont(base_font)
+        i18n.set_language("fr")
+
+
+def test_a_rail_at_its_widest_still_fits_the_three_columns_of_the_smallest_window(french, monkeypatch):
+    """Rail à 120 px au niveau Avancé : le minimum de la fenêtre suffit, rien ne déborde ni ne se chevauche."""
+    from tools import ui_audit as audit
+    from ui.side_rail import RAIL_MAX_WIDTH
+
+    import ui.side_rail as side_rail
+
+    win = french
+    win.set_usage_level("advanced")
+    monkeypatch.setattr(side_rail, "RAIL_FONT_PX", 20)
+    i18n.set_language("es")
+    win.side_rail.retranslate()
+    QApplication.processEvents()
+    assert RAIL_MAX_WIDTH - 12 <= win.side_rail.rail_width() <= RAIL_MAX_WIDTH      # au plafond (ou la police a baissé d'un cran pour y tenir)
+    win.resize(win.minimumSize())
+    audit.settle(win)
+    bar = win.side_rail.parentWidget()
+    assert win.width() >= win.minimumWidth() and win.size() == win.minimumSize()
+    found = [str(f) for f in audit.parent_overflow(bar) + audit.sibling_overlaps(bar)]
+    assert not found, found
+    panel = win.properties_panel
+    assert panel.width() >= 240 and win.preview_panel.width() > 0
+    _assert_no_name_cut(win.side_rail, "fenêtre minimale")

@@ -34,6 +34,9 @@ class _LevelChip(QToolButton):
     def full_text(self) -> str:
         return self._full
 
+    def compact_text(self) -> str:
+        return self._compact
+
     def form(self) -> str:
         return self._form
 
