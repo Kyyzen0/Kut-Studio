@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Export : couper un long clip en deux, ou monter un multicam de plusieurs minutes, ne fait plus monter la mémoire de FFmpeg avec la durée qui sépare les morceaux (130 s coupées à 12 s : 3,3 Go, à 60 s : 5,8 Go, avant ; 0,9 Go maintenant, comme un clip seul ; 20 min de multicam : plus de 200 Go). Chaque morceau d'un média et chaque segment d'angle multicam est décodé et composé pour sa seule fenêtre ; le rendu est identique image par image et échantillon par échantillon (comparé sur FFmpeg 6.1, 7.1 et 9). La mémoire dépend maintenant du nombre de morceaux ouverts à la fois (70 à 140 Mo chacun en 1080p) et le refus avant FFmpeg ne vise plus que ce qui reste coûteux (trop de morceaux ouverts à la fois pour la mémoire de la machine) (défaut D-002 de la recette). Voir `docs/performance.md`, section 11.
 - Export : un montage dont FFmpeg devrait garder des dizaines de gigaoctets d'images en mémoire (plusieurs morceaux d'un même média ou d'un même angle multicam séparés par un long passage, par exemple 20 min de multicam) est refusé **avant** le lancement, avec la mémoire estimée, au lieu de remplir la mémoire puis le disque (défaut D-002 de la recette). Voir `docs/performance.md`, section 11.
 
 ### Added
@@ -23,6 +24,19 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Mises à jour : **installation automatique sous macOS** (« Installer et redémarrer »). Quand la signature Ed25519 de la version est vérifiée et que `Kut-Studio.app` est remplaçable (dossier et bundle inscriptibles, hors translocation et volume en lecture seule), l'application extrait la nouvelle version à côté de l'ancienne, la valide (identifiant, version, architecture, `codesign`, `spctl`, même équipe) avant de toucher à quoi que ce soit, se ferme par le chemin normal (projet non enregistré proposé à l'enregistrement, rendu en cours confirmé ; annuler arrête tout), puis un assistant `/bin/sh` échange les deux applications, rouvre Kut-Studio et attend qu'elle confirme son démarrage ; sinon il **remet l'ancienne version** et le dit au lancement suivant (« Mise à jour installée : X.Y.Z » ou « La mise à jour a échoué », avec le journal). Rien n'est installé sans accord ; sinon, l'installation assistée reste inchangée (Windows et Linux aussi). Voir [docs/updates.md](docs/updates.md), section 3 bis, et la recette [docs/recette/mise-a-jour-automatique.md](docs/recette/mise-a-jour-automatique.md).
 - Interne : ADR-0011 feuille de route vers la v1 (acceptée le 2026-10-21) : sept phases à portes de sortie mesurables (recette sur machines réelles, moteur, interopérabilité et livraison, noyau de motion design, extensibilité, page signature), backlog d'intelligence, parallélisation, décisions à prendre et tableau croisé des écarts par public. Aucun changement de comportement. Voir [docs/adr/0011-feuille-de-route-v1.md](docs/adr/0011-feuille-de-route-v1.md).
 - Interne : recette : banc de recette scripté (`python -m tools.recette`, ADR-0011 phase 1) : trois parcours (TikTok 60 s, YouTube 20 min multicam, motion design + 3D) construits par script déclaratif et exportés par la ligne de commande, sans fenêtre, sur des médias générés de façon déterministe (aucun média dans le dépôt) ; durées, pic de mémoire, `ffprobe`, image noire ou gelée, plantage par signal, rapport JSON + Markdown avec écarts à une référence par ratios, smoke test CI de 10 s en CPU, relevé thermique et plantages par heure. La procédure en vraie fenêtre (M1 Air, M4 mini) est dans `docs/recette/`.
+
+### Fixed
+
+- Sur un MacBook Air 13" (1280x800 ou 1440x900), la fenêtre tient dans l'écran : le Dock ne passe plus par-dessus la timeline, qui montre au moins trois pistes. La fenêtre s'ouvre à la taille de l'écran (et non plus en 1480x920), sa taille minimale baisse (page Couleur 850 -> 670 px, page Audio 1049 -> 686 px) et un panneau détaché enregistré sur un grand écran revient dans l'écran.
+- Panneaux Transitions, Effets et Effets audio : plus de grand vide sous les puces de catégorie, la liste des préréglages montre au moins trois lignes, la bannière d'aide ne chevauche plus la liste, et quand la colonne est trop basse la page défile au lieu de superposer ses éléments (« Enregistrer comme preset » devient un bouton-icône à côté de l'action principale).
+
+### Changed
+
+- **Navigation plus lisible** (partie B du chantier « trouver facilement »). La barre d'icônes de gauche écrit maintenant **le nom de chaque section sous son icône** (Médias, Séquences, Éditer, Effets, Couleur, Texte, Transitions, Audio, Graphiques, Modèles) : la barre est plus large (84 px) ; raccourcis et infobulles inchangés. Les onglets de l'inspecteur montrent **tous** leurs sept boutons : Graphiques, Compositing et **Suivi** ne sont plus cachés derrière un menu « ••• » (ils passent sur une deuxième ligne quand l'inspecteur est étroit). Dans la barre du haut, le sélecteur de niveau dit « Niveau : Avancé » (le nom du niveau seul quand la place manque). Les niveaux d'usage (Simple, Studio, Avancé) ne changent pas.
+
+### Fixed
+
+- Les losanges d'images clés ‹ ◆ › de l'inspecteur (étalonnage et effets) flottaient entre deux champs, ce qui faisait croire qu'ils appartenaient au réglage suivant : ils sont maintenant **à droite du champ qu'ils animent, sur la même ligne**. Dans l'étalonnage, les libellés passent tous ensemble au-dessus de leur champ quand l'inspecteur est étroit (au lieu de seulement « Exposition »).
 
 ## [0.9.0] - 2026-10-21
 

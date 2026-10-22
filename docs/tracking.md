@@ -12,7 +12,7 @@ camera solve, planar tracking, détection d'objets, génération de contenu.
 ## Pour l'utilisateur
 
 1. Sélectionner un clip vidéo, ouvrir l'onglet **Suivi** de l'inspecteur
-   (menu « ••• », ou *Calques → Suivi (tracking)…*).
+   (onglet « Suivi » de l'inspecteur, ou *Calques → Suivi (tracking)…*).
 2. **Ajouter** un tracker (il apparaît au centre ; double-cliquer dans le
    viewer le pose à cet endroit). Le glisser sur un détail contrasté — un
    coin, une tache, un logo — jamais sur une zone uniforme.

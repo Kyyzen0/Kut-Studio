@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QApplication, QFormLayout, QLayout, QWidget
 
-IGNORED_NAMES = ("level_gate", "advanced_fold", "more_options_button", "fill_frame_quick")
+IGNORED_NAMES = ("level_gate", "advanced_fold", "more_options_button", "fill_frame_quick", "field_with_keys")
 
 
 def _entries(layout: QLayout) -> list[int]:

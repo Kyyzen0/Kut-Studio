@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -24,7 +23,7 @@ from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
 from ui.properties_widgets.section_box import SectionBox
-from ui.adaptive_layout import allow_shrinking
+from ui.adaptive_layout import FlowLayout, allow_shrinking
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
@@ -40,7 +39,7 @@ from core.usage_level import UsageLevel
 from ui.properties_widgets.tolerant_spin_box import TolerantDoubleSpinBox
 
 TRACKING_TAB = 6
-"""Onglet « Suivi » (menu « ••• »)."""
+"""Onglet « Suivi »."""
 
 
 class ConstructionMixin:
@@ -84,17 +83,10 @@ class ConstructionMixin:
         return label
 
     def retranslate(self) -> None:
-        """Onglets, menu « ••• », titres de groupes et libellés de formulaire dans la langue courante."""
+        """Onglets, titres de groupes et libellés de formulaire dans la langue courante."""
         for button, key in zip(self.inspector_tab_buttons, self._TAB_KEYS):
             button.setText(translate(key))
-        more = translate("inspector.more_tooltip")
-        self.inspector_more_button.setToolTip(more)
-        self.inspector_more_button.setAccessibleName(more)
-        for action, key in self._more_menu_actions:
-            action.setText(translate(key))
-        active = next((i for i, button in enumerate(self.inspector_tab_buttons) if button.isChecked()), 0)
-        if active in {4, 5, 6}:
-            self.inspector_more_button.setText(translate(self._TAB_KEYS[active]))
+            button.setAccessibleName(translate(key))
         for group, key in self._group_titles:
             group.setTitle(translate(key))
         self.time_section.retranslate()
@@ -123,19 +115,17 @@ class ConstructionMixin:
         title.setStyleSheet(label_style(10, "muted", 800))
         title.hide()
 
-        # Onglets principaux : Clip / Couleur / Audio / Effets. Les outils
-        # spécialisés restent disponibles dans un menu compact afin que
-        # l'inspecteur conserve une vraie largeur de travail.
+        # Sept onglets, tous visibles (un menu « ••• » cachait Graphiques, Compositing et Suivi).
         # Utilisation de QPushButton ``checkable`` plutôt que
         # ``QListWidget`` pour garantir un affichage horizontal compact.
         self.inspector_tabs_row = QWidget()
-        self.inspector_tabs_layout = QHBoxLayout(self.inspector_tabs_row)
-        self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
-        self.inspector_tabs_layout.setSpacing(Spacing.xs)
+        self.inspector_tabs_layout = FlowLayout(self.inspector_tabs_row, spacing=Spacing.xs)
+        self.inspector_tabs_layout.setContentsMargins(0, 0, 0, Spacing.xs)
         self.inspector_tab_buttons: list[QPushButton] = []
         for index, key in enumerate(self._TAB_KEYS):
             button = QPushButton(translate(key))
             button.setObjectName("inspectorTab")
+            button.setAccessibleName(translate(key))
             button.setCheckable(True)
             button.setChecked(index == 0)
             button.setCursor(Qt.PointingHandCursor)
@@ -157,51 +147,11 @@ class ConstructionMixin:
             )
             self.inspector_tab_buttons.append(button)
 
-        # L'ordre visuel suit le geste attendu dans la maquette tout en
-        # conservant les indices historiques utilisés par le contrôleur.
-        for index in (0, 1, 3, 2):
+        # L'ordre visuel suit le geste attendu dans la maquette tout en conservant les indices historiques utilisés par le
+        # contrôleur. Les sept onglets sont toujours des boutons visibles (plus de menu « ••• » : le Suivi, le Compositing et les
+        # Graphiques se trouvent d'un clic) ; ils passent à la ligne quand l'inspecteur est étroit au lieu de se cacher.
+        for index in (0, 1, 3, 2, 4, 5, 6):
             self.inspector_tabs_layout.addWidget(self.inspector_tab_buttons[index])
-        # Graphiques et Compositing passent par le menu « ••• » : leurs
-        # boutons gardent l'état coché mais restent rattachés au panneau
-        # pour ne pas devenir des fenêtres orphelines.
-        for index in (4, 5, 6):
-            self.inspector_tab_buttons[index].setParent(self.inspector_tabs_row)
-            self.inspector_tab_buttons[index].hide()
-
-        self.inspector_more_button = QToolButton()
-        self.inspector_more_button.setObjectName("inspectorMore")
-        self.inspector_more_button.setText("•••")
-        self.inspector_more_button.setToolTip(translate("inspector.more_tooltip"))
-        self.inspector_more_button.setAccessibleName(translate("inspector.more_tooltip"))
-        self.inspector_more_button.setStyleSheet(
-            f"QToolButton {{ color: {COLORS['muted']}; background: transparent;"
-            f" border: none; border-radius: 4px; padding: 5px 6px; }}"
-            f"QToolButton:hover {{ color: {COLORS['text']};"
-            f" background: {COLORS['surface_hover']}; }}"
-            f"QToolButton[active='true'] {{ color: {COLORS['accent']}; }}"
-        )
-        self.inspector_more_button.setPopupMode(QToolButton.InstantPopup)
-        more_menu = QMenu(self.inspector_more_button)
-        graphics_action = more_menu.addAction(translate("rail.graphics"))
-        graphics_action.triggered.connect(
-            lambda _checked=False: self._select_inspector_tab(4)
-        )
-        compositing_action = more_menu.addAction(translate("inspector.tab.compositing"))
-        compositing_action.triggered.connect(
-            lambda _checked=False: self._select_inspector_tab(5)
-        )
-        tracking_action = more_menu.addAction(translate("tracking.title"))
-        tracking_action.triggered.connect(
-            lambda _checked=False: self._select_inspector_tab(TRACKING_TAB)
-        )
-        self._more_menu_actions = [
-            (graphics_action, "rail.graphics"),
-            (compositing_action, "inspector.tab.compositing"),
-            (tracking_action, "tracking.title"),
-        ]
-        self.inspector_more_button.setMenu(more_menu)
-        self.inspector_tabs_layout.addWidget(self.inspector_more_button)
-        self.inspector_tabs_layout.addStretch(1)
         header_layout.addWidget(self.inspector_tabs_row)
         outer_layout.addWidget(header)
 

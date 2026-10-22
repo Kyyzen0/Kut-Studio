@@ -101,7 +101,7 @@ class _Sizes:
     top_bar: int = 50
     # Rail vertical principal, volontairement icon-only. Les libellés
     # restent disponibles dans les infobulles et via l'accessibilité Qt.
-    side_rail_width: int = 52
+    side_rail_width: int = 84          # le nom de chaque section est écrit sous son icône (« Transitions », « Transiciones »)
     panel_min_width: int = 240
     panel_default_width: int = 300
     # En-tête de panneau : la même hauteur partout (bibliothèque, visionneuse, inspecteur, scopes, timeline).
@@ -113,14 +113,16 @@ class _Sizes:
     timeline_header_height: int = 38
     # Doit rester ≤ ``MIN_SIZE[PanelId.TIMELINE]`` (core.workspace_state) : un panneau plus haut que le
     # minimum de sa zone déborde de son hôte (30 px rognés à 1280 × 720).
-    timeline_min_height: int = 240
+    timeline_min_height: int = 260     # au moins 3 pistes visibles : en-têtes 103 px + 3 x 46 px + barre de défilement
     # Colonne de la visionneuse : hauteur minimale utile de la visionneuse (en-tête, image, transport) et
     # plancher des scopes, qui cèdent d'abord quand la fenêtre est basse (voir ``ui.viewer_host``).
-    monitor_min_height: int = 244
+    monitor_min_height: int = 200
     scopes_min_height: int = 128
     scopes_comfort_height: int = 200
     # En-tête (recherche + puces de filtre) d'une page de bibliothèque : il défile en dessous de cette hauteur.
     library_header_min_height: int = 64
+    # Liste principale d'une page de bibliothèque : au moins trois lignes visibles, sinon elle défile (jamais « une ligne et demie »).
+    library_list_min_height: int = 188
     # Barre de progression : une seule épaisseur dans toute l'application (proxys, suivi, flux optique, export, import).
     progress_height: int = 10
     # Zone cliquable minimale d'un bouton-icône (même si l'icône est plus petite) : la cible tactile et souris.

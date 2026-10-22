@@ -23,10 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from core.transitions import transition_type_values
-from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
+from ui.adaptive_layout import ElidedLabel, FlowLayout
 from ui.design_system import DIALOG_MARGINS, Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
-from ui.icons import IconName, make_icon
+from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
 from ui.project_panel_widgets.wide_button import make_wide_button
@@ -107,7 +107,7 @@ class TransitionLibraryView(QWidget):
             button = self._make_filter_button(labels[key], key)
             filter_layout.addWidget(button)
         header_layout.addWidget(self.filter_row)
-        layout.addWidget(ShrinkableScrollArea(header, Sizes.library_header_min_height))
+        layout.addWidget(header)
 
         # --- Astuce + état sélection clips -----------------------------
         self.selection_hint = QLabel(
@@ -115,7 +115,7 @@ class TransitionLibraryView(QWidget):
         )
         self.selection_hint.setWordWrap(True)
         self.selection_hint.setStyleSheet(
-            f"color: {COLORS['muted']}; font-size: 11px; padding: 4px 6px;"
+            f"color: {COLORS['muted']}; font-size: 11px; padding: 2px 6px;"
             f" background: {COLORS['panel_alt']};"
             f" border: 1px solid {COLORS['border']};"
             f" border-radius: 6px;"
@@ -124,7 +124,8 @@ class TransitionLibraryView(QWidget):
         hint_layout = QHBoxLayout(hint_container)
         hint_layout.setContentsMargins(Spacing.sm, 0, Spacing.sm, 0)
         hint_layout.addWidget(self.selection_hint)
-        layout.addWidget(hint_container)
+        # La bannière est la première ligne de la zone défilante (et non un bloc fixe au-dessus) : elle ne peut jamais
+        # chevaucher la liste, et elle ne vole plus ~40 px à une liste déjà courte sur un portable.
 
         # --- Zone défilante : cartes preset ----------------------------
         self.scroll_area = QScrollArea()
@@ -138,18 +139,24 @@ class TransitionLibraryView(QWidget):
         )
         self.cards_host = QWidget()
         self.cards_host.setObjectName("transitionsCardsHost")
-        self.cards_layout = QVBoxLayout(self.cards_host)
+        host_layout = QVBoxLayout(self.cards_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(Spacing.xs)
+        host_layout.addWidget(hint_container)
+        self.cards_layout = QVBoxLayout()
+        host_layout.addLayout(self.cards_layout, 1)
         self.cards_layout.setContentsMargins(Spacing.sm, 0, Spacing.sm, 0)
         self.cards_layout.setSpacing(Spacing.xs)
         self.cards_layout.addStretch(1)
         self.scroll_area.setWidget(self.cards_host)
+        self.scroll_area.setMinimumHeight(Sizes.library_list_min_height)
         layout.addWidget(self.scroll_area, 1)
 
         # --- Durée + bouton d'action principal -------------------------
         actions = QWidget()
         actions_layout = QVBoxLayout(actions)
         actions_layout.setContentsMargins(
-            Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm
+            Spacing.sm, Spacing.xs, Spacing.sm, Spacing.xs
         )
         actions_layout.setSpacing(Spacing.xs)
 
@@ -171,7 +178,6 @@ class TransitionLibraryView(QWidget):
         self.duration_spin.setValue(0.5)
         self.duration_spin.setMinimumWidth(82)
         duration_layout.addWidget(self.duration_spin, 1)
-        actions_layout.addWidget(duration_row)
 
         self.add_button = make_wide_button(
             IconName.PLUS,
@@ -180,16 +186,18 @@ class TransitionLibraryView(QWidget):
             tooltip=translate("transitions.library.apply"),
         )
         self.add_button.clicked.connect(self._emit_add_requested)
-        actions_layout.addWidget(self.add_button)
 
-        self.save_button = make_wide_button(
-            IconName.SAVE,
-            translate("transitions.library.save"),
-            accent=False,
-            tooltip=translate("transitions.library.save"),
+        # « Enregistrer comme preset » : bouton-icône à côté de la durée (il prenait une rangée entière, ~40 px, sur une
+        # liste déjà courte) ; le libellé reste dans l'infobulle et le nom accessible.
+        save_label = translate("transitions.library.save")
+        self.save_button = IconButton(
+            icon=IconName.SAVE, tooltip=save_label, size=Sizes.icon_button, accent=False,
         )
+        self.save_button.setAccessibleName(save_label)
         self.save_button.clicked.connect(self._emit_save_requested)
-        actions_layout.addWidget(self.save_button)
+        duration_layout.addWidget(self.save_button)
+        actions_layout.addWidget(duration_row)
+        actions_layout.addWidget(self.add_button)
         layout.addWidget(actions)
 
         self._refresh_buttons()
