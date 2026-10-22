@@ -432,9 +432,10 @@ def pid_alive(pid: int) -> bool:
 
 
 def helper_running(lock: Path, alive: Callable[[int], bool] = pid_alive) -> bool:
-    """Un assistant d'installation est-il en cours (verrou écrit avec son pid, processus vivant) ?"""
+    """Un assistant d'installation est-il en cours ? Le verrou est un dossier contenant le pid de l'assistant."""
     try:
-        return alive(int(lock.read_text(encoding="utf-8").strip() or "0"))
+        target = lock / "pid" if lock.is_dir() else lock           # (ancien format : un simple fichier)
+        return alive(int(target.read_text(encoding="utf-8").strip() or "0"))
     except (OSError, ValueError):
         return False
 
@@ -474,7 +475,10 @@ def recover_leftovers(
     """
     if helper_running(lock, alive):
         return RecoveryReport(busy=True)
-    lock.unlink(missing_ok=True)
+    if lock.is_dir():
+        shutil.rmtree(lock, ignore_errors=True)
+    else:
+        lock.unlink(missing_ok=True)
     removed: list[Path] = []
     kept: list[Path] = []
     restored: Path | None = None

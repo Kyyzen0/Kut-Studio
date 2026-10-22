@@ -14,8 +14,16 @@ Déroulé (le script est **idempotent** : il lit l'état des dossiers au lieu de
    ``Kut-Studio.app`` ; un échec du second renommage remet aussitôt la précédente ;
 3. ``open`` de la nouvelle application, puis attente du fichier « démarré » qu'elle écrit (version attendue, processus
    vivant ``KUT_UPD_GRACE_SECONDS`` plus tard), au plus ``KUT_UPD_START_SECONDS`` (90 s) ;
-4. succès : statut ``ok``, sauvegarde supprimée ; échec ou signal : **retour arrière** (nouvelle supprimée, précédente
-   remise, relancée) et statut ``rolled_back``.
+4. succès : statut ``ok``, sauvegarde supprimée ; échec ou signal : **retour arrière** (processus de la nouvelle version
+   arrêtés : SIGTERM, attente, SIGKILL, attente ; nouvelle supprimée, précédente remise, relancée) et statut
+   ``rolled_back``. Si un processus de la nouvelle version survit à SIGKILL : statut ``rollback_impossible``, rien n'est
+   déplacé ni supprimé, la précédente n'est pas lancée.
+
+**Verrou** : ``<cache>/updates/install.lock`` est un **dossier** créé par ``mkdir`` (exclusif, atomique) qui contient le pid de
+l'assistant. Un second assistant ne l'obtient pas et sort (code 6) avant d'examiner quoi que ce soit ; un verrou dont le
+propriétaire est mort est renommé vers un nom unique puis supprimé, jamais supprimé en place. Libéré à toute sortie
+(``trap EXIT``) sauf SIGKILL. **Renommages** : ``safe_mv`` n'écrit jamais dans une destination existante (``mv`` y
+imbriquerait le dossier) : test avant, nom unique, test juste avant le dernier renommage, vérification après.
 
 Chaque étape écrit dans ``install.log``. Tout ``rm -rf`` passe par ``safe_rm``, qui refuse un chemin dont le nom n'est
 pas celui d'un staging ou d'une sauvegarde de Kut-Studio.
@@ -57,7 +65,10 @@ export PATH
 : "${KUT_UPD_WAIT_SECONDS:=120}"
 : "${KUT_UPD_START_SECONDS:=90}"
 : "${KUT_UPD_GRACE_SECONDS:=3}"
+: "${KUT_UPD_TERM_SECONDS:=5}"
+: "${KUT_UPD_KILL_SECONDS:=5}"
 PHASE=init
+OWNS_LOCK=0
 
 log() {
     printf '%s [%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$$" "$*" >> "$KUT_UPD_LOG" 2>/dev/null
@@ -69,6 +80,14 @@ status() {
         "$1" "$KUT_UPD_VERSION" "$KUT_UPD_FROM" "$2" > "$_tmp" 2>/dev/null && mv -f "$_tmp" "$KUT_UPD_STATUS"
 }
 
+status_if_absent() {
+    # Écrit le statut seulement s'il n'existe pas (lien dur : atomique, ne remplace jamais le statut d'un autre assistant).
+    _tmp="$KUT_UPD_STATUS.tmp.$$"
+    printf '{"result":"%s","version":"%s","previous":"%s","reason":"%s"}\n' \
+        "$1" "$KUT_UPD_VERSION" "$KUT_UPD_FROM" "$2" > "$_tmp" 2>/dev/null && ln "$_tmp" "$KUT_UPD_STATUS" 2>/dev/null
+    rm -f "$_tmp"
+}
+
 halt_after() {
     # Crochet de test : simule un arrêt brutal (SIGKILL) du script, sans nettoyage, après l'étape nommée.
     if [ "${KUT_UPD_HALT_AFTER:-}" = "$1" ]; then
@@ -78,8 +97,11 @@ halt_after() {
 }
 
 safe_rm() {
-    case "${1##*/}" in
+    _base=${1##*/}
+    _lockbase=${KUT_UPD_LOCK##*/}
+    case "$_base" in
         .Kut-Studio-update-*|.Kut-Studio.app.previous-*) ;;
+        "$_lockbase".stale.*) ;;
         *) log "suppression refusée : $1"; return 1 ;;
     esac
     case "$1" in
@@ -89,24 +111,114 @@ safe_rm() {
     rm -rf -- "$1"
 }
 
-launch() {
-    "$KUT_UPD_OPEN" "$1" >> "$KUT_UPD_LOG" 2>&1
+safe_mv() {
+    # Renomme le dossier $1 en $2 sans jamais l'imbriquer dans une destination existante (``mv`` le ferait) :
+    # la destination est testée avant, le dossier passe par un nom unique, la destination est testée à nouveau juste
+    # avant le dernier renommage, puis on vérifie après coup que rien n'a été imbriqué.
+    _src=$1
+    _dst=$2
+    if [ ! -d "$_src" ] || [ -L "$_src" ]; then
+        log "renommage refusé : source absente ou lien : $_src"
+        return 1
+    fi
+    if [ -e "$_dst" ] || [ -L "$_dst" ]; then
+        log "renommage refusé : la destination existe : $_dst"
+        return 1
+    fi
+    _tmp="$_dst.mv.$$"
+    if [ -e "$_tmp" ] || [ -L "$_tmp" ]; then
+        log "renommage refusé : le nom temporaire existe : $_tmp"
+        return 1
+    fi
+    if ! mv "$_src" "$_tmp"; then
+        log "ÉCHEC du renommage de $_src"
+        return 1
+    fi
+    if [ -e "$_dst" ] || [ -L "$_dst" ]; then
+        log "la destination est apparue : $_src est remis en place"
+        mv "$_tmp" "$_src" || log "ÉCHEC de la remise en place de $_src (reste sous $_tmp)"
+        return 1
+    fi
+    if ! mv "$_tmp" "$_dst"; then
+        log "ÉCHEC de la mise en place de $_dst : $_src est remis en place"
+        mv "$_tmp" "$_src" || log "ÉCHEC de la remise en place de $_src (reste sous $_tmp)"
+        return 1
+    fi
+    if [ -e "$_dst/${_tmp##*/}" ]; then
+        log "imbrication détectée dans $_dst : annulation"
+        mv "$_dst/${_tmp##*/}" "$_src" || log "ÉCHEC de l'annulation (reste sous $_dst/${_tmp##*/})"
+        return 1
+    fi
+    return 0
 }
 
-kill_app() {
-    # Arrête ce qui tourne depuis CE bundle (nouvelle application figée) : uniquement les exécutables de son dossier.
-    ps -ax -o pid=,command= 2>/dev/null | while read -r _pid _cmd; do
+do_kill() {
+    # KUT_UPD_KILL : crochet de test (simule un processus qui survit à un signal).
+    if [ -n "${KUT_UPD_KILL:-}" ]; then
+        "$KUT_UPD_KILL" "$@"
+    else
+        kill "$@"
+    fi
+}
+
+app_pids() {
+    # Processus lancés depuis CE bundle uniquement : commande dont le début est « <bundle>/Contents/MacOS/ »
+    # (chemin exact, jamais un motif large ; ``ps -axo pid=,command=`` filtré par ce préfixe).
+    ps -axo pid=,command= 2>/dev/null | while read -r _pid _cmd; do
         case "$_cmd" in
-            "$1"/Contents/MacOS/*) [ "$_pid" != "$$" ] && kill -TERM "$_pid" 2>/dev/null ;;
+            "$1"/Contents/MacOS/*) [ "$_pid" != "$$" ] && echo "$_pid" ;;
         esac
     done
-    sleep 1
+}
+
+wait_app_gone() {
+    _i=0
+    _max=$(($2 * 5))
+    while [ -n "$(app_pids "$1")" ]; do
+        _i=$((_i + 1))
+        if [ "$_i" -gt "$_max" ]; then
+            return 1
+        fi
+        sleep 0.2
+    done
+    return 0
+}
+
+stop_app() {
+    # SIGTERM, attente (KUT_UPD_TERM_SECONDS, 5 s), puis SIGKILL des processus qui correspondent ENCORE (la liste est
+    # relue : un pid réutilisé par un autre programme ne correspond plus), attente (KUT_UPD_KILL_SECONDS, 5 s).
+    # Échec (1) si un processus du bundle tourne toujours.
+    _pids=$(app_pids "$1")
+    if [ -z "$_pids" ]; then
+        return 0
+    fi
+    log "arrêt (SIGTERM) des processus de $1 : $(echo $_pids)"
+    for _p in $_pids; do
+        do_kill -TERM "$_p" 2>/dev/null
+    done
+    if wait_app_gone "$1" "$KUT_UPD_TERM_SECONDS"; then
+        return 0
+    fi
+    _pids=$(app_pids "$1")
+    log "SIGKILL des processus qui résistent : $(echo $_pids)"
+    for _p in $_pids; do
+        do_kill -KILL "$_p" 2>/dev/null
+    done
+    if wait_app_gone "$1" "$KUT_UPD_KILL_SECONDS"; then
+        return 0
+    fi
+    log "processus encore vivants : $(echo $(app_pids "$1"))"
+    return 1
+}
+
+launch() {
+    "$KUT_UPD_OPEN" "$1" >> "$KUT_UPD_LOG" 2>&1
 }
 
 restore_if_missing() {
     # Entre les deux renommages : l'application a disparu, la précédente est là.
     if [ ! -e "$KUT_UPD_APP" ] && [ -d "$KUT_UPD_PREVIOUS" ]; then
-        if mv "$KUT_UPD_PREVIOUS" "$KUT_UPD_APP"; then
+        if safe_mv "$KUT_UPD_PREVIOUS" "$KUT_UPD_APP"; then
             log "précédente remise en place"
             return 0
         fi
@@ -119,18 +231,23 @@ restore_if_missing() {
 rollback() {
     log "retour arrière : $1"
     PHASE=rollback
-    kill_app "$KUT_UPD_APP"
+    if ! stop_app "$KUT_UPD_APP"; then
+        # Rien n'est déplacé ni supprimé tant qu'un processus de la nouvelle version tourne ; la précédente n'est pas lancée.
+        log "retour arrière impossible : un processus de la nouvelle version tourne encore ; bundles intacts"
+        status failed rollback_impossible
+        exit 7
+    fi
     if [ -d "$KUT_UPD_PREVIOUS" ]; then
         _failed="$KUT_UPD_PREVIOUS.failed"
         safe_rm "$_failed"
         if [ -e "$KUT_UPD_APP" ]; then
-            if ! mv "$KUT_UPD_APP" "$_failed"; then
+            if ! safe_mv "$KUT_UPD_APP" "$_failed"; then
                 log "ÉCHEC : la nouvelle application ne peut pas être écartée"
                 status failed rollback_failed
                 exit 1
             fi
         fi
-        if mv "$KUT_UPD_PREVIOUS" "$KUT_UPD_APP"; then
+        if safe_mv "$KUT_UPD_PREVIOUS" "$KUT_UPD_APP"; then
             log "précédente restaurée"
         else
             log "ÉCHEC : la précédente ne peut pas être restaurée"
@@ -146,6 +263,57 @@ rollback() {
     exit 1
 }
 
+release_lock() {
+    # Libère le verrou s'il est à nous (jamais celui d'un autre) ; appelé à toute sortie (trap EXIT).
+    if [ "$OWNS_LOCK" = 1 ] && [ "$(cat "$KUT_UPD_LOCK/pid" 2>/dev/null)" = "$$" ]; then
+        rm -f "$KUT_UPD_LOCK/pid"
+        rmdir "$KUT_UPD_LOCK" 2>/dev/null
+    fi
+}
+
+acquire_lock() {
+    # Verrou exclusif = ``mkdir`` (atomique : un seul créateur), pid du propriétaire écrit dedans. Verrou périmé
+    # (propriétaire mort) : le dossier est RENOMMÉ vers un nom unique (un seul assistant y réussit) puis supprimé,
+    # jamais supprimé en place ; un verrou vivant n'est jamais pris.
+    _attempt=0
+    while [ "$_attempt" -lt 5 ]; do
+        _attempt=$((_attempt + 1))
+        if mkdir "$KUT_UPD_LOCK" 2>/dev/null; then
+            if echo $$ > "$KUT_UPD_LOCK/pid"; then
+                OWNS_LOCK=1
+                return 0
+            fi
+            rmdir "$KUT_UPD_LOCK" 2>/dev/null
+            return 1
+        fi
+        _owner=$(cat "$KUT_UPD_LOCK/pid" 2>/dev/null)
+        _idle=0
+        while [ -z "$_owner" ] && [ "$_idle" -lt 5 ]; do
+            sleep 0.2                                  # le propriétaire écrit peut-être son pid à l'instant
+            _idle=$((_idle + 1))
+            _owner=$(cat "$KUT_UPD_LOCK/pid" 2>/dev/null)
+        done
+        case "$_owner" in *[!0-9]*) _owner= ;; esac
+        if [ -n "$_owner" ] && kill -0 "$_owner" 2>/dev/null; then
+            log "verrou détenu par le processus $_owner"
+            return 1
+        fi
+        _stale="$KUT_UPD_LOCK.stale.$$"
+        safe_rm "$_stale" >/dev/null 2>&1
+        if mv "$KUT_UPD_LOCK" "$_stale" 2>/dev/null; then
+            _moved=$(cat "$_stale/pid" 2>/dev/null)
+            if [ -n "$_moved" ] && [ "$_moved" != "$_owner" ] && kill -0 "$_moved" 2>/dev/null; then
+                log "le verrou écarté appartenait à un assistant vivant ($_moved) : remis en place"
+                mv "$_stale" "$KUT_UPD_LOCK" 2>/dev/null
+                return 1
+            fi
+            safe_rm "$_stale"
+            log "verrou périmé (propriétaire ${_owner:-inconnu}) repris"
+        fi
+    done
+    return 1
+}
+
 on_signal() {
     log "signal reçu (phase $PHASE)"
     case "$PHASE" in
@@ -155,6 +323,8 @@ on_signal() {
     exit 1
 }
 
+# ---- fin des fonctions ----
+
 for _name in KUT_UPD_PID KUT_UPD_APP KUT_UPD_STAGING KUT_UPD_PREVIOUS KUT_UPD_STARTED KUT_UPD_STATUS KUT_UPD_LOG \
              KUT_UPD_LOCK KUT_UPD_VERSION KUT_UPD_FROM; do
     eval "_value=\${$_name:-}"
@@ -163,12 +333,38 @@ for _name in KUT_UPD_PID KUT_UPD_APP KUT_UPD_STAGING KUT_UPD_PREVIOUS KUT_UPD_ST
         exit 2
     fi
 done
-case "$KUT_UPD_APP" in /?*.app) ;; *) echo "chemin d'application refusé" >&2; exit 2 ;; esac
+for _name in KUT_UPD_APP KUT_UPD_STAGING KUT_UPD_PREVIOUS KUT_UPD_STARTED KUT_UPD_STATUS KUT_UPD_LOG KUT_UPD_LOCK; do
+    eval "_value=\$$_name"
+    case "$_value" in
+        /?*) ;;
+        *) echo "chemin absolu attendu : $_name" >&2; exit 2 ;;
+    esac
+    case "$_value" in
+        */../*|*/..|*/./*|*/.|*//*|*/) echo "chemin refusé : $_name" >&2; exit 2 ;;
+    esac
+done
+case "$KUT_UPD_APP" in /?*/Kut-Studio.app) ;; *) echo "chemin d'application refusé" >&2; exit 2 ;; esac
+case "${KUT_UPD_STAGING##*/}" in .Kut-Studio-update-?*) ;; *) echo "nom de staging refusé" >&2; exit 2 ;; esac
+case "${KUT_UPD_PREVIOUS##*/}" in .Kut-Studio.app.previous-?*) ;; *) echo "nom de sauvegarde refusé" >&2; exit 2 ;; esac
+if [ "${KUT_UPD_STAGING%/*}" != "${KUT_UPD_APP%/*}" ] || [ "${KUT_UPD_PREVIOUS%/*}" != "${KUT_UPD_APP%/*}" ]; then
+    echo "staging et sauvegarde doivent être à côté de l'application (même volume)" >&2
+    exit 2
+fi
 case "$KUT_UPD_PID" in *[!0-9]*) echo "pid refusé" >&2; exit 2 ;; esac
+if [ "$KUT_UPD_PID" -le 1 ]; then
+    echo "pid refusé" >&2
+    exit 2
+fi
+case "$KUT_UPD_VERSION$KUT_UPD_FROM" in *[!0-9A-Za-z.+-]*) echo "version refusée" >&2; exit 2 ;; esac
 
-echo $$ > "$KUT_UPD_LOCK"
-trap 'rm -f "$KUT_UPD_LOCK"' EXIT
+trap release_lock EXIT
 trap on_signal HUP INT TERM
+if ! acquire_lock; then
+    # Une autre mise à jour est en cours : on sort AVANT d'examiner ou de modifier quoi que ce soit.
+    log "une autre mise à jour est déjà en cours : rien n'est examiné ni modifié"
+    status_if_absent failed already_running
+    exit 6
+fi
 log "début : $KUT_UPD_FROM -> $KUT_UPD_VERSION, application $KUT_UPD_APP, attente du processus $KUT_UPD_PID"
 
 _n=0
@@ -215,7 +411,7 @@ if [ "$_state" != swapped ]; then
     fi
     PHASE=swap
     if [ "$_state" = fresh ]; then
-        if ! mv "$KUT_UPD_APP" "$KUT_UPD_PREVIOUS"; then
+        if ! safe_mv "$KUT_UPD_APP" "$KUT_UPD_PREVIOUS"; then
             log "ÉCHEC du renommage de l'ancienne application : rien n'est modifié"
             safe_rm "$KUT_UPD_STAGING"
             status failed swap_failed
@@ -225,7 +421,7 @@ if [ "$_state" != swapped ]; then
         log "ancienne application renommée en $KUT_UPD_PREVIOUS"
         halt_after renamed_previous
     fi
-    if ! mv "$KUT_UPD_STAGING" "$KUT_UPD_APP"; then
+    if ! safe_mv "$KUT_UPD_STAGING" "$KUT_UPD_APP"; then
         log "ÉCHEC de la mise en place de la nouvelle application"
         restore_if_missing
         safe_rm "$KUT_UPD_STAGING"

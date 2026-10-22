@@ -234,6 +234,14 @@ class AutoInstaller(QObject):
         if offer is None or decision is None or decision.app is None:
             shutil.rmtree(staging, ignore_errors=True)
             return
+        plan = update_helper.make_plan(decision.app, pid=os.getpid(), version=str(offer.version),
+                                       from_version=APP_VERSION)
+        if helper_running(plan.lock):
+            # Un assistant d'installation tourne déjà (autre instance) : on n'en lance pas un second.
+            shutil.rmtree(staging, ignore_errors=True)
+            if dialog is not None:
+                dialog.show_auto_failure(i18n.translate("update.auto.problem.busy"))
+            return
         # Fermeture par le chemin normal : projet non enregistré et rendu en cours demandent leur accord. Un refus laisse
         # tout ouvert, supprime le staging et ne lance rien.
         if not window.close():
@@ -241,8 +249,6 @@ class AutoInstaller(QObject):
             if dialog is not None:
                 dialog.show_ready_again()
             return
-        plan = update_helper.make_plan(decision.app, pid=os.getpid(), version=str(offer.version),
-                                       from_version=APP_VERSION)
         try:
             _launch(plan)
         except (OSError, ValueError):
@@ -310,7 +316,9 @@ class AutoInstaller(QObject):
                          i18n.translate("update.outcome.ok.text", version=outcome.version), actions, warning=False)
             return
         reason = _reason_text(outcome.reason)
-        if outcome.reason == "rollback_failed":
+        if outcome.reason == "rollback_impossible":
+            text = i18n.translate("update.outcome.rollback_impossible.text", version=outcome.version)
+        elif outcome.reason == "rollback_failed":
             text = i18n.translate("update.outcome.rollback_failed.text", version=outcome.version)
         elif outcome.result == "rolled_back":
             text = i18n.translate("update.outcome.restored.text", version=outcome.version, reason=reason)

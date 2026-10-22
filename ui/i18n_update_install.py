@@ -174,6 +174,10 @@ UPDATE_INSTALL_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fr": "la signature de la version n'est pas vérifiée", "en": "the version's signature is not verified",
         "es": "la firma de la versión no está verificada",
     },
+    "update.auto.problem.busy": {
+        "fr": "une autre mise à jour est déjà en cours", "en": "another update is already in progress",
+        "es": "ya hay otra actualización en curso",
+    },
     # --- Message du démarrage suivant -----------------------------------------------------------------------------
     "update.outcome.ok.title": {
         "fr": "Mise à jour installée", "en": "Update installed", "es": "Actualización instalada",
@@ -251,6 +255,28 @@ UPDATE_INSTALL_TRANSLATIONS: dict[str, dict[str, str]] = {
     "update.outcome.reason.interrupted": {
         "fr": "l'installation a été interrompue", "en": "the installation was interrupted",
         "es": "la instalación se interrumpió",
+    },
+    "update.outcome.reason.already_running": {
+        "fr": "une autre mise à jour est déjà en cours", "en": "another update is already in progress",
+        "es": "ya hay otra actualización en curso",
+    },
+    "update.outcome.reason.rollback_impossible": {
+        "fr": "un processus de la nouvelle version tourne encore", "en": "a process of the new version is still "
+        "running", "es": "un proceso de la nueva versión sigue en ejecución",
+    },
+    "update.outcome.rollback_impossible.text": {
+        "fr": "La mise à jour vers {version} a échoué et le retour arrière est impossible : un processus de la "
+              "nouvelle version tourne encore. Rien n'a été déplacé ni supprimé. Quittez-le (Moniteur d'activité), "
+              "puis, si Kut-Studio ne se lance pas, renommez le dossier caché « .Kut-Studio.app.previous-… » "
+              "(à côté de l'application) en « Kut-Studio.app » après avoir déplacé la nouvelle version.",
+        "en": "The update to {version} failed and the rollback is impossible: a process of the new version is still "
+              "running. Nothing was moved or deleted. Quit it (Activity Monitor), then, if Kut-Studio does not "
+              "start, rename the hidden folder “.Kut-Studio.app.previous-…” (next to the application) to "
+              "“Kut-Studio.app” after moving the new version away.",
+        "es": "La actualización a {version} ha fallado y la restauración es imposible: un proceso de la nueva "
+              "versión sigue en ejecución. No se ha movido ni borrado nada. Ciérrelo (Monitor de Actividad) y, si "
+              "Kut-Studio no arranca, renombre la carpeta oculta «.Kut-Studio.app.previous-…» (junto a la "
+              "aplicación) a «Kut-Studio.app» tras apartar la nueva versión.",
     },
     "update.outcome.reason.rollback_failed": {
         "fr": "le retour arrière a échoué", "en": "the rollback failed", "es": "la restauración falló",

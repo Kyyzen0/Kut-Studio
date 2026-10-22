@@ -131,13 +131,13 @@ d'installation sans clic).
      `{"version":…,"pid":…}`) que la nouvelle application écrit au démarrage, **90 s au plus** (premier lancement d'un
      gros bundle compris) ; la nouvelle application doit encore vivre **3 s** plus tard ;
    * **succès** : statut `ok`, sauvegarde supprimée. **Échec** (délai, application morte, `open` en erreur, signal
-     reçu) : **retour arrière** — processus issus du nouveau bundle arrêtés, nouvelle application écartée puis supprimée,
+     reçu) : **retour arrière** — processus issus du nouveau bundle (repérés par le chemin exact `<bundle>/Contents/MacOS/` dans `ps -axo pid=,command=`, jamais un motif large) arrêtés : SIGTERM, attente de 5 s, SIGKILL des seuls pids qui correspondent encore, attente de 5 s ; si l'un survit, **retour arrière impossible** (statut `rollback_impossible`, rien n'est déplacé ni supprimé, la précédente n'est pas lancée) ; nouvelle application écartée puis supprimée,
      précédente remise et relancée, statut `rolled_back` ;
    * journalise chaque étape dans `<cache>/updates/install.log` (recréé à chaque installation) ; tout `rm -rf` passe par
      `safe_rm`, qui refuse un nom qui n'est pas un staging ou une sauvegarde de Kut-Studio.
 6. **Idempotence et interruption.** Le script lit l'état des dossiers (neuf / à moitié échangé / échangé) au lieu de
    supposer où il en était : relancé après un arrêt brutal à n'importe quelle étape, il termine ou remet l'ancienne.
-   Il écrit un verrou (`install.lock`, son pid). Au démarrage suivant, `recover_leftovers` : verrou vivant → ne touche à
+   Il prend d'abord un **verrou exclusif** : `install.lock` est un dossier créé par `mkdir` (atomique) qui contient son pid. Un second assistant (deux instances de Kut-Studio) ne l'obtient pas et sort avec le code 6 **avant d'examiner ou de modifier quoi que ce soit** (journal, et statut `already_running` s'il n'y en a pas déjà un) ; l'application ne lance d'ailleurs pas d'assistant si un verrou vivant existe (avant même de fermer la fenêtre). Un verrou dont le propriétaire est mort est renommé vers un nom unique puis supprimé, jamais supprimé en place ni pris s'il est vivant ; il est libéré à toute sortie (`trap EXIT`, y compris SIGTERM), sauf SIGKILL (couvert par la reprise du verrou périmé). Tous les renommages passent par `safe_mv` : jamais vers une destination existante (`mv` y imbriquerait le dossier ; macOS n'a pas `mv -T`) — test avant, passage par un nom unique, test juste avant le dernier renommage, vérification après. Les variables `KUT_UPD_*` sont refusées (code 2, rien de touché) si elles sont vides, relatives, avec `..`, `//` ou `/` final, si le staging et la sauvegarde ne sont pas des frères nommés comme attendu de `Kut-Studio.app`, ou si le pid est ≤ 1. Au démarrage suivant, `recover_leftovers` : verrou vivant → ne touche à
    rien ; `Kut-Studio.app` absent ou invalide et sauvegarde valide → **restaurée** ; application valide et sauvegarde d'une
    autre version (assistant mort après l'échange) → l'application qui tourne prouve que la nouvelle version démarre, la
    sauvegarde est supprimée ; stagings et dossiers d'assistant orphelins supprimés.

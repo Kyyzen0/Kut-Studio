@@ -87,6 +87,13 @@ def snapshot(root: Path) -> dict[str, object]:
     return state
 
 
+def write_lock(lock: Path, pid: int | None) -> None:
+    """Verrou de l'assistant : un dossier qui contient le pid de son propriétaire."""
+    lock.mkdir(parents=True)
+    if pid is not None:
+        (lock / "pid").write_text(str(pid), encoding="utf-8")
+
+
 def dead_pid() -> int:
     process = subprocess.Popen([sys.executable, "-c", "pass"])
     process.wait()
@@ -130,7 +137,7 @@ class Scenario:
     def status(self):
         return read_outcome(self.plan.status)
 
-    def run(self, **extra: str) -> subprocess.CompletedProcess[bytes]:
+    def environment(self, **extra: str) -> dict[str, str]:
         environment = {
             "STUB_OPEN_LOG": str(self.open_log),
             "STUB_ALIVE_PID": str(os.getpid()),
@@ -141,8 +148,12 @@ class Scenario:
         plan = HelperPlan(**{**self.plan.__dict__, "open_command": str(self.stub)})
         env = helper_environment(plan, environment)
         env["KUT_UPD_START_SECONDS"] = environment["KUT_UPD_START_SECONDS"]
+        return env
+
+    def run(self, **extra: str) -> subprocess.CompletedProcess[bytes]:
         script = write_helper_script(self.updates, pid=self.pid)
-        return subprocess.run(["/bin/sh", str(script)], env=env, capture_output=True, timeout=120, check=False)
+        return subprocess.run(["/bin/sh", str(script)], env=self.environment(**extra), capture_output=True, timeout=120,
+                              check=False)
 
     def log(self) -> str:
         return self.plan.log.read_text(encoding="utf-8") if self.plan.log.exists() else ""
@@ -239,16 +250,14 @@ def test_an_invalid_staging_changes_nothing(tmp_path):
 
 
 @needs_sh
-def test_the_helper_never_deletes_a_folder_that_is_not_a_staging(tmp_path):
+def test_the_helper_refuses_a_staging_that_is_not_named_like_one(tmp_path):
     scenario = Scenario(tmp_path)
     precious = scenario.apps / "precieux"
     scenario.plan.staging.rename(precious)
-    (precious / "Contents" / "Info.plist").unlink()
-    plan = HelperPlan(**{**scenario.plan.__dict__, "staging": precious})
-    scenario.plan = plan
-    scenario.run()
-    assert precious.is_dir() and (precious / "Contents").is_dir(), "safe_rm refuse un nom qui n'est pas un staging"
-    assert "suppression refusée" in scenario.log()
+    scenario.plan = HelperPlan(**{**scenario.plan.__dict__, "staging": precious})
+    before = snapshot(scenario.apps)
+    assert scenario.run().returncode == 2
+    assert snapshot(scenario.apps) == before, "refusé avant tout examen : rien n'a bougé"
 
 
 @needs_sh
@@ -396,7 +405,7 @@ def test_a_backup_of_the_running_version_is_kept(tmp_path):
 
 def test_recovery_leaves_everything_while_a_helper_is_alive(tmp_path):
     scenario = Scenario(tmp_path)
-    scenario.plan.lock.write_text("4242", encoding="utf-8")
+    write_lock(scenario.plan.lock, 4242)
     before = snapshot(scenario.root)
     report = _recover(scenario, alive=lambda pid: pid == 4242)
     assert report.busy and snapshot(scenario.root) == before
@@ -404,7 +413,7 @@ def test_recovery_leaves_everything_while_a_helper_is_alive(tmp_path):
 
 def test_recovery_removes_a_stale_lock_and_orphan_stagings_but_not_a_live_one(tmp_path):
     scenario = Scenario(tmp_path)
-    scenario.plan.lock.write_text("4242", encoding="utf-8")
+    write_lock(scenario.plan.lock, 4242)
     other = scenario.apps / ".Kut-Studio-update-777"
     other.mkdir()
     report = _recover(scenario, running=OLD, alive=lambda pid: pid == 777)
@@ -879,3 +888,291 @@ def test_the_real_system_tools_validate_a_real_ad_hoc_bundle(tmp_path):
         validate_bundle(app, expected_identifier=IDENTIFIER, expected_version=Version.parse(NEW),
                         installed_version=Version.parse(OLD), required_arch=machine)
     assert raised.value.problem in (StageProblem.SIGNATURE, StageProblem.ARCHITECTURE)
+
+
+# ---------------------------------------------------------------------------
+# Verrou exclusif, renommages sans imbrication, arrêt des processus (revue Codex de #262)
+# ---------------------------------------------------------------------------
+
+FUNCTIONS = update_helper.HELPER_SCRIPT.split("# ---- fin des fonctions ----")[0]
+
+
+def run_shell(scenario: Scenario, code: str, **env: str) -> subprocess.CompletedProcess[str]:
+    """Exécute les FONCTIONS du script d'assistant (sans son déroulé) suivies de ``code``."""
+    environment = scenario.environment(**env)
+    return subprocess.run(["/bin/sh", "-c", FUNCTIONS + code], env=environment, capture_output=True, text=True,
+                          timeout=60, check=False)
+
+
+def _wait_for(predicate, seconds: float = 20.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
+
+
+@needs_sh
+def test_safe_mv_never_nests_into_an_existing_destination(tmp_path):
+    scenario = Scenario(tmp_path)
+    src, dst = scenario.root / "src", scenario.root / "dst"
+    (src / "Contents").mkdir(parents=True)
+    (src / "Contents" / "x").write_text("x", encoding="utf-8")
+    dst.mkdir()
+    def tree():
+        return {k: v for k, v in snapshot(scenario.root).items() if not k.startswith("cache")}
+
+    before = tree()
+    done = run_shell(scenario, f'safe_mv "{src}" "{dst}"')
+    assert done.returncode != 0
+    assert tree() == before, "ni déplacé ni imbriqué"
+    dst.rmdir()
+    assert run_shell(scenario, f'safe_mv "{src}" "{dst}"').returncode == 0
+    assert (dst / "Contents" / "x").is_file() and not src.exists()
+    assert not [p for p in scenario.root.iterdir() if ".mv." in p.name], "aucun nom temporaire ne reste"
+
+
+@needs_sh
+@pytest.mark.parametrize("appears_at", [1, 2])
+def test_safe_mv_undoes_a_destination_that_appears_in_the_middle(tmp_path, appears_at):
+    scenario = Scenario(tmp_path)
+    src, dst = scenario.root / "src", scenario.root / "dst"
+    (src / "Contents").mkdir(parents=True)
+    (src / "Contents" / "x").write_text("x", encoding="utf-8")
+    shadow = (f'n=0; mv() {{ n=$((n + 1)); if [ "$n" -eq {appears_at} ]; then mkdir "{dst}"; fi; command mv "$@"; }}\n'
+              f'safe_mv "{src}" "{dst}"')
+    done = run_shell(scenario, shadow)
+    assert done.returncode != 0
+    assert (src / "Contents" / "x").is_file(), "la source est revenue à sa place"
+    assert dst.is_dir() and list(dst.iterdir()) == [], "rien n'a été imbriqué dans la destination apparue"
+
+
+@needs_sh
+def test_safe_rm_refuses_anything_that_is_not_a_staging_a_backup_or_a_stale_lock(tmp_path):
+    scenario = Scenario(tmp_path)
+    keep = [scenario.root / "precieux", scenario.apps / "Autre.app", scenario.apps / "Kut-Studio.app.old"]
+    for folder in keep:
+        folder.mkdir(exist_ok=True)
+    doomed = scenario.apps / ".Kut-Studio-update-123"
+    doomed.mkdir()
+    code = "\n".join(f'safe_rm "{path}"' for path in [*keep, doomed, "/", "relatif/.Kut-Studio-update-1"])
+    run_shell(scenario, code)
+    assert all(folder.is_dir() for folder in keep) and not doomed.exists()
+    assert "suppression refusée" in scenario.log()
+
+
+@needs_sh
+@pytest.mark.parametrize("variable", ["KUT_UPD_APP", "KUT_UPD_STAGING", "KUT_UPD_PREVIOUS", "KUT_UPD_LOCK", "KUT_UPD_STATUS"])
+@pytest.mark.parametrize("bad", ["/", "/a/../b/Kut-Studio.app", "relatif", "/x//y", "/dossier/"])
+def test_the_helper_refuses_dangerous_paths_before_doing_anything(tmp_path, variable, bad):
+    scenario = Scenario(tmp_path)
+    before = snapshot(scenario.root)
+    script = write_helper_script(scenario.updates, pid=scenario.pid)
+    env = scenario.environment()
+    env[variable] = bad
+    done = subprocess.run(["/bin/sh", str(script)], env=env, capture_output=True, timeout=60, check=False)
+    assert done.returncode == 2
+    after = {k: v for k, v in snapshot(scenario.root).items() if not k.startswith("monde") and "helper-" not in k}
+    assert after == {k: v for k, v in before.items() if "helper-" not in k}, "rien n'a été touché"
+
+
+@needs_sh
+def test_the_helper_refuses_staging_or_backup_outside_the_application_folder(tmp_path):
+    scenario = Scenario(tmp_path)
+    other = scenario.root / "ailleurs"
+    other.mkdir()
+    for variable, value in (("KUT_UPD_STAGING", other / ".Kut-Studio-update-1"),
+                            ("KUT_UPD_PREVIOUS", other / ".Kut-Studio.app.previous-1.0.0")):
+        script = write_helper_script(scenario.updates, pid=scenario.pid)
+        env = scenario.environment()
+        env[variable] = str(value)
+        assert subprocess.run(["/bin/sh", str(script)], env=env, capture_output=True, timeout=60, check=False).returncode == 2
+
+
+@needs_sh
+def test_two_helpers_on_the_same_tree_exactly_one_replaces_the_application(tmp_path):
+    waiter = subprocess.Popen(["/bin/sleep", "60"])
+    first = None
+    try:
+        scenario = Scenario(tmp_path, pid=waiter.pid)
+        script = write_helper_script(scenario.updates, pid=scenario.pid)
+        first = subprocess.Popen(["/bin/sh", str(script)], env=scenario.environment(), stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        assert _wait_for(lambda: (scenario.plan.lock / "pid").is_file()), "le premier assistant tient le verrou"
+        owner = (scenario.plan.lock / "pid").read_text(encoding="utf-8")
+        before = snapshot(scenario.apps)
+        second = subprocess.run(["/bin/sh", str(script)], env=scenario.environment(), capture_output=True, timeout=60,
+                                check=False)
+        assert second.returncode == 6, "le second sort proprement"
+        assert snapshot(scenario.apps) == before, "il n'a rien examiné ni modifié (comparaison d'arbres)"
+        assert (scenario.plan.lock / "pid").read_text(encoding="utf-8") == owner, "et n'a pas pris le verrou"
+        busy = scenario.status()
+        assert busy is not None and (busy.result, busy.reason) == ("failed", "already_running")
+        assert "une autre mise à jour est déjà en cours" in scenario.log()
+        waiter.terminate()
+        waiter.wait()                                   # l'application « se ferme » : le premier continue seul
+        assert first.wait(timeout=90) == 0
+        assert scenario.installed_version == NEW
+        assert sorted(p.name for p in scenario.apps.iterdir()) == ["Kut-Studio.app"], "pas d'imbrication, pas de reste"
+        assert not scenario.plan.app.joinpath("Kut-Studio.app").exists()
+        outcome = scenario.status()
+        assert outcome is not None and outcome.result == "ok", "le statut final est celui de l'assistant qui a travaillé"
+        assert not scenario.plan.lock.exists()
+    finally:
+        waiter.kill()
+        waiter.wait()
+        if first is not None and first.poll() is None:
+            first.kill()
+            first.wait()
+
+
+@needs_sh
+def test_a_live_lock_is_never_stolen(tmp_path):
+    scenario = Scenario(tmp_path)
+    write_lock(scenario.plan.lock, os.getpid())                 # un propriétaire vivant : ce processus de test
+    before = snapshot(scenario.apps)
+    done = scenario.run()
+    assert done.returncode == 6
+    assert snapshot(scenario.apps) == before
+    assert (scenario.plan.lock / "pid").read_text(encoding="utf-8") == str(os.getpid())
+
+
+@needs_sh
+@pytest.mark.parametrize("pid", ["dead", "none", "garbage"])
+def test_a_stale_lock_is_taken_over_safely(tmp_path, pid):
+    scenario = Scenario(tmp_path)
+    write_lock(scenario.plan.lock, None)
+    if pid == "dead":
+        (scenario.plan.lock / "pid").write_text(str(dead_pid()), encoding="utf-8")
+    elif pid == "garbage":
+        (scenario.plan.lock / "pid").write_text("pas un pid", encoding="utf-8")
+    done = scenario.run()
+    assert done.returncode == 0, scenario.log()
+    assert scenario.installed_version == NEW
+    assert "verrou périmé" in scenario.log()
+    assert not scenario.plan.lock.exists() and not [p for p in scenario.updates.iterdir() if ".stale." in p.name]
+
+
+@needs_sh
+def test_the_lock_is_released_on_failure_and_on_termination(tmp_path):
+    failing = Scenario(tmp_path / "a", new_executable=SILENT_EXE)
+    assert failing.run(KUT_UPD_START_SECONDS="1").returncode == 1
+    assert not failing.plan.lock.exists(), "libéré après un retour arrière"
+    invalid = Scenario(tmp_path / "b")
+    (invalid.plan.staging / "Contents" / "Info.plist").unlink()
+    assert invalid.run().returncode == 4 and not invalid.plan.lock.exists(), "libéré après un échec"
+    waiter = subprocess.Popen(["/bin/sleep", "60"])
+    helper = None
+    try:
+        scenario = Scenario(tmp_path / "c", pid=waiter.pid)
+        script = write_helper_script(scenario.updates, pid=scenario.pid)
+        before = snapshot(scenario.apps)
+        helper = subprocess.Popen(["/bin/sh", str(script)], env=scenario.environment(), stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+        assert _wait_for(lambda: (scenario.plan.lock / "pid").is_file())
+        helper.terminate()                              # SIGTERM à notre propre enfant, l'assistant
+        assert helper.wait(timeout=60) == 1
+        assert not scenario.plan.lock.exists(), "libéré sur SIGTERM"
+        assert snapshot(scenario.apps) == before
+    finally:
+        waiter.kill()
+        waiter.wait()
+        if helper is not None and helper.poll() is None:
+            helper.kill()
+            helper.wait()
+
+
+def _sleeper(tmp_path: Path, *, ignore_term: bool) -> Path:
+    compiler = shutil.which("cc")
+    if compiler is None:
+        pytest.skip("pas de compilateur C pour fabriquer un exécutable qui dort")
+    source = tmp_path / ("dort_sourd.c" if ignore_term else "dort.c")
+    handler = "signal(SIGTERM, SIG_IGN);" if ignore_term else ""
+    source.write_text(f"#include <signal.h>\n#include <unistd.h>\nint main(void){{ {handler} sleep(60); return 0; }}\n",
+                      encoding="utf-8")
+    program = tmp_path / source.stem
+    if subprocess.run([compiler, str(source), "-o", str(program)], capture_output=True, check=False).returncode != 0:
+        pytest.skip("compilation impossible sur cette machine")
+    return program
+
+
+def _launcher(scenario: Scenario, pidfile: Path) -> None:
+    launcher = scenario.root / "open-sleeper.sh"
+    launcher.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$1" >> "$STUB_OPEN_LOG"\n'
+        f'if [ -x "$1/Contents/MacOS/Kut-Studio" ] && [ ! -e "{pidfile}" ]; then\n'
+        f'  "$1/Contents/MacOS/Kut-Studio" >/dev/null 2>&1 & echo $! > "{pidfile}"\nfi\nexit 0\n', encoding="utf-8")
+    launcher.chmod(0o755)
+    scenario.stub = launcher
+
+
+def _terminate(*pids: int) -> None:
+    for pid in pids:
+        try:
+            os.kill(pid, 9)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+@needs_sh
+def test_a_new_application_that_ignores_sigterm_is_killed_before_the_rollback(tmp_path):
+    program = _sleeper(tmp_path, ignore_term=True)
+    scenario = Scenario(tmp_path, new_executable=SILENT_EXE)
+    shutil.copyfile(program, scenario.plan.staging / "Contents" / "MacOS" / "Kut-Studio")
+    (scenario.plan.staging / "Contents" / "MacOS" / "Kut-Studio").chmod(0o755)
+    # Deux « autres » processus de l'utilisateur, dont un d'un bundle voisin au nom proche : à ne jamais toucher.
+    neighbour = scenario.apps / "Kut-Studio.app2" / "Contents" / "MacOS"
+    neighbour.mkdir(parents=True)
+    shutil.copyfile(program, neighbour / "Kut-Studio")
+    (neighbour / "Kut-Studio").chmod(0o755)
+    bystanders = [subprocess.Popen([str(neighbour / "Kut-Studio")]), subprocess.Popen(["/bin/sleep", "60"])]
+    pidfile = scenario.root / "sleeper.pid"
+    _launcher(scenario, pidfile)
+    try:
+        done = scenario.run(KUT_UPD_START_SECONDS="1", KUT_UPD_TERM_SECONDS="1", KUT_UPD_KILL_SECONDS="10")
+        assert done.returncode == 1, scenario.log()
+        sleeper = int(pidfile.read_text(encoding="utf-8"))
+        assert _wait_for(lambda: not update_install.pid_alive(sleeper)), "le processus sourd à SIGTERM a été tué"
+        assert "SIGKILL des processus qui résistent" in scenario.log()
+        assert scenario.installed_version == OLD, "puis le retour arrière a eu lieu"
+        outcome = scenario.status()
+        assert outcome is not None and outcome.result == "rolled_back"
+        assert all(process.poll() is None for process in bystanders), "aucun autre processus n'a été touché"
+    finally:
+        for process in bystanders:
+            process.kill()
+            process.wait()
+        if pidfile.exists():
+            _terminate(int(pidfile.read_text(encoding="utf-8")))
+
+
+@needs_sh
+def test_a_rollback_is_refused_while_a_process_of_the_new_version_survives(tmp_path):
+    program = _sleeper(tmp_path, ignore_term=True)
+    scenario = Scenario(tmp_path, new_executable=SILENT_EXE)
+    shutil.copyfile(program, scenario.plan.staging / "Contents" / "MacOS" / "Kut-Studio")
+    (scenario.plan.staging / "Contents" / "MacOS" / "Kut-Studio").chmod(0o755)
+    pidfile = scenario.root / "sleeper.pid"
+    _launcher(scenario, pidfile)
+    kill_log = scenario.root / "kill.log"
+    fake_kill = scenario.root / "fake-kill.sh"
+    fake_kill.write_text(f'#!/bin/sh\necho "$@" >> "{kill_log}"\nexit 0\n', encoding="utf-8")   # ne tue rien
+    fake_kill.chmod(0o755)
+    try:
+        done = scenario.run(KUT_UPD_START_SECONDS="1", KUT_UPD_TERM_SECONDS="1", KUT_UPD_KILL_SECONDS="1",
+                            KUT_UPD_KILL=str(fake_kill))
+        assert done.returncode == 7, scenario.log()
+        assert "-TERM" in kill_log.read_text(encoding="utf-8") and "-KILL" in kill_log.read_text(encoding="utf-8")
+        assert scenario.installed_version == NEW, "la nouvelle application n'a pas été déplacée"
+        assert scenario.plan.previous.is_dir() and (scenario.plan.previous / "Contents" / "VERSION").read_text(
+            encoding="utf-8") == OLD, "la précédente est intacte"
+        assert sorted(p.name for p in scenario.apps.iterdir()) == [scenario.plan.previous.name, "Kut-Studio.app"]
+        assert scenario.opened() == [str(scenario.app)], "la précédente n'a pas été lancée à côté"
+        outcome = scenario.status()
+        assert outcome is not None and (outcome.result, outcome.reason) == ("failed", "rollback_impossible")
+        assert "retour arrière impossible" in scenario.log()
+        assert not scenario.plan.lock.exists()
+    finally:
+        if pidfile.exists():
+            _terminate(int(pidfile.read_text(encoding="utf-8")))
