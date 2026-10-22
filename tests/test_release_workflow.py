@@ -131,8 +131,10 @@ def test_signing_secrets_only_reach_macos_steps():
         if "secrets." in step:
             assert "if: runner.os == 'macOS'" in step, step.splitlines()[0]
     for name, body in _jobs().items():
-        if name != "build":
+        if name not in ("build", "checksums"):
             assert "secrets." not in body, f"secret utilisé par le job {name}"
+    # Le job qui assemble les notes est le seul autre à toucher un secret : celui de la signature des mises à jour.
+    assert set(re.findall(r"secrets\.([A-Z0-9_]+)", _jobs()["checksums"])) == {"UPDATE_SIGNING_KEY"}
     assert "always() && runner.os == 'macOS'" in build and "macos_signing.sh cleanup" in build
 
 
@@ -140,10 +142,40 @@ def test_secret_names_are_the_documented_ones():
     used = set(re.findall(r"secrets\.([A-Z0-9_]+)", _text()))
     assert used == {
         "MACOS_CERTIFICATE_P12_BASE64", "MACOS_CERTIFICATE_PASSWORD", "MACOS_SIGNING_IDENTITY",
-        "APPLE_API_KEY_P8_BASE64", "APPLE_API_KEY_ID", "APPLE_API_ISSUER_ID",
+        "APPLE_API_KEY_P8_BASE64", "APPLE_API_KEY_ID", "APPLE_API_ISSUER_ID", "UPDATE_SIGNING_KEY",
     }
     docs = (ROOT / "docs" / "updates.md").read_text(encoding="utf-8")
     assert all(name in docs for name in used), "chaque secret est documenté dans docs/updates.md"
+
+
+def _signing_step() -> str:
+    steps = [step for step in _steps(_jobs()["checksums"]) if "tools.release sign" in step]
+    assert len(steps) == 1, "une seule étape de signature, dans le job qui assemble les notes"
+    return steps[0]
+
+
+def test_update_signature_step_signs_after_checksums_and_before_the_notes_and_never_prints_the_secret():
+    checksums = _jobs()["checksums"]
+    step = _signing_step()
+    assert checksums.index("tools.release checksums") < checksums.index("tools.release verify")
+    assert checksums.index("tools.release verify") < checksums.index(step.splitlines()[0])
+    assert checksums.index(step.splitlines()[0]) < checksums.index("tools.release notes")
+    # Le secret n'entre que par l'environnement de l'étape, jamais dans la ligne de commande ni un echo.
+    assert re.search(r"env:\n\s+UPDATE_SIGNING_KEY: \$\{\{ secrets\.UPDATE_SIGNING_KEY \}\}", step)
+    commands = step.split("run:", 1)[1]
+    assert "secrets." not in commands and "$UPDATE_SIGNING_KEY" not in commands and "${UPDATE_SIGNING_KEY" not in commands
+    assert "tools.release verify" in commands, "la release signée est revérifiée avec le code de l'application"
+    for body in _jobs().values():
+        assert not re.search(r"(echo|printf|cat)[^\n]*UPDATE_SIGNING_KEY", body)
+        assert "set -x" not in body and "xtrace" not in body
+
+
+def test_both_notes_calls_state_the_update_signature_and_the_signature_file_is_published():
+    text = _text()
+    assert text.count('--update-signature "$(cat signing-status/update-signature.txt)"') == 2
+    publish = _jobs()["publish"]
+    assert "release-assets/*" in publish          # inclut SHA256SUMS.txt.sig
+    assert publish.index("tools.release verify") < publish.index("gh release create")
 
 
 def test_every_action_in_every_workflow_is_pinned_to_a_full_commit_sha():
@@ -172,7 +204,7 @@ def test_no_certificate_key_or_token_is_tracked_in_the_repository():
     forbidden = re.compile(r"\.(p12|p8|pfx|cer|mobileprovision|keychain-db|pem|key)$", re.IGNORECASE)
     assert [name for name in tracked.splitlines() if forbidden.search(name)] == []
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    for pattern in ("*.p12", "*.p8", "*.pfx", "*.cer", "release-assets/"):
+    for pattern in ("*.p12", "*.p8", "*.pfx", "*.cer", "*.update-key", "release-assets/"):
         assert pattern in ignored
 
 

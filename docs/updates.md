@@ -43,12 +43,19 @@ qu'annonce l'API et son SHA-256 est calculé au fil de l'eau. Il n'est renommé 
    est **refusé** : il échapperait sinon au contrôle de Gatekeeper ou de SmartScreen. Linux n'a pas de marque : rien
    n'est exigé.
 
+Avant même de télécharger le paquet, si la release publie `SHA256SUMS.txt.sig`, la **signature Ed25519** de
+`SHA256SUMS.txt` est vérifiée (section 10) : fausse ou faite par une clé inconnue, elle refuse tout, sans rien écrire sur
+le disque. Une version égale ou plus ancienne que celle installée n'est jamais téléchargée.
+
 Sinon le fichier est supprimé, jamais ouvert. Une release sans `SHA256SUMS.txt`, ou qui n'y liste pas le paquet, n'est
 pas téléchargeable depuis l'application (seule la page de la version est proposée).
 
-**Intégrité, pas authenticité.** `SHA256SUMS.txt` vient de la même release que le paquet : il prouve que le fichier est
-complet et identique à celui publié (pas de coupure, de corruption, de mauvais fichier servi par un cache). Il ne prouve
-pas *qui* a publié : quelqu'un qui pourrait remplacer le paquet pourrait remplacer l'empreinte. L'authenticité repose
+**Intégrité, pas authenticité — sauf si la release est signée.** `SHA256SUMS.txt` vient de la même release que le
+paquet : il prouve que le fichier est complet et identique à celui publié (pas de coupure, de corruption, de mauvais
+fichier servi par un cache). Il ne prouve pas *qui* a publié : quelqu'un qui pourrait remplacer le paquet pourrait
+remplacer l'empreinte. Depuis l'ADR-0012, une release peut porter en plus `SHA256SUMS.txt.sig`, signature Ed25519 que
+seul le détenteur de la clé privée du mainteneur sait produire : l'application la vérifie avec la clé publique du dépôt
+(section 10) et le dialogue dit si la version est signée. Pour une release **non signée**, l'authenticité repose encore
 sur les signatures vérifiées par le système, et l'application le dit dans le dialogue :
 
 * **macOS** : le paquet vérifié reçoit l'attribut `com.apple.quarantine`, comme un téléchargement par navigateur
@@ -79,6 +86,9 @@ droits (Applications, Program Files, dossiers système Linux), une sauvegarde et
 ou si la nouvelle version ne démarre pas, et la relance. Rien de cela ne peut être vérifié ici pour Windows et Linux ;
 le livrer sans vérification serait une auto-installation fragile. La base est prête (paquet vérifié, contexte
 d'installation `core.updates.install_context`, fermeture propre) pour l'ajouter ensuite.
+
+**Mise à jour (ADR-0012).** Une installation automatique ne sera proposée que pour un paquet dont la signature est
+`VERIFIED` (`DownloadResult.signature_status`) ; sans signature, l'installation reste assistée comme ci-dessus.
 
 ## 4. Architecture
 
@@ -136,6 +146,8 @@ disque, annulé. Délais : 20 s pour l'API, 30 s sans donnée pour un téléchar
      (`build.py`), smoke test de l'application construite ; sous macOS, signature et notarisation si les secrets
      existent ;
    * produit les archives conventionnelles, écrit et vérifie `SHA256SUMS.txt` (`checksums`, `verify`) ;
+   * signe `SHA256SUMS.txt` si le secret `UPDATE_SIGNING_KEY` existe (`sign`, section 10) ; sinon la release part
+     **sans signature** et le dit dans le résumé du job et dans les notes ;
    * rédige les notes (état réel de la signature macOS, en clair, puis les notes générées par GitHub) ;
    * publie la release (`gh release create` : brouillon, envoi de tous les fichiers, puis publication — l'application
      ne voit jamais une release incomplète). Seul ce job a le droit d'écrire sur le dépôt.
@@ -227,3 +239,50 @@ certificat disponible :
 le chemin « secrets présents » de `macos_signing.sh` n'a jamais tourné), les droits du runtime renforcé, et
 l'architecture `macos-x64` (aucun paquet construit : un Mac Intel est informé qu'il n'y en a pas). La construction
 locale utilisait Python 3.14 ; la CI et le workflow de release utilisent Python 3.11.
+
+## 10. Signature des mises à jour
+
+Décision et justification : [ADR-0012](adr/0012-mise-a-jour-automatique.md).
+
+**Ce que la signature prouve.** `SHA256SUMS.txt` (qui nomme chaque paquet et donne son SHA-256) a été signé par un
+détenteur de la clé privée Ed25519 dont la moitié publique est dans `core/update_keys.py`. Un attaquant qui remplace un
+paquet et l'empreinte sur GitHub, ou qui modifie `SHA256SUMS.txt` après coup, ne sait pas fabriquer une signature
+valide. Elle ne dit **rien** de plus : voir l'ADR, « Ce que la signature ne protège pas ».
+
+**Fichier.** `SHA256SUMS.txt.sig` : une ligne ASCII `ed25519 <identifiant de clé> <signature en base64>`. L'identifiant est
+les 16 premiers caractères hexadécimaux du SHA-256 de la clé publique. Il permet de distinguer une clé inconnue de cette
+version (release signée par une clé plus récente) d'une signature fausse.
+
+**Résultat dans l'application.** `VERIFIED` (signature valide d'une clé connue), `ABSENT` (pas de `.sig` : comportement
+d'avant, installation assistée, pas une erreur), `INVALID` (illisible, clé inconnue, signature fausse, ou
+`SHA256SUMS.txt` modifié depuis la signature : paquet refusé, message clair). Aide › À propos affiche l'identifiant des
+clés de confiance de cette copie : comparez-le à celui annoncé par le mainteneur.
+
+**Première mise en place (une fois, par le mainteneur, sur sa machine).**
+
+1. `python -m tools.release gen-update-key --out ~/kut-studio.update-key` : crée la graine secrète (droits 600, jamais
+   écrasée, **jamais affichée**) et affiche la clé publique et son identifiant.
+2. Coller la ligne `PublicKey.from_base64("…")` affichée dans `UPDATE_PUBLIC_KEYS` de `core/update_keys.py`, ouvrir la PR,
+   relire, fusionner.
+3. `gh secret set UPDATE_SIGNING_KEY < ~/kut-studio.update-key` (le secret ne passe pas par l'écran). Garder le fichier
+   dans un coffre ; ne jamais l'ajouter au dépôt (`*.update-key` est ignoré).
+4. Publier normalement. Si la clé publique du secret n'est pas dans `UPDATE_PUBLIC_KEYS`, le job échoue (sinon chaque
+   mise à jour serait refusée par les applications). Sans secret, la release part sans signature et les notes disent
+   « mises à jour automatiques indisponibles pour cette version ».
+
+**Rotation (deux versions).** En régime normal, `UPDATE_PUBLIC_KEYS` contient la clé courante. (1) Version N : générer la clé
+suivante, ajouter sa clé publique **en second** dans la liste (sans changer le secret) et publier N signée par l'ancienne
+clé : toutes les copies à jour connaissent alors les deux clés. (2) Version N+1 (ou plus tard, quand la plupart des
+copies ont N) : remplacer le secret `UPDATE_SIGNING_KEY` par la nouvelle graine, publier N+1 signée par la nouvelle clé,
+puis retirer l'ancienne clé de la liste dans la version suivante. Une copie qui saute N ne connaît pas la nouvelle clé :
+elle refuse N+1 (« clé inconnue ») et l'utilisateur installe à la main.
+
+**Fuite ou perte de la clé.** Fuite : révoquer le secret GitHub, générer une nouvelle clé, publier un avis de sécurité et une
+version dont **toute** la liste est remplacée, signée par la clé **suivante** déjà en service si elle existe (sinon par la
+nouvelle, et les copies existantes demandent une installation manuelle). Une release signée par la clé compromise reste
+refusée dès que la liste ne la contient plus. Perte sans fuite : même procédure, sans urgence.
+
+**Fonctionnement et limites.** Pas de nouvelle dépendance : `core/ed25519.py` (RFC 8032 en Python pur, `hashlib.sha512`)
+signe et vérifie ; il est testé contre les vecteurs de la RFC et d'OpenSSL, et le smoke test de l'application construite
+vérifie une signature de démonstration. Le code n'est pas à temps constant : la graine ne doit tourner que dans le workflow
+isolé de GitHub Actions et sur la machine du mainteneur pour `gen-update-key`.

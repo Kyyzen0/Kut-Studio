@@ -27,6 +27,7 @@ from PySide6.QtGui import QDesktopServices
 
 from core.app_version import APP_VERSION, WEBSITE_URL
 from core.release_assets import detect_target
+from core.update_keys import key_ids
 from core.update_service import DownloadResult, HttpClient, UpdateChecker, UpdateDownloader
 from core.updates import (
     CheckMode,
@@ -381,7 +382,8 @@ class UpdatesMixin:
         """Texte de la boîte « À propos » : version, installation, système, bibliothèques."""
         target = detect_target()
         system = platform_label(target) if target is not None else f"{platform.system()} {platform.machine()}"
-        return i18n.translate(
+        keys = ", ".join(key_ids()) or i18n.translate("update.about.keys_none")
+        text = i18n.translate(
             "update.about.text",
             version=APP_VERSION,
             install=install_description(self._update_context),
@@ -391,6 +393,7 @@ class UpdatesMixin:
             python=platform.python_version(),
             website=WEBSITE_URL,
         )
+        return text + "\n" + i18n.translate("update.about.keys", keys=keys)
 
     def show_about(self) -> None:
         _main_window().QMessageBox.about(self, i18n.translate("update.about.title"), self.about_text())
