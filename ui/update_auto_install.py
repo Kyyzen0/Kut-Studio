@@ -316,7 +316,7 @@ class AutoInstaller(QObject):
                          i18n.translate("update.outcome.ok.text", version=outcome.version), actions, warning=False)
             return
         reason = _reason_text(outcome.reason)
-        if outcome.reason == "rollback_impossible":
+        if outcome.reason == "rollback_impossible":  # i18n-ignore: identifiant technique de statut
             text = i18n.translate("update.outcome.rollback_impossible.text", version=outcome.version)
         elif outcome.reason == "rollback_failed":
             text = i18n.translate("update.outcome.rollback_failed.text", version=outcome.version)
