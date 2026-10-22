@@ -101,7 +101,7 @@ class _Sizes:
     top_bar: int = 50
     # Rail vertical principal, volontairement icon-only. Les libellés
     # restent disponibles dans les infobulles et via l'accessibilité Qt.
-    side_rail_width: int = 52
+    side_rail_width: int = 84          # le nom de chaque section est écrit sous son icône (« Transitions », « Transiciones »)
     panel_min_width: int = 240
     panel_default_width: int = 300
     # En-tête de panneau : la même hauteur partout (bibliothèque, visionneuse, inspecteur, scopes, timeline).

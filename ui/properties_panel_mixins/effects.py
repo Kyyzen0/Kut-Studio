@@ -29,6 +29,7 @@ from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
+from ui.properties_widgets.keyframe_row import field_with_keyframes
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
 
@@ -311,9 +312,12 @@ class EffectsMixin(EffectKeyframesMixin):
             self._effect_param_widgets[spec.name] = spin
             label = QLabel(translate(f"effects.param.{spec.name}"))
             label.setStyleSheet(label_style(11, "muted", 600))
-            form.addRow(label, spin)
             if self._is_animatable_effect_param(effect, spec.name):     # ADR-0008 : seuls ces paramètres ont des losanges
-                self._add_effect_keyframe_row(form, effect, spec.name, label.text())
+                field, line = field_with_keyframes(spin)
+                form.addRow(label, field)
+                self._add_effect_keyframe_row(line, effect, spec.name, label.text())
+            else:
+                form.addRow(label, spin)
         wrapper = QWidget()
         wrapper.setLayout(form)
         self.effect_parameters_layout.addWidget(wrapper)

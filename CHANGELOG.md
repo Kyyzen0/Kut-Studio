@@ -29,6 +29,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Sur un MacBook Air 13" (1280x800 ou 1440x900), la fenêtre tient dans l'écran : le Dock ne passe plus par-dessus la timeline, qui montre au moins trois pistes. La fenêtre s'ouvre à la taille de l'écran (et non plus en 1480x920), sa taille minimale baisse (page Couleur 850 -> 670 px, page Audio 1049 -> 686 px) et un panneau détaché enregistré sur un grand écran revient dans l'écran.
 - Panneaux Transitions, Effets et Effets audio : plus de grand vide sous les puces de catégorie, la liste des préréglages montre au moins trois lignes, la bannière d'aide ne chevauche plus la liste, et quand la colonne est trop basse la page défile au lieu de superposer ses éléments (« Enregistrer comme preset » devient un bouton-icône à côté de l'action principale).
 
+### Changed
+
+- **Navigation plus lisible** (partie B du chantier « trouver facilement »). La barre d'icônes de gauche écrit maintenant **le nom de chaque section sous son icône** (Médias, Séquences, Éditer, Effets, Couleur, Texte, Transitions, Audio, Graphiques, Modèles) : la barre est plus large (84 px) ; raccourcis et infobulles inchangés. Les onglets de l'inspecteur montrent **tous** leurs sept boutons : Graphiques, Compositing et **Suivi** ne sont plus cachés derrière un menu « ••• » (ils passent sur une deuxième ligne quand l'inspecteur est étroit). Dans la barre du haut, le sélecteur de niveau dit « Niveau : Avancé » (le nom du niveau seul quand la place manque). Les niveaux d'usage (Simple, Studio, Avancé) ne changent pas.
+
+### Fixed
+
+- Les losanges d'images clés ‹ ◆ › de l'inspecteur (étalonnage et effets) flottaient entre deux champs, ce qui faisait croire qu'ils appartenaient au réglage suivant : ils sont maintenant **à droite du champ qu'ils animent, sur la même ligne**. Dans l'étalonnage, les libellés passent tous ensemble au-dessus de leur champ quand l'inspecteur est étroit (au lieu de seulement « Exposition »).
+
 ## [0.9.0] - 2026-10-21
 
 Version qui **anime l'étalonnage et les effets** : le réglage de couleur d'un clip (exposition, contraste, saturation, température, teinte, ombres, hautes lumières et roues Lift / Gamma / Gain / Offset) se pilote maintenant par images clés, dans l'inspecteur, la page Couleur, l'éditeur de courbes et les scripts, avec un moniteur et un export qui suivent la même courbe ; le flou, l'aberration chromatique et le rayon du Bloom s'animent aussi. L'onglet Suivi et les scripts appliquent la même règle sur les clips verrouillés, et « Coller les attributs » remplace proprement l'ancien étalonnage animé.

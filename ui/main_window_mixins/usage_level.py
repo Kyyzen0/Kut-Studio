@@ -17,7 +17,7 @@ from ui import i18n
 
 
 class _LevelChip(QToolButton):
-    """Puce du niveau, à trois formes selon la place de la barre du haut : complète, abrégée (deux lettres), absente.
+    """Puce du niveau, à trois formes selon la place de la barre du haut : complète (« Niveau : Avancé »), abrégée (le seul nom du niveau), absente.
 
     La barre du haut est pleine à 1180 px avec des polices plus larges (Linux) : la puce ne doit jamais comprimer
     « Réglages » ni « Exporter ». ``text()`` renvoie le texte affiché, ``full_text()`` le libellé complet.
@@ -28,16 +28,22 @@ class _LevelChip(QToolButton):
     def __init__(self) -> None:
         super().__init__()
         self._full = ""
+        self._compact = ""
         self._form = self.FULL
 
     def full_text(self) -> str:
         return self._full
 
+    def compact_text(self) -> str:
+        return self._compact
+
     def form(self) -> str:
         return self._form
 
-    def setText(self, text: str) -> None:  # noqa: N802 - Qt
+    def setText(self, text: str, compact: str | None = None) -> None:  # noqa: N802 - Qt
+        """``text`` : libellé complet ; ``compact`` : libellé de la forme abrégée (défaut : les deux premières lettres)."""
         self._full = text
+        self._compact = compact if compact is not None else text[:2]
         self._show_form()
 
     def set_form(self, form: str) -> None:
@@ -46,13 +52,13 @@ class _LevelChip(QToolButton):
             self._show_form()
 
     def _show_form(self) -> None:
-        super().setText(self._full[:2] if self._form == self.COMPACT else self._full)
+        super().setText(self._compact if self._form == self.COMPACT else self._full)
         self.setVisible(self._form != self.HIDDEN)
 
     def width_for(self, form: str) -> int:
         """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante)."""
         chrome = max(0, super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text()))
-        text = self._full[:2] if form == self.COMPACT else self._full
+        text = self._compact if form == self.COMPACT else self._full
         return chrome + self.fontMetrics().horizontalAdvance(text)
 
 
@@ -158,7 +164,7 @@ class UsageLevelMixin:
         chip = self.usage_level_chip
         if chip is not None:
             label = i18n.translate(f"prefs.usage.{current.value}")
-            chip.setText(label)
+            chip.setText(i18n.translate("usage.chip.label", level=label), compact=label)
             if self._usage_level_fit is not None:
                 self._usage_level_fit.fit()
             chip.setToolTip(i18n.translate("usage.chip.tooltip"))
