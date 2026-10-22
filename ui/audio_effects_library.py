@@ -26,7 +26,7 @@ from core.audio_effects_library import (
     builtin_audio_effect_presets,
     filter_audio_effect_presets,
 )
-from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
+from ui.adaptive_layout import ElidedLabel, FlowLayout
 from ui.design_system import Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
@@ -238,7 +238,7 @@ class AudioEffectsLibraryView(QWidget):
         self.favorites_button.clicked.connect(self._on_favorites_filter_clicked)
         cat_layout.addWidget(self.favorites_button)
         header_layout.addWidget(category_row)
-        layout.addWidget(ShrinkableScrollArea(header, Sizes.library_header_min_height))
+        layout.addWidget(header)
 
         self.clip_hint = QLabel(translate("library.audio_effects.hint"))
         self.clip_hint.setWordWrap(True)
@@ -251,7 +251,7 @@ class AudioEffectsLibraryView(QWidget):
         hint_layout = QHBoxLayout(hint_container)
         hint_layout.setContentsMargins(Spacing.sm, 0, Spacing.sm, 0)
         hint_layout.addWidget(self.clip_hint)
-        layout.addWidget(hint_container)
+        # La bannière est la première ligne de la zone défilante : elle ne chevauche jamais la liste (voir transitions).
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("audioEffectsScroll")
@@ -263,17 +263,23 @@ class AudioEffectsLibraryView(QWidget):
             "QScrollArea > QWidget > QWidget { background: transparent; }"
         )
         self.cards_host = QWidget()
-        self.cards_layout = QVBoxLayout(self.cards_host)
+        host_layout = QVBoxLayout(self.cards_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(Spacing.xs)
+        host_layout.addWidget(hint_container)
+        self.cards_layout = QVBoxLayout()
+        host_layout.addLayout(self.cards_layout, 1)
         self.cards_layout.setContentsMargins(Spacing.sm, 0, Spacing.sm, 0)
         self.cards_layout.setSpacing(Spacing.xs)
         self.cards_layout.addStretch(1)
         self.scroll_area.setWidget(self.cards_host)
+        self.scroll_area.setMinimumHeight(Sizes.library_list_min_height)
         layout.addWidget(self.scroll_area, 1)
 
         actions = QWidget()
         actions_layout = QVBoxLayout(actions)
         actions_layout.setContentsMargins(
-            Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm
+            Spacing.sm, Spacing.xs, Spacing.sm, Spacing.xs
         )
         self.apply_button = IconButton(
             icon=IconName.PLUS,
@@ -287,21 +293,22 @@ class AudioEffectsLibraryView(QWidget):
         self.apply_button.setMinimumHeight(Sizes.button_md)
         self.apply_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.apply_button.clicked.connect(self._emit_apply_requested)
-        actions_layout.addWidget(self.apply_button)
-
+        # « Enregistrer comme preset » : bouton-icône à droite de « Appliquer » (une rangée de ~40 px en moins).
+        save_label = translate("effects.library.save")
         self.save_button = IconButton(
             icon=IconName.SAVE,
             tooltip=translate("library.audio_effects.save_tip"),
             size=Sizes.icon_button,
             accent=False,
-            square=False,
         )
-        self.save_button.setText("  " + translate("effects.library.save"))
-        self.save_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.save_button.setMinimumHeight(Sizes.button_md)
-        self.save_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.save_button.setAccessibleName(save_label)
         self.save_button.clicked.connect(self._emit_save_requested)
-        actions_layout.addWidget(self.save_button)
+        buttons_row = QHBoxLayout()
+        buttons_row.setContentsMargins(0, 0, 0, 0)
+        buttons_row.setSpacing(Spacing.xs)
+        buttons_row.addWidget(self.apply_button, 1)
+        buttons_row.addWidget(self.save_button)
+        actions_layout.addLayout(buttons_row)
         layout.addWidget(actions)
 
         self._rebuild_cards()

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QFormLayout
+from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QHBoxLayout
 
 from core.effect_targets import ANIMATABLE_EFFECT_PARAMS, evaluated_effects
 from core.effects_model import ClipEffect, fx_property_id, is_effect_property
@@ -35,8 +35,8 @@ class EffectKeyframesMixin:
     def _is_animatable_effect_param(self, effect: ClipEffect, name: str) -> bool:
         return name in ANIMATABLE_EFFECT_PARAMS.get(effect.type, ())
 
-    def _add_effect_keyframe_row(self, form: QFormLayout, effect: ClipEffect, name: str, label_text: str) -> None:
-        """Rangée ‹ ◆ › sous le curseur de ``name`` : nouveaux widgets, conteneur Studio créé avec eux."""
+    def _add_effect_keyframe_row(self, line: QHBoxLayout, effect: ClipEffect, name: str, label_text: str) -> None:
+        """Boutons ‹ ◆ › à droite du champ de ``name`` (même ligne que son libellé) : nouveaux widgets, conteneur Studio créé avec eux."""
         property_id = fx_property_id(effect.id, name)
         effect_id = effect.id
         self._effect_keyframe_rows[name] = build_keyframe_row(
@@ -45,7 +45,7 @@ class EffectKeyframesMixin:
             on_toggle=lambda: self._on_effect_diamond_clicked(effect_id, name),
             on_next=lambda: self._on_keyframe_navigation(property_id, 1),
             on_menu=lambda position: self._open_effect_animation_menu(effect_id, name, position),
-            form=form, minimum=UsageLevel.STUDIO,
+            beside=line, minimum=UsageLevel.STUDIO,
         )
 
     def _apply_effect_keyframe_levels(self) -> None:

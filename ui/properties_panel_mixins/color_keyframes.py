@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QFormLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout
 
 from core.grade_keyframing import KeyState, key_state
 from core.grade_targets import GradeCurves, is_animatable_grade, scalar_property_id
@@ -32,8 +32,8 @@ class ColorKeyframesMixin:
     # Construction (appelée par ``_build_color_group``)
     # ------------------------------------------------------------------
 
-    def _add_color_keyframe_row(self, form: QFormLayout, name: str, label_text: str) -> None:
-        """Rangée ‹ ◆ › sous le curseur de ``name`` : nouveaux widgets, conteneur Studio créé avec eux."""
+    def _add_color_keyframe_row(self, line: QHBoxLayout, name: str, label_text: str) -> None:
+        """Boutons ‹ ◆ › à droite du champ de ``name`` (même ligne que son libellé) : nouveaux widgets, conteneur Studio créé avec eux."""
         property_id = scalar_property_id(name)
         self._color_keyframe_rows[name] = build_keyframe_row(
             property_id, label_text,
@@ -41,8 +41,17 @@ class ColorKeyframesMixin:
             on_toggle=lambda: self._on_color_diamond_clicked(name),
             on_next=lambda: self._on_keyframe_navigation(property_id, 1),
             on_menu=lambda position: self._open_color_animation_menu(name, position),
-            form=form, minimum=UsageLevel.STUDIO,
+            beside=line, minimum=UsageLevel.STUDIO,
         )
+
+    def _equalize_color_captions(self) -> None:
+        """Tous les libellés de réglages ont la largeur du plus long : le formulaire passe à la ligne (libellé au-dessus de son champ et
+        de ses losanges) pour **toutes** les rangées à la fois, jamais seulement pour « Température »."""
+        for caption in self._color_captions.values():
+            caption.setMinimumWidth(0)
+        widest = max((caption.sizeHint().width() for caption in self._color_captions.values()), default=0)
+        for caption in self._color_captions.values():
+            caption.setMinimumWidth(widest)
 
     def _build_color_animation_notice(self, root: QVBoxLayout) -> None:
         """Avis « étalonnage découpé en nœuds » et bouton qui retire les images clés ignorées (cachés tant qu'il ne sert pas)."""
@@ -179,10 +188,10 @@ class ColorKeyframesMixin:
             row.previous.setAccessibleName(i18n.translate("a11y.keyframe.previous", property=label))
             row.diamond.setAccessibleName(i18n.translate("a11y.keyframe.toggle", property=label))
             row.next.setAccessibleName(i18n.translate("a11y.keyframe.next", property=label))
-            field = self.color_field_spins.get(name)
-            caption = self._color_form.labelForField(field) if field is not None else None
+            caption = self._color_captions.get(name)
             if caption is not None:
                 caption.setText(label)
+        self._equalize_color_captions()
         self.color_animation_clear_button.setText(i18n.translate("color.animation.clear"))
         self.color_animation_clear_button.setToolTip(i18n.translate("color.animation.clear.tip"))
         self._sync_color_keyframes()

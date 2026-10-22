@@ -1,0 +1,338 @@
+"""Découvrabilité de la navigation (hors écran) : le rail dit ce que fait chaque bouton, tous les onglets de l'inspecteur sont à un
+clic, et chaque losange d'images clés est sur la ligne de son réglage.
+
+Les assertions sont structurelles (pas de pixels) : les polices diffèrent d'une plateforme à l'autre.
+"""
+
+from __future__ import annotations
+
+import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontMetrics
+from PySide6.QtWidgets import QApplication, QToolButton
+
+from core.effects_model import EffectType, create_effect
+from core.usage_level import UsageLevel
+from tests.test_inspector_lock_guards import _add_track_clip, window  # noqa: F401 - fixture et aide communes
+from ui import i18n
+from ui.side_rail import DEFAULT_SECTIONS
+
+LEVELS = pytest.mark.parametrize("level", [UsageLevel.SIMPLE.value, UsageLevel.STUDIO.value, UsageLevel.ADVANCED.value])
+LANGUAGES = pytest.mark.parametrize("language", ["fr", "en", "es"])
+
+
+@pytest.fixture
+def french(window):  # noqa: F811
+    yield window
+    i18n.set_language("fr")
+
+
+def _select_clip(win, level: str):
+    win.set_usage_level(level)
+    track, clip = _add_track_clip(win, "video", "v")
+    win.history.reset(win.project)
+    win._reload_timeline_preserving_selection(clip.id)
+    win.on_clip_selected(clip.id)
+    QApplication.processEvents()
+    return clip
+
+
+# --- le rail de gauche : le nom est écrit sous chaque icône --------------------------------------------------------------
+
+@LEVELS
+@LANGUAGES
+def test_every_visible_rail_button_shows_its_whole_name(french, level, language):
+    win = french
+    i18n.set_language(language)
+    win.set_usage_level(level)
+    QApplication.processEvents()
+    rail = win.side_rail
+    seen = 0
+    for section in DEFAULT_SECTIONS:
+        button = rail._buttons[section.id]
+        if not button.isVisibleTo(rail):
+            continue
+        seen += 1
+        text = button.text()
+        assert text and text == i18n.translate(section.label_key)
+        assert button.toolButtonStyle() == Qt.ToolButtonTextUnderIcon
+        assert button.accessibleName() == text and button.toolTip() == text
+        # Le texte tient dans le bouton, sans élision : une troncature est un échec.
+        advance = QFontMetrics(button.font()).horizontalAdvance(text)
+        assert advance <= button.width() - 4, (language, text, advance, button.width())
+        assert rail.rect().contains(button.geometry()), (text, button.geometry(), rail.rect())
+        assert not button.icon().isNull()
+    assert seen >= 5
+
+
+def test_the_rail_buttons_do_not_overlap_each_other(french):
+    french.set_usage_level("advanced")
+    QApplication.processEvents()
+    rail = french.side_rail
+    rects = [b.geometry() for b in rail._buttons.values() if b.isVisibleTo(rail)]
+    for i, first in enumerate(rects):
+        for second in rects[i + 1:]:
+            assert not first.intersects(second)
+
+
+def test_clicking_a_rail_button_still_switches_section(french):
+    french.set_usage_level("advanced")
+    rail = french.side_rail
+    emitted: list[str] = []
+    rail.section_changed.connect(emitted.append)
+    rail._buttons["audio"].click()
+    assert emitted == ["audio"] and rail.active() == "audio"
+
+
+# --- l'inspecteur : sept onglets, tous visibles -------------------------------------------------------------------------
+
+@LEVELS
+def test_all_inspector_tabs_are_reachable_without_an_overflow_menu(french, level):
+    win = french
+    _select_clip(win, level)
+    panel = win.properties_panel
+    assert not hasattr(panel, "inspector_more_button")
+    assert panel.findChildren(QToolButton, "inspectorMore") == []
+    assert len(panel.inspector_tab_buttons) == 7
+    names = [panel.inspector_tab_buttons[i].text() for i in range(7)]
+    assert "Suivi" in names and "Compositing" in names and "Graphiques" in names
+    viewport = panel.rect()
+    for index, button in enumerate(panel.inspector_tab_buttons):
+        assert button.isVisibleTo(panel), names[index]
+        assert button.width() >= QFontMetrics(button.font()).horizontalAdvance(button.text())
+        assert viewport.contains(button.mapTo(panel, button.rect().topLeft())), names[index]
+        assert viewport.contains(button.mapTo(panel, button.rect().bottomRight())), names[index]
+        button.click()                                   # un clic suffit, jamais de menu
+        assert panel._active_inspector_tab == index and button.isChecked()
+        assert [b.isChecked() for b in panel.inspector_tab_buttons].count(True) == 1
+
+
+@LANGUAGES
+def test_inspector_tabs_follow_the_language(french, language):
+    win = french
+    _select_clip(win, "advanced")
+    panel = win.properties_panel
+    i18n.set_language(language)
+    for button, key in zip(panel.inspector_tab_buttons, panel._TAB_KEYS):
+        assert button.text() == i18n.translate(key) == button.accessibleName()
+    i18n.set_language("fr")
+    assert panel.inspector_tab_buttons[6].text() == "Suivi"
+
+
+def test_the_rail_follows_the_language_fr_en_es(french):
+    win = french
+    texts = {}
+    for language in ("fr", "en", "es"):
+        i18n.set_language(language)
+        texts[language] = tuple(b.text() for b in win.side_rail._buttons.values())
+    assert len(set(texts.values())) == 3
+
+
+# --- les losanges : sur la ligne de leur réglage ------------------------------------------------------------------------
+
+def _y_range(widget, panel):
+    top = widget.mapTo(panel, widget.rect().topLeft()).y()
+    return top, top + widget.height()
+
+
+def _same_line(widget, field, panel) -> bool:
+    (a0, a1), (b0, b1) = _y_range(widget, panel), _y_range(field, panel)
+    return a0 < b1 and b0 < a1 and abs((a0 + a1) - (b0 + b1)) <= max(field.height(), widget.height())
+
+
+def test_color_diamonds_sit_on_the_line_of_their_field(french):
+    win = french
+    _select_clip(win, "advanced")
+    panel = win.properties_panel
+    panel._select_inspector_tab(0)
+    QApplication.processEvents()
+    rows = panel.color_keyframe_widgets()
+    names = list(panel.color_field_spins)
+    assert set(rows) == set(names)
+    for position, name in enumerate(names):
+        row, spin = rows[name], panel.color_field_spins[name]
+        assert row.diamond.isVisibleTo(panel) and spin.isVisibleTo(panel)
+        for button in (row.previous, row.diamond, row.next):
+            assert _same_line(button, spin, panel), (name, _y_range(button, panel), _y_range(spin, panel))
+            assert button.mapTo(panel, button.rect().topLeft()).x() >= spin.mapTo(panel, spin.rect().topLeft()).x()
+        # Jamais à hauteur du libellé du réglage suivant.
+        if position + 1 < len(names):
+            following = panel._color_captions[names[position + 1]]
+            assert _y_range(row.diamond, panel)[1] <= _y_range(following, panel)[0] + 1, name
+            assert not _same_line(row.diamond, following, panel), name
+
+
+def test_effect_diamonds_sit_on_the_line_of_their_parameter(french):
+    win = french
+    win.set_usage_level("advanced")
+    _track, clip = _add_track_clip(win, "video", "v")
+    clip.effects = [create_effect(EffectType.COLOR_CORRECTION, effect_id="cc")]
+    win.history.reset(win.project)
+    win._reload_timeline_preserving_selection(clip.id)
+    win.on_clip_selected(clip.id)
+    panel = win.properties_panel
+    panel._select_inspector_tab(2)
+    panel.effects_list.setCurrentRow(0)
+    QApplication.processEvents()
+    rows = panel.effect_keyframe_widgets()
+    assert rows
+    for name, row in rows.items():
+        spin = panel._effect_param_widgets[name]
+        assert spin.isVisibleTo(panel)
+        assert _same_line(row.diamond, spin, panel), name
+        assert row.gate.parentWidget() is spin.parentWidget()      # même conteneur : même ligne de formulaire
+
+
+def test_the_level_still_hides_only_the_diamonds_not_the_field(french):
+    win = french
+    _select_clip(win, "simple")
+    panel = win.properties_panel
+    for name, row in panel.color_keyframe_widgets().items():
+        assert row.gate is not None and not row.gate.is_shown()
+        assert not row.diamond.isVisibleTo(panel)
+    win.set_usage_level("studio")
+    QApplication.processEvents()
+    assert all(row.diamond.isVisibleTo(panel) for row in panel.color_keyframe_widgets().values())
+
+
+def test_color_captions_have_the_same_width_and_follow_the_language(french):
+    win = french
+    _select_clip(win, "advanced")
+    panel = win.properties_panel
+    for language in ("fr", "en", "es"):
+        i18n.set_language(language)
+        QApplication.processEvents()
+        widths = {c.minimumWidth() for c in panel._color_captions.values()}
+        assert len(widths) == 1 and widths.pop() >= max(c.sizeHint().width() for c in panel._color_captions.values()) - 1
+        assert panel._color_captions["contrast"].text() == i18n.translate("field.contrast")
+
+
+def test_usage_level_chip_says_what_it_is(french):
+    win = french
+    win.set_usage_level("advanced")
+    chip = win.usage_level_chip
+    assert chip.full_text() == "Niveau : Avancé"
+    i18n.set_language("en")
+    assert chip.full_text() == "Level: Advanced"
+    assert isinstance(win.settings_button.text(), str) and win.settings_button.text().strip() == "Settings"
+    assert not win.settings_button.icon().isNull()
+
+
+# --- la taille de l'icône du rail ne se perd pas (Codex, PR #259) ---------------------------------------------------------
+
+def _assert_rail_icons(rail) -> None:
+    from PySide6.QtCore import QSize
+
+    from ui.side_rail import RAIL_ICON_PX
+
+    for sid, button in rail._buttons.items():
+        assert button.iconSize() == QSize(RAIL_ICON_PX, RAIL_ICON_PX), (sid, button.iconSize())
+
+
+def test_the_rail_icon_size_survives_every_icon_replacement(french):
+    from ui.side_rail import RAIL_ICON_PX
+
+    rail = french.side_rail
+    assert RAIL_ICON_PX == 20
+    _assert_rail_icons(rail)                                        # après construction
+    for section_id in ("audio", "media", "audio"):
+        rail.set_active(section_id)
+        _assert_rail_icons(rail)                                    # après activation / désactivation
+    rail.refresh_theme()
+    _assert_rail_icons(rail)                                        # après un changement de thème
+    for language in ("en", "es", "fr"):
+        i18n.set_language(language)
+        _assert_rail_icons(rail)                                    # après un changement de langue
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.2])
+def test_the_rail_label_is_not_clipped_by_the_icon(french, scale):
+    """Icône + libellé tiennent dans la hauteur du bouton, à la police du rail et à une police 20 % plus grande."""
+    from PySide6.QtGui import QFont
+
+    from ui.side_rail import RAIL_FONT_PX
+
+    french.set_usage_level("advanced")
+    rail = french.side_rail
+    font = QFont(next(iter(rail._buttons.values())).font())
+    font.setPixelSize(round(RAIL_FONT_PX * scale))
+    text_height = QFontMetrics(font).height()
+    for button in rail._buttons.values():
+        assert button.iconSize().height() + text_height <= button.height() - 4, (button.text(), button.iconSize(), button.height())
+
+
+# --- polices plus larges que celles de macOS : un nom du rail n'est jamais coupé (CI Debian, PR #259) --------------------------
+# Le rail calcule sa largeur à partir de la police réelle de ses boutons. Ces tests la rendent plus large à volonté (sur le Mac du
+# développeur comme en CI) : taille de police du rail (RAIL_FONT_PX) plus grande, et famille « DejaVu Sans » si elle est installée.
+
+def _assert_no_name_cut(rail, label: str) -> None:
+    from ui.side_rail import RAIL_MAX_WIDTH
+
+    assert rail.rail_width() <= RAIL_MAX_WIDTH and rail.width() == rail.rail_width(), (label, rail.width())
+    for button in rail._buttons.values():
+        advance = QFontMetrics(button.font()).horizontalAdvance(button.text())
+        assert advance <= button.width() - 4, (label, button.text(), advance, button.width())
+        assert button.width() == rail.width() - 16
+
+
+@pytest.mark.parametrize("font_px", [10, 12, 14, 18])
+@LANGUAGES
+def test_the_rail_width_follows_the_widest_name_at_any_font(french, monkeypatch, language, font_px):
+    import ui.side_rail as side_rail
+
+    monkeypatch.setattr(side_rail, "RAIL_FONT_PX", font_px)
+    i18n.set_language(language)
+    rail = french.side_rail
+    rail.retranslate()
+    QApplication.processEvents()
+    _assert_no_name_cut(rail, f"{language}/{font_px}px")
+    widths = rail.rail_width()
+    assert widths >= 84
+    if font_px >= 14:
+        assert widths > 84                      # la barre s'est élargie (ou la police a baissé) : jamais d'élision
+    print(f"rail {language} {font_px}px -> {widths}px")
+
+
+def test_the_rail_widens_for_a_wider_font_family_and_follows_app_font_changes(french):
+    from PySide6.QtGui import QFont, QFontDatabase
+
+    rail = french.side_rail
+    base_font = QApplication.font()
+    families = QFontDatabase.families()
+    wide = QFont(base_font)
+    wide.setFamily("DejaVu Sans" if "DejaVu Sans" in families else base_font.family())
+    wide.setPointSizeF(max(1.0, base_font.pointSizeF()) * 1.25) if base_font.pointSizeF() > 0 else wide.setPixelSize(round(base_font.pixelSize() * 1.25))
+    try:
+        QApplication.setFont(wide)
+        QApplication.processEvents()
+        i18n.set_language("es")                                    # « Transiciones » : le plus long nom
+        QApplication.processEvents()
+        _assert_no_name_cut(rail, "police de repli plus large")
+    finally:
+        QApplication.setFont(base_font)
+        i18n.set_language("fr")
+
+
+def test_a_rail_at_its_widest_still_fits_the_three_columns_of_the_smallest_window(french, monkeypatch):
+    """Rail à 120 px au niveau Avancé : le minimum de la fenêtre suffit, rien ne déborde ni ne se chevauche."""
+    from tools import ui_audit as audit
+    from ui.side_rail import RAIL_MAX_WIDTH
+
+    import ui.side_rail as side_rail
+
+    win = french
+    win.set_usage_level("advanced")
+    monkeypatch.setattr(side_rail, "RAIL_FONT_PX", 20)
+    i18n.set_language("es")
+    win.side_rail.retranslate()
+    QApplication.processEvents()
+    assert RAIL_MAX_WIDTH - 12 <= win.side_rail.rail_width() <= RAIL_MAX_WIDTH      # au plafond (ou la police a baissé d'un cran pour y tenir)
+    win.resize(win.minimumSize())
+    audit.settle(win)
+    bar = win.side_rail.parentWidget()
+    assert win.width() >= win.minimumWidth() and win.size() == win.minimumSize()
+    found = [str(f) for f in audit.parent_overflow(bar) + audit.sibling_overlaps(bar)]
+    assert not found, found
+    panel = win.properties_panel
+    assert panel.width() >= 240 and win.preview_panel.width() > 0
+    _assert_no_name_cut(win.side_rail, "fenêtre minimale")

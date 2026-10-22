@@ -9,7 +9,7 @@ disposition n'y change pas.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QSplitter, QWidget
 
 from ui.design_system import Sizes
@@ -29,11 +29,24 @@ class ViewerHostSplitter(QSplitter):
         self.addWidget(scopes)
         self.setStretchFactor(0, 3)
         self.setStretchFactor(1, 2)
+        # Les scopes sont le seul bloc qui peut disparaître : sur un portable, la fenêtre ne réserve que la visionneuse.
+        self.setCollapsible(0, False)
+        self.setCollapsible(1, True)
 
     def scopes_minimum_height(self) -> int:
         """Hauteur minimale des scopes pour la hauteur actuelle de la colonne."""
         room = self.height() - self.handleWidth() - Sizes.monitor_min_height
         return max(Sizes.scopes_min_height, min(Sizes.scopes_comfort_height, room))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - API Qt
+        """Hauteur minimale **réelle** de la colonne : visionneuse utile + plancher des scopes.
+
+        Le minimum des scopes monte à leur confort (200 px) dès que la colonne est haute ; compté tel quel, il gonflait la
+        taille minimale de toute la fenêtre (770 px au lieu de ~520) alors que les scopes cèdent en premier, jusqu'à
+        se replier (``setCollapsible``) quand la colonne ne laisse que la visionneuse.
+        """
+        base = super().minimumSizeHint()
+        return QSize(base.width(), Sizes.monitor_min_height)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)

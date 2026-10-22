@@ -192,7 +192,6 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
     "inspector.project.format": _t("Format", "Format", "Formato"),
     "inspector.color.saturation": _t("Saturation", "Saturation", "Saturación"),
     "inspector.title": _t("INSPECTEUR", "INSPECTOR", "INSPECTOR"),
-    "inspector.more_tooltip": _t("Outils spécialisés", "Specialized tools", "Herramientas especializadas"),
     "inspector.project.state": _t("État", "State", "Estado"),
     "inspector.clip.title": _t("Clip sélectionné", "Selected clip", "Clip seleccionado"),
     "inspector.transition.title": _t("Transition", "Transition", "Transición"),

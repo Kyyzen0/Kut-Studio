@@ -29,6 +29,7 @@ from ui.theme import label_style
 from ui.properties_panel_mixins.color_keyframes import ColorKeyframesMixin
 from ui.properties_widgets.color_curve_editor import ColorCurveEditor
 from ui.properties_widgets.level_gate import LevelGate
+from ui.properties_widgets.keyframe_row import field_with_keyframes
 from ui.i18n import translate
 
 class ColorMixin(ColorKeyframesMixin):
@@ -68,6 +69,7 @@ class ColorMixin(ColorKeyframesMixin):
             ("highlights", "inspector.color.highlights", -1.0, 1.0, 0.05, ""),
         )
         self.color_field_spins: dict[str, QDoubleSpinBox] = {}
+        self._color_captions: dict[str, QLabel] = {}       # champ -> libellé de sa ligne (même largeur pour tous : ils passent à la ligne ensemble)
         self._color_field_keys: dict[str, str] = {}        # champ -> clé i18n du libellé (relu à chaque langue)
         for name, label_key, minimum, maximum, step, suffix in specs:
             label = translate(label_key)
@@ -81,9 +83,13 @@ class ColorMixin(ColorKeyframesMixin):
             )
             self.color_field_spins[name] = spin
             self._color_field_keys[name] = label_key
-            form.addRow(label, spin)
-            self._add_color_keyframe_row(form, name, label)        # ‹ ◆ › sous chaque réglage animable (ADR-0008, étape 8)
+            field, line = field_with_keyframes(spin)
+            caption = QLabel(label)
+            self._color_captions[name] = caption
+            form.addRow(caption, field)
+            self._add_color_keyframe_row(line, name, label)        # ‹ ◆ › à droite de chaque réglage animable (ADR-0008, étape 8)
         self._color_form = form
+        self._equalize_color_captions()
         root.addLayout(form)
 
         # Courbes, préréglages et LUT 3D : réglages avancés (niveau d'usage), réunis dans un conteneur créé ici.

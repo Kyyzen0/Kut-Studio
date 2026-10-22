@@ -146,8 +146,8 @@ menus possibles de la barre (Fichier, Édition, Affichage, Séquence, Calques, F
   absolue), mais les polices de Windows et Linux n'ont pas été essayées ici ; la marge simulée est de +20 %. Le test
   d'Alt + lettre est **sauté sur macOS** (le thème n'a pas de mnémoniques) : il ne tourne qu'en CI Windows / Linux.
 * **Éditeur de courbes** : minimum ~730 px, pas de défilement (la barre d'outils ne se replie pas).
-* **Onglet spécialisé de l'inspecteur** : son nom (« Graphiques », « Compositing ») est tronqué dans le bouton « ••• » à
-  280 px (« Gr…es »). L'info-bulle de chaque tuile d'alignement est encore en anglais (nom accessible traduit).
+* **Onglet spécialisé de l'inspecteur** : *corrigé* (le menu « ••• » n'existe plus, les sept onglets sont visibles sur deux lignes).
+  L'info-bulle de chaque tuile d'alignement est encore en anglais (nom accessible traduit).
 * **Transitions à 1180 px** : quatre rangées de puces et trois boutons pour ~340 px de colonne ; l'en-tête défile.
 * **Barre de menus sous macOS** : barre intégrée à la fenêtre (`setNativeMenuBar(False)`), sans accès Alt.
 * **Page d'export** : Échap la ferme, mais Entrée n'y lance rien (le bouton primaire est atteint avec Tab).

@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.i18n import translate
 from ui.keyboard_navigation import follow_layout_order
 
 
@@ -25,13 +24,6 @@ class TabsMixin:
         """Bascule l'onglet actif de l'inspecteur."""
         for i, button in enumerate(self.inspector_tab_buttons):
             button.setChecked(i == index)
-        specialized = index in {4, 5, 6}
-        self.inspector_more_button.setText(
-            translate(self._TAB_KEYS[index]) if index in {4, 5, 6} else "•••"
-        )
-        self.inspector_more_button.setProperty("active", specialized)
-        self.inspector_more_button.style().unpolish(self.inspector_more_button)
-        self.inspector_more_button.style().polish(self.inspector_more_button)
         self._on_inspector_tab_changed(index)
 
     def _set_group_condition(self, group: QWidget, allowed: bool) -> None:

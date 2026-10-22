@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -34,6 +33,7 @@ from core.usage_level import UsageLevel, coerce_usage_level
 from core.project_model import MediaAsset
 from ui.adaptive_layout import ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
+from ui.scroll_guard import GuardedStack, ScrollGuard
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName
 from ui.audio_effects_library import AudioEffectsLibraryView
@@ -71,7 +71,7 @@ from ui.project_panel_widgets.effects_library_view import (
 from ui.i18n import translate
 
 
-BROWSE_MIN_HEIGHT = 84
+BROWSE_MIN_HEIGHT = 64
 """Hauteur plancher (px) du bloc dossiers / filtres / tags : en dessous il défile (voir ``ShrinkableScrollArea``)."""
 
 
@@ -185,9 +185,17 @@ class ProjectPanel(QWidget):
         # Compteurs par dossier pour l'arborescence.
         self._folder_counts: dict[str, int] = {}
 
-        layout = QVBoxLayout(self)
+        # Tout le panneau vit dans un corps enveloppé d'une zone défilante (construit ici, une fois) : colonne plus basse
+        # que son contenu (portable), le panneau défile au lieu d'imposer sa hauteur à toute la fenêtre.
+        body = QWidget()
+        body.setObjectName("projectPanelBody")
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(ScrollGuard(body))
 
         # ----- En-tête compact : onglets Projet / Favoris --------------
         header = QWidget()
@@ -388,8 +396,8 @@ class ProjectPanel(QWidget):
         self.audio_mode_row.setVisible(False)
         layout.addWidget(self.audio_mode_row)
 
-        self.content_stack = QStackedWidget()
-        self.content_stack.setMinimumHeight(120)
+        self.content_stack = GuardedStack()
+        self.content_stack.setMinimumHeight(112)      # ~2 lignes de médias ; sous ce total le corps du panneau défile
         self.content_stack.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
@@ -424,11 +432,9 @@ class ProjectPanel(QWidget):
         self.content_stack.addWidget(self.sfx_view)
         self.sfx_view.add_requested.connect(self.sfx_add_requested)
         self.sfx_view.on_cuts_requested.connect(self.sfx_on_cuts_requested)
-        # Chaque page est faite pour défiler : on neutralise leur
-        # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
-        # sinon la pile réserve cette hauteur et la grille de vignettes
-        # disparaît. On ne fige pas la hauteur : le layout accorde le
-        # surplus quand la colonne est haute.
+        # Chaque page est enveloppée à l'ajout dans une zone défilante (``GuardedStack``) : son minimum est honnête
+        # (l'éditeur de sous-titres réclame 360 px) mais la pile ne le réserve pas ; quand la colonne est plus basse
+        # la page défile au lieu de se chevaucher. Le surplus va à la page quand la colonne est haute.
         for page in (
             self.bin_videos, self.bin_audios, self.subtitle_view,
             self.effects_view, self.transition_view,
@@ -436,7 +442,6 @@ class ProjectPanel(QWidget):
             self.sfx_view,
         ):
             page.setMinimumHeight(0)
-            page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         layout.addWidget(self.content_stack, 1)
         self.audio_effects_view.apply_requested.connect(
             self.audio_effect_apply_requested

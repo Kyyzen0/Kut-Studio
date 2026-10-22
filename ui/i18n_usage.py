@@ -25,6 +25,7 @@ USAGE_TRANSLATIONS: dict[str, dict[str, str]] = {
     "usage.menu.advanced": _t("&Avancé", "&Advanced", "A&vanzado"),
     # Barre du haut : puce (infobulle et nom accessible).
     "usage.chip.tooltip": _t("Niveau d'usage", "Usage level", "Nivel de uso"),
+    "usage.chip.label": _t("Niveau : {level}", "Level: {level}", "Nivel: {level}"),
     "usage.chip.name": _t("Niveau d'usage : {level}", "Usage level: {level}", "Nivel de uso: {level}"),
     # Inspecteur : lien du bas (groupes réservés aux niveaux supérieurs) et sous-bloc « Avancé » d'un groupe.
     "usage.inspector.more": _t("Afficher plus d'options", "Show more options", "Mostrar más opciones"),
