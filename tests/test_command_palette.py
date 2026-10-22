@@ -395,3 +395,16 @@ def test_the_obvious_command_comes_first_and_a_greyed_placeholder_does_not_outra
     assert not greyed.entry.enabled and greyed.score < first.score
     submenu_entry = next(e for e in entries if e.id == "menu:workspace.panel.color")
     assert submenu_entry.context == "Panneaux" and submenu_entry.title == "Couleur"
+
+
+def test_the_top_bar_button_gives_up_room_before_the_level_chip_and_keeps_its_name(window):
+    window.set_usage_level("advanced")
+    window.resize(1700, 800)
+    QApplication.processEvents()
+    assert window.palette_button.form() == "full" and "Rechercher" in window.palette_button.text()
+    window.resize(1180, 720)
+    QApplication.processEvents()
+    assert window.palette_button.form() in ("text", "icon") and window.usage_level_chip.form() == "full"
+    assert "Ctrl" in window.palette_button.toolTip() or "⌘" in window.palette_button.toolTip()
+    assert window.palette_button.accessibleName() == i18n.translate("palette.button.name")
+    assert window.export_button.geometry().right() <= window.export_button.parentWidget().width()

@@ -190,6 +190,7 @@ class CommandPalette(QWidget):
             chip.setObjectName("paletteChip")
             chip.setProperty("chip_key", key)
             chip.setCursor(Qt.PointingHandCursor)
+            chip.setFocusPolicy(Qt.TabFocus)               # Tab les atteint ; un clic ne prend pas le focus (champ gardé)
             chip.clicked.connect(lambda _checked=False, button=chip: self._use_chip(button))
             chips.addWidget(chip)
             self.chips.append(chip)

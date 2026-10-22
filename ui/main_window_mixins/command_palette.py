@@ -20,13 +20,14 @@ from collections.abc import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QMenu, QToolButton
+from PySide6.QtWidgets import QMenu
 
 from core.command_search import SearchEntry, clean_label
 from core.usage_level import UsageLevel
 from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PanelId
 from ui import i18n
 from ui.command_palette import CommandPalette, shortcut_text
+from ui.command_palette_button import FitPaletteButton, PaletteButton
 from ui.icons import IconName
 from ui.main_window_mixins.menu_levels import PAGE_LEVELS
 from ui.properties_panel_mixins.construction import TRACKING_TAB
@@ -75,27 +76,31 @@ class CommandPaletteMixin:
     """Mixin de ``MainWindow`` (palette de commandes)."""
 
     command_palette: CommandPalette
-    palette_button: QToolButton
+    palette_button: PaletteButton
+    _palette_fit: FitPaletteButton | None = None
     _palette_runners: dict[str, Callable[[], object]]
     _palette_entries_by_id: dict[str, SearchEntry]
     _palette_recent: list[str]
 
     # -- construction --------------------------------------------------------------------------------------------------
 
-    def _build_palette_button(self) -> QToolButton:
+    def _build_palette_button(self) -> PaletteButton:
         """Bouton « Rechercher… ⌘K » de la barre du haut (loupe, texte et raccourci affiché)."""
         from ui.icons import make_icon
 
-        button = QToolButton()
+        button = PaletteButton()
         button.setObjectName("paletteButton")
         button.setIcon(make_icon(IconName.SEARCH))
-        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         button.setCursor(Qt.PointingHandCursor)
         button.setFocusPolicy(Qt.NoFocus)
         button.clicked.connect(lambda _checked=False: self.toggle_command_palette())  # type: ignore[attr-defined]
         self.palette_button = button
         self._retranslate_command_palette()
         return button
+
+    def _fit_palette_button(self, bar) -> None:
+        """Le bouton cède de la place (texte, puis icône seule) avant la puce du niveau, « Réglages » et « Exporter »."""
+        self._palette_fit = FitPaletteButton(bar, self.palette_button, [self.usage_level_chip])  # type: ignore[attr-defined]
 
     def _install_command_palette(self) -> None:
         """Crée la boîte (une fois, enfant de la fenêtre) ; à appeler quand les menus sont construits."""
@@ -117,8 +122,9 @@ class CommandPaletteMixin:
             return
         sequences = self.shortcuts.shortcut_map.sequences("command_palette")  # type: ignore[attr-defined]
         shortcut = shortcut_text(sequences[0]) if sequences else ""
-        label = i18n.translate("palette.button")
-        button.setText(f" {label}   {shortcut}".rstrip())
+        button.set_texts(i18n.translate("palette.button"), shortcut)
+        if self._palette_fit is not None:
+            self._palette_fit.fit()
         button.setToolTip(i18n.translate("palette.button.tooltip", shortcut=shortcut or "—"))
         button.setAccessibleName(i18n.translate("palette.button.name"))
         palette = getattr(self, "command_palette", None)

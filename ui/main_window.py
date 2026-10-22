@@ -1213,6 +1213,7 @@ class MainWindow(
         self.export_button.clicked.connect(self.show_export)
         layout.addWidget(self.export_button)
         self._usage_level_fit = _FitLevelChip(bar, self.usage_level_chip)
+        self._fit_palette_button(bar)
 
         self._update_top_bar()
         return bar
