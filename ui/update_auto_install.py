@@ -26,7 +26,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
 
 from core import update_helper
@@ -85,6 +85,7 @@ def show_message(parent: QWidget, title: str, text: str, actions: list[tuple[str
         button = QPushButton(label, box)
         box.addButton(button, QMessageBox.ButtonRole.ActionRole)
         button.clicked.connect(lambda _checked=False, cb=callback: cb())  # type: ignore[operator]
+    box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     box.open()
 
 
@@ -271,7 +272,7 @@ class AutoInstaller(QObject):
         app = Path(str(self.window._update_context.location))
         try:
             report = recover_leftovers(app, updates_dir=folder, lock=folder / update_helper.LOCK_NAME,
-                                       status=folder / update_helper.STATUS_NAME, running_version=APP_VERSION)
+                                       running_version=APP_VERSION)
         except OSError:
             LOGGER.warning("Mise à jour : reprise impossible", exc_info=True)
         else:

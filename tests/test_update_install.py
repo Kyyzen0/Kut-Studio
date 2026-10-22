@@ -328,7 +328,7 @@ def test_a_half_swapped_state_is_restored_at_the_next_start(tmp_path):
     scenario.run(KUT_UPD_HALT_AFTER="renamed_previous")
     # Ni l'assistant ni l'application ne tournent : une copie qui démarre depuis ailleurs voit l'état et le répare.
     report = recover_leftovers(scenario.app, updates_dir=scenario.updates, lock=scenario.plan.lock,
-                               status=scenario.plan.status, running_version=OLD)
+                               running_version=OLD)
     assert report.restored == scenario.plan.previous
     assert scenario.installed_version == OLD
     assert not scenario.plan.previous.exists()
@@ -372,7 +372,7 @@ def test_rolling_back_stops_what_runs_from_the_new_bundle(tmp_path):
 
 def _recover(scenario: Scenario, *, running: str = NEW, alive=lambda pid: False):
     return recover_leftovers(scenario.app, updates_dir=scenario.updates, lock=scenario.plan.lock,
-                             status=scenario.plan.status, running_version=running, alive=alive)
+                             running_version=running, alive=alive)
 
 
 def test_an_unfinished_install_with_a_running_new_app_drops_the_backup(tmp_path):
@@ -486,7 +486,8 @@ def test_launch_is_detached_and_logs_to_install_log(tmp_path, monkeypatch):
     env = kwargs["env"]
     assert "DYLD_INSERT_LIBRARIES" not in env and env["KUT_UPD_APP"] == str(plan.app) and env["KUT_UPD_OPEN"] == "/usr/bin/open"
     script = Path(args[1])
-    assert script.stat().st_mode & 0o777 == 0o700
+    if sys.platform != "win32":
+        assert script.stat().st_mode & 0o777 == 0o700
     assert plan.app not in script.parents, "l'assistant est hors du bundle qu'il remplace"
     assert str(plan.app) not in script.read_text(encoding="utf-8"), "aucun chemin n'est écrit dans le script"
 
@@ -525,9 +526,9 @@ def test_signature_policy_reads_the_verified_status_of_the_package():
 
 
 def test_install_is_available_only_for_a_verified_writable_app(real_app):
-    decision = evaluate_install(_context(real_app), object(), policy=FixedPolicy(True), platform_name="darwin")
+    decision = evaluate_install(_context(real_app), object(), policy=FixedPolicy(True))
     assert decision.available and decision.refusal is None and decision.app == real_app
-    decision = evaluate_install(_context(real_app), object(), policy=FixedPolicy(False), platform_name="darwin")
+    decision = evaluate_install(_context(real_app), object(), policy=FixedPolicy(False))
     assert not decision.available and decision.refusal is InstallRefusal.NOT_VERIFIED
 
 
@@ -542,20 +543,19 @@ def test_install_is_available_only_for_a_verified_writable_app(real_app):
     (InstallContext(InstallKind.MACOS_APP, PurePosixPath("/nulle/part/Kut-Studio.app")), InstallRefusal.MISSING_BUNDLE),
 ])
 def test_install_is_refused_with_a_reason(context, refusal):
-    decision = evaluate_install(context, object(), policy=FixedPolicy(True), platform_name="darwin")
+    decision = evaluate_install(context, object(), policy=FixedPolicy(True))
     assert not decision.available and decision.refusal is refusal
 
 
-def test_install_is_refused_on_other_systems_read_only_volumes_and_missing_rights(real_app):
+def test_install_is_refused_on_read_only_volumes_and_missing_rights(real_app):
     context = _context(real_app)
-    assert evaluate_install(context, object(), policy=FixedPolicy(True), platform_name="linux").refusal is InstallRefusal.NOT_MACOS
-    read_only = evaluate_install(context, object(), policy=FixedPolicy(True), platform_name="darwin",
+    read_only = evaluate_install(context, object(), policy=FixedPolicy(True),
                                  read_only=lambda path: True)
     assert read_only.refusal is InstallRefusal.READ_ONLY_VOLUME
-    no_parent = evaluate_install(context, object(), policy=FixedPolicy(True), platform_name="darwin",
+    no_parent = evaluate_install(context, object(), policy=FixedPolicy(True),
                                  access=lambda path, mode: path != str(real_app.parent))
     assert no_parent.refusal is InstallRefusal.PARENT_NOT_WRITABLE
-    no_bundle = evaluate_install(context, object(), policy=FixedPolicy(True), platform_name="darwin",
+    no_bundle = evaluate_install(context, object(), policy=FixedPolicy(True),
                                  access=lambda path, mode: path != str(real_app))
     assert no_bundle.refusal is InstallRefusal.BUNDLE_NOT_WRITABLE
 
@@ -567,7 +567,7 @@ def test_a_really_unwritable_parent_folder_is_refused(tmp_path):
     app = make_app(parent, version=OLD, executable=SILENT_EXE)
     parent.chmod(0o555)
     try:
-        decision = evaluate_install(_context(app), object(), policy=FixedPolicy(True), platform_name="darwin")
+        decision = evaluate_install(_context(app), object(), policy=FixedPolicy(True))
         assert decision.refusal is InstallRefusal.PARENT_NOT_WRITABLE
     finally:
         parent.chmod(0o755)
@@ -608,6 +608,8 @@ class FakeTools:
         if tool == "ditto":
             with zipfile.ZipFile(args[-2]) as archive:
                 archive.extractall(args[-1])
+            for executable in Path(args[-1]).glob("*/Contents/MacOS/*"):
+                executable.chmod(0o755)                  # ditto conserve les droits de l'archive
             return CommandResult(0)
         return CommandResult(0)
 
@@ -710,11 +712,11 @@ def test_error_details_are_bounded(tmp_path):
 
 
 def _archive(path: Path, *, version=NEW, identifier=IDENTIFIER, extra: dict[str, bytes] | None = None,
-             prefix="Kut-Studio.app/") -> Path:
+             prefix="Kut-Studio.app/", executable=SILENT_EXE) -> Path:
     with zipfile.ZipFile(path, "w") as bundle:
         bundle.writestr(f"{prefix}Contents/Info.plist", plistlib.dumps({
             "CFBundleIdentifier": identifier, "CFBundleShortVersionString": version, "CFBundleExecutable": "Kut-Studio"}))
-        bundle.writestr(f"{prefix}Contents/MacOS/Kut-Studio", SILENT_EXE)
+        bundle.writestr(f"{prefix}Contents/MacOS/Kut-Studio", executable)
         for name, data in (extra or {}).items():
             bundle.writestr(name, data)
     return path
@@ -731,11 +733,14 @@ def test_staging_extracts_next_to_the_app_and_validates(tmp_path):
     archive = _archive(tmp_path / "paquet.zip")
     tools = FakeTools()
     staging = _stage(archive, tools, app=app)
-    assert staging == app.parent / ".Kut-Studio-update-999" and (staging / "Kut-Studio.app").is_dir()
+    assert staging == app.parent / ".Kut-Studio-update-999" and (staging / "Contents" / "Info.plist").is_file(), \
+        "le staging est le bundle lui-même : l'assistant le renomme tel quel"
+    assert sorted(p.name for p in app.parent.iterdir()) == [".Kut-Studio-update-999", "Kut-Studio.app"], "plus d'extraction"
     ditto = next(c for c in tools.commands if Path(c[0]).name == "ditto")
     assert ditto[1:4] == ["-x", "-k", "--noqtn"], "extraction sans propager la quarantaine"
     xattr = next(c for c in tools.commands if Path(c[0]).name == "xattr")
     assert xattr[1:3] == ["-dr", "com.apple.quarantine"] and xattr[-1].endswith("Kut-Studio.app")
+    assert not (app.parent / ".Kut-Studio-update-999.extract").exists()
     assert archive.exists(), "l'archive vérifiée n'est jamais modifiée"
 
 
@@ -814,7 +819,7 @@ def test_real_ditto_extracts_without_propagating_the_quarantine(tmp_path):
     (tmp_path / "Apps").mkdir()
     app = make_app(tmp_path / "Apps", version=OLD, executable=SILENT_EXE)
     archive = _archive(tmp_path / "paquet.zip")
-    assert mark_as_downloaded(archive, url="https://exemple.invalid/x", platform_name="darwin")
+    assert mark_as_downloaded(archive, url="https://exemple.invalid/x")
     fake = FakeTools()
 
     def runner(args):
@@ -822,6 +827,55 @@ def test_real_ditto_extracts_without_propagating_the_quarantine(tmp_path):
 
     staging = stage_update(archive, app, expected_version=Version.parse(NEW), installed_version=Version.parse(OLD),
                            required_arch="arm64", pid=999, signature_verified=True, run=runner)
-    assert (staging / "Kut-Studio.app" / "Contents" / "Info.plist").is_file()
-    assert macos_extended_attribute(staging / "Kut-Studio.app", "com.apple.quarantine") is None
+    assert (staging / "Contents" / "Info.plist").is_file()
+    assert macos_extended_attribute(staging, "com.apple.quarantine") is None
     assert macos_extended_attribute(archive, "com.apple.quarantine") is not None, "le paquet garde sa marque"
+
+
+@needs_sh
+def test_a_staged_bundle_is_exactly_what_the_helper_installs(tmp_path):
+    """De bout en bout : ``stage_update`` puis l'assistant sur le staging qu'il a produit (le même contrat)."""
+    scenario = Scenario(tmp_path)
+    shutil.rmtree(scenario.plan.staging)
+    # Le faux ``Kut-Studio`` de l'archive écrit le fichier « démarré » comme la vraie application.
+    archive = _archive(tmp_path / "paquet.zip", executable=GOOD_EXE % NEW)
+    staged = stage_update(archive, scenario.app, expected_version=Version.parse(NEW), installed_version=Version.parse(OLD),
+                          required_arch="arm64", pid=scenario.pid, signature_verified=True, run=FakeTools())
+    assert staged == scenario.plan.staging
+    done = scenario.run()
+    assert done.returncode == 0, scenario.log()
+    info = plistlib.loads((scenario.app / "Contents" / "Info.plist").read_bytes())
+    assert info["CFBundleShortVersionString"] == NEW
+    assert sorted(p.name for p in scenario.apps.iterdir()) == ["Kut-Studio.app"]
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or shutil.which("cc") is None or not Path("/usr/bin/codesign").exists(),
+                    reason="codesign, lipo et un compilateur C réels : macOS seulement")
+def test_the_real_system_tools_validate_a_real_ad_hoc_bundle(tmp_path):
+    """Vrais ``codesign`` / ``lipo`` sur un vrai petit bundle ad hoc fabriqué dans un dossier temporaire."""
+    import platform
+
+    machine = platform.machine()
+    app = make_app(tmp_path, version=NEW, executable=SILENT_EXE)
+    source = tmp_path / "main.c"
+    source.write_text("int main(void){ return 0; }\n", encoding="utf-8")
+    (app / "Contents" / "VERSION").unlink()                 # un fichier de plus dans Contents/ ferait refuser le sceau
+    exe = app / "Contents" / "MacOS" / "Kut-Studio"
+    built = subprocess.run(["cc", str(source), "-o", str(exe)], capture_output=True, check=False)
+    if built.returncode != 0:
+        pytest.skip("compilation impossible")
+    signed = subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(app)], capture_output=True, check=False)
+    if signed.returncode != 0:
+        pytest.skip("signature ad hoc impossible : " + signed.stderr.decode(errors="replace")[:200])
+    report = validate_bundle(app, expected_identifier=IDENTIFIER, expected_version=Version.parse(NEW),
+                             installed_version=Version.parse(OLD), required_arch=machine)
+    assert report.adhoc and report.team is None and machine in report.architectures
+    with pytest.raises(StageError) as raised:
+        validate_bundle(app, expected_identifier=IDENTIFIER, expected_version=Version.parse(NEW),
+                        installed_version=Version.parse(OLD), required_arch="x86_64" if machine == "arm64" else "arm64")
+    assert raised.value.problem is StageProblem.ARCHITECTURE
+    exe.write_bytes(exe.read_bytes() + b"\0altere")          # le sceau de signature ne correspond plus
+    with pytest.raises(StageError) as raised:
+        validate_bundle(app, expected_identifier=IDENTIFIER, expected_version=Version.parse(NEW),
+                        installed_version=Version.parse(OLD), required_arch=machine)
+    assert raised.value.problem in (StageProblem.SIGNATURE, StageProblem.ARCHITECTURE)

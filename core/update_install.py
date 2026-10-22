@@ -25,7 +25,6 @@ import plistlib
 import re
 import shutil
 import subprocess
-import sys
 import time
 import zipfile
 from collections.abc import Callable, Sequence
@@ -34,7 +33,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
-from .release_assets import Architecture, OperatingSystem, normalize_system
+from .process_supervisor import supervised_run
+from .release_assets import Architecture
 from .update_helper import PREVIOUS_PREFIX, STAGING_PREFIX
 from .updates import InstallContext, InstallKind
 from .versioning import Version
@@ -110,8 +110,11 @@ class InstallDecision:
 
 
 def _volume_is_read_only(path: Path) -> bool:
+    statvfs = getattr(os, "statvfs", None)
+    if statvfs is None:                      # pas de statvfs (Windows) : le droit d'écriture tranchera
+        return False
     try:
-        return bool(os.statvfs(path).f_flag & os.ST_RDONLY)
+        return bool(statvfs(path).f_flag & os.ST_RDONLY)
     except OSError:
         return True
 
@@ -121,15 +124,13 @@ def evaluate_install(
     package: object,
     *,
     policy: InstallPolicy | None = None,
-    platform_name: str | None = None,
     access: Callable[[str, int], bool] = os.access,
     read_only: Callable[[Path], bool] = _volume_is_read_only,
 ) -> InstallDecision:
     """L'installation automatique est-elle possible, et sinon pourquoi ? Ne touche à rien."""
     if context.kind is InstallKind.SOURCE:
         return InstallDecision(False, InstallRefusal.SOURCE)
-    system = normalize_system(platform_name or sys.platform)
-    if context.kind is not InstallKind.MACOS_APP or system is not OperatingSystem.MACOS:
+    if context.kind is not InstallKind.MACOS_APP:        # le genre vient de ``install_context`` : il porte déjà le système
         return InstallDecision(False, InstallRefusal.NOT_MACOS)
     if context.translocated:
         return InstallDecision(False, InstallRefusal.TRANSLOCATED)
@@ -195,7 +196,7 @@ class StageError(Exception):
 def run_command(args: Sequence[str]) -> CommandResult:
     """Lance un outil système sans shell, avec délai ; un outil absent ou trop lent est une :class:`StageError`."""
     try:
-        done = subprocess.run(list(args), capture_output=True, text=True, timeout=TOOL_TIMEOUT_SECONDS, check=False,
+        done = supervised_run(list(args), capture_output=True, text=True, timeout=TOOL_TIMEOUT_SECONDS, check=False,
                               stdin=subprocess.DEVNULL, errors="replace")
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise StageError(StageProblem.TOOL, f"{Path(args[0]).name} : {type(exc).__name__}") from exc
@@ -334,22 +335,24 @@ def stage_update(
     expected_identifier: str = BUNDLE_IDENTIFIER,
     run: Runner = run_command,
 ) -> Path:
-    """Extrait et valide la nouvelle application à côté de ``app`` ; retourne le dossier de staging.
+    """Extrait et valide la nouvelle application à côté de ``app`` ; retourne le staging, qui **est** le nouveau bundle.
 
     Aucun fichier existant n'est modifié ; au moindre défaut, le staging est supprimé avant de lever l'erreur.
     """
     if not signature_verified:
         raise StageError(StageProblem.NOT_VERIFIED, "la signature n'est pas vérifiée : la quarantaine reste")
     staging = app.parent / f"{STAGING_PREFIX}{pid}"
+    extraction = app.parent / f"{STAGING_PREFIX}{pid}.extract"
     try:
         inspect_archive(archive, free_bytes=shutil.disk_usage(app.parent).free)
-        if staging.exists() or staging.is_symlink():
-            shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(mode=0o700)
-        extracted = run([DITTO, "-x", "-k", "--noqtn", str(archive), str(staging)])
+        for leftover in (staging, extraction):
+            if leftover.exists() or leftover.is_symlink():
+                shutil.rmtree(leftover, ignore_errors=True)
+        extraction.mkdir(mode=0o700)
+        extracted = run([DITTO, "-x", "-k", "--noqtn", str(archive), str(extraction)])
         if extracted.returncode != 0:
             raise StageError(StageProblem.ARCHIVE, f"ditto : {(extracted.stderr or extracted.stdout).strip()[:200]}")
-        bundle = staging / APP_BUNDLE_NAME
+        bundle = extraction / APP_BUNDLE_NAME
         if bundle.is_dir() and not bundle.is_symlink():
             # Signature Ed25519 vérifiée = authenticité garantie par nous : la quarantaine du bundle ne sert plus.
             run([XATTR, "-dr", "com.apple.quarantine", str(bundle)])
@@ -363,8 +366,12 @@ def stage_update(
             installed_team=installed_team,
             run=run,
         )
+        # Le staging EST le bundle : l'assistant le renomme tel quel en ``Kut-Studio.app`` (même volume, atomique).
+        os.rename(bundle, staging)
+        shutil.rmtree(extraction, ignore_errors=True)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(extraction, ignore_errors=True)
         raise
     return staging
 
@@ -454,7 +461,6 @@ def recover_leftovers(
     *,
     updates_dir: Path,
     lock: Path,
-    status: Path,
     running_version: str,
     alive: Callable[[int], bool] = pid_alive,
 ) -> RecoveryReport:
@@ -495,8 +501,8 @@ def recover_leftovers(
         shutil.rmtree(leftover, ignore_errors=True)
         removed.append(leftover)
     for staging in (p for p in entries if p.name.startswith(STAGING_PREFIX)):
-        suffix = staging.name[len(STAGING_PREFIX):]
-        if suffix.isdigit() and alive(int(suffix)):
+        owner = re.match(r"\d+", staging.name[len(STAGING_PREFIX):])
+        if owner is not None and alive(int(owner.group())):
             continue                      # staging d'une autre instance encore ouverte
         shutil.rmtree(staging, ignore_errors=True)
         removed.append(staging)
