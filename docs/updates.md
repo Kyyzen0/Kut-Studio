@@ -94,7 +94,7 @@ garde « Quitter et installer… » (parcours assisté de la section 3) et dit p
 
 | Condition | Raison dite si elle manque |
 | --- | --- |
-| La **signature Ed25519** de la release est `VERIFIED` (lot 1, ADR-0012 : `core/update_signature.py`). Interface : `core.update_install.InstallPolicy` ; la vraie valeur lit `package.signature_status`, une valeur imposée sert aux tests. Tant que le paquet n'expose pas ce statut, la condition est fausse. | (silence : la signature a son propre message) |
+| La **signature Ed25519** de la release est `VERIFIED` (ADR-0012) : `DownloadResult.signature_status` vaut `SignatureStatus.VERIFIED` **et** la clé qui l'a validée figure dans `core/update_keys.py` (`core.update_install.SignaturePolicy`, qui lit le vrai statut ; `FixedPolicy` sert aux tests). Non signé (liste de clés vide aujourd'hui), signature fausse ou clé inconnue (le paquet est alors refusé par le téléchargement), statut absent : parcours assisté. | « la signature de cette version n'est pas vérifiée » |
 | Application gelée, `Kut-Studio.app` macOS | exécution depuis les sources / autre système (silence) |
 | Pas de translocation (`/AppTranslocation/`) | « macOS exécute cette copie depuis un emplacement temporaire » |
 | Bundle présent, volume non en lecture seule (`statvfs`) | volume en lecture seule |

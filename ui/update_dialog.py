@@ -67,8 +67,8 @@ class _View:
     """Problème de préparation déjà traduit : l'installation automatique n'est plus proposée pour ce paquet."""
 
 
-_SILENT_REFUSALS = {None, InstallRefusal.SOURCE, InstallRefusal.NOT_MACOS, InstallRefusal.NOT_VERIFIED}
-"""Raisons qu'on ne commente pas : hors macOS ou sources, il n'y a rien à dire ; la signature a son propre message."""
+_SILENT_REFUSALS = {None, InstallRefusal.SOURCE, InstallRefusal.NOT_MACOS}
+"""Raisons qu'on ne commente pas : hors macOS ou sources, il n'y a rien à dire."""
 
 
 def _locale() -> QLocale:

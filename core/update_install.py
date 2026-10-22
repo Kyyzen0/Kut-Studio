@@ -36,6 +36,8 @@ from typing import Protocol
 from .process_supervisor import supervised_run
 from .release_assets import Architecture
 from .update_helper import PREVIOUS_PREFIX, STAGING_PREFIX
+from .update_keys import UPDATE_PUBLIC_KEYS, PublicKey
+from .update_signature import SignatureStatus
 from .updates import InstallContext, InstallKind
 from .versioning import Version
 
@@ -68,14 +70,21 @@ class InstallPolicy(Protocol):
 
 
 class SignaturePolicy:
-    """Vraie condition : ``package.signature_status`` vaut ``VERIFIED`` (:mod:`core.update_signature`, lot 1)."""
+    """Vraie condition (ADR-0012) : le statut de signature du paquet est ``VERIFIED`` **et** la clé qui l'a validée figure
+    dans :data:`core.update_keys.UPDATE_PUBLIC_KEYS` (ou dans ``keys``, pour les tests). Non signé (``ABSENT``, liste de
+    clés vide aujourd'hui), signature fausse ou clé inconnue (``INVALID``), statut absent : refus, donc installation assistée."""
+
+    def __init__(self, keys: Sequence[PublicKey] | None = None) -> None:
+        self._keys = keys
 
     def allows(self, package: object) -> bool:
-        status = getattr(package, "signature_status", None)
-        if status is None:
+        if getattr(package, "signature_status", None) is not SignatureStatus.VERIFIED:
             return False
-        names = {getattr(status, "name", None), getattr(status, "value", None), status}
-        return any(isinstance(name, str) and name.upper() == "VERIFIED" for name in names)
+        signature = getattr(package, "signature", None)
+        if signature is None or not signature.verified or not signature.key_id:
+            return False
+        known = {key.key_id for key in (UPDATE_PUBLIC_KEYS if self._keys is None else self._keys)}
+        return signature.key_id in known
 
 
 @dataclass(frozen=True)

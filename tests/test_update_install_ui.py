@@ -138,7 +138,8 @@ def test_an_unverified_package_keeps_the_assisted_install_unchanged(qtbot, monke
     assert _visible_buttons(dialog) == {"open_folder", "install", "close"}
     assert not dialog.auto_install_button.isVisibleTo(dialog)
     assert dialog.instructions.text() == i18n.translate("update.steps.macos"), "les étapes d'aujourd'hui, inchangées"
-    assert "update.auto" not in dialog.details.text() and i18n.translate("update.auto.reason.not_verified") not in dialog.details.text()
+    assert i18n.translate("update.auto.unavailable", reason=i18n.translate("update.auto.reason.not_verified")) \
+        in dialog.details.text(), "message clair : la signature de cette version n'est pas vérifiée"
 
 
 def test_the_default_policy_requires_the_signature_status_of_the_package(qtbot, monkeypatch, server, tmp_path, context):
@@ -433,3 +434,25 @@ def test_every_installation_text_is_translated(qtbot, tmp_path, monkeypatch, lan
             assert seen and not any(text.startswith("[") for text in seen)
     finally:
         i18n.set_language(original)
+
+
+def test_the_real_policy_follows_the_signature_of_the_downloaded_package(qtbot, monkeypatch, server, tmp_path, context, recorder):
+    from test_update_install import SUMS, _download, _key
+    from test_update_ui import _offer
+
+    from core.update_install import SignaturePolicy
+    from core.update_service import DownloadResult
+
+    serve_releases(server, REPOSITORY, [_publish(server)])
+    window = _window_for(qtbot, monkeypatch, server, tmp_path, context=context)
+    window._auto_installer.policy = SignaturePolicy(keys=[_key(1)[1]])
+    dialog = window._ensure_update_dialog()
+    offer = _offer(target=Target(OperatingSystem.MACOS, Architecture.ARM64))
+    for label, signed, expected in (("vérifiée", _download(), True), ("non signée", _download(signer=None), False),
+                                    ("clé inconnue", _download(signer=2), False),
+                                    ("falsifiée", _download(sums=SUMS + b"x"), False)):
+        result = DownloadResult(offer, path=tmp_path / "Kut-Studio.zip", sha256="0" * 64, signature=signed.signature)
+        dialog.show_download_result(result)
+        window._auto_installer.refresh_dialog()
+        assert dialog.auto_install_button.isVisibleTo(dialog) is expected, label
+        assert dialog.install_button.isVisibleTo(dialog) is (not expected), label

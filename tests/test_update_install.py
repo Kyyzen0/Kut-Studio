@@ -506,15 +506,64 @@ def test_launch_is_detached_and_logs_to_install_log(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-class _Package:
-    def __init__(self, status=None):
-        if status is not None:
-            self.signature_status = status
+SUMS = b"0" * 64 + b"  Kut-Studio-2.0.0-macos-arm64.zip\n"
 
 
-class _Status:
-    def __init__(self, name):
-        self.name = name
+def _key(seed_byte: int):
+    from core import ed25519
+    from core.update_keys import PublicKey
+
+    seed = bytes([seed_byte]) * 32
+    return seed, PublicKey(ed25519.public_key_from_seed(seed))
+
+
+def _download(sums: bytes = SUMS, *, signer: int | None = 1, listed: int = 1, signature: bytes | None = None):
+    """Vrai ``DownloadResult`` dont la signature est vérifiée par ``verify_release_signature`` (liste de ``listed``)."""
+    from core import ed25519
+    from core.update_service import DownloadResult
+    from core.update_signature import format_signature_file, verify_release_signature
+
+    if signature is None and signer is not None:
+        seed, public = _key(signer)
+        signature = format_signature_file(public.key_id, ed25519.sign(seed, SUMS))
+    result = verify_release_signature(sums, signature, [_key(listed)[1]])
+    return DownloadResult(object(), signature=result)       # type: ignore[arg-type]
+
+
+def test_signature_policy_allows_only_a_verified_signature_by_a_listed_key():
+    policy = SignaturePolicy(keys=[_key(1)[1]])
+    verified = _download()
+    assert verified.signature_status.name == "VERIFIED" and policy.allows(verified)
+    assert not SignaturePolicy().allows(verified), "liste de clés de l'application vide aujourd'hui : jamais"
+    assert not SignaturePolicy(keys=[_key(9)[1]]).allows(verified), "la clé qui a signé n'est pas dans la liste"
+
+
+@pytest.mark.parametrize("case", ["unsigned", "unknown_key", "forged", "garbage", "no_result"])
+def test_signature_policy_refuses_everything_that_is_not_verified(case):
+    policy = SignaturePolicy(keys=[_key(1)[1]])
+    if case == "unsigned":
+        package = _download(signer=None)                           # ABSENT
+    elif case == "unknown_key":
+        package = _download(signer=2)                              # signé par une clé que l'application ne connaît pas
+    elif case == "forged":
+        package = _download(sums=SUMS.replace(b"0", b"1", 1))      # la signature ne correspond pas aux sommes reçues
+    elif case == "garbage":
+        package = _download(signature=b"n'importe quoi")
+    else:
+        from core.update_service import DownloadResult
+
+        package = DownloadResult(object())                         # type: ignore[arg-type]
+    assert not policy.allows(package)
+    assert not policy.allows(object()), "sans statut de signature : jamais"
+    assert FixedPolicy(True).allows(object()) and not FixedPolicy(False).allows(object())
+
+
+def test_the_unforgeable_status_is_the_enum_not_a_look_alike_string():
+    class Fake:
+        signature_status = "verified"
+        signature = None
+
+    assert not SignaturePolicy(keys=[_key(1)[1]]).allows(Fake())
 
 
 @pytest.fixture
@@ -524,14 +573,6 @@ def real_app(tmp_path):
 
 def _context(app: Path, **options) -> InstallContext:
     return InstallContext(InstallKind.MACOS_APP, PurePosixPath(str(app)), **options)
-
-
-def test_signature_policy_reads_the_verified_status_of_the_package():
-    policy = SignaturePolicy()
-    assert policy.allows(_Package(_Status("VERIFIED"))) and policy.allows(_Package("verified"))
-    assert not policy.allows(_Package(_Status("ABSENT"))) and not policy.allows(_Package(_Status("INVALID")))
-    assert not policy.allows(_Package()), "sans statut de signature (lot 1 absent) : jamais"
-    assert FixedPolicy(True).allows(object()) and not FixedPolicy(False).allows(object())
 
 
 def test_install_is_available_only_for_a_verified_writable_app(real_app):
