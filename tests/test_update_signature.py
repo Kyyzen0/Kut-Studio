@@ -201,6 +201,17 @@ def test_without_the_secret_the_release_is_unsigned_and_says_so(tmp_path, monkey
     assert signing.sign_release_directory(folder, {signing.SIGNING_KEY_ENV: "   "}) == "unsigned"
 
 
+def test_an_unsigned_run_removes_a_stale_signature_file(tmp_path, monkeypatch):
+    """Dossier réutilisé : l'ancienne .sig ne doit pas être publiée avec une release qui se dit non signée."""
+    folder = _release(tmp_path)
+    (folder / SIGNATURE_FILE).write_bytes(sign_with_fake_key(b"ancien contenu"))
+    monkeypatch.delenv(signing.SIGNING_KEY_ENV, raising=False)
+    status = tmp_path / "update-signature.txt"
+    assert cli.main(["sign", str(folder), "--status-file", str(status)]) == 0
+    assert status.read_text(encoding="utf-8") == "unsigned\n"
+    assert not (folder / SIGNATURE_FILE).exists()
+
+
 def test_with_the_secret_the_release_is_signed_and_verified_with_the_application_code(tmp_path, monkeypatch):
     folder = _release(tmp_path)
     status = tmp_path / "update-signature.txt"

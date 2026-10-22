@@ -106,6 +106,8 @@ def sign_release_directory(
     env = os.environ if environment is None else environment
     secret = env.get(SIGNING_KEY_ENV, "").strip()
     if not secret:
+        # Jamais de signature d'une exécution précédente dans un dossier réutilisé : une release non signée n'en porte pas.
+        (directory / SIGNATURE_FILE).unlink(missing_ok=True)
         return "unsigned"
     keys = UPDATE_PUBLIC_KEYS if keys is None else keys
     sums_path = directory / CHECKSUMS_FILE

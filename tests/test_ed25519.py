@@ -141,3 +141,46 @@ def test_agrees_with_the_cryptography_library_when_it_is_installed():
         message = bytes(rng.getrandbits(8) for _ in range(rng.randrange(0, 200)))
         reference = primitives.Ed25519PrivateKey.from_private_bytes(seed)
         assert ed25519.sign(seed, message) == reference.sign(message)
+
+
+def _low_order_points():
+    """Identité, ordre 2, ordre 4 (deux), et un point d'ordre 8 : tous de torsion."""
+    p = ed25519._P
+    encodings = [
+        (1).to_bytes(32, "little"),                       # identité (0, 1)
+        (p - 1).to_bytes(32, "little"),                   # (0, -1), ordre 2
+        (0).to_bytes(32, "little"),                       # y = 0 : ordre 4
+        ((0) | (1 << 255)).to_bytes(32, "little"),        # y = 0, autre signe : ordre 4
+    ]
+    return [e for e in encodings if ed25519._decode(e) is not None]
+
+
+def test_low_order_public_keys_cannot_forge_signatures():
+    """Clé identité + R = B, S = 1 : l'équation [S]B = R + [h]A tient pour tout h, sans clé privée."""
+    base = ed25519._encode(ed25519._BASE)
+    forged = base + (1).to_bytes(32, "little")
+    identity = (1).to_bytes(32, "little")
+    # Sans la garde, cette « signature » serait valide pour n'importe quel message : on le démontre.
+    assert ed25519._decode(identity) is not None
+    assert not ed25519.verify(identity, b"n'importe quel message", forged)
+    points = _low_order_points()
+    assert len(points) >= 3
+    for encoded in points:
+        assert not ed25519.is_valid_public_key(encoded)
+        assert not ed25519.verify(encoded, b"message", forged)
+        assert not ed25519.verify(encoded, b"message", encoded + (0).to_bytes(32, "little"))
+
+
+def test_a_key_with_a_torsion_component_is_refused():
+    a = ed25519._decode(bytes.fromhex(VECTORS[1][2]))
+    torsion = ed25519._decode((ed25519._P - 1).to_bytes(32, "little"))
+    mixed = ed25519._encode(ed25519._add(a, torsion))
+    assert not ed25519.is_valid_public_key(mixed)
+    assert ed25519.is_valid_public_key(bytes.fromhex(VECTORS[1][2]))
+
+
+def test_the_public_key_type_refuses_weak_keys():
+    from core.update_keys import PublicKey
+
+    with pytest.raises(ValueError):
+        PublicKey((1).to_bytes(32, "little"))

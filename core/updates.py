@@ -285,10 +285,10 @@ class UpdateOffer:
     target: Target | None
     package: ReleaseAsset | None
     checksums: ReleaseAsset | None
-    signature: ReleaseAsset | None = None
-    """``SHA256SUMS.txt.sig`` quand la release est signée (sinon ``None`` : installation assistée seulement)."""
     skipped: bool = False
     """L'utilisateur avait choisi d'ignorer cette version (seule une recherche manuelle la montre alors)."""
+    signature: ReleaseAsset | None = None
+    """``SHA256SUMS.txt.sig`` quand la release est signée (sinon ``None`` : installation assistée seulement)."""
 
     @property
     def version(self) -> Version:

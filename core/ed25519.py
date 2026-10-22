@@ -13,7 +13,8 @@ standard. Il est vérifié contre les vecteurs de la RFC (§ 7.1) et contre des 
   clé secrète ne doit tourner que dans le workflow isolé de GitHub Actions et, pour ``gen-update-key``, sur la machine de
   l'utilisateur, jamais sur un serveur partagé où un autre processus pourrait mesurer les durées.
 * Lent (quelques dizaines de millisecondes par opération) : une signature par release, une vérification par mise à jour.
-* La vérification est **stricte** : ``S`` doit être inférieur à l'ordre du groupe (pas de malléabilité), les encodages
+* La vérification est **stricte** : la clé publique doit être un point non neutre du sous-groupe d'ordre premier
+  (pas de clé d'ordre faible) ; ``S`` doit être inférieur à l'ordre du groupe (pas de malléabilité), les encodages
   de ``A`` et de ``R`` doivent être canoniques (coordonnée ``y`` < p, signe de ``x`` cohérent), et l'équation est vérifiée
   sans cofacteur par comparaison des encodages (``[S]B - [h]A`` doit s'encoder exactement en ``R``).
 
@@ -137,6 +138,27 @@ def sign(seed: bytes, message: bytes) -> bytes:
     return commitment + int.to_bytes(s, 32, "little")
 
 
+def _is_identity(point: Point) -> bool:
+    return point[0] % _P == 0 and (point[1] - point[2]) % _P == 0
+
+
+def _valid_public_point(data: bytes) -> Point | None:
+    """Point d'une clé publique acceptable : canonique, hors identité et dans le sous-groupe d'ordre premier L.
+
+    Une clé d'ordre faible (identité, ordre 2, 4 ou 8) ou à composante de torsion permettrait de forger des signatures
+    sans clé privée (par exemple clé identité, R = B, S = 1) : refusée, par ``[L]A == identité`` et ``A != identité``.
+    """
+    point = _decode(data)
+    if point is None or _is_identity(point) or not _is_identity(_multiply(_L, point)):
+        return None
+    return point
+
+
+def is_valid_public_key(public_key: bytes) -> bool:
+    """``True`` pour une clé publique de 32 octets que :func:`verify` peut accepter."""
+    return len(public_key) == PUBLIC_KEY_SIZE and _valid_public_point(bytes(public_key)) is not None
+
+
 def verify(public_key: bytes, message: bytes, signature: bytes) -> bool:
     """``True`` seulement pour une signature valide de ``message`` par ``public_key`` (jamais d'exception).
 
@@ -145,7 +167,7 @@ def verify(public_key: bytes, message: bytes, signature: bytes) -> bool:
     """
     if len(public_key) != PUBLIC_KEY_SIZE or len(signature) != SIGNATURE_SIZE:
         return False
-    a = _decode(bytes(public_key))
+    a = _valid_public_point(bytes(public_key))
     if a is None:
         return False
     commitment, s_bytes = bytes(signature[:32]), bytes(signature[32:])
@@ -168,6 +190,7 @@ __all__ = [
     "PUBLIC_KEY_SIZE",
     "SEED_SIZE",
     "SIGNATURE_SIZE",
+    "is_valid_public_key",
     "public_key_from_seed",
     "sign",
     "verify",

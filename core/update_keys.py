@@ -19,7 +19,7 @@ import binascii
 import hashlib
 from dataclasses import dataclass
 
-from .ed25519 import PUBLIC_KEY_SIZE
+from .ed25519 import PUBLIC_KEY_SIZE, is_valid_public_key
 
 KEY_ID_LENGTH = 16
 """Caractères hexadécimaux de l'identifiant : 64 premiers bits du SHA-256 de la clé publique."""
@@ -34,6 +34,8 @@ class PublicKey:
     def __post_init__(self) -> None:
         if len(self.public) != PUBLIC_KEY_SIZE:
             raise ValueError(f"clé publique de {PUBLIC_KEY_SIZE} octets attendue")
+        if not is_valid_public_key(self.public):
+            raise ValueError("clé publique refusée : point hors courbe, neutre ou d'ordre faible")
 
     @property
     def key_id(self) -> str:
