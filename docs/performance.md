@@ -442,7 +442,7 @@ même coupe ne coûte plus rien d'une position à l'autre (`tests/test_export_me
 | 590 s | non lancé (> 6 Go) | 1,03 Go (47 s) |
 
 À 1080p, 58 s, six segments : 3,1 à 4,5 Go avant (selon l'essai) → 1,2 Go ; onze segments : 2,1 Go (avant : 4,3 Go à plus de 6 Go).
-**Loi mesurée après** : mémoire ≈ base (0,25 Go) + nombre d'entrées ouvertes × coût d'une entrée, **indépendante de la durée** ; le coût
+**Loi mesurée après** : mémoire ≈ base (0,25 Go) + Σ entrées ouvertes × coût d'une entrée **à la taille de SA composition** (une séquence 4K imbriquée dans un projet 1080p pèse 4 entrées de la racine ; la décision de scinder et l'estimation comptent les mêmes entrées, `core/export_inputs.py`),  **indépendante de la durée** ; le coût
 d'une entrée suit la taille du cadre : 70 Mo en 1080p avec un seul fil de décodage (140 Mo avec deux : d'où `-threads 1` sur les
 entrées positionnées), 90 à 175 Mo pour une instance de séquence imbriquée (entrée + chaîne imbriquée + `overlay` du plan),
 environ 10 Mo en 480 × 270. Un banc isolé (16 entrées 1080p, `overlay` en chaîne) donne 140 Mo avec deux fils, 72 avec un, et 50 Mo
