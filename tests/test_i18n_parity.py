@@ -156,6 +156,7 @@ _COGNATES_EN = {
     *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
     "Vertical", "Portrait", "Impact", "Amplitude", "Pages", "Luminance", "Composition",
     "Simple", "&Simple",    # niveau d'usage « Simple »
+    "Page",                 # palette de commandes : « Page » (type de destination)
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante", "Simple", "&Simple"}
