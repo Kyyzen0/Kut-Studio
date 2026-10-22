@@ -115,6 +115,7 @@ def _visible_buttons(dialog: UpdateDialog) -> set[str]:
 
 
 def test_the_help_menu_offers_the_check_and_the_version(qtbot, monkeypatch, server, tmp_path):
+    monkeypatch.setattr("ui.main_window_mixins.updates.key_ids", lambda: [])      # indépendant des clés livrées
     window = _window_for(qtbot, monkeypatch, server, tmp_path)
     (help_menu,) = [a.menu() for a in window.menuBar().actions() if a.menu() and a.menu().objectName() == "help_menu"]
     texts = [action.text() for action in help_menu.actions() if action.text()]
