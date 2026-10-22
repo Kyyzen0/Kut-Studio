@@ -6,6 +6,8 @@ de :mod:`core.updates` se traduisent par leur genre : ``update.error.<UpdateErro
 
 from __future__ import annotations
 
+from ui.i18n_update_install import UPDATE_INSTALL_TRANSLATIONS
+
 UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
     # --- Menu et barre supérieure -------------------------------------------------------------------------------
     "update.menu.check": {
@@ -466,3 +468,6 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 __all__ = ["UPDATES_TRANSLATIONS"]
+
+# Installation automatique macOS : table séparée (clés ``update.auto.*`` et ``update.outcome.*``), fusionnée ici.
+UPDATES_TRANSLATIONS.update(UPDATE_INSTALL_TRANSLATIONS)

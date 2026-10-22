@@ -121,6 +121,7 @@ standard) ; un job de workflow n'a qu'à lancer cette ligne après la constructi
 
 1. [etapes-communes.md](etapes-communes.md) : installation propre, premier lancement, mise à jour depuis la version précédente, signature et notarisation.
 2. Un parcours : [parcours-tiktok.md](parcours-tiktok.md), [parcours-youtube-multicam.md](parcours-youtube-multicam.md), [parcours-motion-3d.md](parcours-motion-3d.md).
+3. [mise-a-jour-automatique.md](mise-a-jour-automatique.md) : la mise à jour automatique macOS (« Installer et redémarrer »), son retour arrière et ses cas assistés.
 3. [seance-soutenue.md](seance-soutenue.md) : 20 min soutenues sur le M1 Air (throttling) et mesure de référence de lecture.
 4. [plantages-par-heure.md](plantages-par-heure.md) : séances de 2 h, indicateur « plantages par heure ».
 5. [fiche-defaut.md](fiche-defaut.md) : le gabarit de fiche de défaut ; [defauts-connus.md](defauts-connus.md) : ce qui est déjà inscrit.
