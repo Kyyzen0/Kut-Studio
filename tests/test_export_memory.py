@@ -339,17 +339,38 @@ def media(tmp_path_factory) -> str:
     return str(path)
 
 
+_WAIT4_HELPER = (
+    "import os, subprocess, sys\n"
+    "p = subprocess.Popen(sys.argv[1:], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+    "_pid, status, usage = os.wait4(p.pid, 0)\n"
+    "print(os.waitstatus_to_exitcode(status), usage.ru_maxrss)\n"
+)
+
+
 def _peak_rss_mb(arguments: list[str]) -> float:
-    """Pic de mémoire résidente de FFmpeg, lu par le système à la fin du processus (``ru_maxrss`` : exact, sans échantillonnage)."""
-    process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Pic de mémoire résidente de FFmpeg, lu par le système à la fin du processus (``ru_maxrss`` : exact, sans échantillonnage).
+
+    FFmpeg est lancé **par un petit interprète intermédiaire**, pas par le processus de test : sous Linux, ``ru_maxrss`` d'un
+    fils compte aussi le pic de mémoire du processus qui l'a lancé (le noyau reprend le maximum de l'ancienne image à
+    ``exec``). Lancé depuis la suite complète (plusieurs Go déjà résidents), FFmpeg se voyait donc attribuer un plancher de
+    plusieurs centaines de Mo, qui écrasait la pente mesurée (160 Mo au lieu de 371 sous FFmpeg 7.1 en CI, 350 Mo isolé)."""
+    done = subprocess.run([sys.executable, "-I", "-c", _WAIT4_HELPER, *arguments], capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stderr
+    code, maxrss = done.stdout.split()
+    assert int(code) == 0
+    return int(maxrss) / (1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0)     # macOS : octets ; Linux : Ko
+
+
+@needs_wait4
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="plancher hérité de ru_maxrss : propre à Linux")
+def test_the_peak_measure_ignores_the_memory_of_the_test_process():
+    """Le pic d'un fils ne doit pas être plancher par la mémoire du processus de test (la suite complète en a plusieurs Go)."""
+    ballast = bytearray(400 * 1024 * 1024)
+    ballast[::4096] = b"\x01" * len(ballast[::4096])                          # pages réellement résidentes
     try:
-        _pid, status, usage = os.wait4(process.pid, 0)
-    except BaseException:
-        process.kill()
-        raise
-    process.returncode = os.waitstatus_to_exitcode(status)
-    assert process.returncode == 0
-    return usage.ru_maxrss / (1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0)     # macOS : octets ; Linux : Ko
+        assert _peak_rss_mb([sys.executable, "-I", "-c", "pass"]) < 200.0
+    finally:
+        del ballast
 
 
 def _measure(path: str, at: float | None, tmp_path: Path, tag: str, transform: ClipTransform | None = None) -> tuple[float, int]:
