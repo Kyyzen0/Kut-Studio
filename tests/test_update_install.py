@@ -1227,6 +1227,12 @@ def test_pid_alive_tells_a_live_process_from_a_dead_one_without_signalling_it():
 
 
 def test_no_code_path_sends_signal_zero_on_windows():
-    source = Path(update_install.__file__).read_text(encoding="utf-8")
-    assert source.count("os.kill(") == 1, "le seul os.kill de pid_alive, derrière le test de plateforme"
-    assert source.index('sys.platform == "win32"') < source.index("os.kill(")
+    import ast
+
+    tree = ast.parse(Path(update_install.__file__).read_text(encoding="utf-8"))
+    kills = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+             and node.func.attr == "kill" and isinstance(node.func.value, ast.Name) and node.func.value.id == "os"]
+    assert len(kills) == 1, "le seul os.kill de core/update_install.py est celui de pid_alive"
+    function = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "pid_alive")
+    guard = next(node for node in function.body if isinstance(node, ast.If) and "win32" in ast.unparse(node.test))
+    assert kills[0].lineno > guard.end_lineno, "après le test de plateforme Windows, qui retourne avant"
