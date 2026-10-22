@@ -32,6 +32,7 @@ release-notes.md
 # Secrets de signature : ne JAMAIS les commiter (ils vont dans les secrets GitHub Actions, voir docs/updates.md).
 *.p12
 *.p8
+*.update-key
 *.pfx
 *.cer
 *.mobileprovision

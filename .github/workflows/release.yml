@@ -8,7 +8,8 @@ name: Release
 # * Lancement manuel (workflow_dispatch) : construction d'essai complète, paquets en artefacts, AUCUNE publication.
 #
 # Convention des fichiers (core/release_assets.py) : Kut-Studio-<version>-<système>-<arch>.<zip|tar.gz> et
-# SHA256SUMS.txt. Signature et notarisation macOS seulement si les secrets existent (tools/release/macos_signing.sh) ;
+# SHA256SUMS.txt (+ SHA256SUMS.txt.sig si le secret UPDATE_SIGNING_KEY existe). Signature et notarisation macOS
+# seulement si les secrets existent (tools/release/macos_signing.sh) ;
 # sinon le paquet est signé ad hoc et les notes de la release disent clairement qu'il n'est pas notarisé.
 # Procédure et secrets : docs/updates.md.
 
@@ -197,10 +198,21 @@ jobs:
           python -m tools.release checksums release-assets
           python -m tools.release verify release-assets --version ${{ needs.version.outputs.version }}
 
+      # Signature Ed25519 de SHA256SUMS.txt (ADR-0012). Le secret n'entre que par l'environnement de cette étape (GitHub le
+      # masque dans les journaux) et n'est jamais affiché. Secret absent : release SANS signature, dite en clair dans le
+      # résumé et les notes. Secret présent : la signature est vérifiée avec le code de l'application, sinon le job échoue.
+      - name: Sign SHA256SUMS.txt for automatic updates
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          python -m tools.release sign release-assets --status-file signing-status/update-signature.txt
+          python -m tools.release verify release-assets --version ${{ needs.version.outputs.version }}
+
       - name: Release notes header
         run: |
           python -m tools.release notes --version ${{ needs.version.outputs.version }} \
-            --signing "$(cat signing-status/macos.txt)" --out release-notes.md
+            --signing "$(cat signing-status/macos.txt)" \
+            --update-signature "$(cat signing-status/update-signature.txt)" --out release-notes.md
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -248,6 +260,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body > generated-notes.md
           # Pas de valeur par défaut : sans l'état réel de la signature macOS, on ne publie pas.
           python -m tools.release notes --version "$VERSION" --signing "$(cat signing-status/macos.txt)" \
+            --update-signature "$(cat signing-status/update-signature.txt)" \
             --generated generated-notes.md --out final-notes.md
           flags=()
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); else flags+=(--latest); fi

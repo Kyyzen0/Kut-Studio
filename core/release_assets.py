@@ -15,7 +15,8 @@ l'outil de publication qui les nomme et les empreinte (``python -m tools.release
 
   architectures : ``x64`` (x86-64 / AMD64) et ``arm64`` (Apple Silicon, ARM64) ;
 * ``SHA256SUMS.txt`` : une ligne ``<sha256 hexadécimal>  <nom du fichier>`` par paquet (format de ``sha256sum`` /
-  ``shasum -a 256``, vérifiable à la main avec ``shasum -a 256 -c SHA256SUMS.txt``).
+  ``shasum -a 256``, vérifiable à la main avec ``shasum -a 256 -c SHA256SUMS.txt``) ;
+* ``SHA256SUMS.txt.sig`` (facultatif) : signature détachée Ed25519 de ``SHA256SUMS.txt`` (ADR-0012).
 
 Le choix du paquet est **exact** : même système, même architecture, aucun repli. Un Mac Intel ne se voit jamais
 proposer le paquet Apple Silicon (il ne démarrerait pas) ; s'il n'existe pas de paquet ``macos-x64``, l'application
@@ -41,6 +42,8 @@ from .versioning import Version
 
 ASSET_PREFIX = "Kut-Studio"
 CHECKSUMS_FILE = "SHA256SUMS.txt"
+SIGNATURE_FILE = "SHA256SUMS.txt.sig"
+"""Signature détachée Ed25519 de ``SHA256SUMS.txt`` (format et vérification : :mod:`core.update_signature`)."""
 MAX_CHECKSUMS_BYTES = 64 * 1024
 """Taille maximale acceptée pour ``SHA256SUMS.txt`` (quelques lignes en pratique)."""
 
@@ -262,6 +265,7 @@ __all__ = [
     "Architecture",
     "AssetName",
     "CHECKSUMS_FILE",
+    "SIGNATURE_FILE",
     "ChecksumFileError",
     "MAX_CHECKSUMS_BYTES",
     "OperatingSystem",
