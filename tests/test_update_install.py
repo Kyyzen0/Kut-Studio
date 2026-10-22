@@ -1217,3 +1217,16 @@ def test_a_rollback_is_refused_while_a_process_of_the_new_version_survives(tmp_p
     finally:
         if pidfile.exists():
             _terminate(int(pidfile.read_text(encoding="utf-8")))
+
+
+def test_pid_alive_tells_a_live_process_from_a_dead_one_without_signalling_it():
+    """Sous Windows, ``os.kill(pid, 0)`` enverrait Ctrl+C à la console entière : ``pid_alive`` ne doit rien envoyer."""
+    assert update_install.pid_alive(os.getpid())
+    assert not update_install.pid_alive(dead_pid())
+    assert not update_install.pid_alive(0) and not update_install.pid_alive(-5)
+
+
+def test_no_code_path_sends_signal_zero_on_windows():
+    source = Path(update_install.__file__).read_text(encoding="utf-8")
+    assert source.count("os.kill(") == 1, "le seul os.kill de pid_alive, derrière le test de plateforme"
+    assert source.index('sys.platform == "win32"') < source.index("os.kill(")

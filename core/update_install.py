@@ -25,6 +25,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import time
 import zipfile
 from collections.abc import Callable, Sequence
@@ -431,9 +432,36 @@ def consume_outcome(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
+def _windows_pid_alive(pid: int) -> bool:
+    """Sous Windows, ``os.kill(pid, 0)`` n'est PAS un test : le signal 0 est ``CTRL_C_EVENT`` et interrompt toute la console.
+
+    On interroge donc le processus (``OpenProcess`` + ``GetExitCodeProcess``), sans lui envoyer quoi que ce soit.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)       # type: ignore[attr-defined]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(0x1000, False, pid)               # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        # accès refusé (5) : le processus existe
+        return ctypes.get_last_error() == 5  # type: ignore[attr-defined]
+    try:
+        code = wintypes.DWORD()
+        return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259   # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def pid_alive(pid: int) -> bool:
+    """Le processus ``pid`` existe-t-il ? Sans signal réel (voir :func:`_windows_pid_alive` pour Windows)."""
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        return _windows_pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
