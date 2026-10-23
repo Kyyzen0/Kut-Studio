@@ -60,13 +60,18 @@ def opened(monkeypatch):
     return calls
 
 
+INSTALLED = "0.9.0"
+"""Version installée simulée : une stable, pour que « une préversion n'est pas proposée » ne dépende pas de ``APP_VERSION``
+(pendant une bêta, l'application installée reçoit toujours la préversion suivante : c'est voulu)."""
+
+
 def _wire(monkeypatch, server, directory, target=MAC_ARM):
     """Les services de la fenêtre parlent au faux GitHub et téléchargent dans ``directory``."""
     def create(owner):
         from core.update_service import HttpClient
 
         client = HttpClient(owner)
-        checker = UpdateChecker(client, current=Version.parse(APP_VERSION), repository=REPOSITORY,
+        checker = UpdateChecker(client, current=Version.parse(INSTALLED), repository=REPOSITORY,
                                 api_base=server.base, asset_prefix=server.url("/download/"),
                                 target_detector=lambda: target, parent=owner)
         return checker, UpdateDownloader(client, directory=directory, parent=owner)
@@ -284,7 +289,7 @@ def test_a_manual_check_says_clearly_that_kut_studio_is_up_to_date(qtbot, monkey
     dialog = window._update_dialog
     assert dialog.isVisible() and dialog.state is UpdateDialogState.UP_TO_DATE
     assert dialog.headline.text() == i18n.translate("update.up_to_date.title")
-    assert APP_VERSION in dialog.message.text()
+    assert INSTALLED in dialog.message.text()
     assert "99.0.0-beta.1" in dialog.message.text(), "la préversion non proposée est signalée"
     assert _visible_buttons(dialog) == {"close"}
 

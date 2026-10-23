@@ -20,6 +20,7 @@ import pytest
 import build
 from core.app_version import APP_VERSION
 from core.release_assets import CHECKSUMS_FILE, RELEASE_TARGETS, Architecture, OperatingSystem, Target, parse_checksums
+from core.versioning import Version
 from tools.release import __main__ as cli
 from tools.release.packaging import (
     ReleaseError,
@@ -70,8 +71,9 @@ def test_the_check_tag_command_writes_github_outputs(tmp_path, monkeypatch):
     output = tmp_path / "out.txt"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     assert cli.main(["check-tag", "--ref", f"refs/tags/v{APP_VERSION}"]) == 0
+    prerelease = "true" if Version.parse(APP_VERSION).is_prerelease else "false"     # vrai pour une 1.2.3-beta.N
     assert output.read_text(encoding="utf-8").splitlines() == [
-        f"version={APP_VERSION}", "prerelease=false", "publish=true"]
+        f"version={APP_VERSION}", f"prerelease={prerelease}", "publish=true"]
     assert cli.main(["check-tag", "--ref", "refs/tags/v999.0.0"]) == 1
 
 
