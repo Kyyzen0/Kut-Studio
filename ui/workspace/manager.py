@@ -567,7 +567,7 @@ class WorkspaceManager(QObject):
         if area is DockArea.BOTTOM:
             # Ouvrir le mixeur agrandit la zone basse : on rééquilibre
             # pour que la timeline garde sa hauteur confortable.
-            QTimer.singleShot(0, self.balance_vertical_split)
+            QTimer.singleShot(0, self, self.balance_vertical_split)
         self._refresh_dependents()
 
     def float_panel(self, panel: PanelId) -> None:
@@ -742,7 +742,7 @@ class WorkspaceManager(QObject):
         self._sync_window_minimum_height()       # le rail et les panneaux sont affichés : le minimum de la fenêtre est exact
         total = root.height()
         if total <= 0:
-            QTimer.singleShot(0, self.balance_vertical_split)
+            QTimer.singleShot(0, self, self.balance_vertical_split)
             return
         timeline = self._panels.get(PanelId.TIMELINE)
         if timeline is None:
