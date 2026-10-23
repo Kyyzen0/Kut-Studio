@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from core.app_version import APP_NAME, APP_VERSION
-from core.versioning import Version
+from core.versioning import BUNDLE_VERSION_KEY, Version
 
 ROOT = Path(__file__).resolve().parent
 ENTITLEMENTS = ROOT / "tools" / "release" / "entitlements.plist"
@@ -105,9 +105,12 @@ def macos_info_overrides(version: str = APP_VERSION) -> dict[str, object]:
     """Entrées d'``Info.plist`` ajoutées au bundle construit."""
     parsed = Version.parse(version)
     return {
-        "CFBundleShortVersionString": str(parsed),
-        # Numérique seulement (MAJEUR.MINEUR.CORRECTIF) : macOS compare ce champ entre deux versions.
+        # Apple n'accepte que 1 à 3 entiers dans ces deux clés : une préversion (« 0.9.1-beta.1 ») y est ramenée à
+        # « 0.9.1 » (une métadonnée invalide ferait rejeter ou mal identifier le bundle signé/notarisé). La version
+        # complète vit dans ``KutStudioVersion`` ; l'installation automatique la lit de préférence.
+        "CFBundleShortVersionString": parsed.core,
         "CFBundleVersion": parsed.core,
+        BUNDLE_VERSION_KEY: str(parsed),
         "NSMicrophoneUsageDescription": MICROPHONE_USAGE,
         # Double-clic et « Ouvrir avec » sur un .kut : le Finder lance l'application, qui reçoit le fichier.
         "CFBundleDocumentTypes": [

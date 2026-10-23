@@ -29,6 +29,11 @@ _PATTERN = re.compile(
 )
 
 
+BUNDLE_VERSION_KEY = "KutStudioVersion"
+"""Clé d'``Info.plist`` (macOS) qui porte la version **complète**, préversion comprise : ``CFBundleShortVersionString``
+n'accepte que 1 à 3 entiers (``0.9.1``), jamais ``0.9.1-beta.1``."""
+
+
 class InvalidVersion(ValueError):
     """Texte qui n'est pas une version SemVer valide."""
 
@@ -106,4 +111,4 @@ class Version:
         return text
 
 
-__all__ = ["InvalidVersion", "MAX_LENGTH", "Version"]
+__all__ = ["BUNDLE_VERSION_KEY", "InvalidVersion", "MAX_LENGTH", "Version"]

@@ -192,6 +192,11 @@ disque, annulé. Délais : 20 s pour l'API, 30 s sans donnée pour un téléchar
 
 * **Tag** : `vMAJEUR.MINEUR.CORRECTIF`, ou une préversion `vX.Y.Z-beta.N` / `-rc.N` (cochée « pre-release » par le
   workflow). Il doit être **égal** à `core/app_version.py`.
+* **Version dans le bundle macOS** : Apple exige 1 à 3 entiers dans `CFBundleShortVersionString` et `CFBundleVersion`.
+  Une préversion (`0.9.1-beta.1`) y est donc écrite `0.9.1` ; la version **complète** est dans la clé `KutStudioVersion`
+  d'`Info.plist`, que l'installation automatique lit de préférence (`validate_bundle`) pour la comparer à la release.
+  `CFBundleVersion` reste `X.Y.Z` pour toutes les préversions d'un même numéro (non strictement croissant entre `beta.1`
+  et `beta.2` : seule la version complète les distingue).
 * **Paquets** : `Kut-Studio-<version>-<système>-<architecture>.<extension>`
 
   | Fichier | Contenu | Construit sur |

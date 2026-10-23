@@ -40,7 +40,7 @@ from .update_helper import PREVIOUS_PREFIX, STAGING_PREFIX
 from .update_keys import UPDATE_PUBLIC_KEYS, PublicKey
 from .update_signature import SignatureStatus
 from .updates import InstallContext, InstallKind
-from .versioning import Version
+from .versioning import BUNDLE_VERSION_KEY, Version
 
 APP_BUNDLE_NAME = "Kut-Studio.app"
 BUNDLE_IDENTIFIER = "com.kutstudio.app"
@@ -274,10 +274,11 @@ def validate_bundle(
     identifier = info.get("CFBundleIdentifier")
     if identifier != expected_identifier:
         raise StageError(StageProblem.IDENTIFIER, f"identifiant {str(identifier)[:80]!r}, attendu {expected_identifier!r}")
-    announced = Version.try_parse(info.get("CFBundleShortVersionString"))
+    # Version complète (préversion comprise) d'abord : ``CFBundleShortVersionString`` est numérique (« 0.9.1 »).
+    raw_version = info.get(BUNDLE_VERSION_KEY, info.get("CFBundleShortVersionString"))
+    announced = Version.try_parse(raw_version)
     if announced is None or announced != expected_version:
-        raise StageError(StageProblem.VERSION, f"version {str(info.get('CFBundleShortVersionString'))[:40]!r}, "
-                                               f"annoncée {expected_version}")
+        raise StageError(StageProblem.VERSION, f"version {str(raw_version)[:40]!r}, annoncée {expected_version}")
     if not announced > installed_version:
         raise StageError(StageProblem.NOT_NEWER, f"{announced} n'est pas plus récente que {installed_version}")
     executable_name = info.get("CFBundleExecutable")
