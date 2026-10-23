@@ -59,7 +59,7 @@ class SectionBox(QGroupBox):
         wanted = self._remembered.get(key, open_by_default) if key else open_by_default
         if not wanted:
             # Une fois le contenu construit. Lié à la section (contexte) : la fonction différée ne s'exécute jamais sur une section déjà
-            # détruite (fenêtre fermée avant le premier tour de boucle), ce qui touchait un widget libéré (voir ``tests/test_section_box_deferred.py``).
+            # détruite (fenêtre fermée avant le premier tour de boucle), ce qui touchait un widget libéré (voir ``tests/test_section_box.py``).
             QTimer.singleShot(0, self, lambda: self.set_open(False))
 
     # -- état ---------------------------------------------------------------------------------------------
