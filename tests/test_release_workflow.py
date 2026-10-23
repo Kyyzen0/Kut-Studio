@@ -96,6 +96,20 @@ def test_a_hung_test_suite_leaves_its_stacks_and_fails_before_the_job_budget():
     assert int(step_minutes.group(1)) * 60 >= needed, f"il faut au moins {needed / 60:.0f} min"
 
 
+def test_the_build_job_budget_covers_tests_build_and_notarization():
+    """v0.9.1-beta.1 : tests 41 min + notarisation en attente chez Apple 32 min+ ont épuisé les 75 min du job."""
+    build = _jobs()["build"]
+    job = int(re.search(r"^    timeout-minutes: (\d+)\s*$", build, re.MULTILINE).group(1))
+    suite = [step for step in _steps(build) if "python -m pytest" in step][0]
+    tests = int(re.search(r"^\s+timeout-minutes: (\d+)\s*$", suite, re.MULTILINE).group(1))
+    script = (Path(__file__).resolve().parent.parent / "tools" / "release" / "macos_signing.sh").read_text(encoding="utf-8")
+    notarize = int(re.search(r"notarytool submit .*--timeout (\d+)m", script).group(1))
+    build_and_sign = 10
+    margin = 15
+    assert job >= tests + build_and_sign + notarize + margin, (
+        f"job {job} min < tests {tests} + construction {build_and_sign} + notarisation {notarize} + marge {margin}")
+
+
 def test_only_the_publish_job_can_write_and_only_for_a_tag():
     text = _text()
     assert re.search(r"^permissions:\n  contents: read$", text, re.MULTILINE)
