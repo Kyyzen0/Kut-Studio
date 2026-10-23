@@ -749,6 +749,45 @@ def test_a_malformed_bundle_is_refused(tmp_path, breakage):
     assert raised.value.problem is StageProblem.BUNDLE
 
 
+def _beta_app(root, *, full):
+    """Bundle de préversion tel que ``build.py`` l'écrit : clé Apple numérique + version complète."""
+    bundle = make_app(root, version="3.0.0", executable=SILENT_EXE)
+    plist = bundle / "Contents" / "Info.plist"
+    info = plistlib.loads(plist.read_bytes())
+    if full is not None:
+        info["KutStudioVersion"] = full
+    plist.write_bytes(plistlib.dumps(info))
+    return bundle
+
+
+def test_a_prerelease_bundle_is_validated_on_its_full_version(tmp_path):
+    bundle = _beta_app(tmp_path, full="3.0.0-beta.2")
+    _validate(bundle, FakeTools(), version="3.0.0-beta.2", installed="3.0.0-beta.1")
+
+
+def test_a_prerelease_bundle_whose_full_version_differs_from_the_release_is_refused(tmp_path):
+    bundle = _beta_app(tmp_path, full="3.0.0-beta.1")
+    with pytest.raises(StageError) as raised:
+        _validate(bundle, FakeTools(), version="3.0.0-beta.2", installed="2.0.0")
+    assert raised.value.problem is StageProblem.VERSION
+
+
+def test_a_numeric_bundle_does_not_pass_for_the_announced_prerelease(tmp_path):
+    bundle = _beta_app(tmp_path, full=None)             # « 3.0.0 » seul, sans la clé complète
+    with pytest.raises(StageError) as raised:
+        _validate(bundle, FakeTools(), version="3.0.0-beta.2", installed="2.0.0")
+    assert raised.value.problem is StageProblem.VERSION
+
+
+def test_beta_1_to_beta_2_is_an_update_but_beta_1_to_beta_1_is_not(tmp_path):
+    bundle = _beta_app(tmp_path, full="3.0.0-beta.1")
+    with pytest.raises(StageError) as raised:
+        _validate(bundle, FakeTools(), version="3.0.0-beta.1", installed="3.0.0-beta.1")
+    assert raised.value.problem is StageProblem.NOT_NEWER
+    assert Version.parse("3.0.0-beta.2") > Version.parse("3.0.0-beta.1")
+    assert Version.parse("3.0.0") > Version.parse("3.0.0-beta.2")
+
+
 def test_error_details_are_bounded(tmp_path):
     bundle = make_app(tmp_path, version=NEW, executable=SILENT_EXE, identifier="x" * 5000)
     with pytest.raises(StageError) as raised:
