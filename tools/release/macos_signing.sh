@@ -84,7 +84,7 @@ notarize() {
     (umask 077 && printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$key")
     ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
     local credentials=(--key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
-    xcrun notarytool submit "$archive" "${credentials[@]}" --wait --timeout 45m --output-format json > "$result" || true
+    xcrun notarytool submit "$archive" "${credentials[@]}" --wait --timeout 60m --output-format json > "$result" || true
     rm -f "$archive"
     local status submission
     status="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$result" 2>/dev/null || true)"

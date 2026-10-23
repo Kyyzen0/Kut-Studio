@@ -49,7 +49,7 @@ jobs:
     name: Build ${{ matrix.target }}
     needs: version
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 75
+    timeout-minutes: 150
     strategy:
       fail-fast: true
       matrix:
@@ -105,7 +105,9 @@ jobs:
       # thread Python sous Windows) ne part alors jamais (v0.3.0 : 50 min muettes à 94 %). Le test continue ensuite.
       # timeout-minutes : la suite saine a duré jusqu'à 38 min sous Windows (v0.7.0) et elle grandit ; 60 min laissent un
       # runner lent finir (garde : tests/test_release_workflow.py), mais un blocage échoue à 60 min au lieu d'épuiser les
-      # 75 min du job (60 + installation, construction et contrôle de l'application restent sous 75).
+      # 150 min du job. Budget du job : tests 60 + installation, construction, signature et contrôle ~10 + notarisation
+      # macOS 60 (--timeout de macos_signing.sh ; la file d'Apple a dépassé 32 min à la première soumission, v0.9.1-beta.1,
+      # annulée à 75 min) = 130 min, 20 min de marge (garde : tests/test_release_workflow.py).
       - name: Run test suite
         timeout-minutes: 60
         run: python -m pytest -q -n auto --timeout=600 -o faulthandler_timeout=420

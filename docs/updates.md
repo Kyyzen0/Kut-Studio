@@ -254,6 +254,13 @@ fait signer chaque binaire par PyInstaller avec le runtime renforcé et `tools/r
 workflow notarise et agrafe le ticket (`tools/release/macos_signing.sh`). Si les secrets sont là et que la notarisation
 échoue, le job échoue et **rien n'est publié**.
 
+Budget de temps du job de construction : 150 min = tests 60 + construction/signature ~10 + notarisation 60
+(`xcrun notarytool submit --wait --timeout 60m`) + marge ; `test_release_workflow` vérifie cette relation. Avec l'ancien
+plafond de 75 min, la première soumission (v0.9.1-beta.1) était encore « en cours » chez Apple quand le job a été annulé :
+les secrets et la signature étaient bons, mais le tag est resté sans release (« rien n'est publié » = aucun fichier, aucune
+release, les utilisateurs ne voient rien). `gh run rerun <id> --failed` ne suffit pas si le workflow a changé : une relance
+reprend la définition du commit du tag ; il faut un nouveau tag (version suivante dans `core/app_version.py`).
+
 Secrets (*Settings › Secrets and variables › Actions*, jamais dans le dépôt — `.gitignore` refuse `*.p12`, `*.p8`… et
 `test_release_workflow` vérifie qu'aucun n'est suivi) :
 
