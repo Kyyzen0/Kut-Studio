@@ -12,7 +12,7 @@ This project deploys to the **existing Cloudflare Pages project** called `kut-st
 
 The pages reproduce the public site that was online before the 12 October 2026 placeholder deploy: OrigoHub emblem, language switch, and the same sections. English and Spanish HTML were not in the public archive; they follow the French page, and the workflow steps use the English and Spanish copy already stored in `script.js`.
 
-The project version shown on the page is **0.9.0** (`core/app_version.py`). The download buttons point at the latest **published** GitHub release, currently **v0.9.0**.
+The project version shown on the page is **0.9.1** (`core/app_version.py`). The download buttons point at the latest **published** GitHub release, currently **v0.9.1**.
 
 ## One-time setup
 1. In Cloudflare, generate an API token scoped to your account with **Cloudflare Pages: Edit** permission.
