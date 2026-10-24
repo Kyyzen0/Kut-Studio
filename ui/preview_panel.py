@@ -18,11 +18,13 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
+import shiboken6
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QPixmap, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
@@ -95,9 +97,27 @@ def _decode_underlay_frame(path: str, seconds: float, color_override: str = ""):
 
 
 class _UnderlayDecodeBridge(QObject):
-    """Pont fil de décodage → thread Qt."""
+    """Pont fil de décodage → thread Qt (un seul, partagé par tous les panneaux)."""
 
-    ready = Signal(str, str, object)  # source_id, key, VideoFrame | None
+    ready = Signal(int, str, str, object)  # panneau, source_id, key, VideoFrame | None
+
+
+_UNDERLAY_BRIDGE: _UnderlayDecodeBridge | None = None
+_PANEL_IDS = itertools.count(1)
+
+
+def _underlay_bridge() -> _UnderlayDecodeBridge:
+    """Le pont, créé sur le fil Qt et jamais rattaché à un panneau.
+
+    Le fil de décodage émet sur ce QObject pendant que le fil Qt peut détruire un panneau (démontage de test, fermeture
+    de fenêtre) : un signal émis sur un QObject en cours de destruction plante (CI Debian, ``_job`` ligne 1244). Le pont
+    vit donc tant que l'application ; la connexion vers un panneau détruit se défait seule, et l'événement en file est
+    abandonné par Qt.
+    """
+    global _UNDERLAY_BRIDGE
+    if _UNDERLAY_BRIDGE is None or not shiboken6.isValid(_UNDERLAY_BRIDGE):
+        _UNDERLAY_BRIDGE = _UnderlayDecodeBridge(QCoreApplication.instance())
+    return _UNDERLAY_BRIDGE
 
 
 class _ViewportWatcher(QObject):
@@ -249,8 +269,8 @@ class PreviewPanel(QWidget):
         self._gpu_underlays: tuple = ()
         self._gpu_underlay_pushed: dict[str, str] = {}
         self._gpu_underlay_wanted: dict[str, str] = {}  # source_id → clé path|time en vol
-        self._underlay_bridge = _UnderlayDecodeBridge(self)
-        self._underlay_bridge.ready.connect(self._on_underlay_decoded, Qt.QueuedConnection)
+        self._underlay_panel_id = next(_PANEL_IDS)
+        _underlay_bridge().ready.connect(self._on_underlay_bridge, Qt.QueuedConnection)
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
@@ -1229,8 +1249,10 @@ class PreviewPanel(QWidget):
             # Dernière demande gagne : les jobs déjà en file voient la clé périmée
             # avant le décodage coûteux et s'arrêtent (coalesce scrub / lecture).
             self._gpu_underlay_wanted[source_id] = key
+            bridge, panel_id = _underlay_bridge(), self._underlay_panel_id  # pris ici : le fil de décodage ne touche pas ``self`` Qt
 
-            def _job(source_id=source_id, path=path, time_s=time_s, key=key, override=override) -> None:
+            def _job(source_id=source_id, path=path, time_s=time_s, key=key, override=override,
+                     bridge=bridge, panel_id=panel_id) -> None:
                 if self._gpu_underlay_wanted.get(source_id) != key:
                     return
                 try:
@@ -1241,7 +1263,7 @@ class PreviewPanel(QWidget):
                     frame = None
                 if self._gpu_underlay_wanted.get(source_id) != key:
                     return
-                self._underlay_bridge.ready.emit(source_id, key, frame)
+                bridge.ready.emit(panel_id, source_id, key, frame)
 
             _underlay_pool().submit(_job)
         for source_id in [s for s in list(self._gpu_underlay_pushed) if s not in used]:
@@ -1252,6 +1274,10 @@ class PreviewPanel(QWidget):
         for source_id in [s for s in list(self._gpu_underlay_wanted) if s not in used]:
             self._gpu_underlay_wanted.pop(source_id, None)
         self._update_gpu_composite()
+
+    def _on_underlay_bridge(self, panel_id: int, source_id: str, key: str, decoded) -> None:
+        if panel_id == self._underlay_panel_id:
+            self._on_underlay_decoded(source_id, key, decoded)
 
     def _on_underlay_decoded(self, source_id: str, key: str, decoded) -> None:
         """Rappel Qt : une image underlay est prête (ou ``None`` si échec)."""

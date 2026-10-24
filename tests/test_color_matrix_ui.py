@@ -230,6 +230,45 @@ def test_the_underlay_decode_key_and_job_carry_the_matrix(qtbot, monkeypatch):
     assert done.wait(2.0) and calls[-1][2] == "bt470bg"
 
 
+def test_a_decode_job_finishing_after_its_panel_is_destroyed_emits_on_a_live_bridge(qtbot, monkeypatch):
+    """Le fil de décodage n'émet jamais sur un QObject du panneau : démonté pendant un décodage, rien ne plante.
+
+    Avant le correctif, le pont était un enfant du panneau : détruit avec lui, il recevait pourtant l'émission du fil de
+    décodage (``Internal C++ object already deleted`` ici ; segfault de la CI Debian quand la course tombe pendant la
+    destruction). Le pont est désormais unique et vit autant que l'application.
+    """
+    import shiboken6
+    from concurrent.futures import ThreadPoolExecutor
+
+    from tests.qt_cleanup import deliver_deferred_deletes
+    from ui import preview_panel
+
+    panel = preview_panel.PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
+    panel.gpu_view = SimpleNamespace(forget_source=lambda *_: None, set_video_frame=lambda *_: None,
+                                     set_composite=lambda *_a, **_k: None)
+    gate, started = threading.Event(), threading.Event()
+
+    def decode(path, seconds, color_override=""):
+        started.set()
+        gate.wait(5.0)
+
+    monkeypatch.setattr(preview_panel, "_decode_underlay_frame", decode)
+    pool = ThreadPoolExecutor(max_workers=1)
+    submitted = []
+    monkeypatch.setattr(preview_panel, "_underlay_pool", lambda: type("P", (), {"submit": lambda _s, f: submitted.append(pool.submit(f))})())
+    entry = ["clip:a", "/x/a.mp4", 0.5, (1, 0, 0, 1, 0, 0), (0, 0, 10, 10), 1.0, "normal", (), (1.0, 1.0), None, None, {}, 0.0, "bt709"]
+    panel.set_video_underlays((tuple(entry),))
+    assert started.wait(2.0)
+    panel.close()
+    panel.deleteLater()
+    deliver_deferred_deletes()
+    assert not shiboken6.isValid(panel)                                                    # le panneau est bien détruit
+    gate.set()
+    assert submitted[0].exception(timeout=5.0) is None                                     # l'émission n'a rien touché de détruit
+    assert shiboken6.isValid(preview_panel._underlay_bridge())
+    pool.shutdown()
+
+
 # --- Décodage d'une image, pipette, flux multicam ---------------------------------------------------------------------------
 
 
