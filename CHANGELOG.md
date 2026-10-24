@@ -36,6 +36,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Sur un MacBook Air 13" (1280x800 ou 1440x900), la fenêtre tient dans l'écran : le Dock ne passe plus par-dessus la timeline, qui montre au moins trois pistes. La fenêtre s'ouvre à la taille de l'écran (et non plus en 1480x920), sa taille minimale baisse (page Couleur 850 -> 670 px, page Audio 1049 -> 686 px) et un panneau détaché enregistré sur un grand écran revient dans l'écran.
 - Panneaux Transitions, Effets et Effets audio : plus de grand vide sous les puces de catégorie, la liste des préréglages montre au moins trois lignes, la bannière d'aide ne chevauche plus la liste, et quand la colonne est trop basse la page défile au lieu de superposer ses éléments (« Enregistrer comme preset » devient un bouton-icône à côté de l'action principale).
 - Les losanges d'images clés ‹ ◆ › de l'inspecteur (étalonnage et effets) flottaient entre deux champs, ce qui faisait croire qu'ils appartenaient au réglage suivant : ils sont maintenant **à droite du champ qu'ils animent, sur la même ligne**. Dans l'étalonnage, les libellés passent tous ensemble au-dessus de leur champ quand l'inspecteur est étroit (au lieu de seulement « Exposition »).
+- Interne : le moniteur ne peut plus planter à la fermeture d'un panneau pendant qu'une image d'une piste sous le clip se décode (le fil de décodage émettait sur un objet détruit par le fil Qt) ; origine d'un plantage intermittent de la CI.
 
 ## [0.9.0] - 2026-10-21
 
