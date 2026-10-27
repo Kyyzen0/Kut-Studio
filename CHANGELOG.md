@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lisibilité sur un MacBook Air 13"** (niveau Avancé, pages Couleur et Audio, un clip sélectionné). La page Couleur n'exige plus 974 px de haut : la fenêtre ne s'agrandit plus au-delà de l'écran et ne passe plus sous le Dock ; les onglets *Roues*, *Qualificateur*, *Fenêtres* et *Flou* défilent au lieu d'être coupés en deux, et le qualifieur met chaque étiquette au-dessus de son champ (plus de « Centre / Largeur / Douceur » sous « Saturation », boutons « Pipette » et « Afficher la sélection » entiers, à la ligne si la colonne est étroite). Le mixeur montre, quand il est bas, **une ligne par piste** (nom, FX, fader, vumètre, M/S/A, panoramique, sortie) qui défile, au lieu de l'en-tête « A1 / FX » seule ; il garde ses tranches verticales quand il a la place. Dans la bibliothèque Médias / Audio, le bloc des dossiers se replie tout seul quand la colonne est basse (bouton « Dossiers et filtres » à côté de la recherche) pour laisser voir la liste ; « Importer » / « Timeline » passent à la ligne plutôt que d'être tronqués ; dans l'inspecteur, « Point de vitesse » et « Supprimer la courbe » ne sont plus tronqués. Nouveau contrôle développeur : `python -m tools.ui_legibility` (chevauchements en grille, contenu coupé, boutons tronqués, fenêtre qui grandit).
+
 ## [0.9.1] - 2026-10-24
 
 ### Added

@@ -14,7 +14,7 @@ encore de la page d'origine : le reste du code ne voit pas la différence.
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import QScrollArea, QSizePolicy, QStackedWidget, QWidget
+from PySide6.QtWidgets import QScrollArea, QSizePolicy, QStackedWidget, QTabWidget, QWidget
 
 
 class ScrollGuard(QScrollArea):
@@ -77,4 +77,38 @@ class GuardedStack(QStackedWidget):
         super().setCurrentWidget(self._guards.get(widget, widget))
 
 
-__all__ = ["GuardedStack", "ScrollGuard"]
+class GuardedTabs(QTabWidget):
+    """``QTabWidget`` dont chaque onglet est enveloppé dans un :class:`ScrollGuard` à l'ajout.
+
+    Un onglet trop haut pour la colonne (les roues d'étalonnage, le qualifieur) défile au lieu d'imposer sa hauteur
+    minimale à la fenêtre (elle dépassait l'écran d'un portable) ou de superposer ses étiquettes. Comme
+    :class:`GuardedStack`, ``currentWidget`` / ``widget`` / ``indexOf`` / ``setCurrentWidget`` parlent encore de la page
+    d'origine.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._guards: dict[QWidget, ScrollGuard] = {}
+
+    def addTab(self, page: QWidget, label: str) -> int:  # type: ignore[override]  # noqa: N802 - API Qt
+        guard = ScrollGuard(page)
+        self._guards[page] = guard
+        return super().addTab(guard, label)
+
+    def _unwrap(self, widget: QWidget | None) -> QWidget | None:
+        return widget.page if isinstance(widget, ScrollGuard) else widget
+
+    def currentWidget(self) -> QWidget | None:  # noqa: N802 - API Qt
+        return self._unwrap(super().currentWidget())
+
+    def widget(self, index: int) -> QWidget | None:
+        return self._unwrap(super().widget(index))
+
+    def indexOf(self, widget: QWidget | None) -> int:  # noqa: N802 - API Qt
+        return super().indexOf(self._guards.get(widget, widget)) if widget is not None else -1  # type: ignore[arg-type]
+
+    def setCurrentWidget(self, widget: QWidget) -> None:  # noqa: N802 - API Qt
+        super().setCurrentWidget(self._guards.get(widget, widget))
+
+
+__all__ = ["GuardedStack", "GuardedTabs", "ScrollGuard"]

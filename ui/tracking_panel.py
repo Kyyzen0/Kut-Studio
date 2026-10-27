@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from core.tracking_model import AdaptMode, BorderMode, Precision, Smoothing, StabilizationMode
 from core.tracking_panel_state import TrackingPanelState
 from ui import i18n
+from ui.wrap_text import WrappingPushButton
 from ui.adaptive_layout import FlowLayout, WrappingCheckBox, allow_shrinking, make_shrinkable
 from ui.design_system import Iconography, Spacing
 from ui.icons import IconName, make_icon
@@ -221,7 +222,7 @@ class TrackingPanel(QGroupBox):
         buttons = FlowLayout(spacing=Spacing.xs)
         self.link_button = QPushButton(_tr("tracking.link"), objectName="tracking_link")
         self.link_button.setToolTip(_tr("tracking.link.tip"))
-        self.bake_button = QPushButton(_tr("tracking.bake"), objectName="tracking_bake")
+        self.bake_button = WrappingPushButton(_tr("tracking.bake"), objectName="tracking_bake")
         self.bake_button.setToolTip(_tr("tracking.bake.tip"))
         allow_shrinking(self.bake_button, 120)  # le libellé le plus long de l'onglet : dernier recours, il est alors coupé
         self.link_button.clicked.connect(lambda: self._emit_link(False))
@@ -286,7 +287,7 @@ class TrackingPanel(QGroupBox):
         self.stab_info = QLabel(objectName="stab_info")
         self.stab_info.setWordWrap(True)
         stab.addRow(self.stab_info)
-        self.auto_stab = QPushButton(_tr("tracking.stab.auto"), objectName="stab_auto")
+        self.auto_stab = WrappingPushButton(_tr("tracking.stab.auto"), objectName="stab_auto")
         self.auto_stab.setToolTip(_tr("tracking.stab.auto.tip"))
         allow_shrinking(self.auto_stab, 120)
         self.auto_stab.clicked.connect(self.auto_stabilize_requested.emit)
