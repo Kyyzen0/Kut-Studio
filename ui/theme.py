@@ -696,7 +696,7 @@ def _stylesheet(palette: ThemePalette) -> str:
         background: {palette.surface};
         border: 1px solid {palette.border};
         border-radius: {r.md}px;
-        padding: {s.xs}px {s.sm}px;
+        padding: {s.xs}px 6px;                  /* 6 px de chaque côté : quatre pages dans la barre du haut (voir _build_top_bar) */
         color: {palette.text};
         font-weight: {w.medium};
     }}

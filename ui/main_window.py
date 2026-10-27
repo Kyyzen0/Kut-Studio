@@ -1077,7 +1077,9 @@ class MainWindow(
         )
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(Spacing.md, 0, Spacing.md, 0)
-        layout.setSpacing(Spacing.sm)
+        # 6 px (et non 8) entre les éléments : avec les boutons de 28 à 34 px et le texte de 14 px, la barre est pleine à 1180 px sous
+        # les polices de repli de Linux (DejaVu Sans, plus large) ; ces ~24 px gardent la puce du niveau visible sans réduire le texte.
+        layout.setSpacing(6)
 
         # --- Identité ---------------------------------------------------
         logo_box = QWidget()
