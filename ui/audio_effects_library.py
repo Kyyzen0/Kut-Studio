@@ -114,7 +114,7 @@ class AudioEffectPresetCard(QFrame):
         self.favorite_button.setChecked(favorite)
         self.favorite_button.setCursor(Qt.PointingHandCursor)
         self.favorite_button.setFocusPolicy(Qt.NoFocus)
-        self.favorite_button.setFixedSize(22, 22)
+        self.favorite_button.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         self.favorite_button.setToolTip(translate("transitions.library.favorite_add"))
         self.favorite_button.setStyleSheet(
             "QPushButton#audioPresetFavorite { background: transparent;"
@@ -129,7 +129,7 @@ class AudioEffectPresetCard(QFrame):
         self.delete_button.setObjectName("audioPresetDelete")
         self.delete_button.setCursor(Qt.PointingHandCursor)
         self.delete_button.setFocusPolicy(Qt.NoFocus)
-        self.delete_button.setFixedSize(22, 22)
+        self.delete_button.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         self.delete_button.setToolTip(translate("effects.library.delete"))
         self.delete_button.setIcon(make_icon(IconName.CLOSE, size=12))
         self.delete_button.setStyleSheet(
@@ -243,7 +243,7 @@ class AudioEffectsLibraryView(QWidget):
         self.clip_hint = QLabel(translate("library.audio_effects.hint"))
         self.clip_hint.setWordWrap(True)
         self.clip_hint.setStyleSheet(
-            f"color: {COLORS['muted']}; font-size: 11px; padding: 4px 6px;"
+            f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 4px 6px;"
             f" background: {COLORS['panel_alt']};"
             f" border: 1px solid {COLORS['border']}; border-radius: 6px;"
         )
@@ -363,7 +363,7 @@ class AudioEffectsLibraryView(QWidget):
             f"QPushButton#audioEffectsCategoryTab {{ background: transparent;"
             f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 3px 8px; font-weight: 600;"
-            f" font-size: 10px; letter-spacing: 0.4px; }}"
+            f" font-size: {Typography.micro}px; letter-spacing: 0.4px; }}"
             f"QPushButton#audioEffectsCategoryTab:hover {{"
             f" color: {COLORS['text']}; background: {COLORS['surface_hover']}; }}"
             f"QPushButton#audioEffectsCategoryTab:checked {{"
@@ -428,7 +428,7 @@ class AudioEffectsLibraryView(QWidget):
             empty.setWordWrap(True)
             empty.setAlignment(Qt.AlignCenter)
             empty.setStyleSheet(
-                f"color: {COLORS['muted']}; font-size: 11px; padding: 16px 8px;"
+                f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 16px 8px;"
             )
             self.cards_layout.insertWidget(0, empty)
         else:
@@ -451,7 +451,7 @@ class AudioEffectsLibraryView(QWidget):
             return
         label = QLabel(title.upper())
         label.setStyleSheet(
-            f"color: {COLORS['muted_strong']}; font-size: 10px;"
+            f"color: {COLORS['muted_strong']}; font-size: {Typography.micro}px;"
             f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )

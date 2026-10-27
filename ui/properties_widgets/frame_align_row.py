@@ -12,6 +12,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from core.frame_alignment import FrameEdge
+from ui.design_system import Sizes
 from ui.i18n import translate
 from ui.theme import label_style
 
@@ -81,7 +82,7 @@ class FrameAlignRow(QWidget):
             button.setObjectName("iconOnly")
             button.setIcon(_icon_for(edge, color))
             button.setIconSize(QSize(_ICON, _ICON))
-            button.setFixedSize(26, 24)
+            button.setFixedSize(26, Sizes.icon_button_sm)
             button.setAutoRaise(True)
             button.clicked.connect(lambda _checked=False, e=edge: self.align_requested.emit(e.value))
             self.buttons[edge] = button

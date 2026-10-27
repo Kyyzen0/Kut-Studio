@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from core.project_model import MediaAsset
-from ui.design_system import Spacing
+from ui.design_system import Spacing, Typography
 from ui.icons import IconName, make_icon
 from ui.library_organization_widgets import AssetUsageBadge
 from ui.theme import COLORS
@@ -103,7 +103,7 @@ class AssetBin(QWidget):
             name_pen = QColor(COLORS["text"] if selected else COLORS["text"])
             painter.setPen(name_pen)
             font = painter.font()
-            font.setPointSize(10)
+            font.setPixelSize(Typography.small)
             font.setBold(True)
             painter.setFont(font)
             name_rect = text_rect.adjusted(0, 0, 0, -text_rect.height() // 2)
@@ -112,7 +112,7 @@ class AssetBin(QWidget):
                                  str(name), Qt.ElideRight, name_rect.width()
                              ))
             font.setBold(False)
-            font.setPointSize(9)
+            font.setPixelSize(Typography.micro)
             painter.setFont(font)
             painter.setPen(QColor(COLORS["accent"] if selected else COLORS["muted"]))
             duration_rect = text_rect.adjusted(0, text_rect.height() // 2, 0, 0)
@@ -136,7 +136,7 @@ class AssetBin(QWidget):
             tag_colors = list(getattr(badge, "tag_colors", []) or [])
             right_edge = rect.right() - self.PADDING
             font = painter.font()
-            font.setPointSize(9)
+            font.setPixelSize(Typography.micro)
             font.setBold(True)
             painter.setFont(font)
             # Média manquant : un triangle d'avertissement (une forme, pas seulement du rouge), posé tout à droite **avant** les autres

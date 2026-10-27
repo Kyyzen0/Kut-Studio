@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 from core.graphics import GraphicOverlay, GraphicType
 from core.usage_level import UsageLevel
 from ui import i18n
-from ui.design_system import Spacing
+from ui.design_system import Sizes, Spacing
 from ui.layers_panel import SHAPE_CHOICES
 from ui.scene3d_inspector import Scene3DSection
 from ui.properties_widgets.level_gate import AdvancedFold, LevelGate, gated
@@ -97,7 +97,7 @@ class _ColorField(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Spacing.xs)
         self.swatch = QPushButton()
-        self.swatch.setFixedSize(22, 22)
+        self.swatch.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         self.swatch.setToolTip(i18n.translate("graphics.color.pick"))
         self.swatch.setAccessibleName(i18n.translate("graphics.color.pick"))
         self.swatch.clicked.connect(self._pick)

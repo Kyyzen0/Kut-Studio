@@ -148,7 +148,7 @@ class TrackRowHeader(QFrame):
                 tooltip=tooltip,
                 checkable=checkable,
                 checked=checked,
-                size=Sizes.icon_button_sm,
+                size=Sizes.track_header_button,
             )
             button.clicked.connect(callback)
             return button
@@ -215,7 +215,7 @@ class TrackRowHeader(QFrame):
         else:
             # Même largeur que le bouton d'armement des pistes audio : les colonnes de boutons s'alignent d'une piste à l'autre.
             spacer = QWidget()
-            spacer.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
+            spacer.setFixedSize(Sizes.track_header_button, Sizes.track_header_button)
             layout.addWidget(spacer)
 
         # Les commandes moins fréquentes restent disponibles sans saturer

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
+from ui.design_system import Typography
 from ui.timeline_widgets.common import _current_palette
 from ui.i18n import translate
 
@@ -36,7 +37,7 @@ class TransitionMarkerWidget(QLabel):
         self.setStyleSheet(
             f"QLabel {{ background: {background}; color: {palette.clip_text}; "
             f"border: 1px solid {border}; border-radius: 4px; "
-            "font-size: 10px; font-weight: 700; padding: 1px 4px; }}"
+            f"font-size: {Typography.micro}px; font-weight: 700; padding: 1px 4px; }}"
         )
 
     def mousePressEvent(self, event) -> None:

@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- Les textes de l'interface sont plus grands et plus lisibles sur un écran de portable : plus aucun texte n'est sous 12 px (métadonnées 12, étiquettes secondaires 13, texte courant 14, titres de panneau 16, titres de page 18), les boutons, champs et boutons d'icône font au moins 28 px de haut (34 px pour un bouton ou un champ courant), la poignée des curseurs passe à 16 px, l'interrupteur à 44 × 24 px et le rail latéral à 96 px de large. La fenêtre garde la même taille minimale (1100 × 677 px) : rien ne demande un écran plus grand. Interne : un test garde le plancher de 12 px dans `ui/` (`tests/test_design_tokens.py`).
+
 ## [0.9.1] - 2026-10-24
 
 ### Added

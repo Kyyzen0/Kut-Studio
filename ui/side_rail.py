@@ -21,7 +21,7 @@ from PySide6.QtGui import QColor, QFontMetrics
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from core.usage_level import UsageLevel, coerce_usage_level
-from ui.design_system import Iconography, Sizes, Spacing
+from ui.design_system import Iconography, Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName, make_icon
 from ui.theme import COLORS
@@ -67,11 +67,11 @@ SECTION_LEVELS: dict[str, UsageLevel] = {
 
 
 RAIL_BUTTON_WIDTH = Sizes.side_rail_width - 2 * Spacing.sm
-RAIL_BUTTON_HEIGHT = 54
-RAIL_FONT_PX = 10
-RAIL_MAX_WIDTH = 120
+RAIL_BUTTON_HEIGHT = 54      # 10 boutons : la colonne fixe le minimum de hauteur de la fenêtre (676 px), 68 px en ferait 800 + (maquette : trop haut pour un Air réglé en 1280 x 800)
+RAIL_FONT_PX = Typography.caption
+RAIL_MAX_WIDTH = 132
 RAIL_TEXT_MARGIN = 12      # bord (2 × 1 px), marges internes (2 × 2 px) et reste d'arrondi de la police, des deux côtés du nom réunis
-RAIL_MIN_FONT_PX = 7
+RAIL_MIN_FONT_PX = Typography.MIN_PX
 RAIL_ICON_PX = 20
 
 

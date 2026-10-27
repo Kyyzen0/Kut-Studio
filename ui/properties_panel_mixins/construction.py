@@ -24,7 +24,7 @@ from core.visual_effects import (
 )
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, allow_shrinking
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.text_style_editor import TextStyleEditor
@@ -134,7 +134,7 @@ class ConstructionMixin:
                 f"QPushButton#inspectorTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid transparent;"
                 f" border-radius: 0; padding: 7px 7px;"
-                f" font-weight: 600; font-size: 11px; }}"
+                f" font-weight: 600; font-size: {Typography.micro}px; }}"
                 f"QPushButton#inspectorTab:hover {{ color: {COLORS['text']};"
                 f" background: transparent; }}"
                 f"QPushButton#inspectorTab:checked {{ color: {COLORS['accent']};"
@@ -201,7 +201,7 @@ class ConstructionMixin:
         self._project_info_labels: dict[str, QLabel] = {}
         for name in ("state", "resolution", "format", "fps", "background"):
             lbl = QLabel()
-            lbl.setMinimumHeight(20)
+            lbl.setMinimumHeight(Sizes.icon_button_sm)
             lbl.setWordWrap(True)  # « État : Aucun clip sélectionné » fixait la largeur minimale de tout l'inspecteur
             lbl.setStyleSheet(label_style(12, "text", 500))
             project_layout.addWidget(lbl)
@@ -379,7 +379,7 @@ class ConstructionMixin:
             previous_button = QToolButton()
             previous_button.setObjectName("iconOnly")  # padding nul : sinon le thème rogne la flèche
             previous_button.setText("‹")
-            previous_button.setFixedSize(18, 22)
+            previous_button.setFixedSize(18, Sizes.icon_button_sm)
             previous_button.setEnabled(False)
             previous_button.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, -1)
@@ -396,7 +396,7 @@ class ConstructionMixin:
             next_button = QToolButton()
             next_button.setObjectName("iconOnly")
             next_button.setText("›")
-            next_button.setFixedSize(18, 22)
+            next_button.setFixedSize(18, Sizes.icon_button_sm)
             next_button.setEnabled(False)
             next_button.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, 1)

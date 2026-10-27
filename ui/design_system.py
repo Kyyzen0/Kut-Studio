@@ -19,7 +19,7 @@ composant puise ses dimensions ici, et ``tests/test_design_tokens.py`` garde les
 **Rayons.** ``4`` (case à cocher, pastille, curseur), ``6`` (bouton, champ, carte), ``8`` (menu, infobulle, fenêtre flottante),
 ``12`` (boîte de dialogue). Pas de 2, 3, 5, 7, 10 ou 11 px.
 
-**Texte.** Sept rôles, six tailles : un titre d'application, un titre de panneau, un titre de section, une étiquette, une
+**Texte.** Sept rôles, cinq tailles (12 · 13 · 14 · 16 · 18, jamais sous 12 px) : un titre d'application, un titre de panneau, un titre de section, une étiquette, une
 étiquette secondaire, un texte d'aide et une métadonnée. Les graisses : 400, 500, 600 et 700 (jamais plus).
 """
 
@@ -86,22 +86,25 @@ Radius = _Radius()
 
 @dataclass(frozen=True)
 class _Sizes:
-    button_sm: int = 26
-    button_md: int = 32
-    button_lg: int = 38
-    icon_button: int = 30
-    icon_button_sm: int = 22
+    # Barème « Air d'abord » (maquettes validées, écran 1440 x 900) : aucune commande sous 28 px de haut.
+    button_sm: int = 28
+    button_md: int = 34
+    button_lg: int = 40
+    icon_button: int = 32
+    icon_button_sm: int = 28
     icon_button_lg: int = 36
-    input_md: int = 32
+    # Boutons d'une en-tête de piste (7 par ligne dans 220 px, piste de 46 px) : la timeline reste dense, c'est la seule exception au plancher de 28 px.
+    track_header_button: int = 22
+    input_md: int = 34
     # Champ de recherche (``ui/search_field.py``) : le même sur toutes les pages de bibliothèque.
-    search_field: int = 28
+    search_field: int = 32
     toolbar: int = 44
     # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
     # de 50-56 px pour rester un repère, pas une bande.
     top_bar: int = 50
     # Rail vertical principal, volontairement icon-only. Les libellés
     # restent disponibles dans les infobulles et via l'accessibilité Qt.
-    side_rail_width: int = 84          # le nom de chaque section est écrit sous son icône (« Transitions », « Transiciones »)
+    side_rail_width: int = 96          # le nom de chaque section est écrit sous son icône (« Transitions », « Transiciones »)
     panel_min_width: int = 240
     panel_default_width: int = 300
     # En-tête de panneau : la même hauteur partout (bibliothèque, visionneuse, inspecteur, scopes, timeline).
@@ -127,10 +130,10 @@ class _Sizes:
     progress_height: int = 10
     # Zone cliquable minimale d'un bouton-icône (même si l'icône est plus petite) : la cible tactile et souris.
     hit_target: int = 24
-    # Remplissage vertical d'un bouton : 6 px autour d'une ligne de 13 px et d'une bordure de 1 px donnent les 32 px de
+    # Remplissage vertical d'un bouton : 7 px autour d'une ligne de 14 px et d'une bordure de 1 px donnent les ~34 px de
     # ``button_md``. C'est une taille de contrôle, pas un espacement de mise en page : les pastilles de filtre, qui n'ont pas
     # de hauteur minimale, en dépendent.
-    control_pad_y: int = 6
+    control_pad_y: int = 7
     # Vignette d'un template (hauteur d'une image 9:16) dans l'assistant « Nouveau projet réseaux sociaux ».
     template_thumb: int = 148
 
@@ -145,16 +148,23 @@ Sizes = _Sizes()
 
 @dataclass(frozen=True)
 class _Typography:
-    """Les tailles de police (px). Six pas : ``10 · 11 · 12 · 13 · 15 · 17``, plus l'afficheur du timecode."""
+    """Les tailles de police (px). Cinq pas : ``12 · 13 · 14 · 16 · 18``, plus l'afficheur du timecode.
 
-    caption: int = 10
-    micro: int = 11
-    small: int = 12
-    body: int = 13
-    body_lg: int = 15
-    title: int = 15
-    heading: int = 17
+    **Jamais sous 12 px** (barème « Air d'abord », écran de portable) : métadonnées et horodatages 12, étiquettes secondaires 13,
+    texte courant et étiquettes 14, titres de panneau 16, titres de page 18. ``caption`` et ``micro`` partagent 12 : ils restent
+    deux noms pour que les appelants disent ce qu'ils sont (métadonnée / texte d'aide) sans qu'une taille de plus ne s'ajoute.
+    """
+
+    caption: int = 12
+    micro: int = 12
+    small: int = 13
+    body: int = 14
+    body_lg: int = 16
+    title: int = 16
+    heading: int = 18
     display: int = 22
+
+    MIN_PX = 12
 
 
 @dataclass(frozen=True)
@@ -187,7 +197,7 @@ class _TextRoles:
     """Les sept rôles de texte. Les titres ressortent (taille ou graisse), les métadonnées s'effacent (couleur discrète)."""
 
     app_title: TextRole = TextRole("app-title", Typography.heading, Weights.bold, "text_strong")
-    panel_title: TextRole = TextRole("panel-title", Typography.body, Weights.semibold, "text")
+    panel_title: TextRole = TextRole("panel-title", Typography.title, Weights.semibold, "text")
     section_title: TextRole = TextRole("section-title", Typography.small, Weights.semibold, "muted_strong")
     label: TextRole = TextRole("label", Typography.body, Weights.regular, "text")
     label_secondary: TextRole = TextRole("label-secondary", Typography.small, Weights.regular, "muted")

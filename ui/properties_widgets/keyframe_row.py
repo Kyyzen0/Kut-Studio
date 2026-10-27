@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDoubleSpinBox, QFormLayout, QHBoxLayout, QSizePolicy, QToolButton, QWidget
 
 from core.usage_level import UsageLevel
+from ui.design_system import Sizes
 from ui import i18n
 from ui.properties_widgets.diamond_button import KeyframeDiamondButton
 from ui.properties_widgets.level_gate import LevelGate, gated
@@ -48,7 +49,7 @@ def build_keyframe_row(
     previous = QToolButton()
     previous.setObjectName("iconOnly")      # padding nul : sinon le thème rogne la flèche
     previous.setText("‹")
-    previous.setFixedSize(18, 22)
+    previous.setFixedSize(18, Sizes.icon_button_sm)
     previous.clicked.connect(lambda _checked=False: on_previous())
     diamond = KeyframeDiamondButton(property_id)
     diamond.clicked.connect(lambda _checked=False: on_toggle())
@@ -58,7 +59,7 @@ def build_keyframe_row(
     next_button = QToolButton()
     next_button.setObjectName("iconOnly")
     next_button.setText("›")
-    next_button.setFixedSize(18, 22)
+    next_button.setFixedSize(18, Sizes.icon_button_sm)
     next_button.clicked.connect(lambda _checked=False: on_next())
     previous.setAccessibleName(i18n.translate("a11y.keyframe.previous", property=label_text))
     diamond.setAccessibleName(i18n.translate("a11y.keyframe.toggle", property=label_text))

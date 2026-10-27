@@ -37,6 +37,7 @@ from shiboken6 import isValid
 from core.command_search import MAX_QUERY_CHARS, MAX_RESULTS, SearchEntry, SearchResult, recent_results, search
 from core.usage_level import UsageLevel
 from ui import i18n
+from ui.design_system import Typography
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS
 
@@ -410,7 +411,7 @@ class CommandPalette(QWidget):
         c = COLORS
         self.setStyleSheet(
             f"QFrame#paletteBox {{ background: {c['panel']}; border: 1px solid {c['border_strong']}; border-radius: 12px; }}"
-            f" QLineEdit#paletteField {{ background: transparent; border: none; color: {c['text']}; font-size: 17px;"
+            f" QLineEdit#paletteField {{ background: transparent; border: none; color: {c['text']}; font-size: {Typography.heading}px;"
             f" padding: 6px 2px; }}"
             f" QToolButton#paletteClose {{ background: {c['surface_hover']}; color: {c['text']}; border: 1px solid {c['border']};"
             f" border-radius: 6px; padding: 4px 10px; }}"
@@ -423,7 +424,7 @@ class CommandPalette(QWidget):
             f" QLabel#paletteTitle {{ color: {c['text']}; font-size: 13px; font-weight: 600; background: transparent; }}"
             f" QLabel#paletteTitle[faded=\"true\"] {{ color: {c['disabled_text']}; }}"
             f" QLabel#paletteHint, QLabel#paletteShortcut, QLabel#paletteFooter, QLabel#paletteMessage"
-            f" {{ color: {c['muted']}; font-size: 11px; background: transparent; }}"
+            f" {{ color: {c['muted']}; font-size: {Typography.micro}px; background: transparent; }}"
             f" QLabel#paletteMessage {{ font-size: 13px; padding: 22px 16px; }}"
             f" QPushButton#paletteOpen {{ background: {c['accent']}; color: {c['on_accent']}; border: none; border-radius: 6px;"
             f" padding: 5px 12px; font-weight: 600; }}"

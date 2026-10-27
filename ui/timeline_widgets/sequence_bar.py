@@ -19,6 +19,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
 
+from ui.design_system import Sizes
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import label_style
@@ -79,7 +80,7 @@ class SequenceNavigationBar(QWidget):
         button = QToolButton()
         button.setText(glyph)
         button.setToolTip(translate(tooltip_key))
-        button.setFixedSize(22, 22)
+        button.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         button.setCursor(Qt.PointingHandCursor)
         button.setFocusPolicy(Qt.NoFocus)
         return button

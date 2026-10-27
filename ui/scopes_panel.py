@@ -50,7 +50,7 @@ from core.scopes import (
     VideoLevels,
     levels_bounds,
 )
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
 
@@ -155,7 +155,7 @@ class _ScopeCanvas(QWidget):
     def _paint_placeholder(self, painter: QPainter, rect) -> None:
         painter.setPen(QPen(QColor(COLORS["muted"])))
         font = QFont()
-        font.setPointSize(9)
+        font.setPixelSize(Typography.small)
         painter.setFont(font)
         painter.drawText(
             rect, Qt.AlignCenter,
