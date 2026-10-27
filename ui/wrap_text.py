@@ -19,10 +19,12 @@ class WrapTextMixin:
     _wrap_text = False
     _logical_text: str | None = None
     _rewrapping = False
+    _wrap_opt_out = False                       # ``set_text_wrapping(False)`` : définitif, ``setText`` ne le réactive pas
     _wrap_base_min: int | None = None
 
     def set_text_wrapping(self, enabled: bool = True) -> None:
         self._wrap_text = bool(enabled)
+        self._wrap_opt_out = not enabled
         self._rewrap()
 
     def _wrap_overhead(self) -> int:

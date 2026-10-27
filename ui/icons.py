@@ -1027,7 +1027,7 @@ class IconButton(WrapTextMixin, QToolButton):
                 # la page. Il peut se comprimer (libellé coupé) plutôt que de faire déborder son conteneur.
                 self.setMinimumWidth(self._icon_size_px + 60)
             self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            if not self._square:
+            if not self._square and not self._wrap_opt_out:
                 self.set_text_wrapping()           # libellé à la ligne plutôt que tronqué (colonne étroite, polices larges)
 
     def _apply_style(self) -> None:
