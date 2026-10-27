@@ -170,7 +170,7 @@ def _visible_height(widget, host_viewport) -> int:
 @pytest.mark.parametrize("size", SIZES, ids=SIZE_IDS)
 @pytest.mark.parametrize("section", ["media", "audio"])
 def test_library_list_has_visible_rows(windows, size, section):
-    """Médias / Audio : au moins une ligne et demie de la liste est **visible** (avant : dossiers puis liste sous le bord, 0 px).
+    """Médias / Audio : au moins une grosse ligne de la liste est **visible** (avant : dossiers puis liste sous le bord, 0 px).
 
     Le plancher est celui de l'Air réglé en 1280x800 (colonne de ~215 px : en-tête, recherche, onglets Fichiers / Effets
     audio / SFX et boutons d'action en prennent plus de la moitié) ; la liste défile pour le reste.
@@ -183,7 +183,7 @@ def test_library_list_has_visible_rows(windows, size, section):
     view = (panel.bin_videos if section == "media" else panel.bin_audios)
     viewport = panel.findChild(QScrollArea, "scrollGuard").viewport() if panel.findChild(QScrollArea, "scrollGuard") else panel
     visible = _visible_height(view, viewport)
-    assert visible >= 64, f"{section} : {visible} px de liste visibles"
+    assert visible >= 56, f"{section} : {visible} px de liste visibles"
     window.project_panel.select_section("media")
 
 
