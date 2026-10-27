@@ -84,7 +84,8 @@ class FitPaletteButton(QObject):
             widgets = [w for w in widgets if w is not None and id(w) not in skipped and not w.isHidden()]
             used = sum(w.sizeHint().width() for w in widgets) + margins.left() + margins.right()
             reserved = sum(w.width_for("full") for w in self._reserved)
-            gaps = layout.spacing() * (len(widgets) + 1 + len(self._reserved))
+            spacers = sum(1 for i in range(layout.count()) if layout.itemAt(i).widget() is None)   # les ressorts ont aussi leurs espaces
+            gaps = layout.spacing() * (len(widgets) + spacers + 1 + len(self._reserved))
             room = self._bar.width() - used - reserved - gaps
             form = next((f for f in _FORMS if self._button.width_for(f) <= room), HIDDEN)
             self._button.set_form(form)

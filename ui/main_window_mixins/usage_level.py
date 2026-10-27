@@ -82,7 +82,8 @@ class _FitLevelChip(QObject):
             others = [layout.itemAt(i).widget() for i in range(layout.count())]
             widgets = [w for w in others if w is not None and w is not self._chip and not w.isHidden()]
             used = sum(w.sizeHint().width() for w in widgets) + margins.left() + margins.right()
-            gaps = layout.spacing() * (len(widgets) + 1)           # y compris l'espace propre à la puce
+            spacers = sum(1 for i in range(layout.count()) if layout.itemAt(i).widget() is None)   # les ressorts ont aussi leurs espaces
+            gaps = layout.spacing() * (len(widgets) + spacers + 1)  # y compris l'espace propre à la puce
             room = self._bar.width() - used - gaps
             if self._chip.width_for(_LevelChip.FULL) <= room:
                 form = _LevelChip.FULL
