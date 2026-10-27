@@ -50,6 +50,21 @@ met l'étiquette au-dessus de son champ ; un formulaire d'inspecteur avec des bo
 (`ui/mixer_panel.py`) bascule seul entre tranches verticales (zone des tranches ≥ 316 px) et lignes compactes ; le bloc
 dossiers de la bibliothèque (`ui/project_panel_widgets/browse_fold.py`) se replie sous 480 px de colonne.
 
+## Page Couleur « Air d'abord » (roues entières, bande des plans)
+
+Mesures à 1440x900 : colonne de droite ~667 px de haut (la timeline n'y est plus empilée), quatre roues de 150 px côte à côte,
+nœuds en une bande de 88 px à l'échelle 1, bande des plans de ~151 px.
+
+* La page Couleur démarre **sans timeline** : la bande des plans (`ui/color_page/clip_strip.py`) prend sa place, avec le bouton
+  « Afficher la timeline » (« Masquer la timeline » une fois cochée). Ce choix est **de session** :
+  `core.workspace_state.color_page_session_state` replie la timeline au premier affichage de la page et à l'enregistrement
+  (jamais dans `workspace_color.json`). Sous la timeline la bande se réduit à son en-tête (`MIN_HEIGHT[CLIPS]` = 36 px) ; seule,
+  elle prend `DEFAULT_SIZE[CLIPS]` (`WorkspaceManager._strip_only_height`).
+* La colonne Couleur s'ouvre à 660 px (`COLOR_PAGE_PANEL_WIDTH`) et le moniteur cède, jusqu'à son minimum, à la colonne.
+* `ColorWheels` choisit 4 colonnes dès que chaque cellule fait 120 px (disque >= 120 px à 1280 et 1222 px de large ; 150 px au
+  plus), sinon 2 x 2 ; sa `minimumSizeHint` est celle de deux roues, pour que la page prenne la largeur de l'onglet.
+* `ColorPanel` est une colonne (nœuds au-dessus, roues dessous) tant que sa largeur ne dépasse pas 1,6 fois sa hauteur.
+
 ## Mesurer et voir
 
 ```

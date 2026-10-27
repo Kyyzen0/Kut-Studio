@@ -110,9 +110,13 @@ DEFAULT_SIZE: dict[PanelId, int] = {
     PanelId.MIXER: 320,
     PanelId.HISTORY: 240,
     PanelId.COLOR: 440,
-    PanelId.CLIPS: 124,
+    PanelId.CLIPS: 152,
     PanelId.COMPOSITION: 520,
 }
+
+#: Largeur d'origine de la colonne Couleur de la page Couleur : quatre roues de ~150 px côte à côte (le moniteur cède, jusqu'à son
+#: minimum, quand la fenêtre est plus étroite).
+COLOR_PAGE_PANEL_WIDTH: int = 660
 
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
 MIN_SIZE: dict[PanelId, int] = {
@@ -130,7 +134,7 @@ MIN_SIZE: dict[PanelId, int] = {
 #: Hauteur minimale d'un panneau **empilé dans la zone basse** (timeline + mixeur ou bande des plans). Elle remplace
 #: ``MIN_SIZE`` pour les hauteurs : le mixeur défile verticalement, il n'a pas besoin de 320 px pour rester utilisable, et
 #: sa valeur d'origine portait la fenêtre de la page Audio à plus de 1000 px (plus que l'écran d'un portable).
-MIN_HEIGHT: dict[PanelId, int] = {**MIN_SIZE, PanelId.MIXER: 140, PanelId.CLIPS: 124}   # CLIPS : le minimum réel de ``ClipStrip``
+MIN_HEIGHT: dict[PanelId, int] = {**MIN_SIZE, PanelId.MIXER: 140, PanelId.CLIPS: 36}   # CLIPS : son en-tête seul (sous la timeline, la bande se réduit à son en-tête ; seule, elle prend DEFAULT_SIZE)
 
 #: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
 DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR, PanelId.CLIPS,
@@ -564,8 +568,11 @@ def page_default_state(page: str) -> WorkspaceState:
 
     Couleur : grand moniteur au centre (les scopes dessous), l'inspecteur à
     gauche pour les réglages primaires, les courbes et la LUT du nœud courant,
-    les nœuds et les roues à droite, la timeline et la bande des plans en bas
-    pour passer d'un plan à l'autre ; les médias se replient. Composition :
+    les nœuds et les roues à droite (la colonne prend toute la hauteur libre),
+    la bande des plans en bas pour passer d'un plan à l'autre ; la timeline
+    y est repliée (le bouton « Afficher la timeline » de la bande la rouvre,
+    le temps de la session : voir :func:`color_page_session_state`) ; les
+    médias se replient. Composition :
     le moniteur, les nœuds et l'inspecteur du nœud à droite, la timeline.
     Audio : le mixeur et ses vumètres en bas, avec la timeline, sous un
     moniteur plus petit ; l'inspecteur (onglet Audio) et les médias restent.
@@ -584,11 +591,21 @@ def page_default_state(page: str) -> WorkspaceState:
         return state
     return (
         state.with_panel(PanelId.MEDIA, visible=False)
-        .with_panel(PanelId.INSPECTOR, area=DockArea.LEFT)
-        .with_panel(PanelId.COLOR, area=DockArea.RIGHT, visible=True)
+        .with_panel(PanelId.INSPECTOR, area=DockArea.LEFT, size=MIN_SIZE[PanelId.INSPECTOR])
+        .with_panel(PanelId.COLOR, area=DockArea.RIGHT, visible=True, size=COLOR_PAGE_PANEL_WIDTH)
         .with_panel(PanelId.CLIPS, area=DockArea.BOTTOM, visible=True)
+        .with_panel(PanelId.TIMELINE, visible=False)
         .with_center_ratio(0.62)
     )
+
+
+def color_page_session_state(state: WorkspaceState) -> WorkspaceState:
+    """Disposition de la page Couleur au départ d'une session et à l'enregistrement : la timeline y est repliée.
+
+    Afficher la timeline sur cette page est un choix **de session** (bouton de la bande des plans) : il n'est ni gardé
+    dans ``workspace_color.json`` ni repris d'une disposition enregistrée avant ce choix (timeline + bande empilées).
+    """
+    return state.with_panel(PanelId.TIMELINE, visible=False)
 
 
 def page_state_path(page: str, settings_dir: str | os.PathLike[str] | None = None) -> Path:
@@ -764,6 +781,7 @@ __all__ = [
     "PAGES",
     "PAGE_AUDIO",
     "PAGE_COLOR",
+    "color_page_session_state",
     "PAGE_COMPOSITION",
     "PAGE_EDIT",
     "PANEL_TOOLBAR_SIZE",

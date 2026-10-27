@@ -166,6 +166,8 @@ def test_transitions_panel_has_no_empty_band_between_chips_and_list(screen_windo
 def test_timeline_shows_three_tracks_at_its_smallest(screen_window, screen, page):
     """La timeline garde une hauteur minimale utile : au moins trois pistes visibles (ou un défilement vertical clair)."""
     window = screen_window(screen, "advanced", page)
+    if page == "color":
+        window.clip_strip.timeline_button.setChecked(True)     # la page Couleur démarre sans timeline : « Afficher la timeline »
     window.resize(window.minimumSize())
     audit.settle(window)
     try:

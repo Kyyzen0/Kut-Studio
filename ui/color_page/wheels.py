@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QConicalGradient, QFont, QPainter, QPen
 from PySide6.QtWidgets import QGridLayout, QSizePolicy, QWidget
 
@@ -30,11 +30,14 @@ HUE_SCREEN_ANGLE = 103.0
 """Angle à l'écran (degrés, sens trigonométrique, 0 à droite) de la teinte 0 (rouge), comme sur un vectorscope."""
 
 FINE_FACTOR = 0.25
-_TITLE_HEIGHT = 18
+_TITLE_HEIGHT = 20
 _DIAL_HEIGHT = 14
-_READOUT_HEIGHT = 16
+_READOUT_LINE = Typography.caption + 4
+_READOUT_HEIGHT = 2 * _READOUT_LINE                       # deux lignes : « R V » puis « B Y » (jamais coupées, même à 120 px)
 _RING_WIDTH = 5.0
-_MIN_DISC = 72
+_MIN_DISC = 120                                           # une roue plus petite n'est plus réglable à la souris (barème « Air d'abord »)
+_MAX_DISC = 150
+_SIDE = 2                                                 # air autour du disque : à 1222 px la colonne n'a que 514 px pour quatre roues
 
 
 class ColorWheel(QWidget):
@@ -49,10 +52,16 @@ class ColorWheel(QWidget):
         self._wheel = Wheel()
         self._puck_drag: tuple[QPointF, float, float] | None = None
         self._dial_drag: tuple[float, float] | None = None
-        self.setMinimumSize(_MIN_DISC + 2 * Spacing.sm, _MIN_DISC + _TITLE_HEIGHT + _DIAL_HEIGHT + _READOUT_HEIGHT)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        chrome = _TITLE_HEIGHT + _DIAL_HEIGHT + _READOUT_HEIGHT + Spacing.xs
+        self.setMinimumSize(_MIN_DISC, _MIN_DISC + chrome)
+        self.setMaximumHeight(_MAX_DISC + chrome)            # jamais plus haute que nécessaire : le reste de l'onglet reste vide
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setCursor(Qt.CrossCursor)
         self.retranslate()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - API Qt
+        """Le disque entier au diamètre maximal : sans cela la layout ne lui donnerait que son minimum."""
+        return QSize(_MAX_DISC + 2 * _SIDE, _MAX_DISC + _TITLE_HEIGHT + _DIAL_HEIGHT + _READOUT_HEIGHT + Spacing.xs)
 
     # -- état ---------------------------------------------------------------------------------------------------
 
@@ -77,7 +86,7 @@ class ColorWheel(QWidget):
     def _disc(self) -> tuple[QPointF, float]:
         """Centre et rayon du disque (anneau compris)."""
         height = self.height() - _TITLE_HEIGHT - _DIAL_HEIGHT - _READOUT_HEIGHT - Spacing.xs
-        radius = max(8.0, min(self.width() - 2 * Spacing.sm, height) / 2.0)
+        radius = max(8.0, min(self.width() - 2 * _SIDE, height, _MAX_DISC) / 2.0)
         return QPointF(self.width() / 2.0, _TITLE_HEIGHT + Spacing.xs / 2 + height / 2.0), radius
 
     def _travel(self) -> float:
@@ -164,7 +173,11 @@ class ColorWheel(QWidget):
         wheel = self._wheel
         text = translate("color.wheel.readout", r=f"{wheel.r:+.2f}", g=f"{wheel.g:+.2f}", b=f"{wheel.b:+.2f}",
                          y=f"{wheel.y:+.2f}")
-        painter.drawText(QRectF(0, dial.bottom() + 2, self.width(), _READOUT_HEIGHT), Qt.AlignCenter, text)
+        parts = text.split("  ")                                     # « R +0.05 », « V +0.00 »… (le libellé traduit les lettres)
+        lines = ["  ".join(parts[:2]), "  ".join(parts[2:])] if len(parts) > 2 else [text, ""]
+        for index, line in enumerate(lines):
+            painter.drawText(QRectF(0, dial.bottom() + 2 + index * _READOUT_LINE, self.width(), _READOUT_LINE),
+                             Qt.AlignCenter, line)
 
     # -- souris -------------------------------------------------------------------------------------------------
 
@@ -240,8 +253,9 @@ class ColorWheels(QWidget):
         self.wheels: dict[str, ColorWheel] = {}
         self.cells: dict[str, WheelCell] = {}
         self._grid = QGridLayout(self)
-        self._grid.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
-        self._grid.setSpacing(Spacing.sm)
+        self._grid.setContentsMargins(_SIDE, Spacing.sm, _SIDE, Spacing.sm)
+        self._grid.setSpacing(0)
+        self._grid.setSizeConstraint(QGridLayout.SetNoConstraint)        # le minimum est celui de ``minimumSizeHint`` (deux roues)
         for name in WHEELS:
             wheel = ColorWheel(name)
             wheel.changed.connect(lambda value, wheel_name=name: self.wheel_changed.emit(wheel_name, value))
@@ -273,11 +287,18 @@ class ColorWheels(QWidget):
         for cell in self.cells.values():
             cell.retranslate()
 
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - API Qt
+        """Largeur de deux roues seulement : la page prend la largeur de l'onglet et choisit 4 ou 2 colonnes (sans cela, les
+        quatre colonnes imposaient leur largeur et restaient, quitte à couper la dernière roue)."""
+        hint = super().minimumSizeHint()
+        return QSize(2 * _MIN_DISC, hint.height())
+
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)
-        # Quatre roues côte à côte si chacune garde un disque lisible (et pas plus large que haute), sinon 2 × 2.
-        row_fits = self.width() >= 4 * (_MIN_DISC + 3 * Spacing.sm) and self.width() / 4 >= self.height() * 0.55
-        self._arrange(4 if row_fits else 2)
+        # Quatre roues côte à côte si chacune garde un disque entier d'au moins ``_MIN_DISC`` px, sinon 2 × 2.
+        margins = self._grid.contentsMargins()
+        room = (self.width() - margins.left() - margins.right() - 3 * self._grid.horizontalSpacing()) / 4
+        self._arrange(4 if room >= _MIN_DISC else 2)       # (une barre de défilement qui apparaît ôte ~8 px : pas de va-et-vient)
 
     def _arrange(self, columns: int) -> None:
         if columns == self._columns:
@@ -287,3 +308,5 @@ class ColorWheels(QWidget):
             self._grid.removeWidget(cell)
         for index, cell in enumerate(self.cells.values()):
             self._grid.addWidget(cell, index // columns, index % columns)
+        for row in range(3):
+            self._grid.setRowStretch(row, 1 if row == len(self.cells) // columns else 0)     # l'espace en trop reste sous les roues

@@ -792,6 +792,7 @@ class MainWindow(
         """
         self._sync_playhead_labels()
         self._sync_workspace_menu()
+        self._sync_strip_timeline_button()
 
     # ------------------------------------------------------------------
     # Rail latéral : navigation principale par section

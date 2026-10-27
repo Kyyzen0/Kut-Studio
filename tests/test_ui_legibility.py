@@ -20,7 +20,7 @@ from tools import ui_audit as audit
 from tools import ui_legibility as legibility
 
 #: Fenêtres jouées : l'Air réglé en 1440x900 (zone utilisable ~1440x790), l'Air réglé en 1280x800, la fenêtre réelle de la capture.
-SIZES = [(1440, 790), (1280, 690), (1222, 738)]
+SIZES = [(1440, 900), (1440, 790), (1280, 690), (1222, 738)]
 SIZE_IDS = [f"{w}x{h}" for w, h in SIZES]
 MAX_MINIMUM_HEIGHT = 720          # comme test_ui_small_screens.MAX_MINIMUM
 
@@ -219,6 +219,8 @@ def test_no_button_is_elided_with_wider_fonts(windows, scale):
             action()
             audit.settle(window)
             problems += [str(f) for f in legibility.elided_buttons(window, f"x{scale} {name} ")]
+            if name == "couleur-roues":
+                problems += _wheel_problems(window.color_panel, f"x{scale}")
         assert not problems, "\n".join(sorted(set(problems))[:10])
     finally:
         from PySide6.QtWidgets import QApplication
@@ -230,3 +232,183 @@ def test_no_button_is_elided_with_wider_fonts(windows, scale):
         base = app.property("_kut_audit_base_stylesheet")
         if base is not None:
             app.setStyleSheet(base)                    # la feuille de style agrandie ne doit pas survivre aux autres tests
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Page Couleur « Air d'abord » : roues entières, bande de nœuds, bande des plans à la place de la timeline
+# ---------------------------------------------------------------------------------------------------------------
+
+#: Diamètre minimal d'une roue (px) : en dessous, le palet ne se règle plus à la souris. 1440x900 : ~150 px.
+MIN_WHEEL = 120
+#: Marge exigée au-delà du seuil sur les fenêtres les plus petites (Linux et Windows ont des polices plus larges que macOS).
+SLACK = 8
+
+
+def _colour_page(window, tab: int = 0, timeline: bool = False):
+    window.switch_page("color")
+    window.clip_strip.timeline_button.setChecked(timeline)
+    window.color_panel.tabs.setCurrentIndex(tab)
+    audit.settle(window)
+    return window.color_panel
+
+
+def _wheel_problems(panel, label: str) -> list[str]:
+    """Les quatre roues : entières dans la zone visible de l'onglet (sans défiler), disque de ``MIN_WHEEL`` px au moins."""
+    problems: list[str] = []
+    guard = panel.tabs.currentWidget().parentWidget().parentWidget()
+    viewport = guard.viewport()
+    if guard.verticalScrollBar().maximum() > 0 or guard.horizontalScrollBar().maximum() > 0:
+        problems.append(f"{label} : l'onglet des roues défile")
+    for name, wheel in panel.wheels.wheels.items():
+        if not _fully_visible(wheel, viewport):
+            problems.append(f"{label} {name} : roue coupée {wheel.mapTo(viewport, QPoint(0, 0))} {wheel.size()} dans {viewport.size()}")
+        diameter = wheel._disc()[1] * 2
+        if diameter < MIN_WHEEL + (SLACK if viewport.window().width() >= 1280 else 0):      # 1222 px : 514 px pour quatre roues, pas plus
+            problems.append(f"{label} {name} : disque de {diameter:.0f} px")
+    return problems
+
+
+@pytest.mark.parametrize("size", SIZES, ids=SIZE_IDS)
+def test_the_four_wheels_are_whole_and_at_least_120_px(windows, size):
+    """Quatre roues côte à côte, entières, jamais défilées ni coupées ; ~150 px sur un 1440x900, 120 px au moins au plus petit."""
+    window = windows(size)
+    panel = _colour_page(window)
+    try:
+        assert panel.wheels._columns == 4
+        assert not _wheel_problems(panel, f"{size[0]}x{size[1]}"), _wheel_problems(panel, "")
+        if size == (1440, 900):
+            assert min(w._disc()[1] * 2 for w in panel.wheels.wheels.values()) >= 150 - 2
+        for name, cell in panel.wheels.cells.items():                      # le losange d'images clés reste sous la roue
+            assert _fully_visible(cell.keys.inner, panel.tabs.currentWidget().parentWidget()), name
+    finally:
+        window.switch_page("edit")
+        audit.settle(window)
+
+
+@pytest.mark.parametrize("size", SIZES, ids=SIZE_IDS)
+def test_the_node_graph_is_a_legible_strip(windows, size):
+    """Nœuds : une bande d'environ 88 px (pas 112 ni 400) à l'échelle 1, nœud et bornes lisibles."""
+    window = windows(size)
+    panel = _colour_page(window)
+    try:
+        from PySide6.QtCore import Qt
+
+        assert panel.splitter.orientation() == Qt.Vertical
+        assert 84 <= panel.nodes.height() <= 100, panel.nodes.height()
+        assert panel.nodes.transform().m11() >= 0.9, panel.nodes.transform().m11()          # jamais réduit à une vignette
+        assert panel.tabs.height() >= 280, panel.tabs.height()                              # le reste va aux roues
+    finally:
+        window.switch_page("edit")
+        audit.settle(window)
+
+
+def test_the_strip_replaces_the_timeline_and_the_panel_gets_the_height(windows):
+    """1440x900 : bande des plans de ~150 px à la place de la timeline, colonne de droite d'au moins 640 px de haut."""
+    window = windows((1440, 900))
+    panel = _colour_page(window)
+    try:
+        assert not window.timeline_panel.isVisible() and window.clip_strip.isVisible()
+        assert 146 <= window.clip_strip.height() <= 160, window.clip_strip.height()
+        assert panel.height() >= 640, panel.height()
+    finally:
+        window.switch_page("edit")
+        audit.settle(window)
+
+
+@pytest.mark.parametrize("size", SIZES, ids=SIZE_IDS)
+def test_show_timeline_button_toggles_and_is_idempotent(windows, size):
+    """« Afficher la timeline » rouvre la timeline sous la page ; recliquer la replie ; la répéter ne change rien."""
+    from core.workspace_state import PanelId
+
+    window = windows(size)
+    panel = _colour_page(window)
+    button = window.clip_strip.timeline_button
+    try:
+        assert button.text() == "Afficher la timeline" and button.isCheckable() and not button.isChecked()
+        assert button.width() >= button.sizeHint().width() - 1                       # libellé entier, jamais élidé
+        button.setChecked(True)
+        audit.settle(window)
+        assert window.timeline_panel.isVisible() and window.clip_strip.isVisible()
+        assert window.height() <= size[1] and window.minimumHeight() <= MAX_MINIMUM_HEIGHT
+        assert not legibility.overlapping_siblings(window)
+        button.setChecked(True)                                                       # idempotent
+        window.workspace.set_panel_visible(PanelId.TIMELINE, True)                    # idem par le gestionnaire de panneaux
+        audit.settle(window)
+        assert window.timeline_panel.isVisible() and button.isChecked()
+        button.setChecked(False)
+        audit.settle(window)
+        assert not window.timeline_panel.isVisible() and window.clip_strip.isVisible() and not button.isChecked()
+        button.setChecked(False)
+        audit.settle(window)
+        assert not window.timeline_panel.isVisible()
+        assert panel.height() >= (640 if size == (1440, 900) else 400)
+    finally:
+        button.setChecked(False)
+        window.switch_page("edit")
+        audit.settle(window)
+
+
+def test_the_button_follows_the_timeline_opened_elsewhere(windows):
+    """La timeline rouverte par un autre chemin (menu Fenêtre) coche le bouton, sans l'émettre en retour."""
+    from core.workspace_state import PanelId
+
+    window = windows((1440, 900))
+    _colour_page(window)
+    button = window.clip_strip.timeline_button
+    try:
+        window.workspace.set_panel_visible(PanelId.TIMELINE, True)
+        audit.settle(window)
+        assert button.isChecked()
+        window.workspace.set_panel_visible(PanelId.TIMELINE, False)
+        audit.settle(window)
+        assert not button.isChecked()
+    finally:
+        window.switch_page("edit")
+        audit.settle(window)
+
+
+def test_the_timeline_choice_is_a_session_choice():
+    """La page Couleur démarre sans timeline, et ne l'enregistre jamais : ni d'origine, ni dans une disposition ancienne."""
+    from core.workspace_state import (
+        PAGE_COLOR,
+        PAGE_EDIT,
+        DockArea,
+        PanelId,
+        color_page_session_state,
+        page_default_state,
+    )
+
+    state = page_default_state(PAGE_COLOR)
+    assert not state.is_visible(PanelId.TIMELINE) and state.is_visible(PanelId.CLIPS)
+    assert state.area_of(PanelId.CLIPS) is DockArea.BOTTOM
+    assert page_default_state(PAGE_EDIT).is_visible(PanelId.TIMELINE)                  # le Montage ne change pas
+    old = state.with_panel(PanelId.TIMELINE, visible=True)                            # disposition d'avant : timeline + bande empilées
+    assert not color_page_session_state(old).is_visible(PanelId.TIMELINE)
+    assert color_page_session_state(old).is_visible(PanelId.CLIPS)
+
+
+@pytest.mark.parametrize("size", SIZES, ids=SIZE_IDS)
+def test_qualifier_tab_has_titles_bars_fields_and_whole_buttons(windows, size):
+    """Qualificateur : par plage un titre, la barre de couleur et trois champs de 34 px sous leur étiquette ; boutons entiers."""
+    window = windows(size)
+    panel = _colour_page(window, tab=1)
+    try:
+        editor = panel.qualifier
+        guard = editor.parentWidget().parentWidget()
+        for channel in ("hue", "sat", "lum"):
+            assert editor.channel_checks[channel].text() and editor.bars[channel].height() >= 12
+        for name, label in editor.field_labels.items():
+            spin = editor.spins[name]
+            assert label.geometry().bottom() <= spin.geometry().top() + 1, name              # l'étiquette est AU-DESSUS
+            assert label.geometry().intersected(spin.geometry()).isEmpty(), name
+            assert spin.height() >= 34, (name, spin.height())
+            assert label.width() >= label.fontMetrics().horizontalAdvance(label.text()), name         # étiquette entière
+        for button in (editor.pick_button, editor.highlight_button):
+            assert button.isVisible() and button.width() >= button.sizeHint().width() - 1, button.text()
+        assert guard.horizontalScrollBar().maximum() == 0
+        problems = [str(f) for f in legibility.legibility_findings(window, "q ") if f.blocking]
+        assert not problems, problems[:5]
+    finally:
+        panel.tabs.setCurrentIndex(0)
+        window.switch_page("edit")
+        audit.settle(window)

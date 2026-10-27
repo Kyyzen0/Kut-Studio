@@ -127,11 +127,20 @@ def page_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
 
     select_first_clip(window)
     colour = window.color_panel
+
+    def colour_tab(index: int, timeline: bool) -> None:
+        window.switch_page("color")
+        window.clip_strip.timeline_button.setChecked(timeline)          # « Afficher la timeline » : état explicite à chaque scénario
+        colour.tabs.setCurrentIndex(index)
+        settle(window)
+
     for index, name in enumerate(("roues", "qualificateur", "fenetres", "flou")):
-        yield f"couleur-{name}", lambda i=index: (window.switch_page("color"), colour.tabs.setCurrentIndex(i), settle(window))
+        yield f"couleur-{name}", lambda i=index: colour_tab(i, False)
+    yield "couleur-roues-timeline", lambda: colour_tab(0, True)         # timeline rouverte sous la page, avec la bande des plans
+    yield "couleur-qualificateur-timeline", lambda: colour_tab(1, True)
     for index, name in INSPECTOR_TABS:
         yield f"audio-inspecteur-{name}", lambda i=index: (
-            window.switch_page("audio"), window.properties_panel._select_inspector_tab(i), settle(window))
+            colour_tab(0, False), window.switch_page("audio"), window.properties_panel._select_inspector_tab(i), settle(window))
 
 
 def run(sizes: Iterable[tuple[int, int]], out_dir: Path | None = None, level: str = "advanced") -> list[Finding]:

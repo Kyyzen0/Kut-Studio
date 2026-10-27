@@ -43,12 +43,14 @@ from core.workspace_state import (
     DEFAULT_SIZE,
     MIN_HEIGHT,
     MIN_SIZE,
+    PAGE_COLOR,
     PAGE_EDIT,
     PAGES,
     DockArea,
     FloatingGeometry,
     PanelId,
     WorkspaceState,
+    color_page_session_state,
     delete_named_workspace,
     list_named_workspaces,
     load_named_workspace,
@@ -709,6 +711,8 @@ class WorkspaceManager(QObject):
             return False
         self._page_states[self._page] = self._layout_to_keep()
         target = self._page_states.get(page) or load_page_state(page, self._settings_dir)
+        if page == PAGE_COLOR and page not in self._page_states:
+            target = color_page_session_state(target)      # timeline repliée : la bande des plans seule (choix de session)
         self._pre_maximize = None
         for panel in list(self._windows):
             window = self._windows.pop(panel)
@@ -743,6 +747,9 @@ class WorkspaceManager(QObject):
         total = root.height()
         if total <= 0:
             QTimer.singleShot(0, self, self.balance_vertical_split)
+            return
+        if self._strip_only_height() is not None:       # page Couleur sans timeline : la bande garde sa hauteur
+            self._apply_sizes()
             return
         timeline = self._panels.get(PanelId.TIMELINE)
         if timeline is None:
@@ -1085,13 +1092,30 @@ class WorkspaceManager(QObject):
         total = max(top.width(), left + center + right)
         if total <= 0:
             return
+        if self._page == PAGE_COLOR and top.width() > 0:
+            # Page Couleur : le moniteur cède (jusqu'à son minimum) aux roues, qui gardent leur taille entière.
+            center = max(MIN_SIZE[PanelId.VIEWER], top.width() - left - right - 2 * top.handleWidth())
         top.setSizes([left, center, right])
         root = getattr(self, "_root_splitter", None)
         if root is not None:
+            strip = self._strip_only_height()
+            if strip is not None and root.height() > strip:
+                root.setSizes([root.height() - strip, strip])
+                return
             ratio = float(self._state.center_ratio)
             root.setSizes(
                 [int(root.height() * ratio), int(root.height() * (1 - ratio))]
             )
+
+    def _strip_only_height(self) -> int | None:
+        """Hauteur de la zone basse quand elle n'a pas de timeline (la bande des plans de la page Couleur), sinon ``None``."""
+        if self._state.is_visible(PanelId.TIMELINE):
+            return None
+        panels = [p for p in self._state.visible_panels(DockArea.BOTTOM) if p in self._panels]
+        if not panels:
+            return None
+        handles = self._zones[DockArea.BOTTOM]._splitter.handleWidth() * (len(panels) - 1)
+        return sum(max(DEFAULT_SIZE.get(p, 0), MIN_HEIGHT.get(p, 0)) for p in panels) + handles
 
     def _zone_width(self, area: DockArea) -> int:
         panels = [
@@ -1207,7 +1231,7 @@ class WorkspaceManager(QObject):
         self._page_states[self._page] = self._state
         try:
             for page, state in self._page_states.items():
-                save_page_state(page, state, self._settings_dir)
+                save_page_state(page, color_page_session_state(state) if page == PAGE_COLOR else state, self._settings_dir)
         except OSError:
             # Une préférence non persistée ne doit jamais empêcher la
             # fermeture de l'application.

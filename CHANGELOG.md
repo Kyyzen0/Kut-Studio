@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
+- **Page Couleur plus aérée** (maquettes « Air d'abord »). Les quatre roues (Lift, Gamma, Gain, Offset) sont toujours entières, côte à côte, à ~150 px sur un écran de 1440x900 (120 px au moins sur un portable de 1280 ou 1222 px de large), leurs valeurs R, V, B et Y lisibles sur deux lignes ; les nœuds tiennent dans une bande de 88 px ; la colonne de droite gagne la hauteur de la timeline, que remplace la bande des plans (« Afficher la timeline » la rouvre pour la session) ; les champs du qualificateur ont 34 px de haut sous leur étiquette. Les listes de la barre des scopes cèdent avant le bouton « Analyser » quand le moniteur est à son minimum.
 - Les textes de l'interface sont plus grands et plus lisibles sur un écran de portable : plus aucun texte n'est sous 12 px (métadonnées 12, étiquettes secondaires 13, texte courant 14, titres de panneau 16, titres de page 18), les boutons, champs et boutons d'icône font au moins 28 px de haut (34 px pour un bouton ou un champ courant), la poignée des curseurs passe à 16 px, l'interrupteur à 44 × 24 px et le rail latéral à 96 px de large. La fenêtre garde la même taille minimale (1100 × 677 px) : rien ne demande un écran plus grand. Interne : un test garde le plancher de 12 px dans `ui/` (`tests/test_design_tokens.py`).
 
 ### Fixed
