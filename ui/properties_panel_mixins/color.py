@@ -135,7 +135,7 @@ class ColorMixin(ColorKeyframesMixin):
         preset_layout.addWidget(self.color_preset_apply_button)
         advanced.addWidget(preset_row)
         self.color_preset_save_button = self._make_action_button(
-            None, translate("inspector.color.save_button"), translate("inspector.color.save_tip")
+            None, translate("mograph.layers.save_preset"), translate("inspector.color.save_tip")
         )
         self.color_preset_save_button.clicked.connect(self._request_save_color_preset)
         advanced.addWidget(self.color_preset_save_button)
