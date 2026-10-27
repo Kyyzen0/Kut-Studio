@@ -378,6 +378,8 @@ class ProjectPanel(QWidget):
         audio_mode_layout.setContentsMargins(Spacing.sm, Spacing.xs, Spacing.sm, 0)
         audio_mode_layout.setSpacing(Spacing.xs)
         self.audio_mode_buttons: dict[str, QPushButton] = {}
+        # Trois onglets : marge de 8 px (pas 12) pour que la rangée tienne dans la colonne de l'Air en 1280x690
+        # (sinon la zone défilante ajoute une barre horizontale qui retire ~8 px à la liste).
         for mode, label in _audio_modes():
             button = QPushButton(label)
             button.setObjectName("scopeTab")
@@ -388,7 +390,7 @@ class ProjectPanel(QWidget):
             button.setStyleSheet(
                 f"QPushButton#scopeTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
-                f" border-radius: 6px; padding: 4px 12px;"
+                f" border-radius: 6px; padding: 4px 8px;"
                 f" font-weight: 600; font-size: 11px; }}"
                 f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
                 f" background: {COLORS['surface_hover']}; }}"
