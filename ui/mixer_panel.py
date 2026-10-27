@@ -19,8 +19,9 @@ fenêtre : la règle est appliquée au plus près de la donnée.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -45,6 +46,20 @@ from ui.theme import COLORS, label_style
 #: Position du panoramique au curseur (0 = gauche, 100 = droite).
 _PAN_MIN = -100
 _PAN_MAX = 100
+
+#: Ligne compacte d'une piste (panneau bas) : hauteur, largeur maximale, largeurs minimales du fader et du vumètre.
+COMPACT_ROW_HEIGHT = 30
+COMPACT_ROW_MAX_WIDTH = 760
+COMPACT_FADER_MIN_WIDTH = 90
+COMPACT_METER_MIN_WIDTH = 56
+COMPACT_ROUTE_WIDTH = 84
+COMPACT_NAME_MIN_WIDTH = 28
+COMPACT_NAME_MAX_WIDTH = 72
+
+#: Hauteur de la zone des tranches (viewport) à partir de laquelle la tranche verticale (nom, fader, panoramique, boutons)
+#: tient entière : en dessous, le panneau montre des lignes compactes qui défilent.
+FULL_STRIP_VIEWPORT_HEIGHT = 316
+STRIP_HYSTERESIS = 16
 
 #: Hauteur minimale du panneau : une tranche complète (nom, fader,
 #: panoramique, boutons) doit tenir sans être rognée.
@@ -95,29 +110,41 @@ class MixerStrip(QFrame):
         parent: QWidget | None = None,
         *,
         is_bus: bool = False,
+        compact: bool = False,
     ) -> None:
         super().__init__(parent)
         self.track_id = track_id
         self.is_bus = is_bus
+        self.compact = compact
         self._name = name
         self._locked = False
         self.setObjectName("mixerStrip")
         # Pas de feuille de style locale : le fond de la tranche est
         # déclaré dans la feuille globale, sinon les boutons enfants
         # perdraient leurs règles (hover, checked, icônes).
-        self.setFixedWidth(84)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm
-        )
-        layout.setSpacing(Spacing.xs)
-        layout.setAlignment(Qt.AlignTop)
+        # ``compact`` : une ligne (nom, FX, M/S/A, fader horizontal, vumètre...) pour un panneau trop bas pour la tranche
+        # verticale ; le panneau reconstruit ses tranches quand sa hauteur change de côté du seuil.
+        if compact:
+            self.setFixedHeight(COMPACT_ROW_HEIGHT)
+            self.setMaximumWidth(COMPACT_ROW_MAX_WIDTH)
+            layout: QBoxLayout = QHBoxLayout(self)
+            layout.setContentsMargins(Spacing.sm, 1, Spacing.sm, 1)
+            layout.setSpacing(Spacing.sm)
+        else:
+            self.setFixedWidth(84)
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
+            layout.setSpacing(Spacing.xs)
+            layout.setAlignment(Qt.AlignTop)
 
         # Nom de piste (élidé si besoin) + cadenas si verrouillée.
         self.name_label = QLabel(name)
         self.name_label.setStyleSheet(label_style(11, "text", 700))
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setToolTip(name)
+        if compact:
+            self.name_label.setMinimumWidth(COMPACT_NAME_MIN_WIDTH)
+            self.name_label.setMaximumWidth(COMPACT_NAME_MAX_WIDTH)
         layout.addWidget(self.name_label)
 
         self.lock_badge = IconLabel(IconName.LOCK, size=Iconography.sm)
@@ -135,8 +162,10 @@ class MixerStrip(QFrame):
         self.inserts_button.setVisible(track_id is not None)
         layout.addWidget(self.inserts_button)
 
-        # Fader vertical de volume, en dB.
-        self.volume_slider = _VerticalFader()
+        # Fader de volume, en dB : vertical, ou horizontal dans la ligne compacte.
+        self.volume_slider = QSlider(Qt.Horizontal) if compact else _VerticalFader()
+        if compact:
+            self.volume_slider.setMinimumWidth(COMPACT_FADER_MIN_WIDTH)
         self.volume_slider.setRange(int(MIN_GAIN_DB), int(MAX_GAIN_DB))
         self.volume_slider.setValue(0)
         self.volume_slider.valueChanged.connect(
@@ -145,13 +174,18 @@ class MixerStrip(QFrame):
             )
         )
         # Le vumètre de la piste (après fader et ducking) à côté de son fader.
-        self.meter = LevelMeter(Qt.Vertical)
+        self.meter = LevelMeter(Qt.Horizontal if compact else Qt.Vertical)
         fader_row = QHBoxLayout()
         fader_row.setSpacing(Spacing.xs)
-        fader_row.addStretch(1)
-        fader_row.addWidget(self.volume_slider)
-        fader_row.addWidget(self.meter)
-        fader_row.addStretch(1)
+        if compact:
+            self.meter.setMinimumWidth(COMPACT_METER_MIN_WIDTH)
+            fader_row.addWidget(self.volume_slider, 3)
+            fader_row.addWidget(self.meter, 1)
+        else:
+            fader_row.addStretch(1)
+            fader_row.addWidget(self.volume_slider)
+            fader_row.addWidget(self.meter)
+            fader_row.addStretch(1)
         layout.addLayout(fader_row, 1)
 
         self.volume_value = QLabel("0.0 dB")
@@ -236,7 +270,7 @@ class MixerStrip(QFrame):
         # bouton pour se supprimer (ses pistes retournent au Master).
         self.route_combo = QComboBox()
         self.route_combo.setObjectName("mixerRouteCombo")
-        self.route_combo.setMaximumWidth(68)
+        self.route_combo.setMaximumWidth(COMPACT_ROUTE_WIDTH if compact else 68)
         self.route_combo.setToolTip(translate("bus.route.tip", name=name))
         self.route_combo.activated.connect(
             lambda _index: self.route_changed.emit(self.track_id or "", str(self.route_combo.currentData() or ""))
@@ -543,6 +577,10 @@ class MixerPanel(QWidget):
         self._strips: dict[str, MixerStrip] = {}
         self._bus_strips: dict[str, MixerStrip] = {}
         self._master_bar: MixerPanel._MasterBar | None = None
+        self._project: Project | None = None
+        self._compact = False                       # lignes compactes (panneau bas) plutôt que tranches verticales
+        self._built_compact = False                 # la forme des tranches actuellement construites
+        self._rebuild_pending = False
         #: Fournisseur des niveaux réels : ``() -> (relevé, pistes) | None``
         #: (:class:`core.live_mix.MeterFrame` et l'ordre de ses pistes).
         #: ``None`` ou aucun relevé : les vumètres retombent.
@@ -599,6 +637,7 @@ class MixerPanel(QWidget):
         self._body_layout.addWidget(self.empty_label)
         self._body_layout.addStretch(1)
         self.scroll.setWidget(self._body)
+        self.scroll.viewport().installEventFilter(self)
         layout.addWidget(self.scroll, 1)
 
         self._master_bar = _MasterBar(self)
@@ -623,6 +662,12 @@ class MixerPanel(QWidget):
         L'état du panneau est un reflet du modèle : le panneau ne
         conserve aucun état de mixage propre.
         """
+        self._project = project
+        self._built_compact = self._compact
+        self._body_layout.setDirection(QBoxLayout.TopToBottom if self._compact else QBoxLayout.LeftToRight)
+        margin = 2 if self._compact else Spacing.md
+        self._body_layout.setContentsMargins(margin, margin, margin, margin)
+        self._body_layout.setSpacing(2 if self._compact else Spacing.md)
         for strip in [*self._strips.values(), *self._bus_strips.values()]:
             strip.setParent(None)
             strip.deleteLater()
@@ -633,7 +678,7 @@ class MixerPanel(QWidget):
         audio_tracks = [t for t in project.tracks if t.type == "audio"]
         self.empty_label.setVisible(not audio_tracks)
         for track in audio_tracks:
-            strip = MixerStrip(track.name, track_id=track.id)
+            strip = MixerStrip(track.name, track_id=track.id, compact=self._compact)
             strip.set_track(
                 name=track.name,
                 volume_db=track.volume_db,
@@ -660,7 +705,7 @@ class MixerPanel(QWidget):
             self._strips[track.id] = strip
 
         for bus in project.buses:
-            strip = MixerStrip(bus.name, track_id=bus.id, is_bus=True)
+            strip = MixerStrip(bus.name, track_id=bus.id, is_bus=True, compact=self._compact)
             strip.set_track(name=bus.name, volume_db=bus.volume_db, pan=0.0, locked=False)
             strip.set_states(muted=bus.muted, solo=False, armed=False)
             strip.set_inserts(len(bus.inserts), sum(1 for e in bus.inserts if e.enabled))
@@ -674,6 +719,29 @@ class MixerPanel(QWidget):
 
         self._refresh_solo_hint(project)
         self.project_refreshed.emit()
+
+    def is_compact(self) -> bool:
+        """``True`` : une ligne par piste (zone des tranches trop basse pour la tranche verticale)."""
+        return self._built_compact
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - API Qt
+        if watched is self.scroll.viewport() and event.type() == QEvent.Type.Resize:
+            self._sync_compact()               # la taille du viewport est celle d'après la mise en page
+        return super().eventFilter(watched, event)
+
+    def _sync_compact(self) -> None:
+        # Hystérésis : la barre de défilement horizontale (tranches nombreuses) mange ~12 px du viewport.
+        threshold = FULL_STRIP_VIEWPORT_HEIGHT + (STRIP_HYSTERESIS if self._compact else 0)
+        compact = self.scroll.viewport().height() < threshold
+        if compact != self._compact and not self._rebuild_pending:
+            self._compact = compact
+            self._rebuild_pending = True
+            QTimer.singleShot(0, self, self._rebuild_for_height)      # jamais pendant le redimensionnement
+
+    def _rebuild_for_height(self) -> None:
+        self._rebuild_pending = False
+        if self._project is not None:
+            self.set_project(self._project)
 
     def set_master(self, gain_db: float, muted: bool) -> None:
         """Met à jour la sortie Master (gain, coupure globale)."""

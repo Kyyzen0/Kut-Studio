@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QGridLayout,
-    QHBoxLayout,
     QLabel,
     QSizePolicy,
     QToolButton,
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.color_qualifier import Qualifier
+from ui.adaptive_layout import FlowLayout
 from ui.design_system import Iconography, Spacing
 from ui.i18n import translate
 from ui.icons import IconName, make_icon
@@ -189,7 +189,8 @@ class QualifierEditor(QWidget):
         root.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
         root.setSpacing(Spacing.sm)
 
-        top = QHBoxLayout()
+        # Retour à la ligne plutôt que des libellés tronqués (« Pi...te ») ou superposés quand la colonne est étroite.
+        top = FlowLayout(spacing=Spacing.sm)
         self.enabled_check = QCheckBox()
         self.enabled_check.toggled.connect(self._on_enabled)
         self.invert_check = QCheckBox()
@@ -205,7 +206,6 @@ class QualifierEditor(QWidget):
         self.pick_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.pick_button.toggled.connect(self.pick_toggled)
         top.addWidget(self.enabled_check)
-        top.addStretch(1)
         top.addWidget(self.invert_check)
         top.addWidget(self.pick_button)
         top.addWidget(self.highlight_button)
@@ -214,7 +214,7 @@ class QualifierEditor(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(Spacing.sm)
         grid.setVerticalSpacing(Spacing.xs)
-        for column in (1, 3, 5):
+        for column in (0, 1, 2):
             grid.setColumnStretch(column, 1)
         self.channel_checks: dict[str, QCheckBox] = {}
         self.bars: dict[str, RangeBar] = {}
@@ -226,8 +226,8 @@ class QualifierEditor(QWidget):
             bar = RangeBar(channel)
             bar.dragged.connect(self._on_dragged)
             self.channel_checks[channel], self.bars[channel] = check, bar
-            grid.addWidget(check, 3 * row, 0, 1, 6)
-            grid.addWidget(bar, 3 * row + 1, 0, 1, 6)
+            grid.addWidget(check, 4 * row, 0, 1, 3)
+            grid.addWidget(bar, 4 * row + 1, 0, 1, 3)
             for column, (name, low, high, suffix) in enumerate(_FIELDS[channel]):
                 label = QLabel()
                 set_role(label, "label-secondary")
@@ -239,8 +239,10 @@ class QualifierEditor(QWidget):
                 spin.setKeyboardTracking(False)
                 spin.valueChanged.connect(lambda value, field=name: self._edit(**{field: _stored(field, value)}))
                 self.field_labels[name], self.spins[name] = label, spin
-                grid.addWidget(label, 3 * row + 2, 2 * column)
-                grid.addWidget(spin, 3 * row + 2, 2 * column + 1)
+                # L'étiquette au-dessus de son champ : trois paires côte à côte ne tiennent pas dans une colonne de ~340 px
+                # (les étiquettes passaient sous les champs).
+                grid.addWidget(label, 4 * row + 2, column)
+                grid.addWidget(spin, 4 * row + 3, column)
         root.addLayout(grid)
         root.addStretch(1)
         self.retranslate()

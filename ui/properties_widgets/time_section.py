@@ -39,7 +39,9 @@ class TimeSection(QWidget):
         self._form.setContentsMargins(0, Spacing.xs, 0, 0)
         self._form.setSpacing(Spacing.xs)
         self._form.setLabelAlignment(Qt.AlignLeft)
-        self._form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        # Étiquette au-dessus de chaque champ : à côté, les boutons « Point de vitesse » / « Supprimer la courbe » n'avaient que ~117 px
+        # et leur texte était tronqué dans une colonne étroite.
+        self._form.setRowWrapPolicy(QFormLayout.WrapAllRows)
 
         self.interpolation_combo = QComboBox()
         for mode in TimeInterpolation:
