@@ -303,6 +303,11 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
 
 
     def eventFilter(self, watched, event) -> bool:
+        if watched is getattr(self.scroll, "viewport", lambda: None)() and event.type() == QEvent.Resize:
+            # Le viewport change de taille sans que le panneau change (barre de défilement qui apparaît, en-têtes ou règle
+            # qui changent de hauteur avec la police) : la fenêtre à monter change aussi.
+            if self._sync_mounted_clips():
+                self._layout_children()
         if watched is getattr(self.scroll, "viewport", lambda: None)() and event.type() == QEvent.Wheel:
             modifiers = event.modifiers()
             if modifiers & (Qt.ControlModifier | Qt.MetaModifier):
