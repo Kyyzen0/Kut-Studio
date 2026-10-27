@@ -298,3 +298,17 @@ def test_clip_deepcopy_is_independent_but_shares_immutable_parts():
     copied = copy.deepcopy(project)
     assert copied.tracks[0].clips[0] is not project.tracks[0].clips[0]
     assert [c.id for t in copied.tracks for c in t.clips] == [c.id for t in project.tracks for c in t.clips]
+
+
+def test_mounted_clips_follow_a_viewport_resize_without_a_panel_resize(qtbot):
+    """Le viewport peut changer de taille seul (barre de défilement, hauteur de la règle) : le montage suit la fenêtre brute-force."""
+    panel = _panel(qtbot, _random_project(3, clips=800, tracks=8), width=1400)
+    panel.scroll.setFixedWidth(300)
+    qtbot.wait(5)
+    before = panel.mounted_clip_count
+    panel.scroll.setFixedWidth(1400)          # le panneau garde sa taille, seul le viewport grandit
+    qtbot.wait(5)
+    time_range, row_range = panel._visibility_window()
+    expected = {v.id for v in panel.clip_views if panel._clip_in_window(v, time_range, row_range)}
+    assert set(panel.clip_widgets) == expected
+    assert panel.mounted_clip_count > before

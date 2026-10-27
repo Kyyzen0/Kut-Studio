@@ -14,8 +14,13 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- Les textes de l'interface sont plus grands et plus lisibles sur un écran de portable : plus aucun texte n'est sous 12 px (métadonnées 12, étiquettes secondaires 13, texte courant 14, titres de panneau 16, titres de page 18), les boutons, champs et boutons d'icône font au moins 28 px de haut (34 px pour un bouton ou un champ courant), la poignée des curseurs passe à 16 px, l'interrupteur à 44 × 24 px et le rail latéral à 96 px de large. La fenêtre garde la même taille minimale (1100 × 677 px) : rien ne demande un écran plus grand. Interne : un test garde le plancher de 12 px dans `ui/` (`tests/test_design_tokens.py`).
+
 ### Fixed
 
+- Barre du haut : avec les polices plus larges de Linux, la puce du niveau d'usage ne clignote plus entre ses deux formes et « Réglages » passe à l'icône seule avant que « Montage », « Couleur » et « Composition » ne soient tronqués ; les onglets Fichiers / Effets audio / SFX tiennent dans la colonne de l'Air.
 - **Lisibilité sur un MacBook Air 13"** (niveau Avancé, pages Couleur et Audio, un clip sélectionné). La page Couleur n'exige plus 974 px de haut : la fenêtre ne s'agrandit plus au-delà de l'écran et ne passe plus sous le Dock ; les onglets *Roues*, *Qualificateur*, *Fenêtres* et *Flou* défilent au lieu d'être coupés en deux, et le qualifieur met chaque étiquette au-dessus de son champ (plus de « Centre / Largeur / Douceur » sous « Saturation », boutons « Pipette » et « Afficher la sélection » entiers, à la ligne si la colonne est étroite). Le mixeur montre, quand il est bas, **une ligne par piste** (nom, FX, fader, vumètre, M/S/A, panoramique, sortie) qui défile, au lieu de l'en-tête « A1 / FX » seule ; il garde ses tranches verticales quand il a la place. Dans la bibliothèque Médias / Audio, le bloc des dossiers se replie tout seul quand la colonne est basse (bouton « Dossiers et filtres » à côté de la recherche) pour laisser voir la liste ; « Importer » / « Timeline » passent à la ligne plutôt que d'être tronqués ; dans l'inspecteur, « Point de vitesse » et « Supprimer la courbe » ne sont plus tronqués. Nouveau contrôle développeur : `python -m tools.ui_legibility` (chevauchements en grille, contenu coupé, boutons tronqués, fenêtre qui grandit).
 
 ## [0.9.1] - 2026-10-24

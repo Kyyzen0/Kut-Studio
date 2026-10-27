@@ -73,12 +73,12 @@ class ToolbarMixin:
         # Rangée combinée : timecode + durée totale séparées par un slash.
         self.timecode_label = QLabel("00:00:00")
         self.timecode_label.setStyleSheet(
-            f"color: {palette.muted}; font-size: 11px;"
+            f"color: {palette.muted}; font-size: {Typography.micro}px;"
             f" {monospace_font_family()}"
         )
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet(
-            f"color: {palette.muted}; font-size: 11px;"
+            f"color: {palette.muted}; font-size: {Typography.micro}px;"
             f" {monospace_font_family()}"
         )
         time_row = QWidget()
@@ -245,7 +245,7 @@ class ToolbarMixin:
         self.zoom_label = QLabel("100%")
         self.zoom_label.setStyleSheet(
             f"color: {palette.text}; font-weight: 700; min-width: 48px; "
-            f"font-size: 11px;"
+            f"font-size: {Typography.micro}px;"
         )
         self.zoom_label.setAlignment(Qt.AlignCenter)
         self.zoom_in_btn = IconButton(

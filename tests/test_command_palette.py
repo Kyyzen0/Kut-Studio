@@ -157,7 +157,12 @@ def test_the_shortcut_opens_and_escape_closes_with_focus_restored(window):
 
 def test_the_button_opens_it_and_close_button_closes_it(window):
     button = window.palette_button
-    assert "Rechercher" in button.text() and QKeySequence("Ctrl+Shift+P").toString(QKeySequence.NativeText) in button.text()
+    # La forme du bouton (complète, texte, icône) dépend de la largeur des polices de la machine (DejaVu Sans, plus large, sous Linux) :
+    # on la force ici. La fonction testée est « le bouton ouvre et ferme la palette », pas « la forme complète tient à 1280 px ».
+    shortcut = QKeySequence("Ctrl+Shift+P").toString(QKeySequence.NativeText)
+    button.set_form("full")
+    assert "Rechercher" in button.text() and shortcut in button.text()
+    assert shortcut in button.toolTip()          # sous la forme réduite (texte, icône), l'infobulle garde le raccourci
     QTest.mouseClick(button, Qt.LeftButton)
     palette = window.command_palette
     assert palette.isVisible() and palette.field.hasFocus()

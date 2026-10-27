@@ -30,6 +30,7 @@ class _LevelChip(QToolButton):
         self._full = ""
         self._compact = ""
         self._form = self.FULL
+        self._chrome = 0     # marge propre de la puce (padding, flèche) : ne varie jamais d'une forme à l'autre, voir ``width_for``
 
     def full_text(self) -> str:
         return self._full
@@ -56,10 +57,17 @@ class _LevelChip(QToolButton):
         self.setVisible(self._form != self.HIDDEN)
 
     def width_for(self, form: str) -> int:
-        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante)."""
-        chrome = max(0, super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text()))
+        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante).
+
+        La marge (``sizeHint`` moins le texte affiché) varie de 1 px selon le texte courant (19 px « abrégée », 20 px « complète »
+        avec la police DejaVu de Linux) : mesurée à chaque appel, elle faisait que « complète » tenait quand la puce était abrégée
+        et ne tenait plus quand elle était complète, et la puce oscillait à chaque ajustement (``Niveau : Avancé`` écrasée à 70 px).
+        On garde donc la plus grande marge vue : le choix de la forme ne dépend plus de la forme courante.
+        """
+        measured = super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text())
+        self._chrome = max(self._chrome, measured)
         text = self._compact if form == self.COMPACT else self._full
-        return chrome + self.fontMetrics().horizontalAdvance(text)
+        return self._chrome + self.fontMetrics().horizontalAdvance(text)
 
 
 class _FitLevelChip(QObject):
@@ -82,7 +90,8 @@ class _FitLevelChip(QObject):
             others = [layout.itemAt(i).widget() for i in range(layout.count())]
             widgets = [w for w in others if w is not None and w is not self._chip and not w.isHidden()]
             used = sum(w.sizeHint().width() for w in widgets) + margins.left() + margins.right()
-            gaps = layout.spacing() * (len(widgets) + 1)           # y compris l'espace propre à la puce
+            spacers = sum(1 for i in range(layout.count()) if layout.itemAt(i).widget() is None)   # les ressorts ont aussi leurs espaces
+            gaps = layout.spacing() * (len(widgets) + spacers + 1)  # y compris l'espace propre à la puce
             room = self._bar.width() - used - gaps
             if self._chip.width_for(_LevelChip.FULL) <= room:
                 form = _LevelChip.FULL

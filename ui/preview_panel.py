@@ -301,7 +301,7 @@ class PreviewPanel(QWidget):
         self.preview_effects_overlay.setAlignment(Qt.AlignCenter)
         self.preview_effects_overlay.setStyleSheet(
             f"background: rgba(15, 118, 110, 210); color: {COLORS['text']};"
-            " border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 700;"
+            f" border-radius: 6px; padding: 4px 8px; font-size: {Typography.micro}px; font-weight: 700;"
         )
         self.preview_effects_overlay.hide()
 
@@ -310,7 +310,7 @@ class PreviewPanel(QWidget):
         self.preview_quality_notice.setAlignment(Qt.AlignCenter)
         self.preview_quality_notice.setStyleSheet(
             f"background: rgba(120, 80, 0, 200); color: {COLORS['text']};"
-            " border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600;"
+            f" border-radius: 6px; padding: 3px 8px; font-size: {Typography.micro}px; font-weight: 600;"
         )
         self.preview_quality_notice.hide()
 

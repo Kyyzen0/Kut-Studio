@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.adaptive_layout import allow_shrinking, make_shrinkable
-from ui.design_system import Radius
+from ui.design_system import Radius, Sizes
 from ui.properties_widgets.level_gate import AdvancedFold, LevelGate
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
@@ -71,7 +71,7 @@ class AlignmentTile(QToolButton):
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
-        self.setFixedSize(24, 24)
+        self.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         self.setToolTip(alignment.value.replace("_", " ").capitalize())
         self.setAccessibleName(translate(f"a11y.align.{alignment.value}"))
         self._apply_style(active=False)
@@ -481,7 +481,7 @@ class _ColorButton(QPushButton):
         self._allow_none = allow_none
         self.color = hex_color
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(22)
+        self.setFixedHeight(Sizes.icon_button_sm)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMinimumWidth(60)  # le code hexadécimal est coupé plutôt que de pousser la grille hors de l'inspecteur
         self._refresh_label()
@@ -517,7 +517,7 @@ def _build_spin(
     spin.setDecimals(int(decimals))
     if suffix:
         spin.setSuffix(suffix)
-    spin.setFixedHeight(22)
+    spin.setFixedHeight(Sizes.icon_button_sm)
     return spin
 
 

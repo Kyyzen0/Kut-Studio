@@ -71,6 +71,7 @@ from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
 from ui.main_window_mixins.menu_levels import MenuLevelsMixin
 from ui.main_window_mixins.command_palette import CommandPaletteMixin
+from ui.top_bar_fit import FitSettingsButton
 from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
@@ -1077,7 +1078,9 @@ class MainWindow(
         )
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(Spacing.md, 0, Spacing.md, 0)
-        layout.setSpacing(Spacing.sm)
+        # 6 px (et non 8) entre les éléments : avec les boutons de 28 à 34 px et le texte de 14 px, la barre est pleine à 1180 px sous
+        # les polices de repli de Linux (DejaVu Sans, plus large) ; ces ~24 px gardent la puce du niveau visible sans réduire le texte.
+        layout.setSpacing(6)
 
         # --- Identité ---------------------------------------------------
         logo_box = QWidget()
@@ -1220,6 +1223,7 @@ class MainWindow(
         layout.addWidget(self.export_button)
         self._usage_level_fit = _FitLevelChip(bar, self.usage_level_chip)
         self._fit_palette_button(bar)
+        self._settings_fit = FitSettingsButton(bar, settings_btn, [self.usage_level_chip, self.palette_button])
 
         self._update_top_bar()
         return bar

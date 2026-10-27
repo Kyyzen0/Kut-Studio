@@ -28,7 +28,7 @@ from ui.properties_panel_mixins.effect_keyframes import EffectKeyframesMixin
 from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.properties_widgets.keyframe_row import field_with_keyframes
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
@@ -71,7 +71,7 @@ class EffectsMixin(EffectKeyframesMixin):
         self.effect_type_combo.setStyleSheet(
             f"QComboBox#effectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QComboBox#effectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.effect_add_button = self._make_effect_button(
@@ -145,7 +145,7 @@ class EffectsMixin(EffectKeyframesMixin):
         button.setStyleSheet(
             f"QPushButton#effectAction {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QPushButton#effectAction:hover {{ background: {COLORS['surface_hover']}; }}"
             f"QPushButton#effectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#effectAction:disabled {{ color: {COLORS['muted']}; }}"

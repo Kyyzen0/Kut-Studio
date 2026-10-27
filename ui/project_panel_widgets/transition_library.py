@@ -115,7 +115,7 @@ class TransitionLibraryView(QWidget):
         )
         self.selection_hint.setWordWrap(True)
         self.selection_hint.setStyleSheet(
-            f"color: {COLORS['muted']}; font-size: 11px; padding: 2px 6px;"
+            f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 2px 6px;"
             f" background: {COLORS['panel_alt']};"
             f" border: 1px solid {COLORS['border']};"
             f" border-radius: 6px;"
@@ -261,7 +261,7 @@ class TransitionLibraryView(QWidget):
             f" border: 1px solid {COLORS['border']};"
             f" border-radius: 6px;"
             f" padding: 3px 8px;"
-            f" font-weight: 600; font-size: 10px;"
+            f" font-weight: 600; font-size: {Typography.micro}px;"
             f" letter-spacing: 0.4px; }}"
             f"QPushButton#transitionFilterTab:hover {{"
             f" color: {COLORS['text']};"
@@ -386,7 +386,7 @@ class TransitionLibraryView(QWidget):
         empty.setWordWrap(True)
         empty.setAlignment(Qt.AlignCenter)
         empty.setStyleSheet(
-            f"color: {COLORS['muted']}; font-size: 11px; padding: 16px 8px;"
+            f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 16px 8px;"
         )
         self.cards_layout.addWidget(empty)
 
@@ -395,7 +395,7 @@ class TransitionLibraryView(QWidget):
             hint = QLabel(translate("transitions.library.user_empty"))
             hint.setWordWrap(True)
             hint.setStyleSheet(
-                f"color: {COLORS['muted']}; font-size: 10px; padding: 6px 8px;"
+                f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 6px 8px;"
                 f" background: transparent;"
             )
             self.cards_layout.addWidget(hint)
@@ -403,7 +403,7 @@ class TransitionLibraryView(QWidget):
     def _render_section_title(self, title: str) -> None:
         label = QLabel(title.upper())
         label.setStyleSheet(
-            f"color: {COLORS['muted_strong']}; font-size: 10px;"
+            f"color: {COLORS['muted_strong']}; font-size: {Typography.micro}px;"
             f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )

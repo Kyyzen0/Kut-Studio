@@ -553,8 +553,8 @@ def _stylesheet(palette: ThemePalette) -> str:
     QSlider::groove:horizontal {{ height: 4px; background: {palette.border}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {palette.accent}; border-radius: 2px; }}
     QSlider::handle:horizontal {{
-        width: 14px; margin: -6px 0; background: {palette.accent};
-        border-radius: 7px; border: 2px solid {palette.panel};
+        width: 16px; margin: -7px 0; background: {palette.accent};
+        border-radius: 8px; border: 2px solid {palette.panel};
     }}
     QSlider::handle:horizontal:hover {{ background: {palette.accent_hover}; }}
     QSlider:disabled {{ color: {palette.disabled_text}; }}
@@ -628,7 +628,7 @@ def _stylesheet(palette: ThemePalette) -> str:
     QFrame#panelHeader {{ background: {palette.panel}; border: none; border-bottom: 1px solid {palette.border}; }}
     QFrame#panelHeader QLabel {{ background: transparent; }}
     QLabel[role="app-title"] {{ font-size: {t.heading}px; font-weight: {w.bold}; color: {palette.text_strong}; }}
-    QLabel[role="panel-title"] {{ font-size: {t.body}px; font-weight: {w.semibold}; color: {palette.text}; }}
+    QLabel[role="panel-title"] {{ font-size: {t.title}px; font-weight: {w.semibold}; color: {palette.text}; }}
     QLabel[role="section-title"] {{ font-size: {t.small}px; font-weight: {w.semibold}; color: {palette.muted_strong}; }}
     QLabel[role="label"] {{ font-size: {t.body}px; font-weight: {w.regular}; color: {palette.text}; }}
     QLabel[role="label-secondary"] {{ font-size: {t.small}px; font-weight: {w.regular}; color: {palette.muted}; }}
@@ -696,7 +696,7 @@ def _stylesheet(palette: ThemePalette) -> str:
         background: {palette.surface};
         border: 1px solid {palette.border};
         border-radius: {r.md}px;
-        padding: {s.xs}px {s.sm}px;
+        padding: {s.xs}px 6px;                  /* 6 px de chaque côté : quatre pages dans la barre du haut (voir _build_top_bar) */
         color: {palette.text};
         font-weight: {w.medium};
     }}
@@ -714,12 +714,12 @@ def _stylesheet(palette: ThemePalette) -> str:
     QToolButton#switchButton {{
         background: {palette.input_bg};
         border: 1px solid {palette.border_strong};
-        border-radius: 11px;
+        border-radius: 12px;
         padding: 0;
-        min-width: 32px;
-        max-width: 32px;
-        min-height: 18px;
-        max-height: 18px;
+        min-width: 44px;
+        max-width: 44px;
+        min-height: 24px;
+        max-height: 24px;
     }}
     QToolButton#switchButton:checked {{
         background: {palette.accent};

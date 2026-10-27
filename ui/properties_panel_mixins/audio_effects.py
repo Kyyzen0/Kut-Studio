@@ -25,7 +25,7 @@ from core.audio_effects_model import (
 from core.usage_level import UsageLevel
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.theme import COLORS, label_style
 
 
@@ -71,7 +71,7 @@ class AudioEffectsMixin:
         self.audio_effect_type_combo.setStyleSheet(
             f"QComboBox#audioEffectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QComboBox#audioEffectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.audio_effect_add_button = self._make_audio_effect_button(
@@ -153,7 +153,7 @@ class AudioEffectsMixin:
         button.setStyleSheet(
             f"QPushButton#audioEffectAction {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QPushButton#audioEffectAction:hover {{ background: {COLORS['surface_hover']}; }}"
             f"QPushButton#audioEffectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#audioEffectAction:disabled {{ color: {COLORS['muted']}; }}"

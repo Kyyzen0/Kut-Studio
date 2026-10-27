@@ -89,7 +89,7 @@ def test_there_are_four_radii_and_the_old_names_fall_back_on_one_of_them():
 
 def test_the_text_sizes_and_weights_are_few_and_the_roles_use_only_them():
     sizes = {Typography.caption, Typography.micro, Typography.small, Typography.body, Typography.title, Typography.heading}
-    assert sizes == {10, 11, 12, 13, 15, 17} and Typography.body_lg == Typography.title
+    assert sizes == {12, 13, 14, 16, 18} and Typography.body_lg == Typography.title
     assert {Weights.regular, Weights.medium, Weights.semibold, Weights.bold} == {400, 500, 600, 700} and Weights.heavy == Weights.bold
     roles = TextRoles.all()
     assert len(roles) == 7 and len({role.name for role in roles}) == 7
@@ -102,7 +102,7 @@ def test_the_title_roles_stand_out_and_the_metadata_fade_away():
     assert TextRoles.app_title.size > TextRoles.panel_title.size >= TextRoles.label.size > TextRoles.label_secondary.size
     assert TextRoles.panel_title.weight > TextRoles.label.weight and TextRoles.app_title.weight > TextRoles.panel_title.weight
     assert TextRoles.helper.color == TextRoles.meta.color == TextRoles.label_secondary.color == "muted"
-    assert TextRoles.meta.size < TextRoles.helper.size < TextRoles.label_secondary.size
+    assert TextRoles.meta.size <= TextRoles.helper.size < TextRoles.label_secondary.size
 
 
 def test_the_icon_sizes_the_variants_and_the_states_are_declared_once():
@@ -273,13 +273,37 @@ def _ui_sources():
 
 
 def test_no_widget_uses_a_radius_a_text_size_or_a_weight_outside_the_scales():
-    radius, size, weight = {0, 4, 6, 8, 12}, {10, 11, 12, 13, 15, 17, 22}, {400, 500, 600, 700}
+    radius, size, weight = {0, 4, 6, 8, 12}, {12, 13, 14, 16, 18, 22}, {400, 500, 600, 700}
     found = []
     for key, code in _ui_sources():
         found += [f"{key} : border-radius {v}px" for v in re.findall(r"border-radius:\s*(\d+)px", code) if int(v) not in radius]
-        found += [f"{key} : font-size {v}px" for v in re.findall(r"font-size:\s*(\d+)px", code) if int(v) not in size]
+        found += [f"{key} : font-size {v}px" for v in re.findall(r"font-size:\s*(\d+)px", code) if int(v) not in size and int(v) >= MIN_TEXT_PX]      # sous 12 px : voir le plancher ci-dessous
         found += [f"{key} : font-weight {v}" for v in re.findall(r"font-weight:\s*(\d+)", code) if int(v) not in weight]
     assert found == [], "valeur hors échelle : utiliser Radius / Typography / Weights (ui/design_system.py)\n  " + "\n  ".join(found)
+
+
+#: Plancher de lisibilité (barème « Air d'abord ») : aucun texte sous 12 px, ni dans un jeton ni dans un littéral ``font-size: Npx``.
+#: Exceptions, par fichier, et seulement en attendant leur migration (PR #276 en cours sur ces fichiers, lot suivant) :
+#:   project_panel : pastilles de filtre (3 littéraux de 11 px) ;
+#:   mixer_panel   : bouton M/S et pastille de bus (2 littéraux de 10 et 11 px).
+MIN_TEXT_PX = 12
+SMALL_TEXT_EXCEPTIONS: dict[str, int] = {"ui/project_panel.py": 3, "ui/mixer_panel.py": 2}
+
+
+def test_no_text_token_goes_below_the_legibility_floor():
+    sizes = [getattr(Typography, name) for name in ("caption", "micro", "small", "body", "body_lg", "title", "heading", "display")]
+    assert min(sizes) >= MIN_TEXT_PX and Typography.MIN_PX == MIN_TEXT_PX
+    assert all(role.size >= MIN_TEXT_PX for role in TextRoles.all())
+
+
+def test_no_font_size_literal_below_the_floor_outside_the_listed_exceptions():
+    found: dict[str, int] = {}
+    for key, code in _ui_sources():
+        count = sum(1 for v in re.findall(r"font-size:\s*(\d+(?:\.\d+)?)px", code) if float(v) < MIN_TEXT_PX)
+        count += len(re.findall(r"setPointSizeF?\(\s*[0-9.]+\s*\)", code))      # un corps en points (8, 9…) passerait sous le plancher
+        if count:
+            found[key] = count
+    assert found == SMALL_TEXT_EXCEPTIONS, "texte sous 12 px : utiliser Typography.* (ou retirer le fichier de l'exception s'il est migré)"
 
 
 #: Couleurs ``#rrggbb`` en dur par fichier : un **cliquet**. Il ne peut que diminuer ; un nouveau fichier part de zéro.
