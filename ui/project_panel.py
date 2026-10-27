@@ -207,6 +207,7 @@ class ProjectPanel(QWidget):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.xs)
         header_layout.setSpacing(Spacing.xs)
+        self._header_layout = header_layout
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -273,6 +274,7 @@ class ProjectPanel(QWidget):
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
         search_layout.setSpacing(Spacing.sm)
+        self._search_layout = search_layout
         self.search_field = SearchField(translate("library.search_placeholder"), object_name="librarySearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_field)
@@ -377,6 +379,7 @@ class ProjectPanel(QWidget):
         audio_mode_layout = QHBoxLayout(self.audio_mode_row)
         audio_mode_layout.setContentsMargins(Spacing.xs, Spacing.xs, Spacing.xs, 0)
         audio_mode_layout.setSpacing(Spacing.xs)
+        self._audio_mode_layout = audio_mode_layout
         self.audio_mode_buttons: dict[str, QPushButton] = {}
         # Trois onglets : marge intérieure de 6 px (pas 12) et bords de 4 px pour que la rangée tienne (~205 px) dans la colonne de
         # l'Air en 1280x690 (~213 px utiles) avec la police de repli de Linux (DejaVu Sans, plus large que celle de macOS) ;
@@ -759,6 +762,25 @@ class ProjectPanel(QWidget):
             create_multicam = menu.addAction(translate("multicam.menu.create"))
             create_multicam.triggered.connect(lambda: self.multicam_create_requested.emit(list(selected)))
         menu.exec(global_pos)
+
+    #: Colonne plus basse que cette hauteur (portable : ~200 px en 1280x690) : les marges verticales de l'en-tête, de la recherche
+    #: et des onglets Audio se resserrent, ce qui rend ~20 px à la liste quelle que soit la police. Ne dépend que de la taille du
+    #: panneau (pas de son contenu) : aucune oscillation possible.
+    COMPACT_HEIGHT = 340
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt
+        super().resizeEvent(event)
+        self._apply_vertical_density(self.height() < self.COMPACT_HEIGHT)
+
+    def _apply_vertical_density(self, compact: bool) -> None:
+        if getattr(self, "_compact_density", None) == compact:
+            return
+        self._compact_density = compact
+        md, sm, xs = Spacing.md, Spacing.sm, Spacing.xs
+        self._header_layout.setContentsMargins(md, xs if compact else sm, md, 2 if compact else xs)
+        self._header_layout.setSpacing(2 if compact else xs)
+        self._search_layout.setContentsMargins(md, xs - 1 if compact else sm, md, xs - 1 if compact else sm)
+        self._audio_mode_layout.setContentsMargins(xs, 2 if compact else xs, xs, 0)
 
     def set_audio_mode(self, mode: str) -> None:
         """Bascule la section Audio entre fichiers et préréglages d'effets."""
