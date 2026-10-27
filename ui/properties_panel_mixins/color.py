@@ -126,6 +126,7 @@ class ColorMixin(ColorKeyframesMixin):
         preset_layout.setContentsMargins(0, 0, 0, 0)
         preset_layout.setSpacing(Spacing.xs)
         self.color_preset_combo = make_shrinkable(QComboBox())
+        self.color_preset_combo.setMinimumWidth(72)      # le bouton « Appliquer » garde son libellé entier : la liste cède la place
         self._refresh_color_presets()
         self.color_preset_apply_button = self._make_action_button(
             None, translate("tracking.apply"), translate("inspector.color.apply_tip")

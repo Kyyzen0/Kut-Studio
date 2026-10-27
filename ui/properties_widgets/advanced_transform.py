@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.wrap_text import WrappingToolButton
 from ui.adaptive_layout import allow_shrinking
 from ui.design_system import Spacing
 from ui.properties_widgets.diamond_button import KeyframeDiamondButton
@@ -57,7 +58,7 @@ class AdvancedTransformEditor(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, Spacing.xs, 0, 0)
         layout.setSpacing(Spacing.xs)
-        self.toggle = QToolButton()
+        self.toggle = WrappingToolButton()
         self.toggle.setText(translate("mograph.advanced.title"))
         self.toggle.setCheckable(True)
         self.toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)

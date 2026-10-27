@@ -30,6 +30,8 @@ from PySide6.QtGui import QColor, QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QToolButton, QWidget
 
+from ui.wrap_text import WrapTextMixin
+
 
 # ---------------------------------------------------------------------------
 # Énumération
@@ -935,7 +937,7 @@ class IconLabel(QWidget):
         painter.end()
 
 
-class IconButton(QToolButton):
+class IconButton(WrapTextMixin, QToolButton):
     """Bouton ``QToolButton`` avec icône cohérente, tooltip et taille stable.
 
     Utilisé partout dans l'interface pour les contrôles denses (barre
@@ -1025,6 +1027,8 @@ class IconButton(QToolButton):
                 # la page. Il peut se comprimer (libellé coupé) plutôt que de faire déborder son conteneur.
                 self.setMinimumWidth(self._icon_size_px + 60)
             self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            if not self._square:
+                self.set_text_wrapping()           # libellé à la ligne plutôt que tronqué (colonne étroite, polices larges)
 
     def _apply_style(self) -> None:
         # Le style global de l'application couvre les états. On laisse

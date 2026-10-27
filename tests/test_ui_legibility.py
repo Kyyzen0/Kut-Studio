@@ -204,3 +204,29 @@ def test_library_browse_fold_follows_height_then_the_user_choice(windows):
     assert fold.expanded                             # le choix de l'utilisateur est respecté
     panel.browse_toggle.click()
     assert not fold.expanded
+
+
+@pytest.mark.parametrize("scale", [1.2, 1.45], ids=["police+20%", "police+45%"])
+def test_no_button_is_elided_with_wider_fonts(windows, scale):
+    """Polices de repli plus larges (Linux) : aucun bouton des pages Couleur et Audio n'est tronqué (il passe à la ligne)."""
+    from qt_cleanup import deliver_deferred_deletes
+
+    window = audit.make_main_window(1280, 690, scopes=False, font_scale=scale)
+    try:
+        audit.select_first_clip(window)
+        problems: list[str] = []
+        for name, action in legibility.page_scenarios(window):
+            action()
+            audit.settle(window)
+            problems += [str(f) for f in legibility.elided_buttons(window, f"x{scale} {name} ")]
+        assert not problems, "\n".join(sorted(set(problems))[:10])
+    finally:
+        from PySide6.QtWidgets import QApplication
+
+        window.close()
+        window.deleteLater()
+        deliver_deferred_deletes()
+        app = QApplication.instance()
+        base = app.property("_kut_audit_base_stylesheet")
+        if base is not None:
+            app.setStyleSheet(base)                    # la feuille de style agrandie ne doit pas survivre aux autres tests

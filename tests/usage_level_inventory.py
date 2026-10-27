@@ -51,6 +51,10 @@ class _Keys:
 # ---------------------------------------------------------------- menus de la barre et menus contextuels
 
 
+#: Boutons à libellé qui passe à la ligne (``ui.wrap_text``) : même clé de manifeste que leur classe Qt.
+_BASE_NAMES = {"WrappingPushButton": "QPushButton", "WrappingToolButton": "QToolButton"}
+
+
 def _flat_tree(tree: list, prefix: str, keys: _Keys, out: list[str]) -> None:
     """Aplati un arbre de ``tests/menu_order.menu_tree`` en chemins de libellés (séparateurs ignorés)."""
     for entry in tree:
@@ -183,7 +187,7 @@ def inspector_controls(panel) -> list[tuple[str, QWidget]]:
                 break
             node = node.parentWidget()
         label = widget.objectName() or (widget.text().strip() if isinstance(widget, QAbstractButton) else "")  # jamais une valeur
-        out.append((keys.make(f"inspector/{group}/{type(widget).__name__}|{label}"), widget))
+        out.append((keys.make(f"inspector/{group}/{_BASE_NAMES.get(type(widget).__name__, type(widget).__name__)}|{label}"), widget))
     return out
 
 
