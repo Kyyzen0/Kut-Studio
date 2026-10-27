@@ -31,7 +31,7 @@ from core.library_organization import (
 from core.media_color_ops import media_color_refusal
 from core.usage_level import UsageLevel, coerce_usage_level
 from core.project_model import MediaAsset
-from ui.adaptive_layout import ShrinkableScrollArea
+from ui.adaptive_layout import FlowLayout, ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
 from ui.scroll_guard import GuardedStack, ScrollGuard
 from ui.design_system import Sizes, Spacing
@@ -58,6 +58,7 @@ from ui.project_panel_widgets.asset_bin import (
     AssetBin,
 )  # noqa: F401
 from ui.project_panel_widgets.subtitle_library import SubtitleLibraryView  # noqa: F401
+from ui.project_panel_widgets.browse_fold import BrowseFold
 from ui.project_panel_widgets.wide_button import make_wide_button
 from ui.project_panel_widgets.sequence_library import SequenceLibraryView
 from ui.project_panel_widgets.transition_library import (
@@ -195,7 +196,8 @@ class ProjectPanel(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        outer.addWidget(ScrollGuard(body))
+        body_guard = ScrollGuard(body)
+        outer.addWidget(body_guard)
 
         # ----- En-tête compact : onglets Projet / Favoris --------------
         header = QWidget()
@@ -274,6 +276,12 @@ class ProjectPanel(QWidget):
         self.search_field = SearchField(translate("library.search_placeholder"), object_name="librarySearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_field)
+        # Replie / déplie le bloc des dossiers et filtres (se replie de lui-même quand la colonne est basse).
+        self.browse_toggle = IconButton(
+            icon=IconName.LIBRARY, tooltip=translate("library.browse.toggle"), size=Sizes.icon_button_sm, checkable=True
+        )
+        self.browse_toggle.setAccessibleName(translate("library.browse.toggle"))
+        search_layout.addWidget(self.browse_toggle)
         layout.addWidget(search_row)
 
         # ----- Arborescence de la bibliothèque -------------------------
@@ -359,6 +367,7 @@ class ProjectPanel(QWidget):
         browse_scroll.setObjectName("libraryBrowseScroll")
         self.library_browse_content = browse_scroll
         layout.addWidget(browse_scroll, 0)
+        self.browse_fold = BrowseFold(self.browse_toggle, browse_scroll, body_guard.viewport())
 
         # ----- Contenu empilé (grilles + placeholders) ----------------
         # Seule zone élastique du panneau : elle absorbe toute la
@@ -465,18 +474,17 @@ class ProjectPanel(QWidget):
         actions.setStyleSheet(
             f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
         )
-        actions_layout = QHBoxLayout(actions)
+        actions_layout = FlowLayout(actions, spacing=Spacing.xs)      # retour à la ligne plutôt que « Im…rter » dans 230 px
         # Marges latérales réduites : à 1180 px de fenêtre la colonne ne fait que ~230 px, et les libellés
         # « Importer » / « Timeline » étaient tronqués (« Im…rter »).
         actions_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.md)
-        actions_layout.setSpacing(Spacing.xs)
         self.import_button = self._make_wide_button(
             IconName.IMPORT, translate("library.import"),
             accent=False,
             tooltip=translate("library.import_tip"),
         )
         self.import_button.clicked.connect(self.import_requested)
-        actions_layout.addWidget(self.import_button, 1)
+        actions_layout.addWidget(self.import_button)
 
         self.add_to_timeline_button = self._make_wide_button(
             IconName.PLUS, translate("panel.timeline"),
@@ -485,7 +493,7 @@ class ProjectPanel(QWidget):
         )
         self.add_to_timeline_button.setEnabled(False)
         self.add_to_timeline_button.clicked.connect(self._on_add_to_timeline_clicked)
-        actions_layout.addWidget(self.add_to_timeline_button, 1)
+        actions_layout.addWidget(self.add_to_timeline_button)
         layout.addWidget(actions)
 
         # Câblage des signaux du composant Sous-titres.
@@ -810,7 +818,7 @@ class ProjectPanel(QWidget):
         self.audio_mode_row.setVisible(page_index in {1, 6, 8})
         show_asset_chrome = page_index in {0, 1}
         self.library_search_row.setVisible(show_asset_chrome)
-        self.library_browse_content.setVisible(show_asset_chrome)
+        self.browse_fold.set_available(show_asset_chrome)
         self.library_actions.setVisible(show_asset_chrome)
         self._refresh_count()
         self._sync_add_button_for_active_tab()

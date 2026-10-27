@@ -281,6 +281,7 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Search the library…",
         "Buscar en la biblioteca…",
     ),
+    "library.browse.toggle": _t("Dossiers et filtres", "Folders and filters", "Carpetas y filtros"),
     "library.manage_tags": _t("Gérer les tags…", "Manage tags…", "Gestionar etiquetas…"),
     "library.audio_files": _t("Fichiers", "Files", "Archivos"),
     "library.import_tip": _t(

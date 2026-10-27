@@ -32,6 +32,24 @@ chevauchait la liste.
 * Un panneau empilé dans la zone basse déclare sa hauteur dans `core.workspace_state.MIN_HEIGHT` (la même que son
   `setMinimumHeight` réel, sinon il déborde de son hôte).
 
+## Lisibilité avec un clip sélectionné (pages Couleur et Audio)
+
+`tools.ui_layout_audit` ouvre la fenêtre **sans clip sélectionné** et `tools.ui_audit.sibling_overlaps` ne regarde que les
+layouts de boîte et de formulaire. Avec un clip, la page Couleur exigeait 974 px (nœuds + onglets Roues / Qualificateur
+non défilants) : la fenêtre dépassait l'écran, le Dock passait par-dessus la timeline et la bande des plans était coupée.
+`python -m tools.ui_legibility` (et `tests/test_ui_legibility.py`) joue ces pages avec un clip et signale :
+
+* `overlaps` : deux frères d'une même layout (grille et retour à la ligne compris) qui se chevauchent ;
+* `cut-off` : un conteneur plus bas que sa hauteur minimale, hors de toute zone défilante ;
+* `elided-button` : un bouton à texte plus étroit que son texte ;
+* `window-grows` : la fenêtre a dépassé la taille demandée.
+
+Règles qui en découlent : les onglets d'une colonne étroite vont dans `ui.scroll_guard.GuardedTabs` (comme les piles de
+pages dans `GuardedStack`) ; une rangée de boutons ou de cases dans une colonne de ~300 px est un `FlowLayout` ; une grille
+met l'étiquette au-dessus de son champ ; un formulaire d'inspecteur avec des boutons larges utilise `WrapAllRows`. Le mixeur
+(`ui/mixer_panel.py`) bascule seul entre tranches verticales (zone des tranches ≥ 316 px) et lignes compactes ; le bloc
+dossiers de la bibliothèque (`ui/project_panel_widgets/browse_fold.py`) se replie sous 480 px de colonne.
+
 ## Mesurer et voir
 
 ```

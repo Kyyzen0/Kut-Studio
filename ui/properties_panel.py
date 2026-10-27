@@ -280,6 +280,7 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
             icon=icon, tooltip=tooltip, size=Sizes.icon_button
         )
         button.setText(f"  {text}")
+        button.set_text_wrapping()              # à la ligne plutôt que « Réinit...courbe » dans une colonne étroite
         button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         # On force une taille minimale confortable ; le bouton peut
         # s'étirer mais jamais descendre en dessous.

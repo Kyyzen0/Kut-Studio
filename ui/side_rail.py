@@ -134,6 +134,7 @@ class SideRail(QWidget):
             button.installEventFilter(self)
             button.setCheckable(True)
             button.setObjectName("railButton")
+            button.set_text_wrapping(False)           # le rail a ses propres règles (libellé sous l'icône)
             button.setToolTip(section.label)
             button.setAccessibleName(section.label)
             button.clicked.connect(

@@ -12,7 +12,7 @@ ou de calque. Le panneau ne lit ni ne modifie le projet : la fenêtre lui donne 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLabel, QMenu, QPushButton, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QPushButton, QSplitter, QToolButton, QVBoxLayout, QWidget
 
 from core.color_grading import WHEELS
 from core.grade_keyframing import GradeAnimationInfo
@@ -25,6 +25,7 @@ from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.panel_header import PanelHeader
+from ui.scroll_guard import GuardedTabs
 from ui.theme import set_role
 
 
@@ -104,7 +105,7 @@ class ColorPanel(QWidget):
         self.windows.highlight_toggled.connect(self.highlight_toggled)
         self.detail = DetailEditor()
         self.detail.changed.connect(self.detail_changed)
-        self.tabs = QTabWidget()
+        self.tabs = GuardedTabs()           # un onglet trop haut défile : jamais de chevauchement ni de fenêtre trop haute
         self.tabs.setObjectName("color_tabs")
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(self.wheels, translate("color.tab.wheels"))
