@@ -71,6 +71,7 @@ from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
 from ui.main_window_mixins.menu_levels import MenuLevelsMixin
 from ui.main_window_mixins.command_palette import CommandPaletteMixin
+from ui.top_bar_fit import FitSettingsButton
 from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
@@ -1222,6 +1223,7 @@ class MainWindow(
         layout.addWidget(self.export_button)
         self._usage_level_fit = _FitLevelChip(bar, self.usage_level_chip)
         self._fit_palette_button(bar)
+        self._settings_fit = FitSettingsButton(bar, settings_btn, [self.usage_level_chip, self.palette_button])
 
         self._update_top_bar()
         return bar

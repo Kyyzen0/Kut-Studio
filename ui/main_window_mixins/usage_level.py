@@ -30,6 +30,7 @@ class _LevelChip(QToolButton):
         self._full = ""
         self._compact = ""
         self._form = self.FULL
+        self._chrome = 0     # marge propre de la puce (padding, flèche) : ne varie jamais d'une forme à l'autre, voir ``width_for``
 
     def full_text(self) -> str:
         return self._full
@@ -56,10 +57,17 @@ class _LevelChip(QToolButton):
         self.setVisible(self._form != self.HIDDEN)
 
     def width_for(self, form: str) -> int:
-        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante)."""
-        chrome = max(0, super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text()))
+        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante).
+
+        La marge (``sizeHint`` moins le texte affiché) varie de 1 px selon le texte courant (19 px « abrégée », 20 px « complète »
+        avec la police DejaVu de Linux) : mesurée à chaque appel, elle faisait que « complète » tenait quand la puce était abrégée
+        et ne tenait plus quand elle était complète, et la puce oscillait à chaque ajustement (``Niveau : Avancé`` écrasée à 70 px).
+        On garde donc la plus grande marge vue : le choix de la forme ne dépend plus de la forme courante.
+        """
+        measured = super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text())
+        self._chrome = max(self._chrome, measured)
         text = self._compact if form == self.COMPACT else self._full
-        return chrome + self.fontMetrics().horizontalAdvance(text)
+        return self._chrome + self.fontMetrics().horizontalAdvance(text)
 
 
 class _FitLevelChip(QObject):
