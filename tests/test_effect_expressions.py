@@ -17,6 +17,7 @@ from ffmpeg_expr import evaluate
 
 from core.animation import InterpolationType, Keyframe
 from core.animation_targets import targets_for_clip
+from core.effect_sendcmd import context_for
 from core.effect_expressions import GEQ_TIME, animated_effect_expressions, heat_haze_shift
 from core.effect_targets import (
     ANIMATABLE_EFFECT_PARAMS,
@@ -64,7 +65,9 @@ def rich_curve(effect, name, *, overshoot=True):
 
 
 SAMPLES = [-1.0, 0.0, 0.25, 0.5, 0.6, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.4999, 2.5, 2.6, 3.0, 3.7, 4.0, 4.5, 6.0]
-RENDERED = [(kind, name) for kind, names in EXPRESSION_EFFECT_PARAMS.items() for name in names]   # par expression (étape 3)
+RENDERED = [(kind, name) for kind, names in EXPRESSION_EFFECT_PARAMS.items() for name in names
+            if kind is not EffectType.COLOR_CORRECTION]                      # par expression (étape 3) ; la couleur : lut + sendcmd
+LUT_RENDERED = [(EffectType.COLOR_CORRECTION, name) for name in EXPRESSION_EFFECT_PARAMS[EffectType.COLOR_CORRECTION]]
 HAZE_PARAMS = ("amplitude", "frequency", "top", "span")
 HAZE_RENDERED = [(EffectType.HEAT_HAZE, name) for name in HAZE_PARAMS]
 
@@ -113,24 +116,21 @@ def test_pending_parameters_never_get_an_expression():
 
 
 def test_filter_text_in_context_matches_the_python_formulas():
-    """Le texte de l'export (et pas seulement l'expression nue) : ``eq``, angle de la vignette, décalage de la brume."""
+    """Le texte de l'export (et pas seulement l'expression nue) : angle de la vignette (expression) et correction colorimétrique
+    (``lut`` + ``sendcmd`` depuis ADR-0013 : jamais d'expression ni de ``eq``)."""
     import re
 
     eq = create_effect(EffectType.COLOR_CORRECTION, effect_id="cc", params={"saturation": 1.5})
     vig = create_effect(EffectType.VIGNETTE, effect_id="vg")
     animation = rich_curve(eq, "brightness") + rich_curve(eq, "contrast") + rich_curve(vig, "intensity")
     clip = clip_with([eq, vig], animation)
-    text = _build_clip_effect_filters(tuple(clip.effects), animation=tuple(clip.animation))
+    context = context_for(30, 0.0, 5.0)
+    text = _build_clip_effect_filters(tuple(clip.effects), animation=tuple(clip.animation), sendcmd=context, label="v0fx")
+    assert "eq=" not in text and ",lut@v0fx0=" in text and text.startswith("sendcmd=f='")
     eq_text, vignette_text = text.split(",vignette=")
-    assert eq_text.endswith(":eval=frame") and vignette_text.endswith(":eval=frame")
-    assert "saturation=1.5:" in eq_text                          # le paramètre non animé reste une constante
-    brightness = re.search(r"brightness='(.*?)':contrast=", eq_text).group(1)
-    contrast = re.search(r"contrast='(.*?)':saturation=", eq_text).group(1)
+    assert vignette_text.endswith(":eval=frame")
     angle = re.search(r"angle='(.*)':eval=frame", vignette_text).group(1)
     for time in SAMPLES:
-        values = effective_effect_parameters(clip, eq, time)
-        assert evaluate(brightness, t=time) == pytest.approx(values["brightness"], abs=1e-6)
-        assert evaluate(contrast, t=time) == pytest.approx(values["contrast"], abs=1e-6)
         assert evaluate(angle, t=time) == pytest.approx(
             effective_effect_parameters(clip, vig, time)["intensity"] * math.pi / 4, abs=1e-6)
 
@@ -159,7 +159,12 @@ def test_heat_haze_shift_equals_the_static_formula_at_the_evaluated_values(monke
 # (b) Sans animation : le graphe est celui d'avant, caractère pour caractère
 # ---------------------------------------------------------------------------
 
-# Calculés sur une copie de origin/main (3aa06b8) : même couche, ``_build_layer_filter`` sans et avec ``origin``.
+# Calculés sur une copie de origin/main (3aa06b8) : même couche, ``_build_layer_filter`` sans et avec ``origin``. Seul l'``eq`` de la
+# correction colorimétrique a changé de texte (ADR-0013 : ``eq`` est GPL), pour les mêmes octets (``tests/test_eq_lut.py``).
+EQ_LUT = (
+    "format=gray|yuv410p|yuv411p|yuv420p|yuva420p|yuv422p|yuva422p|yuv444p|yuva444p,"
+    "lut=y='clip(floor(val*5324/4096)+12,0,255)':u='clip(floor(val*2867/4096)+38,0,255)':v='clip(floor(val*2867/4096)+38,0,255)'"
+)
 GOLDEN_FULL = (
     "[0:v]trim=start=0.0:end=3.0,setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease,"
     "pad=1280:720:floor((ow-iw)/4)*2:floor((oh-ih)/4)*2:black,fps=30,setpts=PTS-STARTPTS,"
@@ -168,7 +173,7 @@ GOLDEN_FULL = (
     "cb='p(X-floor(5.0*sin(Y*0.06+T*7.0)*clip((Y/H-0.25)/0.5,0,1)),Y)':"
     "cr='p(X-floor(5.0*sin(Y*0.06+T*7.0)*clip((Y/H-0.25)/0.5,0,1)),Y)':a='p(X,Y)',"
     "scale=w='trunc(iw*(1.0)*1280.0/iw)':h='trunc(ih*(1.0)*720.0/ih)':eval=frame,"
-    "eq=brightness=0.2:contrast=1.3:saturation=0.7,gblur=sigma=4.0,vignette=angle=0.392699,format=rgba,"
+    f"{EQ_LUT},gblur=sigma=4.0,vignette=angle=0.392699,format=rgba,"
     "rgbashift=rh=3:bh=-3:edge=smear,format=rgba,format=yuva444p,format=rgba,setpts=PTS+1.0/TB+0.001[v0]"
 )
 GOLDEN_SEGMENT = (
@@ -179,7 +184,7 @@ GOLDEN_SEGMENT = (
     "cb='p(X-floor(2.5*sin(Y*0.12+T*7.0)*clip((Y/H-0.25)/0.5,0,1)),Y)':"
     "cr='p(X-floor(2.5*sin(Y*0.12+T*7.0)*clip((Y/H-0.25)/0.5,0,1)),Y)':a='p(X,Y)',"
     "scale=w='trunc(iw*(1.0)*640.0/iw)':h='trunc(ih*(1.0)*360.0/ih)':eval=frame,"
-    "eq=brightness=0.2:contrast=1.3:saturation=0.7,gblur=sigma=2.0,vignette=angle=0.392699,format=rgba,"
+    f"{EQ_LUT},gblur=sigma=2.0,vignette=angle=0.392699,format=rgba,"
     "rgbashift=rh=2:bh=-2:edge=smear,format=rgba,format=yuva444p,format=rgba,setpts=PTS+1.0/TB+0.001[v0]"
 )
 
@@ -229,7 +234,7 @@ def _all_effects():
     return [create_effect(kind, effect_id=f"e-{kind.value}") for kind in EffectType]
 
 
-@pytest.mark.parametrize("kind, name", RENDERED + HAZE_RENDERED)
+@pytest.mark.parametrize("kind, name", RENDERED + LUT_RENDERED + HAZE_RENDERED)
 def test_every_rendered_parameter_changes_the_export_graph(monkeypatch, kind, name):
     register_haze(monkeypatch)
     effect = create_effect(kind, effect_id="e")
@@ -288,7 +293,9 @@ def test_the_monitor_sync_points_evaluate_the_effects():
 # (g) Cache : l'empreinte suit les images clés fx.*
 # ---------------------------------------------------------------------------
 
-FINGERPRINT_MAIN = "56beeffd56d2527347dfc095308ee639637615c70e3c615352e1d0086421d40d"   # origin/main (3aa06b8), moteur 12
+# Empreinte du moteur 12 de ``origin/main`` (3aa06b8) pour ce clip, recalculée une fois avec ADR-0013 : le texte de la correction colorimétrique
+# a changé (``eq`` GPL remplacé par ``lut``, mêmes octets), donc les segments mis en cache avant ne sont pas resservis. Elle ne bouge plus.
+FINGERPRINT_MAIN = "4bfbd8868a814fa6b019a52c1e9d37e3bd11a465c5600251059dc150bb389d93"
 
 
 def _fingerprint(animation=(), monkeypatch=None, version=None):
@@ -350,7 +357,10 @@ def _chain(effects, animation, *, full_chroma, exact_angle=False):
 
     from core.chroma_siting import siting_before_rgb
 
-    text = _build_clip_effect_filters(tuple(effects), animation=tuple(animation))
+    # Le flux de la mire (durée 2 s) : la correction colorimétrique animée est un fichier de commandes (``lut`` + ``sendcmd``), supprimé
+    # à la sortie du processus de test (dossier de processus de ``core.effect_sendcmd``).
+    text = _build_clip_effect_filters(tuple(effects), animation=tuple(animation), sendcmd=context_for(RATE, 0.0, FRAMES / RATE),
+                                      label="v0fx")
     if exact_angle:
         for effect in effects:
             if effect.type is EffectType.VIGNETTE:

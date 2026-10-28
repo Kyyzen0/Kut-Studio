@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from core.effects_model import EffectType, create_effect
 from core.color_grading import ColorGrade
+from core.eq_lut import static_filters
 from core.export_engine import _build_layer_filter
 from core.render_plan import RenderLayer
 
@@ -34,7 +35,7 @@ def test_video_filter_applies_enabled_effects_in_model_order():
     filter_graph = _build_layer_filter(0, _layer_with_effects(), 0, 1280, 720, 30)
 
     expected = [
-        "eq=brightness=0.2:contrast=1.3:saturation=0.7",
+        static_filters(0.2, 1.3, 0.7),               # ``eq`` est GPL : une table ``lut`` par plan (core.eq_lut)
         "gblur=sigma=4.0",
         "unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=1.5",
         "vignette=angle=0.392699",
@@ -58,7 +59,8 @@ def test_color_grade_runs_after_existing_visual_effects_deterministically():
 
     visual_effect = filter_graph.index("gblur=sigma=4.0")
     color_grade = filter_graph.index("lutrgb=")                 # l'exposition ouvre l'étalonnage
-    saturation = filter_graph.index("eq=contrast=1.0:saturation=1.2")
+    saturation = filter_graph.index(static_filters(0.0, 1.0, 1.2))
     alpha_format = filter_graph.rindex("format=rgba")  # la conversion finale ; la co-sitée précède le premier filtre RVB
     assert visual_effect < color_grade < saturation < alpha_format
     assert "gamma=" not in filter_graph, "l'exposition n'est plus un gamma"
+    assert "eq=" not in filter_graph, "eq est GPL (ADR-0013)"

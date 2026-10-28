@@ -179,6 +179,14 @@ def _commands(kind: EffectType, target: str, value: float) -> str:
     return f"{target} sigma {_number(value)}, {target} sigmaV {_number(value)}"
 
 
+def check_command_budget(commands: int, size: int, max_commands: int | None = None, max_bytes: int | None = None) -> None:
+    """Garde commun des étages ``sendcmd`` : ``ValueError`` (message sans donnée de l'utilisateur) au-delà de
+    :data:`MAX_EFFECT_COMMANDS` instructions (mémoire de FFmpeg 6.1 / 7.1, ~25 Ko par instruction) ou de :data:`MAX_COMMAND_BYTES` octets."""
+    if commands > (MAX_EFFECT_COMMANDS if max_commands is None else max_commands) or size > (MAX_COMMAND_BYTES if max_bytes is None else max_bytes):
+        raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la, gardez une valeur fixe sur une "
+                         "partie du clip ou découpez le clip.")
+
+
 def frame_count(context: SendcmdContext) -> int:
     """Images du flux : jusqu'à la fin du clip, plus deux de marge (des instructions en trop sont sans effet)."""
     remaining = max(0.0, context.duration - context.start)
@@ -369,6 +377,7 @@ __all__ = [
     "MAX_COMMAND_BYTES",
     "MAX_COMMAND_LINES",
     "MAX_EFFECT_COMMANDS",
+    "check_command_budget",
     "WINDOW_BYTES",
     "CommandPlan",
     "SendcmdContext",
