@@ -111,6 +111,18 @@ class ColorAnimationMixin:
         if clip_id is not None:
             self.on_color_keys_toggled(clip_id, wheel_property_ids(wheel))
 
+    def on_color_quick_keys_toggled(self, field: str) -> None:
+        """Losange d'un réglage rapide de la page Couleur : la commande du losange de l'inspecteur."""
+        clip_id = self._color_clip_id()
+        if clip_id is not None and field in SCALAR_NAMES:
+            self.on_color_keys_toggled(clip_id, [scalar_property_id(field)])
+
+    def on_color_quick_graph_requested(self, field: str) -> None:
+        """Éditeur de courbes sur un réglage rapide (sans animation possible, l'éditeur s'ouvre sans propriété)."""
+        clip = self._grade_clip(self._color_clip_id())
+        if clip is not None and field in SCALAR_NAMES:
+            self.open_graph_editor(scalar_property_id(field) if is_animatable_grade(getattr(clip, "color_grade", None)) else None)
+
     def on_color_wheel_keys_navigated(self, wheel: str, direction: int) -> None:
         """Flèches ‹ › d'une roue : la tête va à l'image clé précédente / suivante de l'un de ses quatre canaux."""
         clip = self._grade_clip(self._color_clip_id())

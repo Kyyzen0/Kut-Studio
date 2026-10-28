@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QGridLayout, QSizePolicy, QWidget
 from core.color_grading import WHEELS, Wheel
 from core.color_wheels import puck_from_wheel, wheel_from_puck
 from core.grade_keyframing import GradeAnimationInfo
+from ui.color_page.quick_settings import QuickSettings
 from ui.color_page.wheel_keys import WheelCell
 from ui.design_system import Spacing, Typography, Weights
 from ui.i18n import translate
@@ -37,6 +38,7 @@ _READOUT_HEIGHT = 2 * _READOUT_LINE                       # deux lignes : « R V
 _RING_WIDTH = 5.0
 _MIN_DISC = 120                                           # une roue plus petite n'est plus réglable à la souris (barème « Air d'abord »)
 _MAX_DISC = 150
+_QUICK_SLACK = 8                                          # le disque garde 8 px de plus que ``_MIN_DISC`` quand les réglages rapides sont posés
 _SIDE = 2                                                 # air autour du disque : à 1222 px la colonne n'a que 514 px pour quatre roues
 
 
@@ -266,8 +268,11 @@ class ColorWheels(QWidget):
             cell.graph_requested.connect(self.graph_requested)
             cell.cleared.connect(self.animation_cleared)
             self.cells[name] = cell
+        self.quick = QuickSettings()                  # sous les roues : mêmes réglages que l'inspecteur (voir ``quick_settings``)
         self._columns = 0
+        self._quick_at: tuple[int, int] | None = None
         self._arrange(4)
+        self.quick.hide()
 
     def set_wheels(self, wheels: dict[str, Wheel]) -> None:
         for name, widget in self.wheels.items():
@@ -280,18 +285,31 @@ class ColorWheels(QWidget):
             cell.set_state(info.wheels.get(name) if info is not None else None, animatable=animatable)
         if info is not None and info.shown:
             self.set_wheels({**{name: widget.wheel for name, widget in self.wheels.items()}, **info.shown})
+        self.quick.set_animation(info)
 
     def retranslate(self) -> None:
         for wheel in self.wheels.values():
             wheel.retranslate()
         for cell in self.cells.values():
             cell.retranslate()
+        self.quick.retranslate()
+        self._fit_quick()
+
+    def _quick_height(self, hint: QSize) -> int:
+        """Hauteur de ``hint`` sans la place des réglages rapides : ils ne comptent ni dans le minimum de l'onglet (il défilerait) ni
+        dans la taille souhaitée (le gestionnaire de panneaux partage la hauteur d'après elle) ; ils se posent dans ce qui reste."""
+        return hint.height() - (self.quick.sizeHint().height() if self.quick.isVisibleTo(self) else 0)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - API Qt
+        hint = super().sizeHint()
+        return QSize(hint.width(), self._quick_height(hint))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - API Qt
         """Largeur de deux roues seulement : la page prend la largeur de l'onglet et choisit 4 ou 2 colonnes (sans cela, les
         quatre colonnes imposaient leur largeur et restaient, quitte à couper la dernière roue)."""
         hint = super().minimumSizeHint()
-        return QSize(2 * _MIN_DISC, hint.height())
+        floor = self.quick.minimumSizeHint().height() if self.quick.isVisibleTo(self) else 0
+        return QSize(2 * _MIN_DISC, hint.height() - floor)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)
@@ -299,6 +317,28 @@ class ColorWheels(QWidget):
         margins = self._grid.contentsMargins()
         room = (self.width() - margins.left() - margins.right() - 3 * self._grid.horizontalSpacing()) / 4
         self._arrange(4 if room >= _MIN_DISC else 2)       # (une barre de défilement qui apparaît ôte ~8 px : pas de va-et-vient)
+        self._fit_quick()
+
+    def _fit_quick(self) -> None:
+        """Pose les réglages rapides sous les roues s'il reste la place : une ligne chacun, sinon deux par ligne (sans curseur si la
+        largeur manque), sinon rien.
+
+        Les roues passent d'abord : on compte leur minimum (disque de ``_MIN_DISC`` + ``_QUICK_SLACK`` px) et 8 px de marge ; si les
+        lignes ne tiennent pas dans le reste, elles se cachent plutôt que d'écraser une roue ou de faire défiler l'onglet.
+        Ne dépend que de la taille de l'onglet, jamais de ce qu'il vient de cacher : pas de va-et-vient."""
+        margins = self._grid.contentsMargins()
+        rows = -(-len(self.cells) // max(1, self._columns))
+        cell = max(widget.minimumSizeHint().height() for widget in self.cells.values()) + _QUICK_SLACK
+        room_height = self.height() - margins.top() - margins.bottom() - rows * cell - Spacing.sm
+        room_width = self.width() - margins.left() - margins.right()
+        for columns, sliders in ((1, True), (2, True), (2, False)):
+            width, height = self.quick.required(columns, sliders=sliders)
+            if height <= room_height and width <= room_width:
+                self.quick.arrange(columns, sliders=sliders)
+                self._place_quick()
+                self.quick.show()
+                return
+        self.quick.hide()
 
     def _arrange(self, columns: int) -> None:
         if columns == self._columns:
@@ -308,5 +348,14 @@ class ColorWheels(QWidget):
             self._grid.removeWidget(cell)
         for index, cell in enumerate(self.cells.values()):
             self._grid.addWidget(cell, index // columns, index % columns)
-        for row in range(3):
-            self._grid.setRowStretch(row, 1 if row == len(self.cells) // columns else 0)     # l'espace en trop reste sous les roues
+        self._place_quick()
+
+    def _place_quick(self) -> None:
+        """Réglages rapides : une rangée sous les roues, sur toute la largeur ; l'espace en trop reste sous eux."""
+        rows = -(-len(self.cells) // self._columns)
+        if self._quick_at != (rows, self._columns):
+            self._quick_at = (rows, self._columns)
+            self._grid.removeWidget(self.quick)
+            self._grid.addWidget(self.quick, rows, 0, 1, self._columns)
+        for row in range(4):
+            self._grid.setRowStretch(row, 1 if row == rows + 1 else 0)

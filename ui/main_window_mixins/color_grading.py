@@ -118,6 +118,7 @@ class ColorGradingMixin:
     def on_color_grade_field_changed(
         self, clip_id: str, field: str, value: float
     ) -> None:
+        """Un réglage simple bouge : champ de l'inspecteur **ou** ligne rapide de la page Couleur (une seule commande)."""
         if self._route_grade_field(clip_id, field, value):       # réglage animé : la valeur va dans l'image clé de la tête
             return
         try:
@@ -125,8 +126,35 @@ class ColorGradingMixin:
             updated = current.with_field(field, float(value))
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
+            self._mirror_color_field(clip_id, field)
             return
         self._commit_color_grade(clip_id, updated, translate("history.color.field", field=field), coalesce=True)
+        self._mirror_color_field(clip_id, field)
+
+    def on_color_quick_field_changed(self, field: str, value: float) -> None:
+        """Ligne rapide sous les roues : exactement le chemin du champ de l'inspecteur (animation, verrous, historique)."""
+        clip_id = self._color_clip_id()
+        if clip_id is not None:
+            self.on_color_grade_field_changed(clip_id, field, value)
+
+    def _mirror_color_field(self, clip_id: str, field: str) -> None:
+        """Montre la valeur **du modèle** (nœud courant) dans les deux séries de contrôles, sans signal : le champ de l'inspecteur et
+        la ligne de la page Couleur. Une valeur refusée ou ramenée à sa borne y revient ; aucune étape d'historique en écho."""
+        from shiboken6 import isValid
+
+        from ui.properties_widgets.keyframe_row import set_spin_quietly
+
+        try:
+            value = float(getattr(self._color_grade_of(clip_id), field))
+        except (ColorGradingError, AttributeError, TypeError):
+            return
+        panel = self.properties_panel
+        spin = getattr(panel, "color_field_spins", {}).get(field)
+        if spin is not None and getattr(getattr(panel, "selected_clip", None), "id", None) == clip_id:
+            set_spin_quietly(spin, value)
+        page = getattr(self, "color_panel", None)
+        if page is not None and isValid(page) and clip_id == self._color_clip_id():
+            page.wheels.quick.set_value(field, value)
 
     def on_color_grade_enabled_changed(self, clip_id: str, enabled: bool) -> None:
         try:

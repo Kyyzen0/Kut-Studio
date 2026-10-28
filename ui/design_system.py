@@ -120,6 +120,7 @@ class _Sizes:
     # Colonne de la visionneuse : hauteur minimale utile de la visionneuse (en-tête, image, transport) et
     # plancher des scopes, qui cèdent d'abord quand la fenêtre est basse (voir ``ui.viewer_host``).
     monitor_min_height: int = 200
+    audio_monitor_min_height: int = 160   # page Audio : la visionneuse cède au mixeur et à la timeline (voir ``ViewerHostSplitter.set_compact``)
     scopes_min_height: int = 128
     scopes_comfort_height: int = 200
     # En-tête (recherche + puces de filtre) d'une page de bibliothèque : il défile en dessous de cette hauteur.

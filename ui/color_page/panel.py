@@ -55,6 +55,9 @@ class ColorPanel(QWidget):
     wheel_keys_navigated = Signal(str, int)            # roue, -1 (précédente) ou +1 (suivante)
     wheel_graph_requested = Signal(str)                # ouvrir l'éditeur de courbes sur la roue
     grade_animation_cleared = Signal()                 # retirer toutes les images clés d'étalonnage du clip
+    field_changed = Signal(str, float)                 # réglage rapide (exposition…) : même commande que le champ de l'inspecteur
+    field_keys_toggled = Signal(str)                   # losange d'un réglage rapide
+    field_graph_requested = Signal(str)                # éditeur de courbes sur un réglage rapide
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -104,6 +107,10 @@ class ColorPanel(QWidget):
         self.wheels.keys_navigated.connect(self.wheel_keys_navigated)
         self.wheels.graph_requested.connect(self.wheel_graph_requested)
         self.wheels.animation_cleared.connect(self.grade_animation_cleared)
+        self.wheels.quick.changed.connect(self.field_changed)
+        self.wheels.quick.keys_toggled.connect(self.field_keys_toggled)
+        self.wheels.quick.graph_requested.connect(self.field_graph_requested)
+        self.wheels.quick.animation_cleared.connect(self.grade_animation_cleared)
         self.qualifier = QualifierEditor()
         self.qualifier.changed.connect(self.qualifier_changed)
         self.qualifier.highlight_toggled.connect(self.highlight_toggled)
@@ -172,6 +179,7 @@ class ColorPanel(QWidget):
             self.remove_button.setEnabled(False)
             self.bypass_button.setChecked(False)
             self.wheels.set_wheels({})
+            self.wheels.quick.set_values({})
             self.qualifier.set_qualifier(None)
             self.windows.set_windows(())
             self.detail.set_detail(0.0, 0.0)
@@ -184,6 +192,7 @@ class ColorPanel(QWidget):
                             count=node_number(len(graph.correctors) - 1))
         self.node_caption.setText(f"{caption} · {node.label}" if node.label else caption)
         self.wheels.set_wheels({name: getattr(node.grade, name) for name in WHEELS})
+        self.wheels.quick.set_values({row: float(getattr(node.grade, row)) for row in self.wheels.quick.rows})
         self.qualifier.set_qualifier(node.qualifier)
         self.windows.set_windows(node.windows)
         self.detail.set_detail(node.blur, node.sharpen)
