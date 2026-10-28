@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Windows et Linux sont mis de côté (ADR-0013) : leurs jobs ne tournent plus que sur ce déclenchement manuel et sur
+  # cette exécution hebdomadaire (dimanche 03:00 UTC), pour voir une dérive sans bloquer les PR (docs/ci-policy.md).
+  schedule:
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
@@ -21,7 +25,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # PR et pushes sur main : macOS seul. Exécution hebdomadaire et lancement manuel : les trois systèmes
+        # (os: [macos-latest, windows-latest, ubuntu-latest]). Le bloc « && / || » rend la liste complète par défaut.
+        os: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'push') && '["macos-latest"]' || '["macos-latest","windows-latest","ubuntu-latest"]') }}
 
     env:
       QT_QPA_PLATFORM: offscreen
@@ -159,6 +165,8 @@ jobs:
   # le job au lieu de lui faire tester autre chose en silence. Bloquant, sans dépendance sur la matrice.
   linux-ffmpeg7:
     name: Debian 13 / FFmpeg 7.1 / Python 3.13
+    # Hebdomadaire et manuel seulement (docs/ci-policy.md) : pas sur les PR ni sur main.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     container: debian:trixie
     # Même règle que la matrice : la suite saine (36 min de job au pire mesuré le 2026-10-20) plus le --timeout d'un test
