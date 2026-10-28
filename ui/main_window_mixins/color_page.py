@@ -155,6 +155,7 @@ class ColorPageMixin:
         # Pistes « normales » de 56 px sur la page Audio (3 visibles, lisibles), 48 px ailleurs : la hauteur est celle de la
         # page, le modèle des pistes ne change pas.
         self.timeline_panel.set_row_height_override(Sizes.timeline_track_min_height if page == PAGE_AUDIO else None)
+        self._viewer_host.set_compact(page == PAGE_AUDIO)
         if self.workspace.switch_page(page):
             self._sync_workspace_menu()
         for name, button in self.page_buttons.items():

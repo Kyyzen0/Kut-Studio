@@ -21,10 +21,12 @@ class ViewerHostSplitter(QSplitter):
     def __init__(self, viewer: QWidget, scopes: QWidget, parent: QWidget | None = None) -> None:
         super().__init__(Qt.Vertical, parent)
         self._scopes = scopes
+        self._viewer = viewer
+        self._monitor_min = Sizes.monitor_min_height
         self.setObjectName("viewer_with_scopes")
         self.setChildrenCollapsible(False)
         self.setHandleWidth(6)
-        viewer.setMinimumHeight(Sizes.monitor_min_height)
+        viewer.setMinimumHeight(self._monitor_min)
         self.addWidget(viewer)
         self.addWidget(scopes)
         self.setStretchFactor(0, 3)
@@ -33,9 +35,21 @@ class ViewerHostSplitter(QSplitter):
         self.setCollapsible(0, False)
         self.setCollapsible(1, True)
 
+    def set_compact(self, compact: bool) -> None:
+        """Page Audio : la visionneuse est secondaire, son minimum baisse pour que la timeline et le mixeur gardent leur place.
+
+        Les autres pages gardent ``Sizes.monitor_min_height`` ; seul le minimum change, la hauteur choisie par la page reste libre.
+        """
+        wanted = Sizes.audio_monitor_min_height if compact else Sizes.monitor_min_height
+        if wanted == self._monitor_min:
+            return
+        self._monitor_min = wanted
+        self._viewer.setMinimumHeight(wanted)
+        self.updateGeometry()
+
     def scopes_minimum_height(self) -> int:
         """Hauteur minimale des scopes pour la hauteur actuelle de la colonne."""
-        room = self.height() - self.handleWidth() - Sizes.monitor_min_height
+        room = self.height() - self.handleWidth() - self._monitor_min
         return max(Sizes.scopes_min_height, min(Sizes.scopes_comfort_height, room))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - API Qt
@@ -46,7 +60,7 @@ class ViewerHostSplitter(QSplitter):
         se replier (``setCollapsible``) quand la colonne ne laisse que la visionneuse.
         """
         base = super().minimumSizeHint()
-        return QSize(base.width(), Sizes.monitor_min_height)
+        return QSize(base.width(), self._monitor_min)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)

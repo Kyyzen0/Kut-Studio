@@ -793,7 +793,12 @@ class WorkspaceManager(QObject):
                 self._state.area_of(panel) is DockArea.BOTTOM
                 and self._state.is_visible(panel)
             ):
-                extras += MIN_HEIGHT.get(panel, 200) + self._zones[DockArea.BOTTOM]._splitter.handleWidth()
+                floor = MIN_HEIGHT.get(panel, 200)
+                if audio_page:
+                    # Le plancher réel du mixeur grandit avec la police (Windows) et set_timeline_first le retire à la timeline :
+                    # sa 3e piste perdait sa marge. On le compte ici, et c'est la rangée du haut qui cède.
+                    floor = max(floor, self._panels[panel].minimumSizeHint().height())
+                extras += floor + self._zones[DockArea.BOTTOM]._splitter.handleWidth()
         needed = timeline_needed + extras
         bottom = max(needed, int(total * 0.40))
         bottom = min(bottom, int(total * 0.80))
