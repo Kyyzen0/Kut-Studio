@@ -458,6 +458,8 @@ MIN_TEXT_PX = 12
 MIN_CONTROL = 30
 CHANNEL_WIDTH = 168
 TRACK_ROW = 56
+#: Marge réelle sous la 3e piste avec des polices +20 % (Windows : 7 px mesurés avant la réserve de la timeline ; 8 px suffisaient ailleurs).
+AUDIO_FONT_SLACK = 12
 #: Fenêtres de la cible « Air d'abord » (de 1222x738 à 1440x900). En dessous (1280x690), la hauteur ne permet plus 3 pistes de
 #: 56 px **et** un mixeur : la page garde seulement ses contrôles lisibles (voir ``test_mixer_controls_stay_whole_on_the_smallest_window``).
 AUDIO_SIZES = [(1440, 900), (1440, 790), (1222, 738)]
@@ -528,7 +530,7 @@ def _canal_problems(window, label: str, *, whole: bool) -> list[str]:
     return problems
 
 
-def _timeline_problems(window, label: str) -> list[str]:
+def _timeline_problems(window, label: str, slack: int = SLACK) -> list[str]:
     """Les 3 premières pistes ont 56 px au moins et tiennent dans la zone des pistes, avec une marge."""
     timeline = window.timeline_panel
     viewport = timeline.scroll.viewport()
@@ -538,8 +540,8 @@ def _timeline_problems(window, label: str) -> list[str]:
         bottom = timeline.row_top(index) + height
         if height < TRACK_ROW:
             problems.append(f"{label} piste {track.id} : {height} px")
-        if bottom + SLACK > viewport.height():
-            problems.append(f"{label} piste {track.id} : bas à {bottom} px pour {viewport.height()} px de zone (marge {SLACK} px)")
+        if bottom + slack > viewport.height():
+            problems.append(f"{label} piste {track.id} : bas à {bottom} px pour {viewport.height()} px de zone (marge {slack} px)")
     return problems
 
 
@@ -621,7 +623,7 @@ def test_audio_page_keeps_its_margins_with_taller_fonts():
         audit.select_first_clip(window)
         window.switch_page("audio")
         audit.settle(window)
-        problems = _timeline_problems(window, "+20%")
+        problems = _timeline_problems(window, "+20%", slack=AUDIO_FONT_SLACK)
         with _five_audio_tracks(window):
             problems += _text_floor_problems(window, "+20%") + _canal_problems(window, "+20%", whole=True)
         assert not problems, "\n".join(sorted(set(problems))[:10])

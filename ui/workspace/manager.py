@@ -274,6 +274,9 @@ class _Zone(QWidget):
 #: s'ajoute à la zone des pistes (mesurée : 114 px de chrome pour un viewport de pistes).
 AUDIO_VISIBLE_TRACKS = 3
 AUDIO_TIMELINE_CHROME = 36
+#: Réserve structurelle sous la 3e piste : les polices plus larges (Windows, Linux) grandissent la barre d'outils et l'en-tête de
+#: la timeline de quelques pixels ; sans réserve, la 3e piste frôlait le bas de la zone (7 px de marge mesurés sous Windows).
+AUDIO_TIMELINE_RESERVE = 16
 
 
 class WorkspaceManager(QObject):
@@ -778,7 +781,7 @@ class WorkspaceManager(QObject):
             + 8
             + pitch * max(track_count, 1)
             + 34  # marges + barres de défilement
-            + (AUDIO_TIMELINE_CHROME if audio_page else 0)
+            + (AUDIO_TIMELINE_CHROME + AUDIO_TIMELINE_RESERVE if audio_page else 0)
         )
         # La zone basse peut héberger d'autres panneaux (le mixeur) :
         # chacun réclame son minimum, sinon l'un se fait écraser.
