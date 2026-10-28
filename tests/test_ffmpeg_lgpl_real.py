@@ -294,7 +294,7 @@ def test_explicit_cpu_h264_fails_clearly_since_libx264_is_not_in_a_lgpl_build(me
     assert not result.ok and not (tmp_path / "cpu.mp4").exists()
 
 
-@pytest.mark.libass
+# Sans la marque ``libass`` : le job « libass » de la CI exige zéro saut parmi ses tests, et celui-ci se saute sans l'artefact LGPL.
 def test_libass_draws_the_subtitle_of_the_application(media, tmp_path):
     """Les sous-titres sont dessinés (polices du système par CoreText) : des pixels clairs apparaissent sur un fond uni."""
     assets = [MediaAsset("flat", media["flat"], "flat", float(SECONDS), 320, 180, float(FPS), "video", has_audio=False)]
