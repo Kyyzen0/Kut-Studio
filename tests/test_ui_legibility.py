@@ -12,6 +12,8 @@ qualifieur (une grille), ni le mixeur coupé, ni les boutons tronqués. Ces test
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 from PySide6.QtCore import QPoint, QRect
 from PySide6.QtWidgets import QScrollArea
@@ -438,6 +440,193 @@ def test_library_list_keeps_a_height_margin_with_taller_fonts():
         panel = window.project_panel
         viewport = panel.findChild(QScrollArea, "scrollGuard").viewport()
         assert _visible_height(panel.bin_audios, viewport) >= 60
+    finally:
+        window.close()
+        window.deleteLater()
+        deliver_deferred_deletes()
+        app = QApplication.instance()
+        base = app.property("_kut_audit_base_stylesheet")
+        if base is not None:
+            app.setStyleSheet(base)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Page Audio « Air d'abord » : mixeur en canaux de 168 px, 3 pistes de 56 px, aucun texte sous 12 px
+# ---------------------------------------------------------------------------------------------------------------
+
+MIN_TEXT_PX = 12
+MIN_CONTROL = 30
+CHANNEL_WIDTH = 168
+TRACK_ROW = 56
+#: Marge réelle sous la 3e piste avec des polices +20 % (Windows : 7 px mesurés avant la réserve de la timeline ; 8 px suffisaient ailleurs).
+AUDIO_FONT_SLACK = 12
+#: Fenêtres de la cible « Air d'abord » (de 1222x738 à 1440x900). En dessous (1280x690), la hauteur ne permet plus 3 pistes de
+#: 56 px **et** un mixeur : la page garde seulement ses contrôles lisibles (voir ``test_mixer_controls_stay_whole_on_the_smallest_window``).
+AUDIO_SIZES = [(1440, 900), (1440, 790), (1222, 738)]
+AUDIO_SIZE_IDS = [f"{w}x{h}" for w, h in AUDIO_SIZES]
+
+
+@contextlib.contextmanager
+def _five_audio_tracks(window):
+    """Le projet de démonstration n'a que A1 et A2 : trois pistes audio de plus, le mixeur est reconstruit, puis rendu."""
+    from core.project_model import Track
+
+    project = window.project
+    before = list(project.tracks)
+    project.tracks += [Track(f"A{index}", f"A{index}", "audio") for index in (3, 4, 5)]
+    window.mixer_panel.set_project(project)
+    audit.settle(window)
+    try:
+        yield window.mixer_panel
+    finally:
+        project.tracks[:] = before
+        window.mixer_panel.set_project(project)
+        audit.settle(window)
+
+
+def _text_floor_problems(window, label: str) -> list[str]:
+    """Textes sous 12 px et boutons sous 30 px de haut dans le mixeur et dans les pastilles de la bibliothèque."""
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QAbstractButton, QComboBox, QLabel, QPushButton
+
+    problems: list[str] = []
+    mixer = window.mixer_panel
+    for widget in [*mixer.findChildren(QLabel), *mixer.findChildren(QAbstractButton), *mixer.findChildren(QComboBox),
+                   *(window.project_panel.findChildren(QPushButton))]:
+        if not widget.isVisible():
+            continue
+        text = widget.text() if hasattr(widget, "text") else ""
+        if text.strip() and QFontInfo(widget.font()).pixelSize() < MIN_TEXT_PX:
+            problems.append(f"{label} texte {QFontInfo(widget.font()).pixelSize()} px : « {text[:20]} » ({widget.objectName() or type(widget).__name__})")
+    for button in [*mixer.findChildren(QAbstractButton), *mixer.findChildren(QComboBox)]:
+        if button.isVisible() and button.height() < MIN_CONTROL:
+            problems.append(f"{label} bouton {button.height()} px : {button.objectName() or type(button).__name__} « {getattr(button, 'text', lambda: '')()[:12]} »")
+    return problems
+
+
+def _canal_problems(window, label: str, *, whole: bool) -> list[str]:
+    """5 canaux d'au moins 160 px, entièrement dans la zone des canaux ; ``whole`` : jusqu'au panoramique, sans défiler."""
+    problems: list[str] = []
+    panel = window.mixer_panel
+    viewport = panel.scroll.viewport()
+    strips = [panel.strip_for(f"A{index}") for index in range(1, 6)]
+    if any(strip is None for strip in strips):
+        return [f"{label} : moins de 5 canaux"]
+    for strip in strips:
+        assert strip is not None
+        left = strip.mapTo(viewport, QPoint(0, 0)).x()
+        if strip.width() < 160 or left < 0 or left + strip.width() > viewport.width():
+            problems.append(f"{label} {strip.track_id} : {strip.width()} px de large à x={left} (zone {viewport.width()} px)")
+        parts = [strip.name_label, strip.inserts_button, strip.mute_button, strip.solo_button, strip.volume_slider, strip.meter]
+        if whole:
+            parts.append(strip.pan_slider)
+        for part in parts:
+            if not _fully_visible(part, viewport):
+                problems.append(f"{label} {strip.track_id} : {part.objectName() or type(part).__name__} coupé à {part.mapTo(viewport, QPoint(0, 0))} {part.size()}")
+        if strip.name_label.fontMetrics().horizontalAdvance(strip.name_label.text()) > strip.name_label.width():
+            problems.append(f"{label} {strip.track_id} : nom coupé")
+        if strip.volume_slider.width() < 60:
+            problems.append(f"{label} {strip.track_id} : fader de {strip.volume_slider.width()} px")
+    return problems
+
+
+def _timeline_problems(window, label: str, slack: int = SLACK) -> list[str]:
+    """Les 3 premières pistes ont 56 px au moins et tiennent dans la zone des pistes, avec une marge."""
+    timeline = window.timeline_panel
+    viewport = timeline.scroll.viewport()
+    problems: list[str] = []
+    for index, track in enumerate(window.project.tracks[:3]):
+        height = timeline.clip_height_of(track)
+        bottom = timeline.row_top(index) + height
+        if height < TRACK_ROW:
+            problems.append(f"{label} piste {track.id} : {height} px")
+        if bottom + slack > viewport.height():
+            problems.append(f"{label} piste {track.id} : bas à {bottom} px pour {viewport.height()} px de zone (marge {slack} px)")
+    return problems
+
+
+@pytest.mark.parametrize("size", AUDIO_SIZES, ids=AUDIO_SIZE_IDS)
+def test_audio_page_text_and_controls_meet_the_floor(windows, size):
+    """Aucun texte sous 12 px, aucun bouton du mixeur sous 30 px de haut (avant : 10 et 11 px, boutons de 22 px)."""
+    window = windows(size)
+    window.switch_page("audio")
+    audit.settle(window)
+    with _five_audio_tracks(window):
+        problems = _text_floor_problems(window, f"{size[0]}x{size[1]}")
+    window.switch_page("edit")
+    assert not problems, "\n".join(sorted(set(problems))[:10])
+
+
+@pytest.mark.parametrize("size", AUDIO_SIZES, ids=AUDIO_SIZE_IDS)
+def test_mixer_shows_five_whole_channels(windows, size):
+    """5 canaux de 168 px côte à côte (fader, vumètre, FX, M, S et panoramique visibles), le Master à droite."""
+    window = windows(size)
+    window.switch_page("audio")
+    audit.settle(window)
+    with _five_audio_tracks(window) as panel:
+        problems = _canal_problems(window, f"{size[0]}x{size[1]}", whole=True)
+        master = panel.master_bar()
+        assert master is not None and master.isVisible() and master.width() == CHANNEL_WIDTH
+        assert panel.scroll.horizontalScrollBar().maximum() == 0, "5 canaux ne doivent pas faire défiler à l'horizontale"
+    window.switch_page("edit")
+    assert not problems, "\n".join(sorted(set(problems))[:10])
+
+
+@pytest.mark.parametrize("size", AUDIO_SIZES, ids=AUDIO_SIZE_IDS)
+def test_audio_timeline_shows_three_tracks_of_56_px(windows, size):
+    window = windows(size)
+    window.switch_page("audio")
+    audit.settle(window)
+    problems = _timeline_problems(window, f"{size[0]}x{size[1]}")
+    window.switch_page("edit")
+    assert not problems, "\n".join(problems)
+
+
+def test_track_height_belongs_to_the_page_not_to_the_project(windows):
+    """56 px sur la page Audio, 48 px sur le Montage : le mode de hauteur des pistes (dans le projet) n'est jamais modifié."""
+    window = windows((1222, 738))
+    timeline = window.timeline_panel
+    modes_before = [track.height_mode for track in window.project.tracks]
+    window.switch_page("audio")
+    audit.settle(window)
+    assert timeline.row_height_override == TRACK_ROW and timeline.clip_height_of(window.project.tracks[0]) == TRACK_ROW
+    window.switch_page("edit")
+    audit.settle(window)
+    assert timeline.row_height_override is None and timeline.clip_height_of(window.project.tracks[0]) == 48
+    assert [track.height_mode for track in window.project.tracks] == modes_before
+    larger = next(track for track in window.project.tracks if track.height_mode == "large") if "large" in modes_before else None
+    if larger is not None:                                               # un choix « grande » de l'utilisateur n'est pas écrasé
+        window.switch_page("audio")
+        assert timeline.clip_height_of(larger) != TRACK_ROW
+        window.switch_page("edit")
+
+
+def test_mixer_controls_stay_whole_on_the_smallest_window(windows):
+    """1280x690 : trop bas pour 3 pistes de 56 px et le mixeur ; les canaux gardent leur nom, FX, M, S et fader."""
+    window = windows((1280, 690))
+    window.switch_page("audio")
+    audit.settle(window)
+    with _five_audio_tracks(window):
+        problems = _canal_problems(window, "1280x690", whole=False) + _text_floor_problems(window, "1280x690")
+    window.switch_page("edit")
+    assert not problems, "\n".join(sorted(set(problems))[:10])
+
+
+def test_audio_page_keeps_its_margins_with_taller_fonts():
+    """Police +20 % : mêmes garanties (texte, boutons, 5 canaux, 3 pistes), avec les marges de la cible (pas au pixel)."""
+    from PySide6.QtWidgets import QApplication
+
+    from qt_cleanup import deliver_deferred_deletes
+
+    window = audit.make_main_window(1222, 738, scopes=False, font_scale=1.2)
+    try:
+        audit.select_first_clip(window)
+        window.switch_page("audio")
+        audit.settle(window)
+        problems = _timeline_problems(window, "+20%", slack=AUDIO_FONT_SLACK)
+        with _five_audio_tracks(window):
+            problems += _text_floor_problems(window, "+20%") + _canal_problems(window, "+20%", whole=True)
+        assert not problems, "\n".join(sorted(set(problems))[:10])
     finally:
         window.close()
         window.deleteLater()

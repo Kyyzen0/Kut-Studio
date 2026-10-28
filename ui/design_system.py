@@ -126,6 +126,13 @@ class _Sizes:
     library_header_min_height: int = 64
     # Liste principale d'une page de bibliothèque : au moins trois lignes visibles, sinon elle défile (jamais « une ligne et demie »).
     library_list_min_height: int = 188
+    # Plancher d'un bouton (barème « Air d'abord » : 30 à 40 px de haut) ; le mixeur d'un portable l'applique à FX, M, S, A, ×.
+    control_min: int = 30
+    # Mixeur (page Audio) : un canal fait 168 px de large (5 canaux dans 1222 px).
+    mixer_channel_width: int = 168
+    # Page Audio : hauteur de la rangée du haut (moniteur, bibliothèque, inspecteur) ; elle cède pour que la timeline montre
+    # 3 pistes de ``timeline_track_min_height`` et que le mixeur garde ses canaux.
+    audio_top_row_height: int = 200
     # Barre de progression : une seule épaisseur dans toute l'application (proxys, suivi, flux optique, export, import).
     progress_height: int = 10
     # Zone cliquable minimale d'un bouton-icône (même si l'icône est plus petite) : la cible tactile et souris.

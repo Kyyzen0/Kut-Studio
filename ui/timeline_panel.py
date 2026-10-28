@@ -167,6 +167,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         self.ruler_height = Sizes.timeline_ruler_height
         self.track_height = Sizes.timeline_track_height
         self.track_gap = 0
+        self.row_height_override: int | None = None       # hauteur des pistes « normales » d'une page (Audio : 56 px)
         self.left_margin = Sizes.timeline_left_margin
         self.zoom = 1.0
         self.duration_seconds = 30.0

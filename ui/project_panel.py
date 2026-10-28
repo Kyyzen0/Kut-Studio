@@ -34,7 +34,7 @@ from core.project_model import MediaAsset
 from ui.adaptive_layout import FlowLayout, ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
 from ui.scroll_guard import GuardedStack, ScrollGuard
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.icons import IconButton, IconName
 from ui.audio_effects_library import AudioEffectsLibraryView
 from ui.graphics_library import GraphicsLibraryView
@@ -220,7 +220,7 @@ class ProjectPanel(QWidget):
         title_row.addStretch(1)
         # Compteur global (mis à jour à chaque mutation).
         self.media_count = QLabel(f"0 {translate('library.word.media')}")
-        self.media_count.setStyleSheet(label_style(10, "muted", 500))
+        self.media_count.setStyleSheet(label_style(Typography.caption, "muted", 500))
         title_row.addWidget(self.media_count)
         quick_import = IconButton(
             icon=IconName.PLUS,
@@ -251,7 +251,7 @@ class ProjectPanel(QWidget):
                 f"QPushButton#scopeTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
                 f" border-radius: 6px; padding: 4px 12px;"
-                f" font-weight: 600; font-size: 11px; }}"
+                f" font-weight: 600; font-size: {Typography.caption}px; }}"
                 f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
                 f" background: {COLORS['surface_hover']}; }}"
                 f"QPushButton#scopeTab:checked {{ color: {COLORS['accent']};"
@@ -352,7 +352,7 @@ class ProjectPanel(QWidget):
             f"QPushButton#manageTagsButton {{ background: transparent;"
             f" color: {COLORS['accent']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 10px;"
-            f" font-size: 11px; font-weight: 600; }}"
+            f" font-size: {Typography.caption}px; font-weight: 600; }}"
             f"QPushButton#manageTagsButton:hover {{"
             f" background: {COLORS['accent_dark']};"
             f" border: 1px solid {COLORS['accent']}; }}"
@@ -395,7 +395,7 @@ class ProjectPanel(QWidget):
                 f"QPushButton#scopeTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
                 f" border-radius: 6px; padding: 4px 6px;"
-                f" font-weight: 600; font-size: 11px; }}"
+                f" font-weight: 600; font-size: {Typography.caption}px; }}"
                 f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
                 f" background: {COLORS['surface_hover']}; }}"
                 f"QPushButton#scopeTab:checked {{ color: {COLORS['accent']};"

@@ -488,7 +488,19 @@ class LayoutMixin:
         """Hauteur des clips d'une piste (la rangée moins la bande d'automation)."""
         if getattr(track, "collapsed", False):
             return _COLLAPSED_HEIGHT
-        return _HEIGHTS.get(getattr(track, "height_mode", "normal"), self.track_height)
+        mode = getattr(track, "height_mode", "normal")
+        if mode == "normal" and self.row_height_override is not None:
+            return self.row_height_override
+        return _HEIGHTS.get(mode, self.track_height)
+
+    def set_row_height_override(self, height: int | None) -> None:
+        """Hauteur des pistes « normales » propre à la page affichée (``None`` : celle du Montage). Le modèle n'est pas touché."""
+        if height == self.row_height_override:
+            return
+        self.row_height_override = height
+        self._cached_header_signature = None
+        if self.project is not None:
+            self.refresh_clip_widgets()
 
     def row_height_of(self, track) -> int:
         """Hauteur de la rangée d'une piste : ses clips, puis sa courbe de volume si elle est affichée."""

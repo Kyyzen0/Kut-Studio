@@ -9,7 +9,7 @@ le bouton est plus haut, jamais élidé.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtWidgets import QAbstractButton, QPushButton, QToolButton
 
 
@@ -21,6 +21,11 @@ class WrapTextMixin:
     _rewrapping = False
     _wrap_opt_out = False                       # ``set_text_wrapping(False)`` : définitif, ``setText`` ne le réactive pas
     _wrap_base_min: int | None = None
+    _rewrap_scheduled = False
+
+    def _rewrap_later(self) -> None:
+        self._rewrap_scheduled = False
+        self._rewrap()
 
     def set_text_wrapping(self, enabled: bool = True) -> None:
         self._wrap_text = bool(enabled)
@@ -82,7 +87,9 @@ class WrapTextMixin:
     def changeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().changeEvent(event)                                      # type: ignore[misc]
         if self._wrap_text and event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange, QEvent.Type.Polish):
-            self._rewrap()                                              # police ou feuille de style changée : largeurs à refaire
+            if not self._rewrap_scheduled:
+                self._rewrap_scheduled = True
+                QTimer.singleShot(0, self, self._rewrap_later)          # jamais pendant que Qt repolit tous les widgets
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)                                      # type: ignore[misc]
