@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from core.color_qualifier import Qualifier
 from ui.adaptive_layout import FlowLayout
-from ui.design_system import Iconography, Spacing
+from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS, set_role
@@ -236,6 +236,7 @@ class QualifierEditor(QWidget):
                 spin.setDecimals(0)
                 spin.setSuffix(suffix)
                 spin.setMinimumWidth(64)
+                spin.setMinimumHeight(Sizes.input_md)
                 spin.setKeyboardTracking(False)
                 spin.valueChanged.connect(lambda value, field=name: self._edit(**{field: _stored(field, value)}))
                 self.field_labels[name], self.spins[name] = label, spin

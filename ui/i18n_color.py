@@ -305,4 +305,13 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     "workspace.panel.color": _t("Couleur", "Color", "Color"),
     "workspace.panel.clips": _t("Plans", "Clips", "Planos"),
     "color.strip.nodes": _t("{count} nœuds", "{count} nodes", "{count} nodos"),
+    "color.strip.title": _t("Plans de la séquence", "Sequence shots", "Planos de la secuencia"),
+    "color.strip.hint": _t("Choisissez le plan à étalonner", "Choose the shot to grade", "Elija el plano que quiere etalonar"),
+    "color.strip.timeline": _t("Afficher la timeline", "Show the timeline", "Mostrar la línea de tiempo"),
+    "color.strip.timeline_hide": _t("Masquer la timeline", "Hide the timeline", "Ocultar la línea de tiempo"),
+    "color.strip.timeline.tip": _t(
+        "Rouvre la timeline sous la page Couleur (jusqu'à la fermeture de l'application) ; recliquer la replie.",
+        "Reopens the timeline under the Color page (until the application is closed); click again to fold it.",
+        "Reabre la línea de tiempo bajo la página Color (hasta cerrar la aplicación); otro clic la pliega.",
+    ),
 }

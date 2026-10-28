@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QLabel, QMenu, QPushButton, QSplitter, QToolButton
 from core.color_grading import WHEELS
 from core.grade_keyframing import GradeAnimationInfo
 from core.color_nodes import ColorNodeGraph, MixerKind
-from ui.color_page.node_editor import NodeEditor, node_number
+from ui.color_page.node_editor import NODE_HEIGHT, ROW_GAP, NodeEditor, layout as node_layout, node_number
 from ui.color_page.qualifier import QualifierEditor
 from ui.color_page.wheels import ColorWheels
 from ui.color_page.windows import DetailEditor, WindowsEditor
@@ -27,6 +27,15 @@ from ui.icons import IconButton, IconName
 from ui.panel_header import PanelHeader
 from ui.scroll_guard import GuardedTabs
 from ui.theme import set_role
+
+
+_BAND_RATIO = 1.6
+"""Le panneau est une bande (nœuds à gauche) seulement s'il est au moins 1,6 fois plus large que haut : une colonne de la page
+Couleur d'un portable (572 x 457 px) reste une colonne, ses nœuds au-dessus et ses roues entières dessous."""
+
+NODES_STRIP_HEIGHT = 88
+"""Hauteur de la bande des nœuds (colonne de la page Couleur) pour un graphe d'une seule rangée : le nœud (56 px), ses bornes et
+leurs légendes, à l'échelle 1 ; chaque branche en plus ajoute une rangée."""
 
 
 class ColorPanel(QWidget):
@@ -118,8 +127,8 @@ class ColorPanel(QWidget):
         self.splitter.setHandleWidth(6)
         self.splitter.addWidget(self.nodes)
         self.splitter.addWidget(self.tabs)
-        self.splitter.setStretchFactor(0, 3)
-        self.splitter.setStretchFactor(1, 5)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
         layout.addWidget(self.splitter, 1)
 
         self.add_button.clicked.connect(lambda: self.nodes.add_requested.emit(self.nodes.current_id or ""))
@@ -167,6 +176,7 @@ class ColorPanel(QWidget):
             self.windows.set_windows(())
             self.detail.set_detail(0.0, 0.0)
             return
+        self._fit_nodes_strip()
         node = graph.node_or_first(current_id)
         self.remove_button.setEnabled(active and len(graph.correctors) > 1)
         self.bypass_button.setChecked(not node.enabled)
@@ -241,9 +251,22 @@ class ColorPanel(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)
         # Colonne (plus haute que large) : nœuds au-dessus des onglets ; bande : nœuds à gauche.
-        orientation = Qt.Vertical if self.height() >= self.width() * 0.8 else Qt.Horizontal
+        orientation = Qt.Vertical if self.height() * _BAND_RATIO >= self.width() else Qt.Horizontal
         if self.splitter.orientation() != orientation:
             self.splitter.setOrientation(orientation)
+        self._fit_nodes_strip()
+
+    def _fit_nodes_strip(self) -> None:
+        """Colonne : les nœuds tiennent dans une bande de ~88 px (plus une rangée par branche), les roues prennent le reste."""
+        splitter = self.splitter
+        graph = self.nodes.graph
+        if splitter.orientation() != Qt.Vertical or graph is None or splitter.height() <= 0:
+            return
+        rows = 1 + max((row for _column, row in node_layout(graph).values()), default=0)
+        wanted = NODES_STRIP_HEIGHT + (rows - 1) * int(NODE_HEIGHT + ROW_GAP)
+        wanted = min(wanted, int(splitter.height() * 0.45))
+        if splitter.sizes()[0] != wanted:
+            splitter.setSizes([wanted, max(0, splitter.height() - wanted - splitter.handleWidth())])
 
     # -- commandes ----------------------------------------------------------------------------------------------
 

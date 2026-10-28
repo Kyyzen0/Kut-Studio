@@ -218,7 +218,7 @@ class NodeEditor(QGraphicsView):
         self.setFrameShape(QFrame.NoFrame)
         self.setAlignment(Qt.AlignCenter)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setMinimumHeight(int(NODE_HEIGHT) + 56)
+        self.setMinimumHeight(int(NODE_HEIGHT) + 32)         # la bande de la page Couleur (~88 px) montre le nœud à l'échelle 1
         self.graph: ColorNodeGraph | None = None
         self.current_id: str | None = None
         self._items: list[_NodeItem] = []

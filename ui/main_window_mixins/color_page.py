@@ -17,7 +17,7 @@ from core.color_grading import ColorGradingError, ColorGradingService
 from core.color_nodes import MixerKind, as_graph
 from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
-from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES
+from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES, PanelId
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
@@ -101,6 +101,8 @@ class ColorPageMixin:
         self.clip_strip.thumbnail_provider = self.timeline_panel.clip_thumbnail
         self.clip_strip.clip_requested.connect(self.timeline_panel.select_clip)
         self.clip_strip.shown.connect(self._refresh_clip_strip)
+        self.clip_strip.shown.connect(self._sync_strip_timeline_button)
+        self.clip_strip.timeline_toggled.connect(self._on_strip_timeline_toggled)
         self.timeline_panel.previews_arrived.connect(self.clip_strip.refresh_thumbnails)
         self.properties_panel.clip_shown.connect(self._refresh_clip_strip)
 
@@ -301,6 +303,17 @@ class ColorPageMixin:
         )
         if animated:
             self._sync_preview_to_timeline()
+
+    def _on_strip_timeline_toggled(self, shown: bool) -> None:
+        """« Afficher la timeline » de la bande des plans : rouvre ou replie la timeline de la page Couleur (choix de session)."""
+        if self.workspace.is_visible(PanelId.TIMELINE) != shown:
+            self.workspace.set_panel_visible(PanelId.TIMELINE, shown)
+
+    def _sync_strip_timeline_button(self, *_args) -> None:
+        """Le bouton suit l'état réel de la timeline (menu Fenêtre, changement de page) sans rien émettre."""
+        strip = getattr(self, "clip_strip", None)
+        if strip is not None:
+            strip.set_timeline_shown(self.workspace.is_visible(PanelId.TIMELINE))
 
     def _refresh_clip_strip(self, *_args) -> None:
         """Les plans vidéo de la séquence affichée, dans l'ordre du montage, et le plan de l'inspecteur."""
