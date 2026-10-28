@@ -24,6 +24,7 @@ class TabsMixin:
         """Bascule l'onglet actif de l'inspecteur."""
         for i, button in enumerate(self.inspector_tab_buttons):
             button.setChecked(i == index)
+        self.inspector_tabs_row.sync_checked()          # « Plus » s'allume si l'onglet choisi est sous lui
         self._on_inspector_tab_changed(index)
 
     def _set_group_condition(self, group: QWidget, allowed: bool) -> None:

@@ -38,6 +38,7 @@ from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Track
 from ui.design_system import Iconography, Radius, Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName
+from ui.keyboard_navigation import tab_only_controls
 from ui.level_meter import LevelMeter
 from ui.panel_header import PanelHeader
 from ui.scroll_guard import ScrollGuard
@@ -65,6 +66,11 @@ STRIP_HYSTERESIS = 16
 #: Hauteur minimale du panneau : une tranche complète (nom, fader,
 #: panoramique, boutons) doit tenir sans être rognée.
 MIN_PANEL_HEIGHT = 140      # les tranches défilent verticalement (voir ``core.workspace_state.MIN_HEIGHT``)
+
+#: Page Montage : le mixeur est **replié** en une barre de 40 px (titre + « Ouvrir ») ; un clic sur la barre le rouvre et il
+#: garde alors le comportement de la page Audio. Une seule zone secondaire à la fois : replié, la hauteur va à la timeline.
+COLLAPSED_HEIGHT = Sizes.mixer_bar_height
+NO_MAX_HEIGHT = 16777215      # QWIDGETSIZE_MAX (PySide6 ne l'exporte pas)
 
 
 def _panel_stylesheet() -> str:
@@ -635,10 +641,14 @@ class MixerPanel(QWidget):
     master_volume_changed = Signal(float)
     master_mute_toggled = Signal(bool)
     master_reset_requested = Signal()
+    #: L'utilisateur a replié (``True``) ou rouvert (``False``) le mixeur (barre ou bouton) ; jamais émis par ``set_collapsed``.
+    collapse_toggled = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("mixer_panel")
+        self._collapsed = False
+        self._collapsible = False
         self.setMinimumHeight(MIN_PANEL_HEIGHT)
         # Les fonds des enfants sont déclarés **ici** et pas seulement
         # dans la feuille globale : une feuille locale fait autorité sur
@@ -668,6 +678,19 @@ class MixerPanel(QWidget):
         self.title_label = header.title_label
         self.solo_hint = QLabel("")
         self.solo_hint.setStyleSheet(label_style(Typography.caption, "warning", 600))
+        self._header = header
+        self.collapse_button = QPushButton()
+        self.collapse_button.setObjectName("mixerCollapse")
+        self.collapse_button.setCursor(Qt.PointingHandCursor)
+        self.collapse_button.setFixedHeight(CONTROL_HEIGHT)
+        self.collapse_button.setStyleSheet(
+            f"QPushButton#mixerCollapse {{ background: {COLORS['surface']}; color: {COLORS['text']};"
+            f" border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 0 12px; font-size: {Typography.small}px; font-weight: 600; }}"
+            f"QPushButton#mixerCollapse:hover {{ background: {COLORS['surface_hover']}; }}"
+        )
+        self.collapse_button.clicked.connect(self._toggle_collapsed)
+        self.collapse_button.hide()                  # seule la page Montage rend le mixeur repliable
+        header.add_trailing(self.collapse_button)
         header.add_trailing(self.solo_hint)
         self.add_bus_button = QPushButton(translate("bus.add"))
         self.add_bus_button.setObjectName("mixerAddBus")
@@ -709,6 +732,7 @@ class MixerPanel(QWidget):
         self._body_layout.addStretch(1)
         self.scroll.setWidget(self._body)
         self.scroll.viewport().installEventFilter(self)
+        self._header.installEventFilter(self)       # replié, toute la barre rouvre le mixeur
         body_row = QHBoxLayout()
         body_row.setContentsMargins(0, 0, 0, 0)
         body_row.setSpacing(0)
@@ -721,6 +745,7 @@ class MixerPanel(QWidget):
         self._master_bar.reset_requested.connect(self.master_reset_requested)
         body_row.addWidget(self._master_bar)
 
+        tab_only_controls(self)          # un clic sur un bouton ou un curseur du mixeur ne vole pas Espace / J / K / L à la fenêtre
         self._retranslate()
 
     # ------------------------------------------------------------------
@@ -776,6 +801,7 @@ class MixerPanel(QWidget):
             self._body_layout.insertWidget(
                 self._body_layout.count() - 1, strip
             )
+            tab_only_controls(strip)
             self._strips[track.id] = strip
 
         for bus in project.buses:
@@ -789,6 +815,7 @@ class MixerPanel(QWidget):
             strip.remove_requested.connect(self.bus_remove_requested)
             strip.rename_requested.connect(self.bus_rename_requested)
             self._body_layout.insertWidget(self._body_layout.count() - 1, strip)
+            tab_only_controls(strip)
             self._bus_strips[bus.id] = strip
 
         self._refresh_solo_hint(project)
@@ -801,7 +828,59 @@ class MixerPanel(QWidget):
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - API Qt
         if watched is self.scroll.viewport() and event.type() == QEvent.Type.Resize:
             self._sync_compact()               # la taille du viewport est celle d'après la mise en page
+        elif (watched is self._header and event.type() == QEvent.Type.MouseButtonRelease
+              and self._collapsed and self._collapsible):
+            self._toggle_collapsed()           # replié : un clic sur la barre le rouvre
+            return True
         return super().eventFilter(watched, event)
+
+    # ------------------------------------------------------------------
+    # Repli (page Montage)
+    # ------------------------------------------------------------------
+
+    @property
+    def collapsed(self) -> bool:
+        return self._collapsed
+
+    def height_cap(self) -> int | None:
+        """Hauteur imposée à l'hôte du panneau : ``COLLAPSED_HEIGHT`` quand il est replié, sinon aucune."""
+        return COLLAPSED_HEIGHT if self._collapsed else None
+
+    def set_collapsible(self, collapsible: bool) -> None:
+        """Montre ou cache le bouton de repli (page Montage seulement) ; sans lui, un mixeur déplié le reste."""
+        if collapsible == self._collapsible:
+            return
+        self._collapsible = collapsible
+        if not collapsible and self._collapsed:
+            self.set_collapsed(False)
+        self._sync_collapse_button()
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Replie le mixeur en une barre de 40 px (titre + bouton) ou le rouvre ; n'émet pas ``collapse_toggled``."""
+        collapsed = bool(collapsed) and self._collapsible
+        if collapsed == self._collapsed:
+            return
+        self._collapsed = collapsed
+        for part in (self.scroll, self._master_bar, self.add_bus_button, self.solo_hint):
+            if part is not None:
+                part.setVisible(not collapsed)
+        self._header.setFixedHeight(COLLAPSED_HEIGHT if collapsed else Sizes.panel_header)
+        self.setMinimumHeight(COLLAPSED_HEIGHT if collapsed else MIN_PANEL_HEIGHT)
+        self.setMaximumHeight(COLLAPSED_HEIGHT if collapsed else NO_MAX_HEIGHT)
+        self._header.setCursor(Qt.PointingHandCursor if collapsed else Qt.ArrowCursor)
+        self._sync_collapse_button()
+        self.updateGeometry()
+
+    def _toggle_collapsed(self) -> None:
+        self.set_collapsed(not self._collapsed)
+        self.collapse_toggled.emit(self._collapsed)
+
+    def _sync_collapse_button(self) -> None:
+        self.collapse_button.setVisible(self._collapsible)
+        key = "mixer.fold.open" if self._collapsed else "mixer.fold.close"
+        self.collapse_button.setText(translate(key))
+        self.collapse_button.setToolTip(translate(f"{key}.tip"))
+        self.collapse_button.setAccessibleName(translate(key))
 
     def _sync_compact(self) -> None:
         # Hystérésis : la barre de défilement horizontale (tranches nombreuses) mange ~12 px du viewport.
@@ -840,6 +919,8 @@ class MixerPanel(QWidget):
 
     def refresh_levels(self) -> None:
         """Relève les niveaux auprès de :attr:`level_provider` et les montre (minuteur, panneau visible)."""
+        if self._collapsed:
+            return                                   # barre repliée : aucun vumètre à peindre
         result = self.level_provider() if self.level_provider is not None else None
         reading, tracks = result if result else (None, ())
         if self._master_bar is not None:
@@ -879,6 +960,7 @@ class MixerPanel(QWidget):
         self.empty_label.setText(translate("mixer.no_tracks"))
         self.add_bus_button.setText(translate("bus.add"))
         self.add_bus_button.setToolTip(translate("bus.add.tip"))
+        self._sync_collapse_button()
         if self._master_bar is not None:
             self._master_bar.retranslate()
         for strip in self._strips.values():

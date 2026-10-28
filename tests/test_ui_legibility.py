@@ -458,6 +458,7 @@ MIN_TEXT_PX = 12
 MIN_CONTROL = 30
 CHANNEL_WIDTH = 168
 TRACK_ROW = 56
+MONTAGE_ROW = 60
 #: Marge réelle sous la 3e piste avec des polices +20 % (Windows : 7 px mesurés avant la réserve de la timeline ; 8 px suffisaient ailleurs).
 AUDIO_FONT_SLACK = 12
 #: Fenêtres de la cible « Air d'abord » (de 1222x738 à 1440x900). En dessous (1280x690), la hauteur ne permet plus 3 pistes de
@@ -583,7 +584,7 @@ def test_audio_timeline_shows_three_tracks_of_56_px(windows, size):
 
 
 def test_track_height_belongs_to_the_page_not_to_the_project(windows):
-    """56 px sur la page Audio, 48 px sur le Montage : le mode de hauteur des pistes (dans le projet) n'est jamais modifié."""
+    """56 px sur la page Audio, 60 px sur le Montage, 48 px ailleurs : le mode de hauteur des pistes (dans le projet) n'est jamais modifié."""
     window = windows((1222, 738))
     timeline = window.timeline_panel
     modes_before = [track.height_mode for track in window.project.tracks]
@@ -592,13 +593,18 @@ def test_track_height_belongs_to_the_page_not_to_the_project(windows):
     assert timeline.row_height_override == TRACK_ROW and timeline.clip_height_of(window.project.tracks[0]) == TRACK_ROW
     window.switch_page("edit")
     audit.settle(window)
+    assert timeline.row_height_override == MONTAGE_ROW and timeline.clip_height_of(window.project.tracks[0]) == MONTAGE_ROW
+    window.switch_page("composition")
+    audit.settle(window)
     assert timeline.row_height_override is None and timeline.clip_height_of(window.project.tracks[0]) == 48
+    window.switch_page("edit")
     assert [track.height_mode for track in window.project.tracks] == modes_before
     larger = next(track for track in window.project.tracks if track.height_mode == "large") if "large" in modes_before else None
     if larger is not None:                                               # un choix « grande » de l'utilisateur n'est pas écrasé
         window.switch_page("audio")
         assert timeline.clip_height_of(larger) != TRACK_ROW
         window.switch_page("edit")
+        assert timeline.clip_height_of(larger) != MONTAGE_ROW
 
 
 def test_mixer_controls_stay_whole_on_the_smallest_window(windows):
@@ -635,3 +641,310 @@ def test_audio_page_keeps_its_margins_with_taller_fonts():
         base = app.property("_kut_audit_base_stylesheet")
         if base is not None:
             app.setStyleSheet(base)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Page Montage « Air d'abord » : mixeur replié en barre de 40 px, 4 pistes de 60 px, vignettes de 72 px, onglets sur une ligne
+# ---------------------------------------------------------------------------------------------------------------
+
+MONTAGE_SIZES = [(1440, 900), (1440, 790), (1222, 738)]
+MONTAGE_SIZE_IDS = [f"{w}x{h}" for w, h in MONTAGE_SIZES]
+BAR_HEIGHT = 40
+#: Marge structurelle sous la 4e piste : 8 px au plus bas, 12 à 16 visés (les polices de Windows et de Linux sont plus larges).
+MONTAGE_MARGIN = 12
+#: Polices +20 % / +35 % sur 1222x738 : la rangée du haut a alors son minimum (les panneaux défilent) et la timeline garde 10 px sous la 4e piste.
+MONTAGE_FONT_MARGIN = 8
+#: Pistes de 60 px visibles : 4 quand la zone de travail mesure 730 px ou plus (1440x900, 1440x790), 3 en dessous (1222x738) pour garder l'image.
+MONTAGE_TRACKS = {(1440, 900): 4, (1440, 790): 4, (1222, 738): 3}
+
+
+@contextlib.contextmanager
+def _montage(window, *, mixer_open: bool = False, lanes: bool = False):
+    """Page Montage, mixeur replié (ou ouvert), courbes de volume masquées (le projet de démonstration en ouvre une sous A1)."""
+    timeline = window.timeline_panel
+    window.switch_page("edit")
+    mixer = window.mixer_panel
+    if mixer.collapsed == mixer_open:
+        mixer._toggle_collapsed()
+    hidden = []
+    if not lanes:
+        for track in window.project.tracks:
+            if timeline.automation_shown(track):
+                timeline.set_automation_visible(track.id, False)
+                hidden.append(track.id)
+    audit.settle(window)
+    try:
+        yield window
+    finally:
+        for track_id in hidden:
+            timeline.set_automation_visible(track_id, True)
+        if not mixer.collapsed:
+            mixer._toggle_collapsed()
+        audit.settle(window)
+
+
+def _montage_timeline_problems(window, label: str, slack: int = MONTAGE_MARGIN, tracks: int = 4) -> list[str]:
+    """Les ``tracks`` premières pistes ont 60 px au moins et tiennent dans la zone des pistes, avec une marge ; nom et type lisibles."""
+    from PySide6.QtWidgets import QLabel
+
+    from ui.timeline_widgets.track_header import TrackRowHeader
+
+    timeline = window.timeline_panel
+    viewport = timeline.scroll.viewport()
+    problems: list[str] = []
+    wanted = window.project.tracks[:tracks]
+    for index, track in enumerate(wanted):
+        height = timeline.clip_height_of(track)
+        bottom = timeline.row_top(index) + height
+        if height < MONTAGE_ROW:
+            problems.append(f"{label} piste {track.id} : {height} px")
+        if bottom + slack > viewport.height():
+            problems.append(f"{label} piste {track.id} : bas à {bottom} px pour {viewport.height()} px de zone (marge {slack} px)")
+    ids = {track.id for track in wanted}
+    seen: set[str] = set()
+    for header in timeline.findChildren(TrackRowHeader):
+        if header.track.id not in ids or not header.isVisible():
+            continue
+        seen.add(header.track.id)
+        labels = [lab for lab in header.findChildren(QLabel) if lab.text().strip() and lab.isVisible()]
+        shown_texts = " ".join(lab.text() for lab in labels)
+        type_word = {"video": "VIDÉO", "audio": "AUDIO"}.get(header.track.type)
+        if len(labels) < 2 or (type_word and type_word.lower() not in shown_texts.lower()):
+            problems.append(f"{label} en-tête {header.track.id} : nom et type absents ({shown_texts!r})")
+        for lab in labels:
+            if lab.fontMetrics().horizontalAdvance(lab.text()) > lab.width() + 1:
+                problems.append(f"{label} en-tête {header.track.id} : « {lab.text()} » coupé ({lab.width()} px)")
+    problems += [f"{label} en-tête {track_id} absent" for track_id in ids - seen]
+    return problems
+
+
+@pytest.mark.parametrize("size", MONTAGE_SIZES, ids=MONTAGE_SIZE_IDS)
+def test_montage_mixer_is_a_40px_bar_that_one_click_opens(windows, size):
+    """Le mixeur du Montage est une barre de 40 px (un clic la rouvre, « Replier » la referme) ; ouvert, c'est celui de la page Audio."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    window = windows(size)
+    with _montage(window) as win:
+        mixer = win.mixer_panel
+        assert mixer.isVisible() and mixer.collapsed and mixer.height() == BAR_HEIGHT, f"barre de {mixer.height()} px"
+        assert mixer.collapse_button.isVisible() and mixer.collapse_button.height() >= MIN_CONTROL
+        assert not mixer.scroll.isVisible() and not mixer.master_bar().isVisible()
+        assert win.workspace._hosts[next(p for p, w in win.workspace._panels.items() if w is mixer)].maximumHeight() == BAR_HEIGHT
+        QTest.mouseClick(mixer._header, Qt.LeftButton)                                  # un clic sur la barre suffit
+        audit.settle(win)
+        assert not mixer.collapsed and mixer.height() >= 140 and mixer.scroll.isVisible() and win._montage_mixer_open
+        assert mixer.strip_for("A1") is not None and mixer.collapse_button.text() == "Replier"
+        problems = _montage_timeline_problems(win, "mixeur ouvert", tracks=3)             # une seule zone secondaire : la timeline cède
+        mixer.collapse_button.click()
+        audit.settle(win)
+        assert mixer.collapsed and mixer.height() == BAR_HEIGHT and not win._montage_mixer_open
+    assert not problems, "\n".join(problems)
+
+
+def test_montage_mixer_fold_is_a_session_choice_and_only_for_the_montage(windows):
+    """Ouvert sur le Montage, il le reste au retour ; la page Audio le montre toujours ouvert, sans bouton de repli ; rien dans le fichier."""
+    from core.workspace_state import workspace_file_path
+
+    window = windows((1222, 738))
+    with _montage(window) as win:
+        mixer = win.mixer_panel
+        mixer._toggle_collapsed()                                   # ouvert par l'utilisateur
+        win.switch_page("audio")
+        audit.settle(win)
+        assert not mixer.collapsed and not mixer.collapse_button.isVisible() and mixer.height() >= 140
+        win.switch_page("color")
+        win.switch_page("edit")
+        audit.settle(win)
+        assert not mixer.collapsed and mixer.collapse_button.isVisible()      # le choix de la session est repris
+        mixer._toggle_collapsed()
+        win.switch_page("audio")
+        win.switch_page("edit")
+        audit.settle(win)
+        assert mixer.collapsed and mixer.height() == BAR_HEIGHT
+        saved = win.workspace.capture_state().to_json()
+        assert "collapsed" not in saved and "mixer_open" not in saved       # jamais dans workspace.json
+        assert str(workspace_file_path()).startswith(str(__import__("os").environ["KUT_STUDIO_CONFIG_DIR"]))   # configuration isolée
+
+
+@pytest.mark.parametrize("size", MONTAGE_SIZES, ids=MONTAGE_SIZE_IDS)
+def test_montage_timeline_shows_four_tracks_of_60_px_with_name_and_type(windows, size):
+    window = windows(size)
+    with _montage(window) as win:
+        problems = _montage_timeline_problems(win, f"{size[0]}x{size[1]}", tracks=MONTAGE_TRACKS[size])
+        assert win.workspace._montage_visible_tracks(win.workspace._root_splitter.height()) == MONTAGE_TRACKS[size]
+    assert not problems, "\n".join(problems)
+
+
+def test_montage_track_height_never_touches_the_project_and_respects_large_tracks(windows):
+    """60 px est la hauteur de la page : ``Track.height_mode`` ne change pas, une piste « grande » du modèle garde sa hauteur."""
+    window = windows((1440, 900))
+    timeline = window.timeline_panel
+    track = window.project.tracks[0]
+    modes = [item.height_mode for item in window.project.tracks]
+    with _montage(window):
+        assert timeline.clip_height_of(track) == MONTAGE_ROW
+        track.height_mode = "large"
+        try:
+            assert timeline.clip_height_of(track) != MONTAGE_ROW and timeline.clip_height_of(track) > MONTAGE_ROW
+        finally:
+            track.height_mode = modes[0]
+    assert [item.height_mode for item in window.project.tracks] == modes
+
+
+@pytest.mark.parametrize("size", MONTAGE_SIZES, ids=MONTAGE_SIZE_IDS)
+def test_montage_library_has_72px_posters_and_the_viewer_keeps_its_picture(windows, size):
+    """Vignettes de 72 px sur le Montage (40 px ailleurs), au moins une carte entière visible ; la visionneuse garde une vraie image."""
+    window = windows(size)
+    with _montage(window) as win:
+        panel = win.project_panel
+        assert panel.bin_videos.poster_size() == panel.bin_audios.poster_size() == 72
+        viewport = panel.findChild(QScrollArea, "scrollGuard").viewport()
+        card = panel.bin_videos._list.visualItemRect(panel.bin_videos._list.item(0)).height()
+        assert card >= 72 + 8 and _visible_height(panel.bin_videos, viewport) >= card, f"carte de {card} px"
+        view = win.preview_panel.canvas_item.scene().views()[0]
+        picture = view.mapFromScene(win.preview_panel.canvas_item.sceneBoundingRect()).boundingRect()
+        # macOS mesure 536x302, 348x197 et 362x204 : au moins 15 % de réserve (Windows mesure moins), sauf 1222x738 où 320x180 est la cible
+        floor = {(1440, 900): (450, 255), (1440, 790): (290, 160), (1222, 738): (320, 180)}[size]
+        assert picture.width() >= floor[0] and picture.height() >= floor[1], f"image {picture.width()}x{picture.height()}"
+    win.switch_page("audio")
+    assert win.project_panel.bin_videos.poster_size() == 40            # la page Audio garde ses lignes (voir #279)
+    win.switch_page("edit")
+
+
+def _inspector_tab_problems(window, label: str) -> list[str]:
+    from PySide6.QtGui import QFontInfo
+
+    panel = window.properties_panel
+    row = panel.inspector_tabs_row
+    problems: list[str] = []
+    shown = [b for b in panel.inspector_tab_buttons if b.isVisibleTo(row)]
+    if len(shown) < 1 or row.shown_count() != len(shown):
+        problems.append(f"{label} : {len(shown)} onglet(s) montrés pour {row.shown_count()}")
+    parts = [*shown, row.more_button]
+    tops = {part.mapTo(row, QPoint(0, 0)).y() for part in parts}
+    if len(tops) != 1 or not row.more_button.isVisibleTo(row):
+        problems.append(f"{label} : les onglets ne tiennent pas sur une seule ligne ({sorted(tops)})")
+    for part in parts:
+        if part.height() < MIN_CONTROL or QFontInfo(part.font()).pixelSize() < MIN_TEXT_PX:
+            problems.append(f"{label} : « {part.text()} » {part.height()} px de haut, texte {QFontInfo(part.font()).pixelSize()} px")
+        if part.mapTo(row, QPoint(part.width(), 0)).x() > row.width():
+            problems.append(f"{label} : « {part.text()} » dépasse la rangée")
+        if part.fontMetrics().horizontalAdvance(part.text()) > part.width():
+            problems.append(f"{label} : « {part.text()} » coupé")
+    if row.height() > 2 * MIN_CONTROL:
+        problems.append(f"{label} : rangée de {row.height()} px")
+    return problems
+
+
+@pytest.mark.parametrize("size", MONTAGE_SIZES, ids=MONTAGE_SIZE_IDS)
+def test_inspector_tabs_sit_on_one_row_and_the_rest_is_under_more(windows, size):
+    """Une ligne : les moins utilisés sous « Plus » ; les sept onglets restent atteignables, sans changer aucun libellé."""
+    from ui import i18n
+
+    window = windows(size)
+    with _montage(window) as win:
+        panel = win.properties_panel
+        row = panel.inspector_tabs_row
+        assert row.more_button.text() == "Plus"
+        assert [b.text() for b in panel.inspector_tab_buttons] == [i18n.translate(k) for k in panel._TAB_KEYS]   # aucun libellé modifié
+        assert not _inspector_tab_problems(win, f"{size[0]}x{size[1]}")
+        hidden = row.hidden_tabs()
+        assert {4, 5, 6} <= set(hidden)                                       # Graphiques, Compositing et Suivi sont sous « Plus »
+        row._fill_menu()
+        names = [action.text() for action in row._menu.actions()]
+        assert names == [panel.inspector_tab_buttons[i].text() for i in hidden]
+        for position, index in enumerate(hidden):
+            row._menu.actions()[position].trigger()
+            assert panel._active_inspector_tab == index and row.more_button.isChecked()
+            assert [b.isChecked() for b in panel.inspector_tab_buttons].count(True) == 1
+        panel._select_inspector_tab(0)
+        assert not row.more_button.isChecked()
+
+
+def _montage_floor_problems(window, label: str) -> list[str]:
+    """Textes sous 12 px et boutons sous 30 px de haut dans la barre du haut, la bibliothèque, le mixeur, les onglets et la barre de séquence.
+
+    Les trois petites étiquettes de la barre du haut (KUT-STUDIO, SÉQUENCE, Enregistré : 9 à 10 px) restent hors du plancher : à 12 px la
+    barre ne tient plus avec DejaVu Sans +35 % (le sélecteur de pages est comprimé) ; ses boutons, eux, sont contrôlés.
+    """
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QAbstractButton, QComboBox, QLabel, QToolButton
+
+    from ui.timeline_widgets.sequence_bar import SequenceNavigationBar
+
+    top_bar = window.centralWidget().findChild(__import__("PySide6.QtWidgets", fromlist=["QWidget"]).QWidget, "main_topbar")
+    roots = [top_bar, window.project_panel, window.mixer_panel, window.properties_panel.inspector_tabs_row,
+             window.timeline_panel.findChild(SequenceNavigationBar), window.preview_panel, window.side_rail]
+    problems: list[str] = []
+    for root in roots:
+        for widget in [root, *root.findChildren(__import__("PySide6.QtWidgets", fromlist=["QWidget"]).QWidget)]:
+            if not widget.isVisible() or widget.width() <= 0:
+                continue
+            text = widget.text() if isinstance(widget, (QLabel, QAbstractButton)) else ""
+            name = widget.objectName() or type(widget).__name__
+            if text.strip() and QFontInfo(widget.font()).pixelSize() < MIN_TEXT_PX and not (root is top_bar and isinstance(widget, QLabel)):
+                problems.append(f"{label} texte {QFontInfo(widget.font()).pixelSize()} px : « {text[:20]} » ({name})")
+            if isinstance(widget, (QAbstractButton, QComboBox, QToolButton)):
+                if widget.height() < MIN_CONTROL and widget.parentWidget() is not None and name != "qt_scrollarea_hcontainer":
+                    problems.append(f"{label} bouton {widget.height()} px : {name} « {text[:12]} »")
+    return problems
+
+
+@pytest.mark.parametrize("size", MONTAGE_SIZES, ids=MONTAGE_SIZE_IDS)
+def test_montage_text_and_controls_meet_the_floor(windows, size):
+    window = windows(size)
+    with _montage(window) as win:
+        problems = _montage_floor_problems(win, f"{size[0]}x{size[1]}")
+    assert not problems, "\n".join(sorted(set(problems))[:10])
+
+
+@pytest.mark.parametrize("scale", [1.2, 1.35], ids=["police+20%", "police+35%"])
+def test_montage_page_keeps_its_guarantees_with_taller_fonts(scale):
+    """Polices plus larges (Windows, Linux) : barre de 40 px, 4 pistes avec leur marge, onglets sur une ligne, textes et boutons."""
+    from PySide6.QtWidgets import QApplication
+
+    from qt_cleanup import deliver_deferred_deletes
+
+    window = audit.make_main_window(1222, 738, scopes=False, font_scale=scale)
+    try:
+        audit.select_first_clip(window)
+        with _montage(window) as win:
+            label = f"x{scale}"
+            win.workspace.balance_vertical_split()        # la police est connue avant le premier partage d'une vraie fenêtre
+            audit.settle(win)
+            problems = _montage_timeline_problems(win, label, slack=MONTAGE_FONT_MARGIN, tracks=3)
+            problems += _inspector_tab_problems(win, label) + _montage_floor_problems(win, label)
+            assert win.mixer_panel.collapsed and win.mixer_panel.height() == BAR_HEIGHT
+            assert win.height() <= 738 and win.minimumHeight() <= MAX_MINIMUM_HEIGHT
+            for _name, action in legibility.page_scenarios(win):
+                if _name.startswith("montage"):
+                    action()
+                    audit.settle(win)
+                    # Les panneaux du Montage (la barre du haut, commune à toutes les pages, est comprimée par DejaVu Sans +35 % : hors sujet ici).
+                    for panel in (win.project_panel, win.properties_panel, win.timeline_panel, win.mixer_panel, win.preview_panel):
+                        problems += [str(f) for f in legibility.legibility_findings(panel, f"{label} {_name} ") if f.blocking]
+        assert not problems, "\n".join(sorted(set(problems))[:10])
+    finally:
+        window.close()
+        window.deleteLater()
+        deliver_deferred_deletes()
+        app = QApplication.instance()
+        base = app.property("_kut_audit_base_stylesheet")
+        if base is not None:
+            app.setStyleSheet(base)
+
+
+def test_montage_track_count_follows_the_work_area_with_hysteresis(windows):
+    """4 pistes de 60 px à partir de 730 px de zone de travail, 3 en dessous ; entre 718 et 730 px l'état précédent reste (aucune oscillation)."""
+    from ui.workspace.manager import MONTAGE_FOUR_TRACKS_FROM, MONTAGE_THREE_TRACKS_BELOW
+
+    manager = windows((1440, 900)).workspace
+    saved = manager._montage_four
+    try:
+        manager._montage_four = True
+        assert [manager._montage_visible_tracks(h) for h in (800, 730, 725, 718, 717, 725, 729)] == [4, 4, 4, 4, 3, 3, 3]
+        assert manager._montage_visible_tracks(MONTAGE_FOUR_TRACKS_FROM) == 4 and manager._montage_visible_tracks(725) == 4
+        assert manager._montage_visible_tracks(MONTAGE_THREE_TRACKS_BELOW - 1) == 3 and manager._montage_visible_tracks(725) == 3
+    finally:
+        manager._montage_four = saved

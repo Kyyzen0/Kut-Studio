@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontMetrics
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QApplication
 
 from core.effects_model import EffectType, create_effect
 from core.usage_level import UsageLevel
@@ -84,25 +84,36 @@ def test_clicking_a_rail_button_still_switches_section(french):
     assert emitted == ["audio"] and rail.active() == "audio"
 
 
-# --- l'inspecteur : sept onglets, tous visibles -------------------------------------------------------------------------
+# --- l'inspecteur : sept onglets, quatre boutons et trois sous « Plus » -------------------------------------------------
 
 @LEVELS
-def test_all_inspector_tabs_are_reachable_without_an_overflow_menu(french, level):
+def test_all_inspector_tabs_are_reachable_in_one_row_with_a_more_menu(french, level):
+    """Page Montage « Air d'abord » : une seule ligne (Clip, Couleur, Audio, Effets), le reste sous « Plus » ; rien n'est perdu."""
     win = french
     _select_clip(win, level)
     panel = win.properties_panel
-    assert not hasattr(panel, "inspector_more_button")
-    assert panel.findChildren(QToolButton, "inspectorMore") == []
+    row = panel.inspector_tabs_row
     assert len(panel.inspector_tab_buttons) == 7
     names = [panel.inspector_tab_buttons[i].text() for i in range(7)]
     assert "Suivi" in names and "Compositing" in names and "Graphiques" in names
+    assert row.more_button.text() == "Plus" and row.more_button.isVisibleTo(panel)
     viewport = panel.rect()
+    hidden = row.hidden_tabs()
+    assert {4, 5, 6} <= set(hidden)                                  # Graphiques, Compositing et Suivi sont sous « Plus »
     for index, button in enumerate(panel.inspector_tab_buttons):
-        assert button.isVisibleTo(panel), names[index]
-        assert button.width() >= QFontMetrics(button.font()).horizontalAdvance(button.text())
-        assert viewport.contains(button.mapTo(panel, button.rect().topLeft())), names[index]
-        assert viewport.contains(button.mapTo(panel, button.rect().bottomRight())), names[index]
-        button.click()                                   # un clic suffit, jamais de menu
+        if index in hidden:
+            assert not button.isVisibleTo(panel), names[index]
+            row._fill_menu()
+            action = next(a for a in row._menu.actions() if a.text() == names[index])
+            action.trigger()                                         # un clic dans le menu « Plus »
+            assert row.more_button.isChecked()
+        else:
+            assert button.isVisibleTo(panel), names[index]
+            assert button.width() >= QFontMetrics(button.font()).horizontalAdvance(button.text())
+            assert viewport.contains(button.mapTo(panel, button.rect().topLeft())), names[index]
+            assert viewport.contains(button.mapTo(panel, button.rect().bottomRight())), names[index]
+            button.click()                                           # un clic suffit
+            assert not row.more_button.isChecked()
         assert panel._active_inspector_tab == index and button.isChecked()
         assert [b.isChecked() for b in panel.inspector_tab_buttons].count(True) == 1
 

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from core.project_model import MediaAsset
-from ui.design_system import Spacing, Typography
+from ui.design_system import Sizes, Spacing, Typography
 from ui.icons import IconName, make_icon
 from ui.library_organization_widgets import AssetUsageBadge
 from ui.theme import COLORS
@@ -50,9 +50,16 @@ class AssetBin(QWidget):
 
     # Délégué custom : dessine une carte horizontale par ligne.
     class _CardDelegate(QStyledItemDelegate):
-        CARD_HEIGHT = 52
-        POSTER = 40
+        POSTER = Sizes.library_poster_compact      # 40 px ; le Montage (page « Air d'abord ») passe à 72 px : ``set_poster_size``
         PADDING = 5
+
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self.poster = self.POSTER
+
+        @property
+        def CARD_HEIGHT(self) -> int:  # noqa: N802 - nom historique : 52 px pour une vignette de 40 px
+            return self.poster + 12
 
         def sizeHint(self, option, index):  # noqa: D401 - Qt
             width = option.rect.width() if option.rect.width() > 0 else 280
@@ -81,7 +88,7 @@ class AssetBin(QWidget):
 
             # Poster carré à gauche, à la taille exacte du widget pour
             # éviter toute déformation du film.
-            side = min(self.POSTER, rect.height() - 2 * self.PADDING)
+            side = min(self.poster, rect.height() - 2 * self.PADDING)
             poster_rect = QRect(
                 rect.left() + self.PADDING,
                 rect.top() + (rect.height() - side) // 2,
@@ -260,6 +267,18 @@ class AssetBin(QWidget):
     # ------------------------------------------------------------------
     # API publique
     # ------------------------------------------------------------------
+
+    def set_poster_size(self, size: int) -> None:
+        """Côté de la vignette (40 px, ou 72 px sur le Montage) ; la hauteur des cartes suit. Aucun item n'est recréé."""
+        size = int(size)
+        if size == self._delegate.poster:
+            return
+        self._delegate.poster = size
+        self._list.scheduleDelayedItemsLayout()
+        self._list.viewport().update()
+
+    def poster_size(self) -> int:
+        return self._delegate.poster
 
     def add_asset(self, asset: MediaAsset) -> None:
         self._assets[asset.id] = asset

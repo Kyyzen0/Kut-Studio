@@ -19,7 +19,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
 
-from ui.design_system import Sizes
+from ui.design_system import Sizes, Typography
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import label_style
@@ -48,14 +48,14 @@ class SequenceNavigationBar(QWidget):
         self.forward_button = self._nav_button("›", "sequence.nav.forward")
         self.forward_button.clicked.connect(self.forward_requested.emit)
         self.parent_button = IconButton(
-            icon=IconName.ARROW_UP, tooltip=translate("sequence.nav.parent"), size=22
+            icon=IconName.ARROW_UP, tooltip=translate("sequence.nav.parent"), size=Sizes.control_min
         )
         self.parent_button.clicked.connect(self.parent_requested.emit)
         for button in (self.back_button, self.forward_button, self.parent_button):
             layout.addWidget(button)
 
         self.caption = QLabel(translate("sequence.nav.caption"))
-        self.caption.setStyleSheet(label_style(9, "muted", 800))
+        self.caption.setStyleSheet(label_style(Typography.caption, "muted", 800))
         layout.addSpacing(6)
         layout.addWidget(self.caption)
 
@@ -69,6 +69,7 @@ class SequenceNavigationBar(QWidget):
         self.sequences_button = QToolButton()
         self.sequences_button.setObjectName("sequencesMenuButton")
         self.sequences_button.setText(translate("sequence.nav.menu"))
+        self.sequences_button.setMinimumHeight(Sizes.control_min)
         self.sequences_button.setPopupMode(QToolButton.InstantPopup)
         self.sequences_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.sequences_menu = QMenu(self.sequences_button)
@@ -80,7 +81,7 @@ class SequenceNavigationBar(QWidget):
         button = QToolButton()
         button.setText(glyph)
         button.setToolTip(translate(tooltip_key))
-        button.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
+        button.setFixedSize(Sizes.control_min, Sizes.control_min)
         button.setCursor(Qt.PointingHandCursor)
         button.setFocusPolicy(Qt.NoFocus)
         return button
@@ -120,6 +121,7 @@ class SequenceNavigationBar(QWidget):
             button = QToolButton()
             button.setText(name)
             button.setAutoRaise(True)
+            button.setMinimumHeight(Sizes.control_min)
             button.setCursor(Qt.PointingHandCursor)
             button.setFocusPolicy(Qt.NoFocus)
             is_active = index == len(self._crumbs) - 1

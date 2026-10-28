@@ -58,6 +58,7 @@ from core.workspace_state import (
     load_page_state,
     load_workspace_state,
     page_default_state,
+    workspace_file_path,
     save_named_workspace,
     save_page_state,
 )
@@ -65,6 +66,7 @@ from ui.icons import IconName
 from ui.screen_fit import apply_fitted_geometry
 from ui.design_system import Sizes
 from ui.i18n import translate
+from ui.timeline_widgets.common import _CONTENT_TOP as CONTENT_TOP
 from ui.workspace.panel_host import PanelHost, PanelWindow
 
 
@@ -233,6 +235,12 @@ class _Zone(QWidget):
                 floor + per_panel + (1 if index < remainder else 0)
                 for index, floor in enumerate(floors)
             )
+        for index, widget in enumerate(widgets[1:], start=1):
+            # Un panneau qui impose sa hauteur (mixeur replié en barre de 40 px) ne reçoit jamais le surplus : il va à la timeline.
+            cap = widget.maximumHeight()
+            if cap < _NO_MAX and sizes[index] > cap:
+                sizes[0] += sizes[index] - cap
+                sizes[index] = cap
         self._splitter.setSizes(sizes)
 
     def distribute(self, available: int) -> None:
@@ -277,6 +285,17 @@ AUDIO_TIMELINE_CHROME = 36
 #: Réserve structurelle sous la 3e piste : les polices plus larges (Windows, Linux) grandissent la barre d'outils et l'en-tête de
 #: la timeline de quelques pixels ; sans réserve, la 3e piste frôlait le bas de la zone (7 px de marge mesurés sous Windows).
 AUDIO_TIMELINE_RESERVE = 16
+
+#: Page Montage : 4 pistes de 60 px visibles. Hauteur de la timeline hors zone des pistes (barre de séquence, barre d'outils, règle,
+#: barre de défilement : 116 px mesurés ; relue sur la timeline affichée dès qu'elle l'est, donc fidèle aux polices plus larges) et
+#: marge sous la dernière piste.
+MONTAGE_TIMELINE_CHROME = 116
+MONTAGE_TIMELINE_MARGIN = 20
+#: Montage : 4 pistes tant que la zone de travail (hauteur du séparateur racine) mesure au moins ``FROM`` px, sinon 3 : la visionneuse
+#: garde une image d'environ 320 x 180 px. Hystérésis de 12 px : pas d'oscillation autour du seuil, quel que soit le sens du redimensionnement.
+MONTAGE_FOUR_TRACKS_FROM = 730
+MONTAGE_THREE_TRACKS_BELOW = 718
+_NO_MAX = 16777215
 
 
 class WorkspaceManager(QObject):
@@ -329,6 +348,7 @@ class WorkspaceManager(QObject):
         # quand deux panneaux verticaux doivent cohabiter dans la zone
         # basse.
         self._base_minimum_height = max(1, window.minimumHeight())
+        self._montage_four = True      # Montage : 4 pistes visibles (3 sur une zone basse), avec hystérésis
 
     # ------------------------------------------------------------------
     # Construction
@@ -358,6 +378,8 @@ class WorkspaceManager(QObject):
             self._state = load_workspace_state(self._settings_dir)
         else:
             self._state = WorkspaceState.default()
+        if state is None and not workspace_file_path(self._settings_dir).exists():
+            self._state = page_default_state(PAGE_EDIT)      # première ouverture : la disposition d'origine du Montage (mixeur en barre)
 
         for area in DockArea:
             self._zones[area] = _Zone(area)
@@ -479,11 +501,32 @@ class WorkspaceManager(QObject):
         # que son minimum déclaré).
         handles = zone._splitter.handleWidth() * (len(panels) - 1)
         if area is DockArea.BOTTOM:
-            zone.setMinimumHeight(sum(MIN_HEIGHT.get(p, 200) for p in panels) + handles)
+            zone.setMinimumHeight(sum(self._min_height_of(p) for p in panels) + handles)
             zone.setMinimumWidth(0)
         else:
             zone.setMinimumWidth(sum(MIN_SIZE.get(p, 200) for p in panels) + handles)
             zone.setMinimumHeight(0)
+
+    def _min_height_of(self, panel: PanelId) -> int:
+        """Hauteur minimale d'un panneau empilé : celle de la table, ou sa hauteur imposée (mixeur replié : 40 px)."""
+        base = MIN_HEIGHT.get(panel, 200)
+        cap = getattr(self._panels.get(panel), "height_cap", None)
+        cap = cap() if callable(cap) else None
+        return min(base, cap) if cap else base
+
+    def refresh_height_caps(self, rebalance: bool = True) -> None:
+        """Un panneau a changé la hauteur qu'il impose (mixeur replié ou rouvert) : hôtes et minima suivent, puis le partage.
+
+        ``rebalance=False`` : un changement de page, qui rééquilibre déjà de son côté (aucun partage de plus, donc aucune
+        hauteur de page Audio ou Couleur qui bouge).
+        """
+        for host in self._hosts.values():
+            host.sync_height_cap()
+        self._apply_area_minimum(DockArea.BOTTOM)
+        self._sync_window_minimum_height()
+        root = getattr(self, "_root_splitter", None)
+        if rebalance and root is not None and root.height() > 0:       # fenêtre pas encore affichée : le partage se fait à l'affichage
+            self.balance_vertical_split()
 
     def _primary_panel(self, area: DockArea) -> PanelId:
         """Panneau de référence d'une zone (pour les minima)."""
@@ -731,9 +774,9 @@ class WorkspaceManager(QObject):
             _close_floating_window(window, self._hosts[panel])
         self._page = page
         self._apply_state(target)
-        if page == PAGE_AUDIO:
-            # 3 pistes de 56 px, puis le mixeur : à la première visite la rangée du haut prend aussi sa hauteur ; ensuite le
-            # partage choisi entre le haut et le bas est repris tel quel, seule la timeline retrouve ses 3 pistes.
+        if page in (PAGE_AUDIO, PAGE_EDIT):
+            # 3 pistes de 56 px (Audio) ou 4 de 60 px (Montage), puis le mixeur : à la première visite la rangée du haut prend aussi
+            # sa hauteur ; ensuite le partage choisi entre le haut et le bas est repris tel quel, seule la timeline retrouve ses pistes.
             QTimer.singleShot(0, self, lambda: self.balance_vertical_split(resize_root=first_visit))
         self._refresh_dependents()
         return True
@@ -772,8 +815,11 @@ class WorkspaceManager(QObject):
             return
         track_count = len(self._project_tracks()) or 1
         audio_page = self._page == PAGE_AUDIO
+        edit_page = self._page == PAGE_EDIT
         if audio_page:
             track_count = min(track_count, AUDIO_VISIBLE_TRACKS)       # 3 pistes visibles : les autres défilent
+        elif edit_page:
+            track_count = min(track_count, self._montage_visible_tracks(total))   # 4 pistes (3 sur une zone basse) : les autres défilent
         pitch = (timeline.row_height_override or timeline.track_height) + timeline.track_gap
         timeline_needed = (
             timeline.header_height
@@ -783,6 +829,8 @@ class WorkspaceManager(QObject):
             + 34  # marges + barres de défilement
             + (AUDIO_TIMELINE_CHROME + AUDIO_TIMELINE_RESERVE if audio_page else 0)
         )
+        if edit_page:
+            timeline_needed = self._montage_timeline_height(timeline, pitch * max(track_count, 1))
         # La zone basse peut héberger d'autres panneaux (le mixeur) :
         # chacun réclame son minimum, sinon l'un se fait écraser.
         extras = 0
@@ -793,7 +841,7 @@ class WorkspaceManager(QObject):
                 self._state.area_of(panel) is DockArea.BOTTOM
                 and self._state.is_visible(panel)
             ):
-                floor = MIN_HEIGHT.get(panel, 200)
+                floor = self._min_height_of(panel)
                 if audio_page:
                     # Le plancher réel du mixeur grandit avec la police (Windows) et set_timeline_first le retire à la timeline :
                     # sa 3e piste perdait sa marge. On le compte ici, et c'est la rangée du haut qui cède.
@@ -815,6 +863,8 @@ class WorkspaceManager(QObject):
             # timeline montre 3 pistes de 56 px et que le mixeur garde ses canaux ; le reste de la hauteur va au mixeur.
             wanted = max(Sizes.audio_top_row_height, min(int(total * 0.31), 260))
             bottom = max(total - wanted - root.handleWidth(), timeline_needed + extras)
+        if edit_page:
+            bottom = self._montage_bottom_height(total, root.handleWidth(), timeline, timeline_needed, extras)
         top = max(total - bottom, 160)
         if resize_root:
             root.setSizes([top, bottom])
@@ -823,6 +873,37 @@ class WorkspaceManager(QObject):
         zone = self._zones.get(DockArea.BOTTOM)
         if zone is not None and len(zone.widgets()) > 1:
             zone.set_timeline_first(timeline_needed)
+
+    def _montage_visible_tracks(self, total: int) -> int:
+        """4 pistes de 60 px, ou 3 quand la zone de travail est basse (avec hystérésis : l'état précédent tranche entre les deux seuils)."""
+        four = total >= MONTAGE_FOUR_TRACKS_FROM if total >= MONTAGE_FOUR_TRACKS_FROM or total < MONTAGE_THREE_TRACKS_BELOW else self._montage_four
+        self._montage_four = four
+        return Sizes.montage_visible_tracks if four else Sizes.montage_visible_tracks - 1
+
+    def _montage_timeline_height(self, timeline, tracks_height: int) -> int:
+        """Hauteur de la timeline du Montage : son chrome (mesuré une fois affichée) + les pistes + une marge."""
+        chrome = MONTAGE_TIMELINE_CHROME
+        viewport = getattr(getattr(timeline, "scroll", None), "viewport", None)
+        if viewport is not None and timeline.isVisible() and timeline.height() > 0 and viewport().height() > 0:
+            chrome = max(chrome, timeline.height() - viewport().height())
+        return chrome + CONTENT_TOP + tracks_height + MONTAGE_TIMELINE_MARGIN       # la 1re piste commence 8 px sous le haut de la zone
+
+    def _montage_bottom_height(self, total: int, handle: int, timeline, timeline_needed: int, extras: int) -> int:
+        """Zone basse du Montage : la timeline + la barre du mixeur (40 px) ; rouvert, la rangée du haut garde la hauteur de la page Audio."""
+        floor = timeline.minimumHeight() + extras
+        mixer_open = any(
+            self._state.area_of(p) is DockArea.BOTTOM and self._state.is_visible(p) and p is not PanelId.TIMELINE
+            and self._min_height_of(p) > Sizes.mixer_bar_height
+            for p in self._panels
+        )
+        if mixer_open:
+            # Mixeur rouvert : la timeline cède (trois pistes de 60 px et leur marge au lieu de quatre), la rangée du haut garde
+            # au moins la hauteur de la page Audio.
+            wanted = max(Sizes.audio_top_row_height, min(int(total * 0.31), 260))
+            pitch = (timeline.row_height_override or timeline.track_height) + timeline.track_gap
+            three = self._montage_timeline_height(timeline, pitch * min(len(self._project_tracks()) or 1, 3))
+            return max(total - wanted - handle, three + extras, floor)
+        return min(max(timeline_needed + extras, floor), max(total - 160 - handle, floor))
 
     def _project_tracks(self) -> list:
         """Pistes du projet courant, si le panneau timeline le porte."""

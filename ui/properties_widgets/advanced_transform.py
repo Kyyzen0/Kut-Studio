@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from ui.wrap_text import WrappingToolButton
 from ui.adaptive_layout import allow_shrinking
-from ui.design_system import Spacing
+from ui.design_system import Spacing, Typography
 from ui.properties_widgets.diamond_button import KeyframeDiamondButton
 from ui.theme import label_style
 from ui.i18n import translate
@@ -78,7 +78,7 @@ class AdvancedTransformEditor(QWidget):
         row = 0
         for name, label, low, high, step, factor, suffix in NUMERIC_FIELDS:
             caption = QLabel(translate(label))
-            caption.setStyleSheet(label_style(11, "muted", 600))
+            caption.setStyleSheet(label_style(Typography.caption, "muted", 600))
             spin = QDoubleSpinBox(objectName=f"advanced_{name}")
             spin.setRange(low, high)
             spin.setSingleStep(step)

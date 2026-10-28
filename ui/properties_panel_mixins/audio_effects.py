@@ -57,7 +57,7 @@ class AudioEffectsMixin:
         # Astuce si aucun média sélectionné.
         self.audio_effects_hint = QLabel(_tr("audio_effects.no_clip"))
         self.audio_effects_hint.setWordWrap(True)
-        self.audio_effects_hint.setStyleSheet(label_style(11, "muted", 500))
+        self.audio_effects_hint.setStyleSheet(label_style(Typography.caption, "muted", 500))
         group_layout.addWidget(self.audio_effects_hint)
 
         # Ligne d'ajout : combo + bouton.
@@ -103,7 +103,7 @@ class AudioEffectsMixin:
         self.audio_effects_empty_label = QLabel(_tr("audio_effects.empty"))
         self.audio_effects_empty_label.setWordWrap(True)  # une phrase : elle ne doit pas fixer la largeur de l'inspecteur
         self.audio_effects_empty_label.setStyleSheet(
-            label_style(11, "muted", 500)
+            label_style(Typography.caption, "muted", 500)
         )
         group_layout.addWidget(self.audio_effects_empty_label)
 
@@ -309,7 +309,7 @@ class AudioEffectsMixin:
         specs = audio_parameter_specs(effect.type)
         if not specs:
             label = QLabel(_tr("effects.no_parameters"))
-            label.setStyleSheet(label_style(11, "muted", 500))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 500))
             self.audio_effect_parameters_layout.addWidget(label)
             return
         form = QFormLayout()
@@ -330,7 +330,7 @@ class AudioEffectsMixin:
             )
             self._audio_effect_param_widgets[spec.name] = spin
             label = QLabel(_tr(f"audio_effects.param.{spec.name}"))
-            label.setStyleSheet(label_style(11, "muted", 600))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 600))
             form.addRow(label, spin)
         wrapper = QWidget()
         wrapper.setLayout(form)

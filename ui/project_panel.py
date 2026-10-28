@@ -821,6 +821,18 @@ class ProjectPanel(QWidget):
             self.usage_level = new
             self.graphics_view.layers_panel.set_usage_level(new)    # menus du panneau Calques et boutons Studio de sa barre
 
+    def set_montage_density(self, montage: bool) -> None:
+        """Page Montage « Air d'abord » : vignettes de 72 px (40 px ailleurs) et commandes de l'en-tête de 30 px (28 et 25 ailleurs).
+
+        La liste de la page Audio, plus basse, garde ses lignes (voir #279) : ses commandes gardent donc leur taille d'avant."""
+        for bin_widget in (self.bin_videos, self.bin_audios):
+            bin_widget.set_poster_size(Sizes.library_poster if montage else Sizes.library_poster_compact)
+        side = Sizes.control_min if montage else Sizes.icon_button_sm
+        for button in (self._quick_import, self.browse_toggle):
+            button.setFixedSize(side, side)
+        for button in self.scope_tab_buttons:
+            button.setMinimumHeight(Sizes.control_min if montage else 0)
+
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
         page_index = {

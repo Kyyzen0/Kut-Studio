@@ -103,3 +103,47 @@ timeline 302 px (zone des pistes 188 px : 3 pistes de 56 px et 12 px de marge), 
   page (`TimelinePanel.row_height_override`, posée par `MainWindow.switch_page`) : le modèle (`Track.height_mode`) ne change pas.
 * **Limite** : en 1280x690 (hors cible), 3 pistes de 56 px **et** un mixeur de 140 px ne tiennent pas dans 614 px : la timeline
   garde ~263 px (2 pistes et demie) ; les canaux gardent nom, FX, M, S et fader.
+
+## Page Montage « Air d'abord » (mixeur en barre, 4 pistes de 60 px, vignettes de 72 px)
+
+Mesures hors écran (la fenêtre de test garde sa barre de menus de 25 px, que macOS sort de la fenêtre) :
+
+| Fenêtre | Pistes de 60 px | Visionneuse (panneau) | Image | Avant ce lot |
+| --- | --- | --- | --- | --- |
+| 1440x900 | 4 | 408 px | 542 x 306 | ~720 x 405 |
+| 1440x790 | 4 | 299 px | 348 x 197 | ~400 x 225 |
+| 1222x738 | 3 | 306 px | 362 x 204 | ~400 x 225 |
+
+**Nombre de pistes** : 4 pistes de 60 px tant que la zone de travail (hauteur du séparateur racine) mesure 730 px ou plus, 3 en
+dessous (`MONTAGE_FOUR_TRACKS_FROM` / `MONTAGE_THREE_TRACKS_BELOW` = 730 / 718, hystérésis de 12 px : `WorkspaceManager._montage_visible_tracks`).
+À 1440x790 la zone mesure ~734 px : 4 pistes ; à 1222x738, ~663 px : 3 pistes. La décision ne touche ni `Track.height_mode`
+ni `workspace.json`. La cible de la maquette (640 x 360 à 1440x900) n'est pas atteinte : 4 x 60 px, la barre de 40 px et 114 px de
+chrome de timeline laissent 408 px à la rangée du haut (maquette : ~490) ; sur un vrai Mac la barre de menus sort de la fenêtre.
+
+* **Mixeur replié** : sur le Montage, le mixeur est une barre de 40 px (`Sizes.mixer_bar_height` : titre, bouton « Ouvrir »). Un clic
+  sur la barre ou le bouton le rouvre ; il reprend alors le comportement de la page Audio (canaux compacts de 168 px, hauteur
+  140 px au moins) et le bouton devient « Replier ». Une seule zone secondaire à la fois : replié, toute la hauteur va à la
+  timeline (`MixerPanel.height_cap`, hôte limité par `PanelHost.sync_height_cap`) ; ouvert, la timeline cède (trois pistes) et
+  la rangée du haut garde au moins `Sizes.audio_top_row_height`. Le choix est **de session** (`MainWindow._montage_mixer_open`),
+  jamais écrit dans `workspace.json` ; les autres pages montrent le mixeur toujours déplié et sans bouton de repli. Disposition
+  d'origine du Montage : `page_default_state(PAGE_EDIT)` montre le mixeur (barre). Un `workspace.json` enregistré avant garde
+  son choix (mixeur masqué : « Fenêtre > Mixeur » ou « Réinitialiser la disposition »).
+* **Pistes** : `TimelinePanel.row_height_override` vaut 60 px (`Sizes.montage_track_height`) sur le Montage, 56 px sur la page
+  Audio, rien ailleurs ; `Track.height_mode` n'est jamais touché et une piste « grande » du modèle garde sa hauteur. Le nom et
+  le type de la piste (« V1 / VIDÉO ») sont lisibles dans l'en-tête. `WorkspaceManager.balance_vertical_split` donne à la timeline
+  `MONTAGE_TIMELINE_CHROME` (relu sur la timeline affichée) + 8 px + 4 x 60 px + 14 px de marge. Les courbes de volume affichées
+  (une piste avec images clés) ne sont **pas** comptées (les compter ajoute 40 px par courbe et écraserait la visionneuse) : la dernière piste défile dessous.
+* **Bibliothèque** : vignettes de 72 px sur le Montage (`AssetBin.set_poster_size`, 40 px ailleurs : la liste audio de la page Audio
+  garde ses lignes) ; boutons de l'en-tête (Projet, Favoris, +, dossiers) de 30 px sur le Montage seulement.
+* **Onglets du réglage** (`ui/properties_widgets/tab_row.py`) : une seule ligne. Clip, Couleur, Audio et Effets sont des boutons ;
+  Graphiques, Compositing et Suivi sont sous « Plus » (un onglet de plus quand la colonne est étroite : « Effets » passe sous
+  « Plus » dans 280 px). Les sept boutons existent toujours (`inspector_tab_buttons`, indices historiques) et aucun libellé ne
+  change : le manifeste des niveaux d'usage, indexé par texte, reste vert. « Plus » s'allume quand l'onglet choisi est dedans.
+* **Barre du haut** : 40 px au lieu de 50 (le minimum de la fenêtre passe de 677 à 667 px, sous les 720 px de la cible) ;
+  Annuler / Rétablir, la puce du niveau, les boutons de la barre de séquence et le zoom de la timeline font 30 px au moins.
+  Le rail garde ses boutons de **54 px** (la maquette en a 68) : dix boutons de 68 px imposeraient 817 px de fenêtre, plus que
+  les 720 px de l'Air réglé en 1280x800. Les trois petites étiquettes de la barre (KUT-STUDIO, SÉQUENCE, Enregistré : 9 à 10 px)
+  restent : à 12 px la barre ne tient plus avec DejaVu Sans +35 %.
+* **Textes** : plus aucun texte sous 12 px dans la bibliothèque, le mixeur, les onglets, la barre de séquence, la timeline et
+  l'inspecteur (les `label_style(11, …)` passent à `Typography.caption`). Les boutons des en-têtes de piste (22 px) restent
+  l'exception documentée de `Sizes.track_header_button`.

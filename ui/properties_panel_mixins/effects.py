@@ -58,7 +58,7 @@ class EffectsMixin(EffectKeyframesMixin):
 
         self.effects_hint = QLabel(translate("effects.no_clip"))
         self.effects_hint.setWordWrap(True)
-        self.effects_hint.setStyleSheet(label_style(11, "muted", 500))
+        self.effects_hint.setStyleSheet(label_style(Typography.caption, "muted", 500))
         group_layout.addWidget(self.effects_hint)
 
         self.effect_add_row = QWidget()
@@ -98,7 +98,7 @@ class EffectsMixin(EffectKeyframesMixin):
         group_layout.addWidget(self.effects_list)
 
         self.effects_empty_label = QLabel(translate("effects.empty"))
-        self.effects_empty_label.setStyleSheet(label_style(11, "muted", 500))
+        self.effects_empty_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         group_layout.addWidget(self.effects_empty_label)
 
         # --- Bandeau d'actions ---------------------------------------
@@ -290,7 +290,7 @@ class EffectsMixin(EffectKeyframesMixin):
         specs = parameter_specs(effect.type)
         if not specs:
             label = QLabel(translate("effects.no_parameters"))
-            label.setStyleSheet(label_style(11, "muted", 500))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 500))
             self.effect_parameters_layout.addWidget(label)
             return
         form = QFormLayout()
@@ -311,7 +311,7 @@ class EffectsMixin(EffectKeyframesMixin):
             )
             self._effect_param_widgets[spec.name] = spin
             label = QLabel(translate(f"effects.param.{spec.name}"))
-            label.setStyleSheet(label_style(11, "muted", 600))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 600))
             if self._is_animatable_effect_param(effect, spec.name):     # ADR-0008 : seuls ces paramètres ont des losanges
                 field, line = field_with_keyframes(spin)
                 form.addRow(label, field)
