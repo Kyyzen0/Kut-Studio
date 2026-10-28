@@ -290,7 +290,7 @@ AUDIO_TIMELINE_RESERVE = 16
 #: barre de défilement : 116 px mesurés ; relue sur la timeline affichée dès qu'elle l'est, donc fidèle aux polices plus larges) et
 #: marge sous la dernière piste.
 MONTAGE_TIMELINE_CHROME = 116
-MONTAGE_TIMELINE_MARGIN = 14
+MONTAGE_TIMELINE_MARGIN = 20
 #: Montage : 4 pistes tant que la zone de travail (hauteur du séparateur racine) mesure au moins ``FROM`` px, sinon 3 : la visionneuse
 #: garde une image d'environ 320 x 180 px. Hystérésis de 12 px : pas d'oscillation autour du seuil, quel que soit le sens du redimensionnement.
 MONTAGE_FOUR_TRACKS_FROM = 730
@@ -348,6 +348,7 @@ class WorkspaceManager(QObject):
         # quand deux panneaux verticaux doivent cohabiter dans la zone
         # basse.
         self._base_minimum_height = max(1, window.minimumHeight())
+        self._montage_four = True      # Montage : 4 pistes visibles (3 sur une zone basse), avec hystérésis
 
     # ------------------------------------------------------------------
     # Construction
@@ -875,8 +876,7 @@ class WorkspaceManager(QObject):
 
     def _montage_visible_tracks(self, total: int) -> int:
         """4 pistes de 60 px, ou 3 quand la zone de travail est basse (avec hystérésis : l'état précédent tranche entre les deux seuils)."""
-        four = getattr(self, "_montage_four", True)
-        four = total >= MONTAGE_FOUR_TRACKS_FROM if total >= MONTAGE_FOUR_TRACKS_FROM or total < MONTAGE_THREE_TRACKS_BELOW else four
+        four = total >= MONTAGE_FOUR_TRACKS_FROM if total >= MONTAGE_FOUR_TRACKS_FROM or total < MONTAGE_THREE_TRACKS_BELOW else self._montage_four
         self._montage_four = four
         return Sizes.montage_visible_tracks if four else Sizes.montage_visible_tracks - 1
 

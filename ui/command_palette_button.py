@@ -12,6 +12,8 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtWidgets import QSizePolicy, QToolButton
 
+from ui.design_system import Sizes
+
 FULL, TEXT, ICON, HIDDEN = "full", "text", "icon", "hidden"
 _FORMS = (FULL, TEXT, ICON, HIDDEN)
 
@@ -24,6 +26,7 @@ class PaletteButton(QToolButton):
         self._label = ""
         self._shortcut = ""
         self._form = FULL
+        self.setMinimumHeight(Sizes.control_min)          # jamais sous 30 px (barème « Air d'abord »)
         # ``Preferred`` (et non ``Minimum``) : le layout prend alors ``minimumSizeHint`` (0) pour largeur minimale.
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
