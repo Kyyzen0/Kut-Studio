@@ -64,6 +64,12 @@ nœuds en une bande de 88 px à l'échelle 1, bande des plans de ~151 px.
 * `ColorWheels` choisit 4 colonnes dès que chaque cellule fait 120 px (disque >= 120 px à 1280 et 1222 px de large ; 150 px au
   plus), sinon 2 x 2 ; sa `minimumSizeHint` est celle de deux roues, pour que la page prenne la largeur de l'onglet.
 * `ColorPanel` est une colonne (nœuds au-dessus, roues dessous) tant que sa largeur ne dépasse pas 1,6 fois sa hauteur.
+* **Réglages rapides sous les roues** (`ui/color_page/quick_settings.py`) : Exposition, Contraste, Saturation, Température, lignes de
+  30 px (libellé, curseur, champ, losange). Ce sont des contrôles **neufs liés au même modèle** que l'inspecteur : ils passent par
+  `on_color_grade_field_changed` (même historique, mêmes images clés) et `_mirror_color_field` montre la valeur du modèle dans les
+  deux séries sans signal. `ColorWheels._fit_quick` les pose selon la hauteur de l'onglet **après** le minimum des roues (disque de
+  128 px et 8 px de marge) : une ligne chacun (1440x900), deux par ligne (1222x738), deux par ligne sans curseur si la largeur
+  manque (polices Linux), sinon masquées. Elles ne comptent ni dans `minimumSizeHint` ni dans `sizeHint` de l'onglet.
 
 ## Mesurer et voir
 

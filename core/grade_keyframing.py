@@ -200,6 +200,8 @@ class GradeAnimationInfo:
     key_count: int = 0                                 # images clés d'étalonnage du clip (ignorées si ``animatable`` est faux)
     wheels: dict[str, KeyState] = field(default_factory=dict)
     shown: dict[str, Wheel] = field(default_factory=dict)     # valeurs évaluées à l'instant (vide : valeurs de base)
+    fields: dict[str, KeyState] = field(default_factory=dict)       # état du losange de chaque réglage simple (exposition…)
+    scalars: dict[str, float] = field(default_factory=dict)         # réglages simples évalués à l'instant (vide : valeurs de base)
 
     @property
     def has_keys(self) -> bool:
@@ -215,12 +217,15 @@ def grade_animation_info(clip: Any, local_time: float) -> GradeAnimationInfo:
     if not animatable:
         return GradeAnimationInfo(False, len(keys))
     wheels = {name: key_state(keys, wheel_property_ids(name), local_time) for name in WHEELS}
+    fields = {name: key_state(keys, [scalar_property_id(name)], local_time) for name in SCALAR_NAMES}
     shown: dict[str, Wheel] = {}
+    scalars: dict[str, float] = {}
     if keys:
         evaluated = effective_grade(clip, local_time)
         if isinstance(evaluated, ColorGrade):
             shown = {name: getattr(evaluated, name) for name in WHEELS}
-    return GradeAnimationInfo(True, len(keys), wheels, shown)
+            scalars = {name: float(getattr(evaluated, name)) for name in SCALAR_NAMES}
+    return GradeAnimationInfo(True, len(keys), wheels, shown, fields, scalars)
 
 
 def scalar_ids() -> tuple[str, ...]:

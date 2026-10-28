@@ -83,6 +83,9 @@ class ColorPageMixin:
         self.color_panel.wheel_keys_navigated.connect(self.on_color_wheel_keys_navigated)
         self.color_panel.wheel_graph_requested.connect(self.on_color_wheel_graph_requested)
         self.color_panel.grade_animation_cleared.connect(lambda: self.on_color_animation_cleared(None))
+        self.color_panel.field_changed.connect(self.on_color_quick_field_changed)         # réglages rapides sous les roues
+        self.color_panel.field_keys_toggled.connect(self.on_color_quick_keys_toggled)
+        self.color_panel.field_graph_requested.connect(self.on_color_quick_graph_requested)
         self.color_panel.qualifier_changed.connect(self.on_color_qualifier_changed)
         self.color_panel.highlight_toggled.connect(self.on_color_highlight_toggled)
         self.color_panel.pick_toggled.connect(self.preview_panel.set_pick_mode)
