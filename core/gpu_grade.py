@@ -1,6 +1,6 @@
 """Étalonnage dans le moniteur GPU : la chaîne d'étalonnage de l'export, cuite en LUT 3D par FFmpeg.
 
-L'export étalonne un calque avec ``eq`` → ``colorbalance`` → ``lutrgb`` (roues) → ``curves`` → ``lut3d``, nœud après
+L'export étalonne un calque avec ``lut`` (contraste, saturation ; ex-``eq``) → ``colorbalance`` → ``lutrgb`` (roues) → ``curves`` → ``lut3d``, nœud après
 nœud pour un clip étalonné par nœuds (:func:`core.export_engine._build_color_grade_filters`). Le moniteur GPU ne
 réécrit pas ces filtres : FFmpeg
 fait passer un **réseau de couleurs** — :data:`LUT_SIZE`\\ ³ codes, multiples de 5, dans l'espace d'entrée du calque —

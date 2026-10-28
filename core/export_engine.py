@@ -2151,6 +2151,11 @@ def _last_line(text: str) -> str:
     return lines[-1][:160] if lines else ""
 
 
+def _round6(value: float) -> float:
+    """``value`` telle que FFmpeg la lisait dans la chaîne (six décimales, :func:`_format_seconds`)."""
+    return float(_format_seconds(float(value)))
+
+
 def _format_seconds(value: float) -> str:
     """Formate une durée en secondes pour un argument FFmpeg.
 
@@ -2590,7 +2595,7 @@ def _build_layer_filter(
     layer_space_filters = _layer_space_filters(layer.effects, pixel_scale, layer.animation)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
-    # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
+    # filtres ``lut`` (contraste/saturation), ``colorbalance``
     # (température/teinte), ``curves`` (R/V/B) et ``lut3d`` (LUT
     # optionnel). Les filtres s'appliquent *après* les effets visuels
     # (ordre déterministe : effets créatifs d'abord, étalonnage ensuite)
@@ -2769,7 +2774,7 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     L'ordre est déterministe et identique pour tous les clips ; chaque
     filtre n'est émis que s'il change quelque chose :
 
-    1. ``eq`` — exposition (gamma ``2^EV``), contraste, saturation ; plus
+    1. ``lut`` (:mod:`core.eq_lut`, ex-``eq``) — exposition (table ``lutrgb``), contraste, saturation ; plus
        émis au neutre (jusqu'au 2026-10-10 il l'était toujours) : son
        aller-retour YUV coûtait un arrondi à chaque nœud. Mesuré sur cinq
        nœuds de roues : 0,50 niveau d'écart moyen à la formule (2 au plus,
@@ -2856,15 +2861,14 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     exposure = (animated.exposure() if animated is not None else None) or exposure_filter(grade.exposure)
     if exposure:
         filters.append(exposure)
-    # 1. eq : contraste et saturation sont des multiplicateurs centrés sur 1.
+    # 1. contraste et saturation : des multiplicateurs centrés sur 1, par une table ``lut`` par plan (``eq`` est GPL : ADR-0013,
+    # :mod:`core.eq_lut`, mêmes octets que ``eq``).
     if (animated_eq := animated.eq() if animated is not None else None):
         filters.append(animated_eq)
     elif grade.contrast or grade.saturation != 1.0:
-        eq_contrast = _format_seconds(1.0 + float(grade.contrast))
-        eq_saturation = _format_seconds(float(grade.saturation))
-        filters.append(
-            f"eq=contrast={eq_contrast}:saturation={eq_saturation}"
-        )
+        from .eq_lut import static_filters
+
+        filters.append(static_filters(0.0, _round6(1.0 + float(grade.contrast)), _round6(float(grade.saturation))))
     # 1 bis. teinte : rotation de la chroma (degrés).
     if (animated_hue := animated.hue() if animated is not None else None):
         filters.append(animated_hue)
@@ -3025,7 +3029,7 @@ def _glow_filter(params, pixel_scale: float, label: str, *, blur_name: str | Non
 
     ``blur_name`` / ``blur_sigma`` : le rayon est animé par ``sendcmd`` (:mod:`core.effect_sendcmd`) ; le ``gblur`` porte ce nom
     d'instance et démarre à ``blur_sigma`` (valeur de la première image, déjà en pixels de rendu et plancher appliqué).
-    L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``eq``…) travaillent en YUV,
+    L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``lut``…) travaillent en YUV,
     comme à l'accoutumée (en RVB, la vignette rapprochait chaque canal de 128 et éclaircissait l'image)."""
     threshold = float(params["threshold"])
     gain = float(params["intensity"]) / max(0.05, 1.0 - threshold)
@@ -3092,28 +3096,24 @@ def _build_clip_effect_filters(
         EQ_TIME,
         GEQ_TIME,
         animated_effect_expressions,
-        eq_filter,
         vignette_filter,
     )
+    from .eq_lut import effect_stage, static_filters
 
     filters: list[str] = []
     for index, effect in enumerate(effects):
         if not effect.enabled:
             continue
         params = effect.params
-        if effect.type is EffectType.COLOR_CORRECTION and (
-                expressions := animated_effect_expressions(effect, animation, EQ_TIME)):
-            filters.append(eq_filter(params, expressions, _format_seconds))
+        if effect.type is EffectType.COLOR_CORRECTION:
+            # ``eq`` est GPL (ADR-0013) : une table ``lut`` par plan, exacte (:mod:`core.eq_lut`). Animée : ``sendcmd`` (comme le flou).
+            filters.append(
+                effect_stage(effect, animation, sendcmd, f"{label}{index}")
+                or static_filters(*(_round6(params[name]) for name in ("brightness", "contrast", "saturation")))
+            )
         elif effect.type is EffectType.VIGNETTE and (
                 expressions := animated_effect_expressions(effect, animation, EQ_TIME)):
             filters.append(vignette_filter(params, expressions))
-        elif effect.type is EffectType.COLOR_CORRECTION:
-            filters.append(
-                "eq="
-                f"brightness={_format_seconds(params['brightness'])}:"
-                f"contrast={_format_seconds(params['contrast'])}:"
-                f"saturation={_format_seconds(params['saturation'])}"
-            )
         elif effect.type is EffectType.BLUR:
             if stage := _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}"):
                 filters.extend([stage.load, f"{stage.name}=sigma={_format_seconds(stage.plan.initial)}"])

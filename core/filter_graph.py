@@ -251,7 +251,11 @@ d'être recopiée sur son bloc 2×2, et les bandes de mise au cadre sont paires 
 chroma ou l'ancien placement sont ignorés.
 13 : un paramètre d'effet animé (``fx.<effet>.<paramètre>``, ADR-0008) se rend par une expression du temps local du clip
 (``eq`` et ``vignette`` en ``eval=frame``, ``geq`` de la brume de chaleur) ; un segment mis en cache avec le paramètre
-figé à sa valeur de base est ignoré."""
+figé à sa valeur de base est ignoré.
+
+ADR-0013 : ``eq`` (GPL) est remplacé par ``lut`` (:mod:`core.eq_lut`), **pour les mêmes octets** (mesuré image par image, statique et animé, sur
+FFmpeg 9.0.2 et 7.1.5) : pas de nouvelle version. Le texte de la chaîne change, donc l'empreinte d'un clip à correction colorimétrique : ses segments
+mis en cache avant sont simplement refaits."""
 
 
 def fingerprint_plan(plan, **kwargs):

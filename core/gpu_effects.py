@@ -8,7 +8,7 @@ l'échelle et rotation), le GPU aussi :
 =====================  ===================  =========================================
 Effet (modèle)         Filtre de l'export   Formule GPU (codes normalisés 0..1)
 =====================  ===================  =========================================
-``color_correction``   ``eq``               chemin entier d'FFmpeg (MPlayer) :
+``color_correction``   ``lut`` (ex-``eq``)  chemin entier d'FFmpeg (MPlayer), mêmes octets :
                                             Y' = ⌊Y·⌊c·4096⌋/4096⌋ + b₈ (voir :func:`eq_plane`)
 ``blur``               ``gblur``            noyau séparable **exponentiel** ν^|k| : la réponse
                                             impulsionnelle exacte du filtre récursif de
@@ -244,7 +244,7 @@ def program_for(
 
 
 def eq_plane(contrast: float, brightness: float) -> tuple[float, float, float]:
-    """``(facteur, décalage, actif)`` du filtre ``eq`` d'FFmpeg pour un plan 8 bits.
+    """``(facteur, décalage, actif)`` du filtre ``eq`` d'FFmpeg pour un plan 8 bits (la formule que :mod:`core.eq_lut` écrit en ``lut``).
 
     FFmpeg (``process_c``, hérité de MPlayer) calcule en entiers, **troncatures
     flottantes comprises** : la luminosité est stockée en **float32** et FFmpeg

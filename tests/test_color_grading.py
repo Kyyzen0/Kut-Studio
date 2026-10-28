@@ -783,7 +783,7 @@ def test_grade_filters_includes_eq_for_identity_with_curves() -> None:
     curves = ColorCurves(red=custom_curve)
     grade_obj = ColorGrade(curves=curves)
     filters = _build_color_grade_filters(grade_obj)
-    assert "eq=" not in filters, "un eq neutre coûtait un aller-retour YUV en 8 bits"
+    assert "lut=" not in filters and "format=" not in filters, "un contraste et une saturation neutres coûtaient un aller-retour YUV en 8 bits"
     assert filters.startswith("curves=")
 
 
@@ -858,8 +858,8 @@ def test_grade_filters_order_is_deterministic() -> None:
         highlights=0.1,
     )
     filters = _build_color_grade_filters(grade)
-    # eq d'abord, colorbalance ensuite.
-    eq_pos = filters.index("eq=")
+    # contraste et saturation (``lut``, qui remplace ``eq`` : ADR-0013) d'abord, colorbalance ensuite.
+    eq_pos = filters.index("lut=y=")
     cb_pos = filters.index("colorbalance=")
     assert eq_pos < cb_pos
 
@@ -882,14 +882,16 @@ def test_grade_filters_chain_includes_lut_after_curves() -> None:
 
 
 def test_grade_filters_with_b_and_w_preset() -> None:
-    """Le preset N&B contraste doit produire ``saturation=0`` et un
-    ``eq`` qui en tient compte (saturation neutre = 1.0)."""
+    """Le preset N&B contraste doit produire une saturation nulle : la table de chroma ``lut`` qui remplace ``eq`` (ADR-0013) ramène
+    U et V au gris (saturation neutre = 1.0)."""
     b_w = next(p for p in builtin_color_presets()
                if p.category == ColorPresetCategory.BLACK_AND_WHITE)
     grade = b_w.grade
     filters = _build_color_grade_filters(grade)
-    assert "eq=" in filters
-    assert "saturation=0.0" in filters
+    from core.eq_lut import eq_planes
+
+    assert "lut=y=" in filters and "eq=" not in filters
+    assert f"u={eq_planes(0.0, 1.0, 0.0)[1]}:v={eq_planes(0.0, 1.0, 0.0)[2]}" in filters
 
 
 def test_grade_filters_identity_emits_nothing() -> None:

@@ -249,3 +249,13 @@ Contraste, saturation et teinte passent par expression (`eq` en `eval=frame`, `h
   l'ADR-0008, « Résultats de l'étape 6 », `tools/measure_grade_cost.py`) ;
 - taille : ~4,7 Ko par image et par table (17 octets par point). Les fichiers sont écrits **par fenêtres de 192 Ko** et le total est borné à
   32 Mo : voir le piège 9 (mémoire de `sendcmd` sur 6.1 / 7.1).
+
+## Addendum (ADR-0013) : `lut` accepte les commandes `y`, `u`, `v`
+
+Mesuré le 2026-10-28 (`tests/test_eq_lut.py`) : `lut` (LGPL) reçoit `y`, `u`, `v` par `sendcmd` (`process_command` de `vf_lut.c` rappelle
+`config_props`, FFmpeg 6.1, 7.1 et 9.0 ; options `RUNTIME_PARAM`) et sort **les mêmes octets** qu'`eq` (GPL) réglé par ses propres
+commandes (écart maximal 0, 900 réglages changeant à chaque image, 9.0.2 et 7.1.5). Pièges : (1) un argument avec des virgules
+(`'clip(floor(val*5324/4096)+12,0,255)'`) se cite entre apostrophes dans le fichier, comme dans le graphe ; (2) `y`, `u`, `v` valent `clipval`
+par défaut, qui écrête à [16, 235] / [16, 240] : un plan à laisser intact reçoit `val` ; (3) chaque commande recalcule 65 536 valeurs par
+composante (~13 ms par image à trois plans), d'où l'envoi des seuls plans qui changent. Utilisé par `core/eq_lut.py` pour la correction
+colorimétrique et le contraste et la saturation de l'étalonnage.
