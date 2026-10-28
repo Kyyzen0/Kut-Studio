@@ -48,3 +48,6 @@ experiments/kut3d-spike/out/
 *.mobileprovision
 *.provisionprofile
 packaging/store-spike/**/build/
+
+# FFmpeg LGPL (ADR-0013) : sources, outils et artefacts de construction, jamais commités.
+packaging/ffmpeg-lgpl/_build/
