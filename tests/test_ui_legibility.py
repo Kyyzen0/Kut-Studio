@@ -230,3 +230,37 @@ def test_no_button_is_elided_with_wider_fonts(windows, scale):
         base = app.property("_kut_audit_base_stylesheet")
         if base is not None:
             app.setStyleSheet(base)                    # la feuille de style agrandie ne doit pas survivre aux autres tests
+
+
+def test_library_list_keeps_a_height_margin_with_taller_fonts():
+    """Police +20 % (plus haute que celle de Windows / Linux) : la liste audio garde plus que le plancher de 56 px.
+
+    L'en-tête, la recherche et les onglets Audio resserrent leurs marges verticales dans une colonne basse (``COMPACT_HEIGHT``) :
+    la marge ne dépend plus d'un réglage au pixel par plateforme (51 px sur macOS, 53 sur Linux, 54 sur Windows avant).
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from qt_cleanup import deliver_deferred_deletes
+
+    window = audit.make_main_window(1280, 690, scopes=False, font_scale=1.2)
+    try:
+        audit.select_first_clip(window)
+        for _name, action in legibility.page_scenarios(window):
+            action()
+            audit.settle(window)
+        window.switch_page("edit")
+        audit.settle(window)
+        window.switch_page("audio")
+        window.project_panel.select_section("audio")
+        audit.settle(window)
+        panel = window.project_panel
+        viewport = panel.findChild(QScrollArea, "scrollGuard").viewport()
+        assert _visible_height(panel.bin_audios, viewport) >= 60
+    finally:
+        window.close()
+        window.deleteLater()
+        deliver_deferred_deletes()
+        app = QApplication.instance()
+        base = app.property("_kut_audit_base_stylesheet")
+        if base is not None:
+            app.setStyleSheet(base)
