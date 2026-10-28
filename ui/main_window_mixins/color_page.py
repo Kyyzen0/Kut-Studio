@@ -18,6 +18,7 @@ from core.color_nodes import MixerKind, as_graph
 from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
 from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES, PanelId
+from ui.design_system import Sizes
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
@@ -148,6 +149,9 @@ class ColorPageMixin:
     def switch_page(self, page: str) -> None:
         """Passe à la page ``page`` : sa disposition, l'onglet Couleur et les scopes sur la page Couleur."""
         self._finalize_color_history()
+        # Pistes « normales » de 56 px sur la page Audio (3 visibles, lisibles), 48 px ailleurs : la hauteur est celle de la
+        # page, le modèle des pistes ne change pas.
+        self.timeline_panel.set_row_height_override(Sizes.timeline_track_min_height if page == PAGE_AUDIO else None)
         if self.workspace.switch_page(page):
             self._sync_workspace_menu()
         for name, button in self.page_buttons.items():

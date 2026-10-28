@@ -43,6 +43,7 @@ from core.workspace_state import (
     DEFAULT_SIZE,
     MIN_HEIGHT,
     MIN_SIZE,
+    PAGE_AUDIO,
     PAGE_COLOR,
     PAGE_EDIT,
     PAGES,
@@ -62,6 +63,7 @@ from core.workspace_state import (
 )
 from ui.icons import IconName
 from ui.screen_fit import apply_fitted_geometry
+from ui.design_system import Sizes
 from ui.i18n import translate
 from ui.workspace.panel_host import PanelHost, PanelWindow
 
@@ -266,6 +268,12 @@ class _Zone(QWidget):
         # Le dernier absorbe l'arrondi pour que la somme soit exacte.
         sizes[-1] = max(1, available - sum(sizes[:-1]))
         self._splitter.setSizes(sizes)
+
+
+#: Page Audio : pistes montrées sans défiler, et hauteur de la barre d'outils + en-tête de séquence de la timeline qui
+#: s'ajoute à la zone des pistes (mesurée : 114 px de chrome pour un viewport de pistes).
+AUDIO_VISIBLE_TRACKS = 3
+AUDIO_TIMELINE_CHROME = 36
 
 
 class WorkspaceManager(QObject):
@@ -710,6 +718,7 @@ class WorkspaceManager(QObject):
         if page not in PAGES or page == self._page:
             return False
         self._page_states[self._page] = self._layout_to_keep()
+        first_visit = page not in self._page_states
         target = self._page_states.get(page) or load_page_state(page, self._settings_dir)
         if page == PAGE_COLOR and page not in self._page_states:
             target = color_page_session_state(target)      # timeline repliée : la bande des plans seule (choix de session)
@@ -719,6 +728,10 @@ class WorkspaceManager(QObject):
             _close_floating_window(window, self._hosts[panel])
         self._page = page
         self._apply_state(target)
+        if page == PAGE_AUDIO:
+            # 3 pistes de 56 px, puis le mixeur : à la première visite la rangée du haut prend aussi sa hauteur ; ensuite le
+            # partage choisi entre le haut et le bas est repris tel quel, seule la timeline retrouve ses 3 pistes.
+            QTimer.singleShot(0, self, lambda: self.balance_vertical_split(resize_root=first_visit))
         self._refresh_dependents()
         return True
 
@@ -732,7 +745,7 @@ class WorkspaceManager(QObject):
     # Équilibrage
     # ------------------------------------------------------------------
 
-    def balance_vertical_split(self) -> None:
+    def balance_vertical_split(self, resize_root: bool = True) -> None:
         """Répartit la hauteur entre la zone haute et la timeline.
 
         La timeline reçoit la hauteur nécessaire pour montrer toutes ses
@@ -755,13 +768,17 @@ class WorkspaceManager(QObject):
         if timeline is None:
             return
         track_count = len(self._project_tracks()) or 1
-        pitch = timeline.track_height + timeline.track_gap
+        audio_page = self._page == PAGE_AUDIO
+        if audio_page:
+            track_count = min(track_count, AUDIO_VISIBLE_TRACKS)       # 3 pistes visibles : les autres défilent
+        pitch = (timeline.row_height_override or timeline.track_height) + timeline.track_gap
         timeline_needed = (
             timeline.header_height
             + timeline.ruler_height
             + 8
             + pitch * max(track_count, 1)
             + 34  # marges + barres de défilement
+            + (AUDIO_TIMELINE_CHROME if audio_page else 0)
         )
         # La zone basse peut héberger d'autres panneaux (le mixeur) :
         # chacun réclame son minimum, sinon l'un se fait écraser.
@@ -785,8 +802,14 @@ class WorkspaceManager(QObject):
         if library is not None and not self._state.is_floating(PanelId.MEDIA):
             wanted_top = library.sizeHint().height()
             bottom = min(bottom, max(total - wanted_top, timeline.minimumHeight() + extras))
+        if audio_page:
+            # Page Audio : la rangée du haut (moniteur, bibliothèque, inspecteur : des zones qui défilent) cède pour que la
+            # timeline montre 3 pistes de 56 px et que le mixeur garde ses canaux ; le reste de la hauteur va au mixeur.
+            wanted = max(Sizes.audio_top_row_height, min(int(total * 0.31), 260))
+            bottom = max(total - wanted - root.handleWidth(), timeline_needed + extras)
         top = max(total - bottom, 160)
-        root.setSizes([top, bottom])
+        if resize_root:
+            root.setSizes([top, bottom])
         # Partage interne déterministe : la timeline prend ce dont elle a
         # besoin, le reste va aux autres panneaux de la zone (mixeur).
         zone = self._zones.get(DockArea.BOTTOM)

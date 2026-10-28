@@ -618,6 +618,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "mixer.output": {"fr": "Sortie", "en": "Output", "es": "Salida"},
     "mixer.volume": {"fr": "Volume", "en": "Volume", "es": "Volumen"},
     "mixer.pan": {"fr": "Panoramique", "en": "Pan", "es": "Pan"},
+    "mixer.pan.short": {"fr": "Pan", "en": "Pan", "es": "Pan"},
     "mixer.pan_center": {"fr": "Centré", "en": "Center", "es": "Centrado"},
     "mixer.pan_left": {"fr": "Gauche", "en": "Left", "es": "Izquierda"},
     "mixer.pan_right": {"fr": "Droite", "en": "Right", "es": "Derecha"},
