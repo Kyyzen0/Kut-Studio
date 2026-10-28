@@ -1,0 +1,58 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		A1000001 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000002; };
+		A1000002 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		A1000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1000004 /* KutShell.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KutShell.entitlements; sourceTree = "<group>"; };
+		A1000005 /* KutShell.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KutShell.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000006 = {isa = PBXGroup; children = (A1000002, A1000003, A1000004, A1000007); sourceTree = "<group>"; };
+		A1000007 /* Products */ = {isa = PBXGroup; children = (A1000005); name = Products; sourceTree = "<group>"; };
+		A1000008 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000001); runOnlyForDeploymentPostprocessing = 0; };
+		A1000009 /* KutShell */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A100000C;
+			buildPhases = (A1000008);
+			buildRules = ();
+			dependencies = ();
+			name = KutShell;
+			productName = KutShell;
+			productReference = A1000005;
+			productType = "com.apple.product-type.application";
+		};
+		A100000A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 2700; TargetAttributes = {A1000009 = {DevelopmentTeam = 3SZ5D643QC;};};};
+			buildConfigurationList = A100000B;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A1000006;
+			productRefGroup = A1000007;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A1000009);
+		};
+		A100000B /* Project config list */ = {isa = XCConfigurationList; buildConfigurations = (A100000D); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;};
+		A100000C /* Target config list */ = {isa = XCConfigurationList; buildConfigurations = (A100000E); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;};
+		A100000D /* Project Debug */ = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+			SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 14.0; ARCHS = arm64; ONLY_ACTIVE_ARCH = YES;
+		};};
+		A100000E /* Target Debug */ = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+			PRODUCT_BUNDLE_IDENTIFIER = com.kutstudio.app;
+			PRODUCT_NAME = KutShell;
+			INFOPLIST_FILE = Info.plist;
+			CODE_SIGN_ENTITLEMENTS = KutShell.entitlements;
+			CODE_SIGN_STYLE = Automatic;
+			DEVELOPMENT_TEAM = 3SZ5D643QC;
+			ENABLE_HARDENED_RUNTIME = YES;
+			ENABLE_APP_SANDBOX = YES;
+			GENERATE_INFOPLIST_FILE = NO;
+		};};
+	};
+	rootObject = A100000A;
+}
