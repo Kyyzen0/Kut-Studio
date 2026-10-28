@@ -1,0 +1,59 @@
+name: Mirror GitLab
+
+# Miroir de sauvegarde vers un dépôt GitLab PRIVÉ : main et les tags, à chaque push. Sans les deux secrets
+# GITLAB_MIRROR_URL et GITLAB_MIRROR_TOKEN, le job se termine proprement (« miroir non configuré »), jamais en échec.
+# Mise en place : docs/gitlab-mirror.md.
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-gitlab
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Miroir GitLab
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLAB_MIRROR_URL: ${{ secrets.GITLAB_MIRROR_URL }}
+      GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+
+    steps:
+      - name: Check the mirror is configured
+        id: config
+        run: |
+          if [ -n "$GITLAB_MIRROR_URL" ] && [ -n "$GITLAB_MIRROR_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Miroir non configuré (secrets GITLAB_MIRROR_URL / GITLAB_MIRROR_TOKEN absents) : rien à faire."
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.config.outputs.configured == 'true'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push main and tags to GitLab
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          # Le jeton ne s'affiche jamais : masqué (lui et sa forme encodée), passé par un en-tête HTTP, pas dans l'URL.
+          echo "::add-mask::$GITLAB_MIRROR_TOKEN"
+          basic="$(printf 'oauth2:%s' "$GITLAB_MIRROR_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$basic"
+          case "$GITLAB_MIRROR_URL" in
+            https://*@*) echo "::error::GITLAB_MIRROR_URL ne doit pas contenir d'identifiants"; exit 1 ;;
+            https://*) ;;
+            *) echo "::error::GITLAB_MIRROR_URL doit être une URL https"; exit 1 ;;
+          esac
+          git -c "http.extraheader=Authorization: Basic $basic" push "$GITLAB_MIRROR_URL" \
+            "refs/remotes/origin/main:refs/heads/main" "refs/tags/*:refs/tags/*"
