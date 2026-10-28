@@ -1530,7 +1530,7 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
         captured["request"] = request
         return [
             "ffmpeg", "-y", "-ss", f"{playhead:.3f}", "-i", "clip.mp4",
-            "-filter_complex", "[0:v]eq=1[v]", "-map", "[v]",
+            "-filter_complex", "[0:v]null[v]", "-map", "[v]",
             "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
         ]
 

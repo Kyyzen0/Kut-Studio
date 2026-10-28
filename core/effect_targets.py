@@ -39,8 +39,10 @@ EXPRESSION_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
     EffectType.VIGNETTE: ("intensity",),
 }
-"""Paramètres d'effet rendus par une **expression** FFmpeg (étape 3, :mod:`core.effect_expressions`) : ``eq``
-(``eval=frame``) et ``vignette`` (``angle``)."""
+"""Paramètres d'effet du groupe « expression » (étape 3) : ``eq`` (``eval=frame``) et ``vignette`` (``angle``). Depuis ADR-0013 (``eq`` est
+GPL), la correction colorimétrique est rendue par ``lut`` et ``sendcmd`` (:mod:`core.eq_lut`) ; elle reste dans ce groupe parce que
+le groupe décide de la version du fichier ``.kut`` (:func:`core.project_io.payload_uses_sendcmd_animation`) : la changer de groupe
+relèverait le format sans que le fichier change."""
 
 SENDCMD_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.BLUR: ("intensity",),

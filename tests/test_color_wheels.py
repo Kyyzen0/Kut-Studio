@@ -84,7 +84,7 @@ def test_the_wheels_come_after_colorbalance_and_before_the_curves():
                        curves=ColorCurves(master=bent), gain=Wheel(y=0.2))
     chain = _build_color_grade_filters(grade)
     # L'exposition (un premier ``lutrgb``) ouvre la chaîne, les molettes (le dernier) viennent avant les courbes.
-    stages = [chain.index("lutrgb="), chain.index("eq="), chain.index("hue="), chain.index("colorbalance="),
+    stages = [chain.index("lutrgb="), chain.index("lut=y="), chain.index("hue="), chain.index("colorbalance="),
               chain.index("colorchannelmixer="), chain.rindex("lutrgb="), chain.index("curves=")]
     assert stages[0] != stages[5], "deux tables : l'exposition, puis les molettes"
     assert stages == sorted(stages)
@@ -182,7 +182,7 @@ def test_five_serial_nodes_drift_by_no_more_than_their_own_roundings():
                           input=image.tobytes(), capture_output=True, check=True)
     error = np.abs(np.frombuffer(done.stdout, np.uint8).reshape(32, 48, 3) - ideal)
     assert error.mean() < 0.7 and error.max() <= 2.5, (error.mean(), error.max())
-    assert "eq=" not in _build_color_grade_filters(graph)
+    assert "lut=y=" not in _build_color_grade_filters(graph)
 
 
 # --- palet --------------------------------------------------------------------------------------------------------

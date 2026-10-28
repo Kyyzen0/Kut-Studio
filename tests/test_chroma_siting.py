@@ -66,11 +66,11 @@ def test_the_heat_haze_converts_with_the_same_rule_and_nothing_converts_twice():
 
 
 def test_siting_goes_before_the_first_rgb_filter_only():
-    chain = "eq=contrast=1.1,gblur=sigma=2,colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba"
+    chain = "lut=y=val,gblur=sigma=2,colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba"
     assert siting_before_rgb(chain) == (
-        f"eq=contrast=1.1,gblur=sigma=2,{CHROMA_SITING_TO_RGBA},colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba")
+        f"lut=y=val,gblur=sigma=2,{CHROMA_SITING_TO_RGBA},colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba")
     assert siting_before_rgb("format=rgba,split") == f"{CHROMA_SITING_TO_RGBA},split"
-    assert siting_before_rgb("eq=contrast=1.1") == "eq=contrast=1.1"          # rien d'RVB : inchangé
+    assert siting_before_rgb("lut=y=val") == "lut=y=val"          # rien d'RVB : inchangé
     assert siting_before_rgb("format=rgba64le,eq=gamma=1") == "format=rgba64le,eq=gamma=1"
 
 
@@ -86,7 +86,7 @@ def test_the_conversion_goes_through_one_16_bit_444_step_and_never_a_bare_scale_
     16 bits intermédiaire corrige. Non rejouable sur FFmpeg 9 (la chaîne directe y est juste) : on vérifie la forme."""
     # ``yuva`` et non ``yuv`` : un calque RVBA (fond transparent, composition vide) perdrait son alpha, rendu noir opaque.
     assert CHROMA_SITING_TO_RGBA == f"{CHROMA_SITING_SCALE},format=yuva444p16le,format=rgba"
-    chains = [siting_before_rgb("format=rgba,split"), siting_before_rgb("eq=contrast=1.1,lutrgb=r=val"),
+    chains = [siting_before_rgb("format=rgba,split"), siting_before_rgb("lut=y=val,lutrgb=r=val"),
               siting_before_rgb("colorchannelmixer=.3:.7:.2,format=rgba"), _layer_graph({}, []),
               _layer_graph({}, [EQ]), _layer_graph({}, [_effect(EffectType.SEPIA)])]
     for chain in chains:
@@ -94,4 +94,4 @@ def test_the_conversion_goes_through_one_16_bit_444_step_and_never_a_bare_scale_
         assert f"{CHROMA_SITING_SCALE},format=yuva444p16le,format=rgba" in chain, chain
         assert f"{CHROMA_SITING_SCALE},format=rgba" not in chain, chain
     assert siting_before_rgb("format=rgba,split").count("format=rgba") == 1             # pas de second format=rgba
-    assert siting_before_rgb("eq=contrast=1.1,lutrgb=r=val").startswith(f"eq=contrast=1.1,{CHROMA_SITING_444},format=rgba,")
+    assert siting_before_rgb("lut=y=val,lutrgb=r=val").startswith(f"lut=y=val,{CHROMA_SITING_444},format=rgba,")

@@ -476,7 +476,7 @@ def test_a_color_key_created_by_script_is_rendered_like_one_created_by_the_inter
     scripted, direct = find_clip(session.project, "a"), find_clip(reference, "a")
     text, files = _grade_chain(scripted)
     reference_text, reference_files = _grade_chain(direct)
-    assert "sendcmd" in text and "eq=" in text, text                       # l'animation est bien rendue (expression et fichier de commandes)
+    assert "sendcmd" in text and "lut@" in text and "eq=" not in text, text    # l'animation est bien rendue (fichiers de commandes)
     assert (text, files) == (reference_text, reference_files)
     for moment in (0.0, 0.7, 1.3, 2.0, 2.9, 3.6):
         assert effective_grade(scripted, moment) == effective_grade(direct, moment)
@@ -507,7 +507,7 @@ def test_removing_the_keys_by_script_leaves_a_static_chain():
     assert report.ok, report.error
     clip = find_clip(session.project, "a")
     text, files = _grade_chain(clip)
-    assert not clip.animation and "sendcmd" not in text and "eq=" in text and files == []
+    assert not clip.animation and "sendcmd" not in text and "lut=y=" in text and files == []
 
 
 # --- Mutation après validation ------------------------------------------------------------------------------------------------------
