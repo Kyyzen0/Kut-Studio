@@ -103,6 +103,9 @@ timeline 302 px (zone des pistes 188 px : 3 pistes de 56 px et 12 px de marge), 
   page (`TimelinePanel.row_height_override`, posée par `MainWindow.switch_page`) : le modèle (`Track.height_mode`) ne change pas.
 * **Limite** : en 1280x690 (hors cible), 3 pistes de 56 px **et** un mixeur de 140 px ne tiennent pas dans 614 px : la timeline
   garde ~263 px (2 pistes et demie) ; les canaux gardent nom, FX, M, S et fader.
+  Dès la première visite (`AUDIO_THREE_TRACKS_FROM` = 640 px de zone de travail : 667 en 1222x738, 619 en 1280x690) la rangée du haut
+  garde ses 200 px et la timeline cède ; la liste audio de la bibliothèque y montre ~78 px (34 px avant : la première visite
+  donnait 459 px à la zone basse, la seconde 415, d'où un test qui dépendait de l'ordre d'exécution).
 
 ## Page Montage « Air d'abord » (mixeur en barre, 4 pistes de 60 px, vignettes de 72 px)
 
