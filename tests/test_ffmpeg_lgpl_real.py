@@ -102,7 +102,7 @@ def test_the_build_is_lgpl_with_the_expected_features():
     assert "GNU Lesser General Public" in licence and "GNU General Public" not in licence.replace("GNU Lesser General Public", "")
     for forbidden in ("--enable-gpl", "--enable-nonfree", "--enable-libx264", "--enable-libx265", "--enable-version3"):
         assert forbidden not in version
-    for wanted in ("--enable-libass", "--enable-videotoolbox", "--enable-audiotoolbox"):
+    for wanted in ("--enable-libass", "--enable-libdav1d", "--enable-videotoolbox", "--enable-audiotoolbox"):
         assert wanted in version
     encoders = _run([LGPL, "-hide_banner", "-encoders"]).stdout.decode()
     for present in ("h264_videotoolbox", "hevc_videotoolbox", "prores_ks", "aac_at", "pcm_s16le", "png", "ffv1"):
@@ -132,6 +132,51 @@ def test_the_binaries_link_only_system_libraries(tool):
     lines = _run(["otool", "-L", binary]).stdout.decode().splitlines()[1:]
     paths = [line.split()[0] for line in lines if line.strip()]
     assert paths and all(path.startswith(("/usr/lib/", "/System/Library/")) for path in paths), paths
+
+
+AV1_SAMPLE_BASE64 = (
+    "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"
+)
+"""Un AV1 minuscule (64×36, 3 images, 2 Ko), encodé hors dépôt avec SVT-AV1 : l'artefact n'a aucun encodeur AV1, seulement ``libdav1d``."""
+
+
+def test_av1_decodes_in_software_with_libdav1d(tmp_path):
+    import base64
+
+    sample = tmp_path / "sample.mp4"
+    sample.write_bytes(base64.b64decode("".join(AV1_SAMPLE_BASE64.split())))
+    assert LGPL is not None
+    assert " libdav1d " in _run([LGPL, "-hide_banner", "-decoders"]).stdout.decode()
+    for decoder in ("libdav1d", None):          # explicite, puis le choix par défaut de FFmpeg
+        command = [LGPL, "-v", "error", *(["-c:v", decoder] if decoder else []), "-i", str(sample), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+        data = _run(command).stdout
+        assert len(data) == 3 * 64 * 36 * 3 and max(data) > 0, f"{decoder or 'défaut'} : 3 images attendues"
 
 
 # ---------------------------------------------------------------------------

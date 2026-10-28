@@ -90,6 +90,12 @@ d="$(fetch FRIBIDI | tail -1)"
    -Dtests=false -Ddocs=false -Dbin=false >/dev/null \
  && ninja -C _b >/dev/null && ninja -C _b install >/dev/null)
 
+log "dav1d $DAV1D_VERSION"
+d="$(fetch DAV1D | tail -1)"
+(cd "$d" && meson setup _b --prefix="$PREFIX" --libdir=lib --default-library=static --buildtype=release \
+   -Denable_tools=false -Denable_tests=false -Denable_examples=false >/dev/null \
+ && ninja -C _b >/dev/null && ninja -C _b install >/dev/null)
+
 # libass : polices du système par CoreText (aucune dépendance à fontconfig).
 log "libass $LIBASS_VERSION"
 d="$(fetch LIBASS | tail -1)"
@@ -105,7 +111,7 @@ mkdir -p "$d/_b"
 (cd "$d/_b" && ../configure --prefix="$PREFIX" --arch=arm64 --cc="clang -arch arm64" \
    --enable-static --disable-shared --disable-autodetect \
    --disable-gpl --disable-nonfree --disable-doc --disable-debug --disable-ffplay \
-   --enable-videotoolbox --enable-audiotoolbox --enable-libass \
+   --enable-videotoolbox --enable-audiotoolbox --enable-libass --enable-libdav1d \
    --enable-zlib --enable-iconv \
    --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib" \
    --pkg-config-flags="--static" > "$ROOT/configure.log" 2>&1 \

@@ -29,7 +29,7 @@ GPL_CODECS: frozenset[str] = frozenset({"libx264", "libx264rgb", "libx265", "lib
 # (catégorie, nom) → rôle. Ce que l'application demande sans l'écrire dans un littéral de commande.
 DECLARED: dict[tuple[str, str], str] = {
     **{("decoder", name): "décodage des médias importés" for name in (
-        "h264", "hevc", "prores", "mpeg4", "mjpeg", "vp8", "vp9", "av1", "aac", "mp3float", "flac", "opus", "vorbis", "alac",
+        "h264", "hevc", "prores", "mpeg4", "mjpeg", "vp8", "vp9", "av1", "libdav1d", "aac", "mp3float", "flac", "opus", "vorbis", "alac",
         "pcm_s16le", "pcm_s24le", "pcm_f32le", "png", "gif", "webp", "ffv1", "utvideo", "rawvideo")},
     **{("encoder", name): role for name, role in (
         ("h264_videotoolbox", "export H.264 (matériel Apple)"), ("hevc_videotoolbox", "export HEVC (matériel Apple)"),
