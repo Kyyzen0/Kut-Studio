@@ -291,6 +291,10 @@ AUDIO_TIMELINE_RESERVE = 16
 #: marge sous la dernière piste.
 MONTAGE_TIMELINE_CHROME = 116
 MONTAGE_TIMELINE_MARGIN = 14
+#: Montage : 4 pistes tant que la zone de travail (hauteur du séparateur racine) mesure au moins ``FROM`` px, sinon 3 : la visionneuse
+#: garde une image d'environ 320 x 180 px. Hystérésis de 12 px : pas d'oscillation autour du seuil, quel que soit le sens du redimensionnement.
+MONTAGE_FOUR_TRACKS_FROM = 730
+MONTAGE_THREE_TRACKS_BELOW = 718
 _NO_MAX = 16777215
 
 
@@ -814,7 +818,7 @@ class WorkspaceManager(QObject):
         if audio_page:
             track_count = min(track_count, AUDIO_VISIBLE_TRACKS)       # 3 pistes visibles : les autres défilent
         elif edit_page:
-            track_count = min(track_count, Sizes.montage_visible_tracks)   # 4 pistes visibles : les autres défilent
+            track_count = min(track_count, self._montage_visible_tracks(total))   # 4 pistes (3 sur une zone basse) : les autres défilent
         pitch = (timeline.row_height_override or timeline.track_height) + timeline.track_gap
         timeline_needed = (
             timeline.header_height
@@ -869,6 +873,13 @@ class WorkspaceManager(QObject):
         if zone is not None and len(zone.widgets()) > 1:
             zone.set_timeline_first(timeline_needed)
 
+    def _montage_visible_tracks(self, total: int) -> int:
+        """4 pistes de 60 px, ou 3 quand la zone de travail est basse (avec hystérésis : l'état précédent tranche entre les deux seuils)."""
+        four = getattr(self, "_montage_four", True)
+        four = total >= MONTAGE_FOUR_TRACKS_FROM if total >= MONTAGE_FOUR_TRACKS_FROM or total < MONTAGE_THREE_TRACKS_BELOW else four
+        self._montage_four = four
+        return Sizes.montage_visible_tracks if four else Sizes.montage_visible_tracks - 1
+
     def _montage_timeline_height(self, timeline, tracks_height: int) -> int:
         """Hauteur de la timeline du Montage : son chrome (mesuré une fois affichée) + les pistes + une marge."""
         chrome = MONTAGE_TIMELINE_CHROME
@@ -889,8 +900,8 @@ class WorkspaceManager(QObject):
             # Mixeur rouvert : la timeline cède (trois pistes de 60 px et leur marge au lieu de quatre), la rangée du haut garde
             # au moins la hauteur de la page Audio.
             wanted = max(Sizes.audio_top_row_height, min(int(total * 0.31), 260))
-            three = timeline_needed - (min(len(self._project_tracks()) or 1, Sizes.montage_visible_tracks) - min(len(self._project_tracks()) or 1, 3)) \
-                * (timeline.row_height_override or timeline.track_height)
+            pitch = (timeline.row_height_override or timeline.track_height) + timeline.track_gap
+            three = self._montage_timeline_height(timeline, pitch * min(len(self._project_tracks()) or 1, 3))
             return max(total - wanted - handle, three + extras, floor)
         return min(max(timeline_needed + extras, floor), max(total - 160 - handle, floor))
 

@@ -654,6 +654,8 @@ BAR_HEIGHT = 40
 MONTAGE_MARGIN = 12
 #: Polices +20 % / +35 % sur 1222x738 : la rangée du haut a alors son minimum (les panneaux défilent) et la timeline garde 10 px sous la 4e piste.
 MONTAGE_FONT_MARGIN = 8
+#: Pistes de 60 px visibles : 4 quand la zone de travail mesure 730 px ou plus (1440x900, 1440x790), 3 en dessous (1222x738) pour garder l'image.
+MONTAGE_TRACKS = {(1440, 900): 4, (1440, 790): 4, (1222, 738): 3}
 
 
 @contextlib.contextmanager
@@ -769,7 +771,8 @@ def test_montage_mixer_fold_is_a_session_choice_and_only_for_the_montage(windows
 def test_montage_timeline_shows_four_tracks_of_60_px_with_name_and_type(windows, size):
     window = windows(size)
     with _montage(window) as win:
-        problems = _montage_timeline_problems(win, f"{size[0]}x{size[1]}")
+        problems = _montage_timeline_problems(win, f"{size[0]}x{size[1]}", tracks=MONTAGE_TRACKS[size])
+        assert win.workspace._montage_visible_tracks(win.workspace._root_splitter.height()) == MONTAGE_TRACKS[size]
     assert not problems, "\n".join(problems)
 
 
@@ -801,7 +804,7 @@ def test_montage_library_has_72px_posters_and_the_viewer_keeps_its_picture(windo
         assert card >= 72 + 8 and _visible_height(panel.bin_videos, viewport) >= card, f"carte de {card} px"
         view = win.preview_panel.canvas_item.scene().views()[0]
         picture = view.mapFromScene(win.preview_panel.canvas_item.sceneBoundingRect()).boundingRect()
-        floor = {(1440, 900): (540, 300), (1440, 790): (340, 190), (1222, 738): (250, 140)}[size]
+        floor = {(1440, 900): (540, 300), (1440, 790): (340, 190), (1222, 738): (320, 180)}[size]
         assert picture.width() >= floor[0] and picture.height() >= floor[1], f"image {picture.width()}x{picture.height()}"
     win.switch_page("audio")
     assert win.project_panel.bin_videos.poster_size() == 40            # la page Audio garde ses lignes (voir #279)
@@ -909,7 +912,7 @@ def test_montage_page_keeps_its_guarantees_with_taller_fonts(scale):
             label = f"x{scale}"
             win.workspace.balance_vertical_split()        # la police est connue avant le premier partage d'une vraie fenêtre
             audit.settle(win)
-            problems = _montage_timeline_problems(win, label, slack=MONTAGE_FONT_MARGIN)
+            problems = _montage_timeline_problems(win, label, slack=MONTAGE_FONT_MARGIN, tracks=3)
             problems += _inspector_tab_problems(win, label) + _montage_floor_problems(win, label)
             assert win.mixer_panel.collapsed and win.mixer_panel.height() == BAR_HEIGHT
             assert win.height() <= 738 and win.minimumHeight() <= MAX_MINIMUM_HEIGHT
@@ -929,3 +932,18 @@ def test_montage_page_keeps_its_guarantees_with_taller_fonts(scale):
         base = app.property("_kut_audit_base_stylesheet")
         if base is not None:
             app.setStyleSheet(base)
+
+
+def test_montage_track_count_follows_the_work_area_with_hysteresis(windows):
+    """4 pistes de 60 px à partir de 730 px de zone de travail, 3 en dessous ; entre 718 et 730 px l'état précédent reste (aucune oscillation)."""
+    from ui.workspace.manager import MONTAGE_FOUR_TRACKS_FROM, MONTAGE_THREE_TRACKS_BELOW
+
+    manager = windows((1440, 900)).workspace
+    saved = manager._montage_four
+    try:
+        manager._montage_four = True
+        assert [manager._montage_visible_tracks(h) for h in (800, 730, 725, 718, 717, 725, 729)] == [4, 4, 4, 4, 3, 3, 3]
+        assert manager._montage_visible_tracks(MONTAGE_FOUR_TRACKS_FROM) == 4 and manager._montage_visible_tracks(725) == 4
+        assert manager._montage_visible_tracks(MONTAGE_THREE_TRACKS_BELOW - 1) == 3 and manager._montage_visible_tracks(725) == 3
+    finally:
+        manager._montage_four = saved

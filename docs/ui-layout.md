@@ -108,15 +108,17 @@ timeline 302 px (zone des pistes 188 px : 3 pistes de 56 px et 12 px de marge), 
 
 Mesures hors écran (la fenêtre de test garde sa barre de menus de 25 px, que macOS sort de la fenêtre) :
 
-| Fenêtre | Visionneuse (panneau) | Image | Timeline | Pistes visibles |
+| Fenêtre | Pistes de 60 px | Visionneuse (panneau) | Image | Avant ce lot |
 | --- | --- | --- | --- | --- |
-| 1440x900 | 416 px | 556 x 314 | 376 px | 4 x 60 px, 13 px de marge |
-| 1440x790 | 306 px | 362 x 204 | idem | idem |
-| 1222x738 | 255 px | 257 x 145 | idem | idem |
+| 1440x900 | 4 | 408 px | 542 x 306 | ~720 x 405 |
+| 1440x790 | 4 | 299 px | 348 x 197 | ~400 x 225 |
+| 1222x738 | 3 | 306 px | 362 x 204 | ~400 x 225 |
 
-La cible de la maquette (image de 640 x 360 à 1440x900) **n'est pas atteinte** : quatre pistes de 60 px, la barre du mixeur et
-la timeline (barre de séquence, outils, règle, défilement : 114 px) laissent 416 px à la rangée du haut au lieu des ~490 de la
-maquette. Sur un vrai Mac, la barre de menus n'est pas dans la fenêtre : l'image gagne ~25 px de haut.
+**Nombre de pistes** : 4 pistes de 60 px tant que la zone de travail (hauteur du séparateur racine) mesure 730 px ou plus, 3 en
+dessous (`MONTAGE_FOUR_TRACKS_FROM` / `MONTAGE_THREE_TRACKS_BELOW` = 730 / 718, hystérésis de 12 px : `WorkspaceManager._montage_visible_tracks`).
+À 1440x790 la zone mesure ~734 px : 4 pistes ; à 1222x738, ~663 px : 3 pistes. La décision ne touche ni `Track.height_mode`
+ni `workspace.json`. La cible de la maquette (640 x 360 à 1440x900) n'est pas atteinte : 4 x 60 px, la barre de 40 px et 114 px de
+chrome de timeline laissent 408 px à la rangée du haut (maquette : ~490) ; sur un vrai Mac la barre de menus sort de la fenêtre.
 
 * **Mixeur replié** : sur le Montage, le mixeur est une barre de 40 px (`Sizes.mixer_bar_height` : titre, bouton « Ouvrir »). Un clic
   sur la barre ou le bouton le rouvre ; il reprend alors le comportement de la page Audio (canaux compacts de 168 px, hauteur
@@ -130,7 +132,7 @@ maquette. Sur un vrai Mac, la barre de menus n'est pas dans la fenêtre : l'imag
   Audio, rien ailleurs ; `Track.height_mode` n'est jamais touché et une piste « grande » du modèle garde sa hauteur. Le nom et
   le type de la piste (« V1 / VIDÉO ») sont lisibles dans l'en-tête. `WorkspaceManager.balance_vertical_split` donne à la timeline
   `MONTAGE_TIMELINE_CHROME` (relu sur la timeline affichée) + 8 px + 4 x 60 px + 14 px de marge. Les courbes de volume affichées
-  (un track avec images clés) ne sont **pas** comptées : la 4e piste défile dessous.
+  (une piste avec images clés) ne sont **pas** comptées (les compter ajoute 40 px par courbe et écraserait la visionneuse) : la dernière piste défile dessous.
 * **Bibliothèque** : vignettes de 72 px sur le Montage (`AssetBin.set_poster_size`, 40 px ailleurs : la liste audio de la page Audio
   garde ses lignes) ; boutons de l'en-tête (Projet, Favoris, +, dossiers) de 30 px sur le Montage seulement.
 * **Onglets du réglage** (`ui/properties_widgets/tab_row.py`) : une seule ligne. Clip, Couleur, Audio et Effets sont des boutons ;
