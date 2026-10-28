@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Miroir GitLab optionnel.** Un workflow recopie `main` et les tags vers un dépôt GitLab privé si les secrets `GITLAB_MIRROR_URL` et `GITLAB_MIRROR_TOKEN` existent ; sinon il se termine sans échec (`docs/gitlab-mirror.md`).
+
 ### Changed
 
 - **CI : macOS seul sur les PR ; Windows et Linux en hebdomadaire.** Les PR et `main` ne lancent plus que les jobs macOS ; Windows, Ubuntu et Debian tournent chaque dimanche et à la demande (`docs/ci-policy.md`). Aucun test ni job supprimé ; la publication des releases ne change pas.
