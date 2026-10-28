@@ -23,7 +23,7 @@ from core.color_grading import (
 from core.color_nodes import as_graph
 from core.usage_level import UsageLevel
 from ui.adaptive_layout import FlowLayout, make_shrinkable
-from ui.design_system import Spacing
+from ui.design_system import Spacing, Typography
 from ui.icons import IconName
 from ui.theme import label_style
 from ui.properties_panel_mixins.color_keyframes import ColorKeyframesMixin
@@ -45,7 +45,7 @@ class ColorMixin(ColorKeyframesMixin):
         # Clip étalonné par nœuds : ces réglages sont ceux du nœud courant (page Couleur), on le dit.
         self.color_node_label = QLabel()
         self.color_node_label.setWordWrap(True)
-        self.color_node_label.setStyleSheet(label_style(11, "accent", 600))
+        self.color_node_label.setStyleSheet(label_style(Typography.caption, "accent", 600))
         self.color_node_label.hide()
         root.addWidget(self.color_node_label)
         self._build_color_animation_notice(root)       # avis « étalonnage découpé en nœuds » (ADR-0008, étape 8)
@@ -98,7 +98,7 @@ class ColorMixin(ColorKeyframesMixin):
         advanced = self.color_advanced_gate.layout()
         advanced.setSpacing(Spacing.sm)
         curves_title = QLabel(translate("inspector.color.curves"))
-        curves_title.setStyleSheet(label_style(11, "muted", 700))
+        curves_title.setStyleSheet(label_style(Typography.caption, "muted", 700))
         advanced.addWidget(curves_title)
         self.color_curve_channel = make_shrinkable(QComboBox())
         self.color_curve_channel.addItem(translate("inspector.color.channel_master"), "master")
@@ -119,7 +119,7 @@ class ColorMixin(ColorKeyframesMixin):
         advanced.addWidget(self.color_curve_reset_button)
 
         preset_title = QLabel(translate("inspector.color.presets"))
-        preset_title.setStyleSheet(label_style(11, "muted", 700))
+        preset_title.setStyleSheet(label_style(Typography.caption, "muted", 700))
         advanced.addWidget(preset_title)
         preset_row = QWidget()
         preset_layout = QHBoxLayout(preset_row)
@@ -142,11 +142,11 @@ class ColorMixin(ColorKeyframesMixin):
         advanced.addWidget(self.color_preset_save_button)
 
         lut_title = QLabel("LUT 3D (.cube)")
-        lut_title.setStyleSheet(label_style(11, "muted", 700))
+        lut_title.setStyleSheet(label_style(Typography.caption, "muted", 700))
         advanced.addWidget(lut_title)
         self.color_lut_label = QLabel(translate("inspector.color.no_lut"))
         self.color_lut_label.setWordWrap(True)
-        self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
+        self.color_lut_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         advanced.addWidget(self.color_lut_label)
         lut_row = QWidget()
         lut_layout = FlowLayout(lut_row, spacing=Spacing.xs)
@@ -225,15 +225,15 @@ class ColorMixin(ColorKeyframesMixin):
             lut = self._current_color_grade.lut
             if lut is None:
                 self.color_lut_label.setText(translate("inspector.color.no_lut"))
-                self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
+                self.color_lut_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
                 self.color_lut_remove_button.setEnabled(False)
             elif lut.missing:
                 self.color_lut_label.setText(translate("inspector.color.lut_missing", title=lut.title, path=lut.path))
-                self.color_lut_label.setStyleSheet(label_style(11, "danger", 600))
+                self.color_lut_label.setStyleSheet(label_style(Typography.caption, "danger", 600))
                 self.color_lut_remove_button.setEnabled(True)
             else:
                 self.color_lut_label.setText(f"{lut.title}\n{lut.path}")
-                self.color_lut_label.setStyleSheet(label_style(11, "text", 500))
+                self.color_lut_label.setStyleSheet(label_style(Typography.caption, "text", 500))
                 self.color_lut_remove_button.setEnabled(True)
         finally:
             self._allow_color_signals = True

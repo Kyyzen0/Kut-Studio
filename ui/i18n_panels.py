@@ -188,6 +188,8 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
     ),
     # --- Inspecteur : onglets, groupes, transition, sous-titre -------------------------------------------------------
     "inspector.tab.clip": _t("Clip", "Clip", "Clip"),
+    "inspector.tab.more": _t("Plus", "More", "Más"),
+    "inspector.tab.more.tip": _t("Autres onglets : Graphiques, Compositing, Suivi", "Other tabs: Graphics, Compositing, Tracking", "Otras pestañas: Gráficos, Composición, Seguimiento"),
     "inspector.tab.compositing": _t("Compositing", "Compositing", "Composición"),
     "inspector.project.format": _t("Format", "Format", "Formato"),
     "inspector.color.saturation": _t("Saturation", "Saturation", "Saturación"),

@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QToolButton
 
 from core.usage_level import UsageLevel
+from ui.design_system import Sizes
 from ui import i18n
 
 
@@ -146,6 +147,7 @@ class UsageLevelMixin:
         chip.setCursor(Qt.PointingHandCursor)
         chip.setFocusPolicy(Qt.NoFocus)
         chip.setObjectName("usageLevelChip")
+        chip.setMinimumHeight(Sizes.control_min)          # jamais sous 30 px (barème « Air d'abord »)
         chip.setPopupMode(QToolButton.InstantPopup)
         # Puce étroite : la barre du haut est pleine à 1180 px, +20 % de police (l'export ne doit pas être tronqué).
         chip.setStyleSheet(

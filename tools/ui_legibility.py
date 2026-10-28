@@ -134,6 +134,15 @@ def page_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
         colour.tabs.setCurrentIndex(index)
         settle(window)
 
+    def montage(mixer_open: bool) -> None:
+        window.switch_page("edit")
+        if window.mixer_panel.collapsed == mixer_open:                 # un clic sur la barre (ou « Replier ») : la voie de l'utilisateur
+            window.mixer_panel._toggle_collapsed()
+        settle(window)
+
+    yield "montage-mixeur-replie", lambda: montage(False)              # barre de 40 px sous la timeline
+    yield "montage-mixeur-ouvert", lambda: montage(True)
+    yield "montage-mixeur-replie-2", lambda: montage(False)            # l'état de départ des scénarios suivants
     for index, name in enumerate(("roues", "qualificateur", "fenetres", "flou")):
         yield f"couleur-{name}", lambda i=index: colour_tab(i, False)
     yield "couleur-roues-timeline", lambda: colour_tab(0, True)         # timeline rouverte sous la page, avec la bande des plans

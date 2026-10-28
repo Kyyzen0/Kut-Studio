@@ -152,12 +152,13 @@ class ColorPageMixin:
     def switch_page(self, page: str) -> None:
         """Passe à la page ``page`` : sa disposition, l'onglet Couleur et les scopes sur la page Couleur."""
         self._finalize_color_history()
-        # Pistes « normales » de 56 px sur la page Audio (3 visibles, lisibles), 48 px ailleurs : la hauteur est celle de la
-        # page, le modèle des pistes ne change pas.
-        self.timeline_panel.set_row_height_override(Sizes.timeline_track_min_height if page == PAGE_AUDIO else None)
+        # Pistes « normales » de 56 px sur la page Audio (3 visibles) et de 60 px sur le Montage (4 visibles, nom et type lisibles),
+        # 48 px ailleurs : la hauteur est celle de la page, le modèle des pistes ne change pas.
+        self._apply_page_density(page)
         self._viewer_host.set_compact(page == PAGE_AUDIO)
         if self.workspace.switch_page(page):
             self._sync_workspace_menu()
+        self._apply_mixer_fold()
         for name, button in self.page_buttons.items():
             button.setChecked(name == self.workspace.page)
         rail = self.side_rail
@@ -180,6 +181,27 @@ class ColorPageMixin:
             if self.workspace.page == PAGE_COMPOSITION:
                 self._refresh_composition_panel()
         self._refresh_window_editing()
+
+    def _apply_page_density(self, page: str) -> None:
+        """Hauteur des pistes « normales » (Montage 60 px, Audio 56 px, ailleurs celle du modèle) et vignettes de la bibliothèque (72 px sur le Montage)."""
+        height = {PAGE_EDIT: Sizes.montage_track_height, PAGE_AUDIO: Sizes.timeline_track_min_height}.get(page)
+        self.timeline_panel.set_row_height_override(height)
+        self.project_panel.set_montage_density(page == PAGE_EDIT)
+
+    def _apply_mixer_fold(self) -> None:
+        """Mixeur replié en barre de 40 px sur le Montage (choix de session), déplié et sans bouton de repli ailleurs."""
+        montage = self.workspace.page == PAGE_EDIT
+        mixer = self.mixer_panel
+        before = (mixer.collapsed, mixer.height_cap())
+        mixer.set_collapsible(montage)
+        mixer.set_collapsed(montage and not self._montage_mixer_open)
+        if (mixer.collapsed, mixer.height_cap()) != before:
+            self.workspace.refresh_height_caps(rebalance=False)       # le changement de page rééquilibre déjà
+
+    def _on_mixer_fold_toggled(self, collapsed: bool) -> None:
+        """Clic sur la barre ou le bouton du mixeur : on retient le choix pour la session (jamais dans ``workspace.json``)."""
+        self._montage_mixer_open = not collapsed
+        self.workspace.refresh_height_caps()
 
     def _show_page_scopes(self, color_page: bool) -> None:
         """Scopes affichés sur la page Couleur ; en revenant au Montage, l'état qu'on y avait laissé."""

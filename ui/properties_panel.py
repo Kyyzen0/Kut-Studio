@@ -35,7 +35,7 @@ from core.visual_effects import (
     ClipTransform,
     TransformKeyframe,
 )
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.icons import IconButton, IconName
 from ui.keyboard_navigation import let_tab_leave_in, tab_only_controls
 from ui.wheel_guard import install_wheel_guard
@@ -311,7 +311,7 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
         value_label = QLabel(f"{value}{suffix}")
         value_label.setFixedWidth(40)
         value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        value_label.setStyleSheet(label_style(11, "muted", 600))
+        value_label.setStyleSheet(label_style(Typography.caption, "muted", 600))
         container = QWidget()
         container.setMinimumWidth(140)
         row = QHBoxLayout(container)

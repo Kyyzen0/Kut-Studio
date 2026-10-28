@@ -347,13 +347,18 @@ def test_layout_at_900px_gives_scopes_their_comfort_height(window_at):
 
 def test_library_keeps_its_natural_height_when_the_window_allows_it():
     """Avant, le minimum de layout de la bibliothèque (549 px) imposait sa hauteur à la rangée du haut ; désormais la
-    répartition le décide explicitement, sans que la bibliothèque rogne à 720 px."""
+    répartition le décide explicitement, sans que la bibliothèque rogne à 720 px.
+
+    Sur le Montage « Air d'abord », 4 pistes de 60 px et la barre du mixeur prennent la hauteur, et les cartes de 72 px allongent la
+    liste : la bibliothèque remplit donc la rangée du haut (elle défile pour le reste) au lieu de viser sa hauteur naturelle."""
     window = audit.make_main_window(1440, 900)
     try:
         library = window.project_panel
         root = window.workspace._root_splitter
-        wanted = min(library.sizeHint().height(), root.height() - root.handleWidth() - Sizes.timeline_min_height)
+        row = root.sizes()[0]
+        wanted = min(library.sizeHint().height(), row)
         assert library.height() >= wanted - 16, f"bibliothèque de {library.height()} px, il en faut {wanted}"
+        assert row >= Sizes.monitor_min_height + 160, f"rangée du haut de {row} px"
     finally:
         window.close()
 

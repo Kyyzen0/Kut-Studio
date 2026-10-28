@@ -574,10 +574,13 @@ def page_default_state(page: str) -> WorkspaceState:
     le temps de la session : voir :func:`color_page_session_state`) ; les
     médias se replient. Composition :
     le moniteur, les nœuds et l'inspecteur du nœud à droite, la timeline.
-    Audio : le mixeur et ses vumètres en bas, avec la timeline, sous un
+    Montage : le mixeur est une barre repliée sous la timeline. Audio : le mixeur et ses vumètres en bas, avec la timeline, sous un
     moniteur plus petit ; l'inspecteur (onglet Audio) et les médias restent.
     """
     state = WorkspaceState.default()
+    if page == PAGE_EDIT:
+        # Montage : le mixeur y est une barre de 40 px, repliée (un clic le rouvre : voir ``MixerPanel.set_collapsed``).
+        return state.with_panel(PanelId.MIXER, area=DockArea.BOTTOM, visible=True)
     if page == PAGE_AUDIO:
         return state.with_panel(PanelId.MIXER, area=DockArea.BOTTOM, visible=True).with_center_ratio(0.42)
     if page == PAGE_COMPOSITION:

@@ -203,7 +203,7 @@ def test_the_audio_page_shows_the_mixer_and_the_rail_leads_there(window):
     assert window.page_buttons[PAGE_AUDIO].isChecked() and window.side_rail.active() == "audio"
     assert window.mixer_panel.strip_count() == sum(1 for t in window.project.tracks if t.type == "audio")
     window.switch_page(PAGE_EDIT)
-    assert not window.workspace.is_visible(PanelId.MIXER), "le Montage garde sa disposition, mixeur replié"
+    assert window.workspace.is_visible(PanelId.MIXER) and window.mixer_panel.collapsed, "le Montage garde sa disposition : mixeur replié en barre"
     assert window.side_rail.active() == "edit"
     window._on_side_rail_changed("audio")
     assert window.workspace.page == PAGE_AUDIO

@@ -74,7 +74,7 @@ def test_float_panel_keeps_the_same_widget(window):
 def test_float_panel_moves_it_out_of_the_dock_zone(window):
     manager = window.workspace
     manager.float_panel(PanelId.TIMELINE)
-    assert not manager.state.visible_panels(DockArea.BOTTOM)
+    assert PanelId.TIMELINE not in manager.state.visible_panels(DockArea.BOTTOM)     # le mixeur (barre du Montage) y reste
 
 
 def test_dock_panel_restores_the_same_widget(window):

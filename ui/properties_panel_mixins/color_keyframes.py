@@ -22,6 +22,7 @@ from core.usage_level import UsageLevel
 from ui import i18n
 from ui.icons import IconName
 from ui.properties_widgets.keyframe_row import KeyframeRow, build_keyframe_row, set_diamond_quietly, set_spin_quietly
+from ui.design_system import Typography
 from ui.theme import label_style
 
 
@@ -57,7 +58,7 @@ class ColorKeyframesMixin:
         """Avis « étalonnage découpé en nœuds » et bouton qui retire les images clés ignorées (cachés tant qu'il ne sert pas)."""
         self.color_animation_label = QLabel()
         self.color_animation_label.setWordWrap(True)
-        self.color_animation_label.setStyleSheet(label_style(11, "muted", 600))
+        self.color_animation_label.setStyleSheet(label_style(Typography.caption, "muted", 600))
         self.color_animation_label.hide()
         root.addWidget(self.color_animation_label)
         self.color_animation_clear_button = self._make_action_button(

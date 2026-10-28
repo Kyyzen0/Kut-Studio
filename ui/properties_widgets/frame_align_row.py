@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from core.frame_alignment import FrameEdge
-from ui.design_system import Sizes
+from ui.design_system import Sizes, Typography
 from ui.i18n import translate
 from ui.theme import label_style
 
@@ -69,7 +69,7 @@ class FrameAlignRow(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(2)
         self.title = QLabel()
-        self.title.setStyleSheet(label_style(11, "muted", 600))
+        self.title.setStyleSheet(label_style(Typography.caption, "muted", 600))
         outer.addWidget(self.title)
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)

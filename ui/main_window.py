@@ -714,12 +714,16 @@ class MainWindow(
         self.workspace.register(PanelId.COLOR, self.color_panel)
         self.workspace.register(PanelId.CLIPS, self.clip_strip)
         self.workspace.register(PanelId.COMPOSITION, self.composition_panel)
+        self._montage_mixer_open = False             # Montage : le mixeur démarre replié en barre de 40 px (choix de session)
+        self.mixer_panel.collapse_toggled.connect(self._on_mixer_fold_toggled)
         self._connect_audio_controls()
         self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
         # Le menu « Fenêtre » ne peut être rempli qu'une fois le
         # gestionnaire d'espace de travail construit.
         self._build_workspace_menu(self.window_menu)
+        self._apply_page_density(self.workspace.page)        # la page de départ (Montage) a sa hauteur de piste dès l'ouverture
+        self._apply_mixer_fold()
 
         self.editor_page = QWidget()
         # Le rail vertical est global et reste visible même si tous les
@@ -1160,16 +1164,16 @@ class MainWindow(
         self.undo_button = IconButton(
             icon=IconName.RESET,
             tooltip=i18n.translate("action.undo"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         self.redo_button = IconButton(
             icon=IconName.RESET,
             tooltip=i18n.translate("action.redo"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         from PySide6.QtGui import QTransform, QIcon
         from PySide6.QtCore import Qt as QtCore
-        base_pixmap = make_icon(IconName.RESET, size=Sizes.icon_button_sm - 4).pixmap(64, 64)
+        base_pixmap = make_icon(IconName.RESET, size=Sizes.control_min - 4).pixmap(64, 64)
         self.redo_button.setIcon(
             QIcon(base_pixmap.transformed(
                 # Miroir horizontal : une rotation de 180° garderait le

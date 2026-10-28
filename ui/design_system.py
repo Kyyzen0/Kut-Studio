@@ -101,7 +101,7 @@ class _Sizes:
     toolbar: int = 44
     # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
     # de 50-56 px pour rester un repère, pas une bande.
-    top_bar: int = 50
+    top_bar: int = 40       # « Air d'abord » : 10 px de plus pour la visionneuse ; boutons de 32 à 34 px, 3 px de marge de chaque côté
     # Rail vertical principal, volontairement icon-only. Les libellés
     # restent disponibles dans les infobulles et via l'accessibilité Qt.
     side_rail_width: int = 96          # le nom de chaque section est écrit sous son icône (« Transitions », « Transiciones »)
@@ -134,6 +134,13 @@ class _Sizes:
     # Page Audio : hauteur de la rangée du haut (moniteur, bibliothèque, inspecteur) ; elle cède pour que la timeline montre
     # 3 pistes de ``timeline_track_min_height`` et que le mixeur garde ses canaux.
     audio_top_row_height: int = 200
+    # Page Montage « Air d'abord » : 4 pistes de 60 px visibles (nom et type lisibles), mixeur replié en une barre de 40 px
+    # (un clic le rouvre), vignettes de bibliothèque de 72 px (40 ailleurs : la liste audio de la page Audio garde ses lignes).
+    montage_track_height: int = 60
+    montage_visible_tracks: int = 4
+    mixer_bar_height: int = 40
+    library_poster: int = 72
+    library_poster_compact: int = 40
     # Barre de progression : une seule épaisseur dans toute l'application (proxys, suivi, flux optique, export, import).
     progress_height: int = 10
     # Zone cliquable minimale d'un bouton-icône (même si l'icône est plus petite) : la cible tactile et souris.
