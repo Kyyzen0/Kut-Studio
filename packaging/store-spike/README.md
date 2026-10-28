@@ -43,7 +43,7 @@ Pièges mesurés :
 
 ## À faire à la main (boîtes de dialogue : non automatisable ici)
 
-Avec `$SPIKE_DIR/Kut-Studio.app` (jamais `/Applications/Kut-Studio.app`) :
+Avec `$SPIKE_DIR/Kut-Studio.app` (jamais `/Applications/Kut-Studio.app`). **Travailler sur une COPIE d'un projet** (une sonde ne doit jamais toucher un vrai projet ; `probe.py` ne fait que lire le fichier choisi et ne crée / supprime que des copies voisines à nom unique, test : `tests/test_store_spike_probe.py`) :
 
 1. **Fichier > Ouvrir** un `.kut` placé hors du bundle (par ex. `~/Desktop`) : s'ouvre-t-il ? Le message « verrou non posé » est attendu.
 2. Modifier le projet puis **Enregistrer** : l'écriture atomique (fichier temporaire voisin + renommage) réussit-elle ?

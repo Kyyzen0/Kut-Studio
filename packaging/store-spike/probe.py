@@ -49,15 +49,59 @@ def write_check(path: Path) -> str:
 
 
 def file_tests(path: Path) -> None:
-    """Mesures sur un fichier remis par le système (extension de bac à sable de LaunchServices)."""
-    attempt("fichier_ouvert_lecture", lambda: f"{len(path.read_bytes())} octets")
-    attempt("fichier_ouvert_reecriture_en_place", lambda: (path.write_bytes(path.read_bytes()), "ok")[1])
-    attempt("fichier_ouvert_voisin_lock_O_EXCL", lambda: (os.close(os.open(str(path) + ".lock", os.O_CREAT | os.O_EXCL | os.O_WRONLY)), os.unlink(str(path) + ".lock"), "ok")[2])
-    attempt("fichier_ouvert_voisin_autosave", lambda: (Path(str(path) + ".autosave").write_text("x"), os.unlink(str(path) + ".autosave"), "ok")[2])
-    attempt("fichier_ouvert_temp_voisin_puis_rename", lambda: (Path(str(path.parent / ".t.partial")).write_text("x"), os.replace(str(path.parent / ".t.partial"), str(path)), "ok")[2])
+    """Mesures sur un fichier remis par le système (extension de bac à sable de LaunchServices).
+
+    Le fichier choisi n'est JAMAIS modifié ni supprimé : on le lit, on l'ouvre en lecture-écriture sans écrire, et on ne
+    crée / renomme / supprime que des copies voisines à nom unique (jamais ``nom.kut.lock`` ou ``.autosave`` réels)."""
+    tag = f"kut-probe-{os.getpid()}"
+    content: bytes = b""
+
+    def read() -> str:
+        nonlocal content
+        content = path.read_bytes()
+        return f"{len(content)} octets"
+
+    def open_rw_without_writing() -> str:
+        with open(path, "r+b"):
+            return "ouverture en lecture-écriture ok (rien écrit)"
+
+    def sibling(name: str, action) -> str:
+        target = path.parent / f"{tag}{name}"
+        try:
+            return action(target)
+        finally:
+            target.unlink(missing_ok=True)
+
+    def lock(target: Path) -> str:
+        os.close(os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        return "ok"
+
+    def copy_then_rename(target: Path) -> str:
+        temp = target.with_suffix(".partial")
+        try:
+            temp.write_bytes(content)
+            os.replace(temp, target)
+        finally:
+            temp.unlink(missing_ok=True)
+        return "copie voisine écrite puis renommée"
+
+    def container_temp_then_rename(target: Path) -> str:
+        temp = Path(tempfile.gettempdir()) / f"{tag}.partial"
+        try:
+            temp.write_bytes(content)
+            os.replace(temp, target)
+        finally:
+            temp.unlink(missing_ok=True)
+        return "temporaire du conteneur renommé vers un voisin"
+
+    attempt("fichier_ouvert_lecture", read)
+    attempt("fichier_ouvert_ouverture_rw_sans_ecriture", open_rw_without_writing)
+    attempt("fichier_ouvert_voisin_lock_O_EXCL", lambda: sibling(".lock", lock))
+    attempt("fichier_ouvert_voisin_autosave", lambda: sibling(".autosave", lambda t: (t.write_bytes(content), "ok")[1]))
+    attempt("fichier_ouvert_copie_voisine_temp_puis_rename", lambda: sibling(".copy", copy_then_rename))
+    attempt("fichier_ouvert_temp_conteneur_puis_rename_vers_voisin", lambda: sibling(".moved", container_temp_then_rename))
     attempt("fichier_ouvert_dossier_listing", lambda: len(os.listdir(path.parent)))
-    attempt("fichier_voisin_non_ouvert_lecture", lambda: len(path.parent.joinpath("neighbor.txt").read_bytes()))
-    attempt("fichier_ouvert_temp_dans_conteneur_puis_rename_vers_fichier", lambda: (Path(tempfile.gettempdir(), "t.partial").write_text("x"), os.replace(str(Path(tempfile.gettempdir(), "t.partial")), str(path)), "ok")[2])
+    attempt("fichier_voisin_inexistant_lecture", lambda: len(path.parent.joinpath(f"{tag}.absent").read_bytes()))
 
 
 def main() -> int:
@@ -76,8 +120,8 @@ def main() -> int:
     # --- Fichiers ---
     attempt("ecriture_conteneur_AppSupport", lambda: write_check(Path.home() / "Library" / "Application Support" / "Kut-Studio" / "t"))
     attempt("ecriture_tmp_python", lambda: write_check(Path(tempfile.gettempdir()) / "kut-probe"))
-    attempt("ecriture_/tmp", lambda: write_check(Path("/tmp") / "kut-probe-sandbox"))
-    attempt("ecriture_vrai_Home_Documents", lambda: write_check(Path("/Users") / os.environ.get("USER", "x") / "Documents" / "kut-probe"))
+    attempt("ecriture_/tmp", lambda: write_check(Path("/tmp") / f"kut-probe-{os.getpid()}"))
+    attempt("ecriture_vrai_Home_Documents", lambda: write_check(Path("/Users") / os.environ.get("USER", "x") / "Documents" / f"kut-probe-{os.getpid()}"))
     attempt("lecture_/opt/homebrew/bin/ffmpeg", lambda: f"{len(open('/opt/homebrew/bin/ffmpeg', 'rb').read(64))} octets")
     attempt("lecture_/Users/_home_listing", lambda: len(os.listdir(os.path.expanduser("/Users/" + os.environ.get("USER", "x") + "/Documents"))))
     attempt("lecture_bundle_ressources", lambda: len(os.listdir(bundle / "Contents" / "Frameworks")))
@@ -138,7 +182,7 @@ def main() -> int:
         tmpdir = tempfile.gettempdir()
         attempt("ffmpeg_embarque_encode_tmp", lambda: run([str(ffmpeg), "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=1", "-pix_fmt", "yuv420p", os.path.join(tmpdir, "k.mp4")]) or "ok")
         attempt("ffmpeg_embarque_encode_videotoolbox", lambda: run([str(ffmpeg), "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=1", "-c:v", "h264_videotoolbox", os.path.join(tmpdir, "kv.mp4")]) or "ok")
-        attempt("ffmpeg_embarque_ecriture_hors_conteneur", lambda: run([str(ffmpeg), "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=1", "/Users/" + os.environ.get("USER", "x") + "/Documents/kut-probe.mp4"]) or "ok")
+        attempt("ffmpeg_embarque_ecriture_hors_conteneur", lambda: run([str(ffmpeg), "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=1", "/Users/" + os.environ.get("USER", "x") + f"/Documents/kut-probe-{os.getpid()}.mp4"]) or "ok")
     attempt("ffmpeg_homebrew_-version", lambda: run(["/opt/homebrew/bin/ffmpeg", "-version"]).splitlines()[0])
     # --- Réseau ---
     attempt("dns_github.com", lambda: socket.gethostbyname("github.com"))
