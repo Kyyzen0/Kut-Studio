@@ -141,6 +141,14 @@ class _Sizes:
     mixer_bar_height: int = 40
     library_poster: int = 72
     library_poster_compact: int = 40
+    # Page Composition « Air d'abord » : éditeur de nœuds de 290 px de haut (nœuds de 112 x 56 px, ports de 12 px), réglage du nœud
+    # choisi dessous avec des champs de 36 px, timeline réduite à 2 pistes de ``timeline_track_min_height``.
+    node_editor_height: int = 290
+    node_width: int = 112
+    node_height: int = 56
+    node_port: int = 12
+    node_field: int = 36
+    composition_visible_tracks: int = 2
     # Barre de progression : une seule épaisseur dans toute l'application (proxys, suivi, flux optique, export, import).
     progress_height: int = 10
     # Zone cliquable minimale d'un bouton-icône (même si l'icône est plus petite) : la cible tactile et souris.

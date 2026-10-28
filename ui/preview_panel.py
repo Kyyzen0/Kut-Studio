@@ -348,7 +348,8 @@ class PreviewPanel(QWidget):
         )
         toolbar_layout.addWidget(self.timecode_label)
         toolbar_layout.addSpacing(Spacing.xs)
-        toolbar_layout.addWidget(QLabel("/"))
+        slash = QLabel("/")
+        toolbar_layout.addWidget(slash)
         toolbar_layout.addSpacing(Spacing.xs)
         toolbar_layout.addWidget(self.duration_label)
 
@@ -405,6 +406,11 @@ class PreviewPanel(QWidget):
         toolbar_layout.addWidget(cut_button)
         toolbar_layout.addWidget(import_button)
         self._tooltip_buttons += [(cut_button, "tooltip.cut"), (import_button, "preview.import")]
+        # Colonne étroite (page Composition, nœuds entiers à droite) : la durée totale et les deux boutons de droite s'effacent plutôt
+        # que de rogner le timecode (voir :meth:`set_adaptive_transport`).
+        self._adaptive_transport = False
+        self._transport_full_width = toolbar.minimumSizeHint().width()
+        self._transport_extras = (self.duration_label, slash, cut_button, import_button)
 
         # Zone d'aperçu ---------------------------------------------------------
         preview_container = QWidget()
@@ -617,6 +623,22 @@ class PreviewPanel(QWidget):
         names = ", ".join(effect.type.value.replace("_", " ") for effect in active)
         self.preview_effects_overlay.setText(f"FX · {names}")
         self.preview_effects_overlay.show()
+
+    def set_adaptive_transport(self, enabled: bool) -> None:
+        """Page Composition : sous la largeur de la barre de transport entière, la durée totale et les boutons de droite s'effacent
+        (le timecode et la lecture restent entiers). Ailleurs (``False``, par défaut), la barre ne change jamais."""
+        self._adaptive_transport = bool(enabled)
+        self._fit_transport()
+
+    def _fit_transport(self) -> None:
+        narrow = self._adaptive_transport and self.width() < self._transport_full_width
+        for widget in self._transport_extras:
+            widget.setVisible(not narrow)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        super().resizeEvent(event)
+        if self._adaptive_transport:
+            self._fit_transport()
 
     def set_timecode(self, current_seconds: float, total_seconds: float) -> None:
         """Met à jour le timecode turquoise et la durée totale."""

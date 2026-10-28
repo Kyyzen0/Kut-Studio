@@ -118,6 +118,10 @@ DEFAULT_SIZE: dict[PanelId, int] = {
 #: minimum, quand la fenêtre est plus étroite).
 COLOR_PAGE_PANEL_WIDTH: int = 660
 
+#: Largeur d'origine de la colonne Composition : les 5 colonnes de nœuds de 112 px de l'éditeur (7 nœuds entiers, sans défiler) ;
+#: le moniteur cède, jusqu'à son minimum, quand la fenêtre est plus étroite.
+COMPOSITION_PAGE_PANEL_WIDTH: int = 720
+
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
 MIN_SIZE: dict[PanelId, int] = {
     PanelId.MEDIA: 220,
@@ -588,7 +592,7 @@ def page_default_state(page: str) -> WorkspaceState:
         return (
             state.with_panel(PanelId.MEDIA, visible=False)
             .with_panel(PanelId.INSPECTOR, visible=False)
-            .with_panel(PanelId.COMPOSITION, area=DockArea.RIGHT, visible=True)
+            .with_panel(PanelId.COMPOSITION, area=DockArea.RIGHT, visible=True, size=COMPOSITION_PAGE_PANEL_WIDTH)
         )
     if page != PAGE_COLOR:
         return state

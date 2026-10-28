@@ -147,3 +147,38 @@ chrome de timeline laissent 408 px à la rangée du haut (maquette : ~490) ; sur
 * **Textes** : plus aucun texte sous 12 px dans la bibliothèque, le mixeur, les onglets, la barre de séquence, la timeline et
   l'inspecteur (les `label_style(11, …)` passent à `Typography.caption`). Les boutons des en-têtes de piste (22 px) restent
   l'exception documentée de `Sizes.track_header_button`.
+
+## Page Composition « Air d'abord » (éditeur de 290 px, 7 nœuds entiers, 2 pistes de 56 px)
+
+Mesures hors écran (la fenêtre de test garde sa barre de menus de 25 px) :
+
+| Fenêtre | Colonne des nœuds | Image du moniteur | Avant ce lot | Réglage visible sous les nœuds | Timeline |
+| --- | --- | --- | --- | --- | --- |
+| 1440x900 | 723 px | 593 x 334 | 554 x 313 | ~246 px | 260 px : 2 pistes de 56 px, 26 px de marge |
+| 1440x790 | 723 px | 593 x 334 | 458 x 258 | ~132 px | idem |
+| 1222x738 | 724 px | 374 x 212 | 411 x 232 | ~84 px (défile) | idem |
+
+* **Éditeur** (`ui/composition_page/node_view.py`) : `Sizes.node_editor_height` = 290 px quand le panneau est une colonne (au-dessus de
+  l'inspecteur) ; en bande très large (panneau bas et large) l'éditeur reprend la hauteur qu'on lui laisse. Les nœuds mesurent
+  `Sizes.node_width` x `Sizes.node_height` (112 x 56 px), les ports `Sizes.node_port` (12 px, liseré compris), le texte `Typography.small` /
+  `Typography.caption` (13 / 12 px) : **jamais de zoom arrière** (la vue défile si le graphe est plus grand ; la position de défilement survit à une
+  modification). La disposition automatique (une colonne par profondeur) n'a pas changé : 7 nœuds = 5 colonnes de 112 px + 4 écarts de 32 px = 688 px.
+* **Couleurs par type** : média et couleur unie `track_video` (bleu), texte `track_subtitle` (violet), traitements (transformation,
+  masque, incrustation, effets, étalonnage) `accent` (menthe), fusion `warning` (ambre), sortie `text`. Le bandeau du nœud, son port de
+  sortie, les liens qui en partent et la barre du titre de l'inspecteur prennent cette couleur (`node_tone`). Un nœud sans nom montre son type
+  seul, un nœud nommé le nom puis le type.
+* **Réglage du nœud** (`ui/composition_page/inspector.py`) : tout défile dans une seule zone (le minimum de la fenêtre ne dépend plus du
+  réglage : 710 px) ; champs de `Sizes.node_field` = 36 px, boutons et cases de `Sizes.control_min` = 30 px au moins (appliqués aux champs
+  créés plus tard, comme les paramètres d'un effet) ; les boutons de l'en-tête du panneau font 32 px.
+* **Largeur** : `COMPOSITION_PAGE_PANEL_WIDTH` = 720 px (`core/workspace_state.py`) ; comme sur la page Couleur le moniteur cède (jusqu'à son
+  minimum de 320 px). Une disposition enregistrée avant ce lot garde sa largeur : les nœuds défilent alors.
+* **Barre de lecture** (`PreviewPanel.set_adaptive_transport`) : sur la page Composition seulement, sous la largeur de la barre entière
+  (~500 px), la durée totale et les boutons « couper » / « importer » s'effacent au lieu de rogner le timecode ; ailleurs rien ne change
+  (défaut `False`).
+* **Pistes** : `row_height_override` = 56 px (`Sizes.timeline_track_min_height`) ; `balance_vertical_split` donne à la timeline son chrome
+  mesuré + 8 px + 2 x 56 px + 20 px de marge (`MONTAGE_TIMELINE_MARGIN`), jamais sous son minimum de 260 px ; tout le reste de la hauteur
+  va à la rangée du haut. `Track.height_mode` n'est jamais touché.
+* **Limite** : à 1222x738 le réglage du nœud ne montre que son titre et son champ « Nom » (84 px) : les champs suivants défilent. L'image
+  du moniteur y perd ~9 % (la colonne des nœuds prend 724 px de large), contre un gain de 7 % à 1440x900.
+* **Mesurer** : `python -m tools.ui_legibility` ajoute le scénario `composition-noeuds` (le clip de composition aux 7 nœuds de la
+  maquette, `tools.ui_legibility.seven_node_composition`) ; les gardes sont dans `tests/test_ui_legibility.py` (`test_composition_*`).

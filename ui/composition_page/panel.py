@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QLabel, QMenu, QPushButton, QSplitter, QToolButton
 
 from core.composition import OutputNode
 from ui.composition_page.inspector import NodeInspector
-from ui.composition_page.node_view import CompositionNodeView, add_menu
+from ui.composition_page.node_view import EDITOR_HEIGHT, CompositionNodeView, add_menu
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
@@ -36,6 +36,7 @@ class CompositionPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.header = PanelHeader(translate("comp.panel.title"), icon=IconName.NODES)
+        self.header.setFixedHeight(Sizes.icon_button + Spacing.xs)          # boutons de 32 px, 2 px de marge de chaque côté
         self.view_button = self._header_button(IconName.EYE, "comp.panel.view_node", checkable=True)
         self.view_button.toggled.connect(self.view_toggled)
         self.add_button = self._header_button(IconName.PLUS, "comp.panel.add")
@@ -65,11 +66,11 @@ class CompositionPanel(QWidget):
         self.inspector = NodeInspector()
         self.splitter = QSplitter(Qt.Vertical)
         self.splitter.setChildrenCollapsible(False)
-        self.splitter.setHandleWidth(6)
+        self.splitter.setHandleWidth(1)
         self.splitter.addWidget(self.nodes)
         self.splitter.addWidget(self.inspector)
-        self.splitter.setStretchFactor(0, 5)
-        self.splitter.setStretchFactor(1, 4)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
         self._sized = False
         layout.addWidget(self.splitter, 1)
 
@@ -81,7 +82,7 @@ class CompositionPanel(QWidget):
         self.set_target(None, None, editable=False)
 
     def _header_button(self, icon: IconName, tooltip_key: str, *, checkable: bool = False) -> IconButton:
-        button = IconButton(icon=icon, tooltip=translate(tooltip_key), size=Sizes.icon_button_sm, checkable=checkable)
+        button = IconButton(icon=icon, tooltip=translate(tooltip_key), size=Sizes.icon_button, checkable=checkable)
         button.setProperty("tooltip_key", tooltip_key)
         self.header.add_trailing(button)
         return button
@@ -139,10 +140,14 @@ class CompositionPanel(QWidget):
         # Les nœuds ont besoin de largeur : en colonne tant que le panneau n'est pas une bande très large.
         orientation = Qt.Vertical if self.height() >= self.width() * 0.45 else Qt.Horizontal
         if self.splitter.orientation() != orientation or not self._sized:
+            stacked = orientation == Qt.Vertical
             self.splitter.setOrientation(orientation)
-            total = self.splitter.height() if orientation == Qt.Vertical else self.splitter.width()
+            self.splitter.setHandleWidth(1 if stacked else 6)         # empilé, l'éditeur a sa hauteur fixe : pas de poignée à saisir
+            self.nodes.set_stacked(stacked)
+            total = self.splitter.height() if stacked else self.splitter.width()
             if total > 0:
-                self.splitter.setSizes([int(total * 0.55), int(total * 0.45)])
+                first = EDITOR_HEIGHT if stacked else int(total * 0.55)
+                self.splitter.setSizes([first, total - first])
                 self._sized = True
 
 

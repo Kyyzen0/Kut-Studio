@@ -13,11 +13,14 @@ from dataclasses import replace
 from PySide6.QtCore import QRegularExpression, Signal
 from PySide6.QtGui import QColor, QRegularExpressionValidator
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QAbstractSpinBox,
     QCheckBox,
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,6 +28,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -46,7 +50,8 @@ from core.composition import (
     kind_of,
 )
 from core.effects_model import EFFECT_PARAMETER_SPECS, EffectType, create_effect
-from ui.design_system import Spacing
+from ui.composition_page.node_view import node_tone
+from ui.design_system import Radius, Sizes, Spacing
 from ui.i18n import translate
 from ui.theme import set_role
 
@@ -82,12 +87,29 @@ class NodeInspector(QWidget):
         self._node = None
         self._updating = False
         self._assets: list[tuple[str, str]] = []
-        root = QVBoxLayout(self)
-        root.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        # Tout le réglage défile : sous un éditeur de nœuds de 290 px, la place restante d'un portable est petite, et ce panneau
+        # ne doit jamais relever le minimum de la fenêtre.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        root = QVBoxLayout(content)
+        root.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
         root.setSpacing(Spacing.sm)
+        head = QHBoxLayout()
+        head.setSpacing(Spacing.sm)
+        self.tone_bar = QFrame()                                  # la couleur du type du nœud, comme son bandeau dans l'éditeur
+        self.tone_bar.setFixedSize(8, 22)
         self.title = QLabel()
-        set_role(self.title, "label-secondary")
-        root.addWidget(self.title)
+        set_role(self.title, "panel-title")
+        head.addWidget(self.tone_bar)
+        head.addWidget(self.title)
+        head.addStretch(1)
+        root.addLayout(head)
         name_row = QFormLayout()
         self.label_edit = QLineEdit()
         self.label_edit.editingFinished.connect(lambda: self._edit("label", label=self.label_edit.text()))
@@ -95,11 +117,8 @@ class NodeInspector(QWidget):
         name_row.addRow(self.label_caption, self.label_edit)
         root.addLayout(name_row)
         self.stack = QStackedWidget()
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setWidget(self.stack)
-        root.addWidget(scroll, 1)
+        root.addWidget(self.stack)
+        root.addStretch(1)
         self.pages: dict[str, QWidget] = {}
         self._fields: dict[str, dict[str, object]] = {}
         for kind, build in (("media", self._build_media), ("graphic", self._build_graphic),
@@ -116,8 +135,19 @@ class NodeInspector(QWidget):
             build(form, self._fields[kind])
             self.pages[kind] = page
             self.stack.addWidget(page)
+        self._size_controls(self)
         self.retranslate()
         self.set_node(None)
+
+    @staticmethod
+    def _size_controls(root: QWidget) -> None:
+        """Champs de 36 px de haut, boutons et cases d'au moins 30 px (barème « Air d'abord » : cibles lisibles sur un portable)."""
+        for widget in root.findChildren(QWidget):
+            if isinstance(widget, (QAbstractSpinBox, QComboBox, QLineEdit)) and widget.parentWidget() is not None and \
+                    not isinstance(widget.parentWidget(), (QAbstractSpinBox, QComboBox)):
+                widget.setMinimumHeight(Sizes.node_field)
+            elif isinstance(widget, QAbstractButton):
+                widget.setMinimumHeight(Sizes.control_min)
 
     # -- formulaires --------------------------------------------------------------------------------------------
 
@@ -271,6 +301,10 @@ class NodeInspector(QWidget):
             return
         kind = kind_of(node)
         self.stack.setCurrentWidget(self.pages[kind])
+        for name, page in self.pages.items():                    # la pile ne prend que la hauteur de la page montrée
+            page.setSizePolicy(QSizePolicy.Preferred if name == kind else QSizePolicy.Ignored,
+                               QSizePolicy.Preferred if name == kind else QSizePolicy.Ignored)
+        self.tone_bar.setStyleSheet(f"background: {node_tone(node).name()}; border-radius: {Radius.sm}px;")
         self.title.setText(translate(f"comp.node.{kind}"))
         self._updating = True
         try:
@@ -350,6 +384,7 @@ class NodeInspector(QWidget):
                 spin.setValue(float(effect.params.get(spec.name, spec.default)))
                 spin.valueChanged.connect(lambda value, name=spec.name: self._edit_effect(param=(name, value)))
                 self.effect_form.addRow(translate(f"effects.param.{spec.name}"), spin)
+            self._size_controls(self.effect_params)
         finally:
             self._updating = previous
 
