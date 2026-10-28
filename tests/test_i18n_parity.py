@@ -144,6 +144,8 @@ _LOANWORDS = {
     "{label} · transform",
     # Roues d'étalonnage : les logiciels d'étalonnage gardent ces noms anglais en français et en espagnol.
     "Lift", "Gamma", "Gain", "Offset",
+    # Mixeur : « Pan » (panoramique), l'abréviation que portent tous les mélangeurs, en français comme en espagnol.
+    "Pan",
 }
 # Cognats : le mot s'écrit pareil en français et en anglais.
 _COGNATES_EN = {

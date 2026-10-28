@@ -283,11 +283,10 @@ def test_no_widget_uses_a_radius_a_text_size_or_a_weight_outside_the_scales():
 
 
 #: Plancher de lisibilité (barème « Air d'abord ») : aucun texte sous 12 px, ni dans un jeton ni dans un littéral ``font-size: Npx``.
-#: Exceptions, par fichier, et seulement en attendant leur migration (PR #276 en cours sur ces fichiers, lot suivant) :
-#:   project_panel : pastilles de filtre (3 littéraux de 11 px) ;
-#:   mixer_panel   : bouton M/S et pastille de bus (2 littéraux de 10 et 11 px).
+#: Exceptions, par fichier, et seulement en attendant leur migration : ``project_panel`` et ``mixer_panel`` sont migrés (lot Audio),
+#: il n'en reste aucune.
 MIN_TEXT_PX = 12
-SMALL_TEXT_EXCEPTIONS: dict[str, int] = {"ui/project_panel.py": 3, "ui/mixer_panel.py": 2}
+SMALL_TEXT_EXCEPTIONS: dict[str, int] = {}
 
 
 def test_no_text_token_goes_below_the_legibility_floor():

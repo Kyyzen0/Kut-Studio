@@ -47,7 +47,7 @@ non défilants) : la fenêtre dépassait l'écran, le Dock passait par-dessus la
 Règles qui en découlent : les onglets d'une colonne étroite vont dans `ui.scroll_guard.GuardedTabs` (comme les piles de
 pages dans `GuardedStack`) ; une rangée de boutons ou de cases dans une colonne de ~300 px est un `FlowLayout` ; une grille
 met l'étiquette au-dessus de son champ ; un formulaire d'inspecteur avec des boutons larges utilise `WrapAllRows`. Le mixeur
-(`ui/mixer_panel.py`) bascule seul entre tranches verticales (zone des tranches ≥ 316 px) et lignes compactes ; le bloc
+(`ui/mixer_panel.py`) bascule seul entre tranches verticales (zone des tranches ≥ 296 px) et canaux compacts de 168 px (voir « Page Audio » plus bas) ; le bloc
 dossiers de la bibliothèque (`ui/project_panel_widgets/browse_fold.py`) se replie sous 480 px de colonne.
 
 ## Page Couleur « Air d'abord » (roues entières, bande des plans)
@@ -82,3 +82,18 @@ moins 3 lignes, 3 pistes de timeline visibles, géométrie enregistrée de 3000x
 
 Reste à vérifier sur un vrai écran : le Dock (sa hauteur réelle et le masquage automatique), la barre de titre (40 px
 réservés), l'affichage de la visionneuse.
+
+## Page Audio « Air d'abord » (canaux de 168 px, 3 pistes de 56 px)
+
+Mesures à 1222x738 (zone utilisable d'un Air 13") : rangée du haut 200 à 209 px (moniteur, bibliothèque et inspecteur défilent),
+timeline 302 px (zone des pistes 188 px : 3 pistes de 56 px et 12 px de marge), mixeur 140 px (zone des canaux 108 px).
+
+* **Canal compact** (`MixerStrip(compact=True)`, 168 px de large, boutons de `Sizes.control_min` = 30 px) : nom, FX, M, S ;
+  fader + valeur ; vumètre ; Pan ; puis armement, remise à zéro et sortie (le canal défile). 5 canaux = 880 px.
+* **Master** : un canal de la même largeur à droite des pistes (dans une `ScrollGuard` : la sonie passe sur deux lignes avec
+  des polices larges, rien n'est coupé).
+* **Hauteurs** : `WorkspaceManager.balance_vertical_split` donne à la page Audio `Sizes.audio_top_row_height` (ou 31 % de la
+  hauteur, plafonné à 260 px) à la rangée du haut ; la timeline reçoit 3 pistes. La hauteur de piste (56 px) est celle de la
+  page (`TimelinePanel.row_height_override`, posée par `MainWindow.switch_page`) : le modèle (`Track.height_mode`) ne change pas.
+* **Limite** : en 1280x690 (hors cible), 3 pistes de 56 px **et** un mixeur de 140 px ne tiennent pas dans 614 px : la timeline
+  garde ~263 px (2 pistes et demie) ; les canaux gardent nom, FX, M, S et fader.
