@@ -31,7 +31,7 @@ from .color_grading import ColorGrade
 from .color_wheels import channel_transfer
 from .eq_lut import commands as eq_commands
 from .eq_lut import eq_planes, stage_filters
-from .effect_sendcmd import MAX_COMMAND_BYTES, WINDOW_BYTES, SendcmdContext, frame_count, load_filters
+from .effect_sendcmd import MAX_COMMAND_BYTES, WINDOW_BYTES, SendcmdContext, check_command_budget, frame_count, load_filters
 from .grade_tables import curves_points, exposure_table, wheel_tables
 from .grade_targets import GradeCurves, scalar_property_id, wheel_property_id
 from .color_grading import WHEELS
@@ -176,6 +176,7 @@ class AnimatedGrade:
         wheels_on = self._driven(*_WHEEL_IDS)
         levels_on = self._driven(*_LEVELS)
         levels: tuple[str, str, str] | None = None
+        lut_commands = 0
         previous: dict[str, object] = {}
         size = 0
         from .export_engine import temperature_gains
@@ -184,7 +185,10 @@ class AnimatedGrade:
             grade = self.curves.at(context.start + float(Fraction(index) / fps))
             commands: list[str] = []
             if levels_on and levels != (planes := self._levels(grade)):
-                commands.extend(eq_commands(self.levels_named, planes, levels))
+                sent = eq_commands(self.levels_named, planes, levels)
+                commands.extend(sent)
+                lut_commands += len(sent)
+                check_command_budget(lut_commands, 0)        # même plafond que l'effet : ~25 Ko de mémoire par instruction (FFmpeg 6.1 / 7.1)
                 levels = planes
             if exposure_on and previous.get("exposure") != grade.exposure:
                 previous["exposure"] = grade.exposure

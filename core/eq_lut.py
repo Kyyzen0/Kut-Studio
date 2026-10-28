@@ -39,7 +39,14 @@ from fractions import Fraction
 from typing import Any
 
 from .animation import AnimationCurve, ValueKind
-from .effect_sendcmd import MAX_COMMAND_BYTES, MAX_EFFECT_COMMANDS, SendcmdContext, frame_count, load_filters
+from .effect_sendcmd import (
+    MAX_COMMAND_BYTES,
+    MAX_EFFECT_COMMANDS,
+    SendcmdContext,
+    check_command_budget,
+    frame_count,
+    load_filters,
+)
 from .effects_model import ClipEffect, fx_property_id
 
 EQ_FORMATS = "gray|yuv410p|yuv411p|yuv420p|yuva420p|yuv422p|yuva422p|yuv444p|yuva444p"
@@ -195,9 +202,7 @@ def plan(values_at: Callable[[float], tuple[float, float, float]], context: Send
         instant = max(0.0, context.start + float((Fraction(index) - _HALF_FRAME) / context.fps))
         line = f"{instant:.9f} " + ", ".join(sent) + ";"
         size += len(line) + 1
-        if total > MAX_EFFECT_COMMANDS or size > MAX_COMMAND_BYTES:
-            raise ValueError("Animation d'effet trop longue pour l'export : raccourcissez-la, gardez une valeur fixe sur une "
-                             "partie du clip ou découpez le clip.")
+        check_command_budget(total, size, MAX_EFFECT_COMMANDS, MAX_COMMAND_BYTES)
         rows.append(line)
     if initial is None:  # pragma: no cover - frame_count rend au moins deux images
         raise ValueError("Animation d'effet vide.")

@@ -937,3 +937,20 @@ def test_a_rotated_scaled_layer_keeps_the_command_file_after_the_geometry_and_be
         assert chain.index("rotate=") < chain.index("sendcmd=") < chain.index("curves@v0cge=") < chain.index("setpts=PTS+")
     finally:
         cleanup(written)
+
+
+def test_the_grade_lut_commands_are_capped_by_count_like_an_effect(monkeypatch):
+    """ADR-0013 : le contraste / la saturation animés envoient des instructions ``lut`` ; FFmpeg 6.1 / 7.1 en garde ~25 Ko chacune.
+    Même plafond que l'effet (``MAX_EFFECT_COMMANDS``), pas seulement la taille du texte."""
+    import core.effect_sendcmd as sendcmd
+
+    animation = [kf("color.contrast", 0.0, -1.0, H_), kf("color.contrast", 0.1, 1.0, H_), kf("color.contrast", 0.2, -1.0, H_),
+                 kf("color.contrast", 0.3, 1.0, H_), kf("color.contrast", 0.4, -1.0, H_)]
+    context = context_for(30, 0.0, 1.0)
+    monkeypatch.setattr(sendcmd, "MAX_EFFECT_COMMANDS", 5)
+    with pytest.raises(ValueError, match="trop longue") as raised:
+        chain_of(ColorGrade(), animation, context)
+    assert len(str(raised.value)) < 160
+    monkeypatch.setattr(sendcmd, "MAX_EFFECT_COMMANDS", 40_000)
+    _text, files = chain_of(ColorGrade(), animation, context)             # sous le plafond : accepté
+    cleanup(files)
