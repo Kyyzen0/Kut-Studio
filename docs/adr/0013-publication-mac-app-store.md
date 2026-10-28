@@ -17,7 +17,7 @@ Cet ADR n'est pas un avis juridique (licences, brevets de codecs) : les points j
 
 ## Hypothèse de départ (décision de l'utilisateur, 2026-10-28)
 
-**La distribution par le Mac App Store REMPLACE la distribution actuelle** (GitHub Releases, ADR-0012) pour éviter les problèmes Windows / Linux. **Cible = Mac App Store seul, pour l'instant.** C'est une hypothèse écrite noir sur blanc et **corrigeable** : si elle change, seules les sections « Conséquences » et le plan (étape 11) changent ; le reste de l'audit (sandbox, FFmpeg embarqué, licences) vaut pour toute distribution macOS sérieuse.
+**La distribution par le Mac App Store REMPLACE la distribution actuelle** (GitHub Releases, ADR-0012) pour éviter les problèmes Windows / Linux. **Cible = Mac App Store seul, pour l'instant** (D1, confirmée le 2026-10-28 ; GitHub Releases et les bêtas continuent en parallèle, D8). C'est une hypothèse écrite noir sur blanc et **corrigeable** : si elle change, seules les sections « Conséquences » et le plan (étape 11) changent ; le reste de l'audit (sandbox, FFmpeg embarqué, licences) vaut pour toute distribution macOS sérieuse.
 
 Conséquences immédiates :
 
@@ -258,19 +258,21 @@ Taille relative : **S** ≈ une demi-journée, **M** ≈ quelques jours, **L** �
 | 8 | **Whisper** : désactivation en mode Store (puis embarquement, hors cette série) ; **retrait du CLI** du bundle ; textes fr / en / es, `python -m tools.i18n_audit` | S | — | décision D4 |
 | 9 | **Légal et fiche** : politique de confidentialité (site fr / en / es), notices tierces dans l'application, captures, description, évaluation d'âge, notes de revue avec vidéo de démonstration | M | délai de rédaction | rédiger / valider la fiche, l'URL d'assistance, la tarification (D3) |
 | 10 | **TestFlight puis soumission** : première validation `altool`/Transporter, retours de revue, corrections | M (variable) | refus ; plusieurs allers-retours (jours chacun) | compte App Store Connect, réponses à la revue |
-| 11 | **Alléger la CI et la doc** : documenter que Windows / Linux ne sont plus prioritaires, retirer la page « mises à jour » du README pour le Store ; ne **rien supprimer** des workflows | S | — | décider si le canal Developer ID reste (D8) |
+| 11 | **CI et doc** : documenter que Windows / Linux ne sont plus prioritaires ; **garder** le workflow `release.yml` (bêtas GitHub, Developer ID) en parallèle du workflow Store, avec la même version dans `core/app_version.py` ; ne **rien supprimer** des workflows | S | deux canaux à garder synchrones (numéro de version, notes) | — |
 
 Ordre : 0 → 1 (conditionne 6) → 2 et 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11. Les étapes 2–3 (FFmpeg) et 5 (signets) sont **le chemin critique**.
 
-## Décisions que l'utilisateur doit prendre
+## Décisions de l'utilisateur (2026-10-28)
 
-* **D1** Confirmer H0 : Mac App Store **seul**, ou Store **et** Developer ID ? (change l'étape 11, pas le reste).
-* **D2** Licence de FFmpeg : accepter l'option A (**LGPL, VideoToolbox, plus d'encodeurs logiciels H.264 / HEVC**, `eq` remplacé) ? Où publier l'offre de sources LGPL ?
-* **D3** Modèle économique : payant à l'achat, gratuit, ou achats intégrés ? (impose 3.1.1 ; pas de lien de paiement externe dans la version Store).
-* **D4** Whisper : absent en v1 Store (recommandé) ou embarqué dès la v1 ?
-* **D5** Stockage des signets de sécurité : dans le conteneur (recommandé, format `.kut` inchangé) ou dans le projet (portable, mais demande de toucher au format) ?
-* **D6** Architecture : arm64 seul (recommandé) ou universal2 ? Version minimale de macOS ?
-* **D7** Langue principale de la fiche et identifiant d'app (`com.kutstudio.app` ou un autre, **non modifiable après la première soumission** [A]).
-* **D8** Le canal Developer ID / GitHub Releases est-il conservé pour les bêtas, ou arrêté quand le Store ouvre ?
-* **D9** Faire valider par un juriste : LGPL de FFmpeg et de Qt avec la signature Apple, brevets H.264 / HEVC / AAC, statut de `prores_ks`.
-* **D10** Comptes : l'inscription Apple Developer Program est-elle au nom d'une personne ou d'une entreprise (le nom affiché sur la fiche en dépend) ?
+| # | Décision | Statut |
+| --- | --- | --- |
+| D1 | **Mac App Store seul** : le Store remplace la distribution principale. | **Tranchée** |
+| D2 | **FFmpeg LGPL accepté** : pas d'encodage logiciel H.264 / HEVC (VideoToolbox), filtre `eq` remplacé. Lieu de l'offre de sources LGPL : à fixer à l'étape 2. | **Tranchée** |
+| D3 | **Gratuit, sans achat intégré** (3.1.1 ne s'applique donc pas ; aucune licence ni lien de paiement). | **Tranchée** |
+| D4 | Whisper absent en v1 Store, puis embarqué (modèle comme donnée). | Recommandé, à confirmer |
+| D5 | Signets de sécurité stockés dans le conteneur, format `.kut` inchangé. | Recommandé, à confirmer |
+| D6 | Architecture : **arm64 seul par défaut** ; version minimale de macOS à fixer à l'étape 7. | Non tranchée, défaut proposé |
+| D7 | Langue principale de la fiche : fr ; identifiant d'app `com.kutstudio.app` (non modifiable après la première soumission [A]). | Recommandé, à confirmer |
+| D8 | **GitHub Releases / bêtas gardés en parallèle** ; build Store par le drapeau `STORE` (étape 4). Le canal hors Store n'est donc pas arrêté : ses modules de mise à jour restent actifs hors Store. | **Tranchée** |
+| D9 | Validation juridique : LGPL de FFmpeg et de Qt avec la signature Apple, brevets H.264 / HEVC / AAC, statut de `prores_ks`. | Recommandé, à confirmer |
+| D10 | Compte Apple Developer **au nom d'une personne** (le nom affiché sur la fiche est celui de la personne). | **Tranchée** |
