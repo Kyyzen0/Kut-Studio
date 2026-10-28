@@ -4,8 +4,9 @@ un réglage a des images clés ``color.*``.
 Sans image clé, ce module n'est jamais appelé : la chaîne est celle d'avant, caractère pour caractère. Le choix de chaque rendu est
 **mesuré** (ADR-0008, « Résultats de l'étape 6 » ; ``tools/measure_grade_cost.py``) :
 
-- **expression** du temps local du clip, comme les effets (étape 3) : contraste et saturation (``eq=…:eval=frame``), teinte
-  (``hue=h=…``) ;
+- **expression** du temps local du clip, comme les effets (étape 3) : la teinte (``hue=h=…``) ;
+- contraste et saturation : des tables ``lut`` (:mod:`core.eq_lut`, mêmes octets qu'``eq``, qui est GPL : ADR-0013) envoyées par ``sendcmd``
+  comme le reste (``eq=…:eval=frame`` relisait une expression ; ``lut`` n'évalue ses options qu'à la configuration et à chaque commande) ;
 - **fichier de commandes** ``sendcmd`` (une instruction par image, une demi-image avant l'image visée, règles de
   :mod:`core.effect_sendcmd`) : ombres et hautes lumières (``colorbalance``), température (``colorchannelmixer``), et pour
   l'exposition et les roues une table de 256 niveaux envoyée à ``curves`` (:mod:`core.grade_tables`). ``lutrgb`` animé coûte ×150.
@@ -15,7 +16,7 @@ filtre piloté porte un nom (``curves@v0cge``) pour que la commande le vise dans
 
 Les valeurs sont celles du modèle (:class:`core.grade_targets.GradeCurves`, bornées comme l'inspecteur) puis la même conversion que
 la chaîne statique. Un étage dont un réglage est animé est **toujours émis**, y compris aux images où la valeur est neutre (là où
-la chaîne statique l'omet) : ``curves`` et ``colorbalance`` neutres sont l'identité exacte ; ``eq`` et ``hue`` neutres ajoutent
+la chaîne statique l'omet) : ``curves`` et ``colorbalance`` neutres sont l'identité exacte ; ``lut`` (``val``) et ``hue`` neutres ajoutent
 au plus l'arrondi d'une conversion YUV (mesuré dans l'ADR).
 """
 
@@ -28,18 +29,21 @@ from fractions import Fraction
 from .animation_ffmpeg import curve_expression
 from .color_grading import ColorGrade
 from .color_wheels import channel_transfer
-from .effect_sendcmd import MAX_COMMAND_BYTES, WINDOW_BYTES, SendcmdContext, frame_count, load_filters
+from .eq_lut import commands as eq_commands
+from .eq_lut import eq_planes, stage_filters
+from .effect_sendcmd import MAX_COMMAND_BYTES, WINDOW_BYTES, SendcmdContext, check_command_budget, frame_count, load_filters
 from .grade_tables import curves_points, exposure_table, wheel_tables
 from .grade_targets import GradeCurves, scalar_property_id, wheel_property_id
 from .color_grading import WHEELS
 
 EXPRESSION_TIME = "t"
-"""Variable de temps de ``eq`` et de ``hue`` : le temps local du clip (``PTS`` repart de zéro avant les effets et l'étalonnage)."""
+"""Variable de temps de ``hue`` : le temps local du clip (``PTS`` repart de zéro avant les effets et l'étalonnage)."""
 
 _HALF_FRAME = Fraction(1, 2)
 _EXPOSURE = scalar_property_id("exposure")
 _BALANCE = (scalar_property_id("shadows"), scalar_property_id("highlights"))
 _TEMPERATURE = scalar_property_id("temperature")
+_LEVELS = (scalar_property_id("contrast"), scalar_property_id("saturation"))
 _WHEEL_CHANNEL_IDS = tuple(wheel_property_id(wheel, channel) for wheel in WHEELS for channel in "rgb")
 _WHEEL_IDS = tuple(wheel_property_id(wheel, channel) for wheel in WHEELS for channel in "rgby")
 
@@ -79,6 +83,7 @@ class AnimatedGrade:
         self.wheels_named = _name("curves", tag, "w")
         self.balance_named = _name("colorbalance", tag, "b")
         self.temperature_named = _name("colorchannelmixer", tag, "t")
+        self.levels_named = _name("lut", tag, "q")
 
     # -- Étages par expression -------------------------------------------------------------------------------------
 
@@ -88,18 +93,14 @@ class AnimatedGrade:
                                 minimum=spec.minimum, maximum=spec.maximum)
 
     def eq(self) -> str | None:
-        contrast, saturation = scalar_property_id("contrast"), scalar_property_id("saturation")
-        if not self.curves.animated(contrast, saturation):
+        """Contraste et saturation : les tables ``lut`` de :mod:`core.eq_lut` (``eq`` est GPL, ADR-0013), envoyées par ``sendcmd``."""
+        if not self._driven(*_LEVELS):
             return None
-        if self.curves.animated(contrast):
-            contrast_text = f"'1+{self._expression(contrast)}'"
-        else:
-            contrast_text = self.fmt(1.0 + float(self.base.contrast))
-        if self.curves.animated(saturation):
-            saturation_text = f"'{self._expression(saturation)}'"
-        else:
-            saturation_text = self.fmt(float(self.base.saturation))
-        return f"eq=contrast={contrast_text}:saturation={saturation_text}:eval=frame"
+        return self._loaded(stage_filters(self.levels_named, self._levels(self.first)))
+
+    @staticmethod
+    def _levels(grade: ColorGrade) -> tuple[str, str, str]:
+        return eq_planes(0.0, 1.0 + float(grade.contrast), float(grade.saturation))
 
     def hue(self) -> str | None:
         property_id = scalar_property_id("hue")
@@ -173,6 +174,9 @@ class AnimatedGrade:
         shadows_on, highlights_on = (self._driven(item) for item in _BALANCE)
         temperature_on = self._driven(_TEMPERATURE)
         wheels_on = self._driven(*_WHEEL_IDS)
+        levels_on = self._driven(*_LEVELS)
+        levels: tuple[str, str, str] | None = None
+        lut_commands = 0
         previous: dict[str, object] = {}
         size = 0
         from .export_engine import temperature_gains
@@ -180,6 +184,12 @@ class AnimatedGrade:
         for index in range(count):
             grade = self.curves.at(context.start + float(Fraction(index) / fps))
             commands: list[str] = []
+            if levels_on and levels != (planes := self._levels(grade)):
+                sent = eq_commands(self.levels_named, planes, levels)
+                commands.extend(sent)
+                lut_commands += len(sent)
+                check_command_budget(lut_commands, 0)        # même plafond que l'effet : ~25 Ko de mémoire par instruction (FFmpeg 6.1 / 7.1)
+                levels = planes
             if exposure_on and previous.get("exposure") != grade.exposure:
                 previous["exposure"] = grade.exposure
                 commands.append(f"{self.exposure_named} master '{curves_points(exposure_table(grade.exposure))}'")

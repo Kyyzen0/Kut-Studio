@@ -39,7 +39,7 @@ def test_zero_exposure_emits_nothing_and_no_gamma_is_used():
     assert _build_color_grade_filters(ColorGrade(exposure=0.0)) == ""
     chain = _build_color_grade_filters(ColorGrade(exposure=1.0, contrast=0.2, saturation=1.1))
     assert chain.startswith("lutrgb=") and "gamma=" not in chain
-    assert chain.index("lutrgb=") < chain.index("eq="), "l'exposition précède le contraste"
+    assert chain.index("lutrgb=") < chain.index("lut=y="), "l'exposition précède le contraste"
 
 
 def _ramp(tmp_path):

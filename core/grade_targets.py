@@ -17,7 +17,8 @@ possible hors de ce plan. Une image clé ``color.*`` qui reste dans un clip deve
 
 Comment chaque propriété est rendue (choix mesuré : ``docs/adr/0008-*.md``, « Résultats de l'étape 6 ») :
 
-- par **expression** FFmpeg (``eq`` en ``eval=frame``, ``hue``) : contraste, saturation, teinte ;
+- par **expression** FFmpeg (``hue``) : teinte ;
+- par **fichier de commandes** ``sendcmd`` sur ``lut`` (:mod:`core.eq_lut`, remplaçant LGPL d'``eq`` : ADR-0013) : contraste, saturation ;
 - par **fichier de commandes** ``sendcmd`` : ombres et hautes lumières (``colorbalance``), température
   (``colorchannelmixer``), exposition et roues (une table de 256 niveaux envoyée à ``curves``, **pas** ``lutrgb`` : voir
   l'ADR, ``lutrgb`` recalcule sa table à chaque commande, ×100 à ×200).
@@ -85,7 +86,9 @@ def wheel_property_id(wheel: str, channel: str) -> str:
 WHEEL_IDS: tuple[str, ...] = tuple(wheel_property_id(wheel, channel) for wheel in WHEELS for channel in WHEEL_CHANNELS)
 
 EXPRESSION_GRADE_PARAMS: tuple[str, ...] = tuple(scalar_property_id(n) for n in ("contrast", "saturation", "hue"))
-"""Propriétés rendues par une **expression** FFmpeg (:mod:`core.grade_render`) : ``eq`` (``eval=frame``) et ``hue``."""
+"""Propriétés du groupe « expression » : historiquement rendues par ``eq`` (``eval=frame``) et ``hue``. Depuis ADR-0013 (``eq`` est GPL), le
+contraste et la saturation passent par ``lut`` et ``sendcmd`` (:mod:`core.eq_lut`), la teinte reste une expression ``hue``. Le groupe est
+conservé tel quel : il décide de la version du fichier ``.kut`` (:mod:`core.project_io`), que ce changement de rendu ne touche pas."""
 
 SENDCMD_GRADE_PARAMS: tuple[str, ...] = (
     *(scalar_property_id(n) for n in ("exposure", "temperature", "shadows", "highlights")), *WHEEL_IDS,

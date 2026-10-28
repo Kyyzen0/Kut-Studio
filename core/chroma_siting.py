@@ -45,7 +45,7 @@ _RGB_BOUNDARY = re.compile(
     r"lut3d|colortemperature)(?:@\w+)?=)"
 )
 """Premier filtre d'une chaîne qui impose du RVB : FFmpeg y insère sa conversion, avec ses réglages par défaut
-(recopie de la chroma). Les autres filtres de la chaîne (``eq``, ``hue``, ``gblur``…) travaillent en YUV. Un filtre **nommé**
+(recopie de la chroma). Les autres filtres de la chaîne (``lut``, ``hue``, ``gblur``…) travaillent en YUV. Un filtre **nommé**
 (``curves@v0cge=…``, étalonnage animé, ADR-0008 étape 6) est un filtre RVB comme son homologue statique."""
 
 

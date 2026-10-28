@@ -1,5 +1,5 @@
-"""Étalonnage animé à l'export (ADR-0008, étape 6) : ``color.*`` rendus par expression (``eq``, ``hue``) et par ``sendcmd``
-(``colorbalance``, ``colorchannelmixer``, ``curves`` pour l'exposition et les roues).
+"""Étalonnage animé à l'export (ADR-0008, étape 6) : ``color.*`` rendus par expression (``hue``) et par ``sendcmd``
+(``lut`` pour le contraste et la saturation depuis ADR-0013 ; ``colorbalance``, ``colorchannelmixer``, ``curves`` pour l'exposition et les roues).
 
 Sans FFmpeg : la forme du fichier de commandes (valeurs du modèle, demi-image avant l'image visée, un fichier par étalonnage), la
 chaîne d'un clip sans courbe (inchangée, octet pour octet), l'ordre des étages, les bornes. Avec FFmpeg réel (``needs_ffmpeg``) :
@@ -130,11 +130,16 @@ def test_a_clip_without_a_color_curve_has_the_chain_it_had_before():
     assert written == []
 
 
+FORMATS = "format=gray|yuv410p|yuv411p|yuv420p|yuva420p|yuv422p|yuva422p|yuv444p|yuva444p"
+
+
 def test_the_static_golden_chains_are_unchanged():
     """Chaînes relevées sur ``origin/main`` avant l'étape 6 : le rendu des fichiers existants ne change pas (donc pas de
-    ``RENDER_ENGINE_VERSION``)."""
+    ``RENDER_ENGINE_VERSION``). Seule la première a changé de texte avec ADR-0013 (``eq`` GPL remplacé par ``lut``, mêmes octets :
+    ``tests/test_eq_lut.py``)."""
     assert _build_color_grade_filters(ColorGrade(contrast=0.2, saturation=1.3, hue=12.0, shadows=0.1)) == (
-        "eq=contrast=1.2:saturation=1.3,hue=h=12.0,colorbalance=rs=0.1:gs=0.1:bs=0.1:rh=0.0:gh=0.0:bh=0.0")
+        f"{FORMATS},lut=y='clip(floor(val*4915/4096)-26,0,255)':u='clip(floor(val*5324/4096)-39,0,255)':"
+        "v='clip(floor(val*5324/4096)-39,0,255)',hue=h=12.0,colorbalance=rs=0.1:gs=0.1:bs=0.1:rh=0.0:gh=0.0:bh=0.0")
     assert _build_color_grade_filters(ColorGrade(temperature=30.0)) == "colorchannelmixer=rr=1.09:gg=0.982332:bb=0.91"
     assert _build_color_grade_filters(ColorGrade(exposure=0.5)) == exposure_filter(0.5)
     assert _build_color_grade_filters(ColorGrade(
@@ -146,20 +151,34 @@ def test_the_static_golden_chains_are_unchanged():
     assert _build_color_grade_filters(ColorGrade()) == ""
 
 
-def test_an_animated_contrast_is_an_eq_expression_with_eval_frame_and_no_file():
+def test_an_animated_contrast_or_saturation_is_a_lut_driven_by_sendcmd():
+    """``eq`` est GPL (ADR-0013) : contraste et saturation animés se rendent par ``lut`` et un fichier de commandes (les plans qui changent)."""
     grade = ColorGrade(saturation=1.4, hue=10.0)
-    text, files = chain_of(grade, [kf("color.contrast", 0.0, -0.5), kf("color.contrast", 2.0, 0.5)], context_for(30, 0.0, 3.0))
-    assert files == []
-    assert re.fullmatch(r"eq=contrast='1\+clip\(.*,-1,1\)':saturation=1\.4:eval=frame,hue=h=10\.0", text), text
+    context = context_for(30, 0.0, 3.0)
+    text, files = chain_of(grade, [kf("color.contrast", 0.0, -0.5), kf("color.contrast", 2.0, 0.5)], context)
+    try:
+        assert "eq=" not in text and len(files) == 1 and text.startswith("sendcmd=f='")
+        assert re.fullmatch(rf"sendcmd=f='[^']+',{re.escape(FORMATS)},lut@v0cgq=y=.*:u=.*:v=.*,hue=h=10\.0", text), text
+        states = applied(open(files[0], encoding="utf-8").read(), context.fps, frame_count(context))
+        assert {option for state in states for (_target, option) in state} == {"y", "u", "v"}
+        assert all(target == "lut@v0cgq" for state in states for (target, _option) in state)
+        # La saturation ne bouge pas : les deux plans de chroma ne sont écrits qu'une fois, la luma à chaque image.
+        sent = open(files[0], encoding="utf-8").read().splitlines()
+        assert sum(" u " in line for line in sent) == 1 and sum(" y " in line for line in sent) > 30
+    finally:
+        cleanup(files)
 
 
-def test_an_animated_saturation_and_hue_are_expressions():
+def test_an_animated_saturation_is_a_lut_and_hue_stays_an_expression():
     grade = ColorGrade(contrast=0.25)
     animation = [kf("color.saturation", 0.0, 0.2), kf("color.saturation", 2.0, 1.8), kf("color.hue", 0.0, -90.0),
                  kf("color.hue", 1.0, 90.0)]
-    text, files = chain_of(grade, animation, None)
-    assert files == []
-    assert re.fullmatch(r"eq=contrast=1\.25:saturation='clip\(.*,0,2\)':eval=frame,hue=h='clip\(.*,-180,180\)'", text), text
+    text, files = chain_of(grade, animation, context_for(30, 0.0, 3.0))
+    try:
+        assert "eq=" not in text and len(files) == 1
+        assert re.search(r"lut@v0cgq=y='clip\(floor\(val\*5120/4096\)-?\d+,0,255\)':u=.*,hue=h='clip\(.*,-180,180\)'$", text), text
+    finally:
+        cleanup(files)
 
 
 def test_every_stage_driven_by_sendcmd_shares_one_plan_read_before_the_first_one():
@@ -172,7 +191,7 @@ def test_every_stage_driven_by_sendcmd_shares_one_plan_read_before_the_first_one
     text, files = chain_of(grade, animation, context_for(10, 0.0, 2.0))
     try:
         assert files and text.count("sendcmd=") == len(files) and text.startswith("sendcmd=f='")
-        order = [text.index(name) for name in ("curves@v0cge=", "eq=contrast=1.1", "colorbalance@v0cgb=",
+        order = [text.index(name) for name in ("curves@v0cge=", "lut=y=", "colorbalance@v0cgb=",
                                                "colorchannelmixer@v0cgt=", "curves@v0cgw=")]
         assert order == sorted(order), text[:400]
         assert text.rindex("sendcmd=") < order[0], "tous les sendcmd précèdent le premier filtre piloté"
@@ -217,16 +236,16 @@ def test_a_window_never_exceeds_the_budget_unless_a_single_line_does():
 
 
 def test_without_a_stream_context_the_sendcmd_stages_keep_their_base_value():
-    """Empreintes de cache, calques sans flux connu : exposition, ombres, température et roues restent à leur valeur de base ;
-    contraste, saturation et teinte suivent encore leur courbe (expression : pas besoin du flux)."""
+    """Empreintes de cache, calques sans flux connu : exposition, ombres, température, roues, contraste et saturation (tout ce qui passe
+    par un fichier de commandes) restent à leur valeur de base ; la teinte suit encore sa courbe (expression : pas besoin du flux)."""
     grade = ColorGrade(exposure=0.5, temperature=20.0)
     animation = [kf("color.exposure", 0.0, -1.0), kf("color.exposure", 2.0, 1.0), kf("color.temperature", 0.0, 0.0),
                  kf("color.temperature", 1.0, 80.0), kf("color.contrast", 0.0, -0.3), kf("color.contrast", 1.0, 0.3)]
     text, files = chain_of(grade, animation, None)
     assert files == [] and "sendcmd" not in text
     static = _build_color_grade_filters(grade)
-    assert text.startswith(static.split(",")[0]) and "eval=frame" in text
-    assert exposure_filter(0.5) in text and "colorchannelmixer=rr=1.06" in text
+    assert exposure_filter(0.5) in text and "colorchannelmixer=rr=1.06" in text and "lut@" not in text and "eq=" not in text
+    assert text == static
 
 
 def test_a_disabled_or_graph_grade_writes_nothing():
@@ -307,8 +326,17 @@ def test_values_are_bounded_like_the_model():
     finally:
         cleanup(files)
     assert min(values) == -1.0 and max(values) == 1.0
-    text, _ = chain_of(ColorGrade(), [kf("color.contrast", 0.0, -9.0), kf("color.contrast", 1.0, 9.0)], None)
-    assert ",-1,1)" in text
+    from core.eq_lut import eq_planes
+
+    _text, files = chain_of(ColorGrade(), [kf("color.contrast", 0.0, -9.0), kf("color.contrast", 1.0, 9.0)], context)
+    try:
+        text = open(files[0], encoding="utf-8").read()
+    finally:
+        cleanup(files)
+    # Contraste borné à [-1, 1] (soit un facteur eq de 0 à 2), jamais le -9 ni le 9 écrits : seules ces deux tables y figurent.
+    luma = {eq_planes(0.0, factor, 1.0)[0] for factor in (0.0, 2.0)}
+    assert all(f"y {table}" in text for table in luma)
+    assert eq_planes(0.0, 10.0, 1.0)[0] not in text and eq_planes(0.0, -8.0, 1.0)[0] not in text
 
 
 def test_a_non_finite_keyframe_never_reaches_the_graph():
@@ -520,7 +548,7 @@ def test_a_clip_that_was_never_graded_is_animated_from_the_neutral_grade():
     animation = curve_for("color.exposure") + curve_for("color.contrast")
     chain, files = _real_chain(None, animation, context_for(RATE, 0.0, FRAMES / RATE))
     cleanup(files)
-    assert "curves@v0cge=" in chain and "eq=contrast='1+" in chain
+    assert "curves@v0cge=" in chain and "lut@v0cgq=" in chain and "eq=" not in chain
     _assert_parity(None, animation)
 
 
@@ -661,7 +689,7 @@ def test_an_animated_project_writes_its_files_into_the_callers_list_and_cites_th
     try:
         assert written and all(os.path.isfile(path) for path in written)
         assert all(escape_command_path(path) in graph for path in written) and graph.count("sendcmd=") == len(written)
-        assert "curves@v0cge=" in graph and "eq=contrast='1+" in graph
+        assert "curves@v0cge=" in graph and "lut@" in graph and "eq=" not in graph
     finally:
         cleanup(written)
 
@@ -832,7 +860,7 @@ def test_a_nested_sequence_clip_and_the_clips_inside_it_are_each_graded_by_their
     layer = next(item for item in plan.video_layers if item.clip_id == outer.id)
     assert layer.nested_key and {k.property_name for k in layer.animation} == {"color.contrast"}
     graph, *_ = ExportEngine._build_filter_complex(plan, W, H, 25, None, temporary_files=[])
-    assert "eq=contrast='1+" in graph, "le clip imbriqué suit sa propre courbe (expression : pas de fichier)"
+    assert "lut@" in graph and "eq=" not in graph, "le clip imbriqué suit sa propre courbe"
     # La séquence interne, rendue à part, anime l'exposition de son clip.
     written: list[str] = []
     inner_graph, *_ = ExportEngine._build_filter_complex(build_render_plan(project, sequence_id="leaf"), W, H, 25, None,
@@ -909,3 +937,20 @@ def test_a_rotated_scaled_layer_keeps_the_command_file_after_the_geometry_and_be
         assert chain.index("rotate=") < chain.index("sendcmd=") < chain.index("curves@v0cge=") < chain.index("setpts=PTS+")
     finally:
         cleanup(written)
+
+
+def test_the_grade_lut_commands_are_capped_by_count_like_an_effect(monkeypatch):
+    """ADR-0013 : le contraste / la saturation animés envoient des instructions ``lut`` ; FFmpeg 6.1 / 7.1 en garde ~25 Ko chacune.
+    Même plafond que l'effet (``MAX_EFFECT_COMMANDS``), pas seulement la taille du texte."""
+    import core.effect_sendcmd as sendcmd
+
+    animation = [kf("color.contrast", 0.0, -1.0, H_), kf("color.contrast", 0.1, 1.0, H_), kf("color.contrast", 0.2, -1.0, H_),
+                 kf("color.contrast", 0.3, 1.0, H_), kf("color.contrast", 0.4, -1.0, H_)]
+    context = context_for(30, 0.0, 1.0)
+    monkeypatch.setattr(sendcmd, "MAX_EFFECT_COMMANDS", 5)
+    with pytest.raises(ValueError, match="trop longue") as raised:
+        chain_of(ColorGrade(), animation, context)
+    assert len(str(raised.value)) < 160
+    monkeypatch.setattr(sendcmd, "MAX_EFFECT_COMMANDS", 40_000)
+    _text, files = chain_of(ColorGrade(), animation, context)             # sous le plafond : accepté
+    cleanup(files)

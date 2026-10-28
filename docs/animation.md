@@ -268,14 +268,14 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
 
 ### Rendu (étape 3)
 
-- **Export et aperçu fidèle** (même graphe) : `eq` (`brightness`, `contrast`, `saturation`, `eval=frame`) et `vignette`
-  (`angle = intensité × π/4`, `eval=frame`) reçoivent l'expression de la courbe (`core/effect_expressions.py`, la même
-  `curve_expression` que la transformation, bornée par `clip()` aux bornes du paramètre). Les paramètres non animés d'un
-  même filtre restent des constantes.
+- **Export et aperçu fidèle** (même graphe) : `vignette` (`angle = intensité × π/4`, `eval=frame`) reçoit l'expression de la
+  courbe (`core/effect_expressions.py`, la même `curve_expression` que la transformation, bornée par `clip()` aux bornes du
+  paramètre). **La correction colorimétrique (`brightness`, `contrast`, `saturation`) ne passe plus par `eq` (GPL, ADR-0013) mais par
+  une table `lut` pilotée par `sendcmd`** (`core/eq_lut.py`, mêmes octets : voir « `eq` remplacé par `lut` » plus bas) ; elle reste dans le
+  groupe « expression » du registre, qui décide de la version du fichier `.kut`.
 - **Base de temps** : les images clés d'un effet sont en temps **local du clip**. Dans `_build_layer_filter`, `PTS` repart de
   zéro au début du clip (`setpts=PTS-STARTPTS` après `fps`, plus `+skip/TB` à l'origine d'un segment d'aperçu, ou
-  `+retimed_skip/TB` pour un clip remappé) *avant* les effets ; `PTS+timeline_start` n'est posé qu'à la fin. `t` (`eq`,
-  `vignette`) et `T` (`geq`) valent donc le temps local du clip, comme `t` pour l'échelle et la rotation. Testé : un clip
+  `+retimed_skip/TB` pour un clip remappé) *avant* les effets ; `PTS+timeline_start` n'est posé qu'à la fin. `t` (`vignette`) et `T` (`geq`) valent donc le temps local du clip, comme `t` pour l'échelle et la rotation. Testé : un clip
   entier et un segment qui démarre en milieu de clip (clip décalé sur la timeline et source rognée, changement de cadence
   24 vers 10 i/s, clip à vitesse ×2) donnent les mêmes images, et chacune égale le rendu statique à la valeur évaluée.
 - **Moniteur GPU** : `evaluated_effects` est appelé à chaque image par les deux points de synchronisation (clip du dessus,
@@ -291,9 +291,21 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   l'image `n` de la sortie animée égale l'image `n` du rendu statique à la valeur évaluée (écart maximal 0 niveau). La
   référence de la vignette prend l'angle exact : l'export statique arrondit l'angle à six décimales, et un pixel sur une
   frontière d'arrondi bascule d'un niveau (1 octet sur 230 000, écart 2, disparu avec l'angle exact).
-- **Écart d'un `eq` statique, hors animation** : à luminosité négative, la formule du moniteur (`eq_plane`) s'écarte déjà du
+- **Écart du moniteur à un `eq` statique, hors animation** (le rendu de l'export est identique à `eq`, voir plus bas) : à luminosité négative, la formule du moniteur (`eq_plane`) s'écarte déjà du
   `eq` de l'export (écart moyen 1,9 à −0,1 et 2,8 à −0,2, contre 0,4 à +0,1 ; mesuré sur des valeurs fixes). Ce n'est pas
   l'animation ; les tests de parité animée prennent une luminosité de 0 à 0,3.
+
+### `eq` remplacé par `lut` (ADR-0013)
+
+`eq` est un filtre GPL : le FFmpeg de la version Mac App Store (LGPL) ne l'a pas. `core/eq_lut.py` écrit la même correction avec
+`lut` : `eq` n'est qu'une table de 256 niveaux par plan en YUV 8 bits, et la formule entière de `vf_eq.c` se recalcule exactement
+(`⌊Y·C/4096⌋ + B`, voir le module). Le texte du filtre fixe est `format=<formats d'eq>,lut=y='…':u='…':v='…'` (le `format` donne à `lut` la
+négociation d'`eq`, qui n'accepte que le YUV 8 bits). Animé : `lut` n'évalue ses options qu'à la configuration et à chaque commande, la
+courbe passe donc par un fichier de commandes (une instruction par image où une table change, une demi-image avant l'image visée,
+`lut@<étiquette> y '…', lut@<étiquette> u '…', …`). Mesuré contre `eq` sur FFmpeg 9.0.2 et 7.1.5 : écart maximal **0** (rampes de
+0 à 255 sur les trois plans, 900 réglages changeant à chaque image, mire animée de 90 images pour l'effet et pour l'étalonnage).
+Coût animé : ~13 ms par image quand les trois plans changent (chaque commande recalcule 65 536 valeurs par composante), borne de
+40 000 instructions par effet comme les autres étages `sendcmd`. Détail : ADR-0013, « Filtre `eq` : remplacé ».
 
 ### Flou, aberration chromatique, rayon du Bloom : fichier de commandes `sendcmd` (étape 5)
 
@@ -356,15 +368,15 @@ modèle, l'**export** (donc l'aperçu fidèle, qui rend le même graphe) et, dep
 - **Valeur effective** : `effective_grade(clip, t)` (fonction pure) rend l'étalonnage de base dont les champs animés sont remplacés par leur
   courbe, bornée ; sans image clé, **exactement** `clip.color_grade` (le même objet, `None` compris). C'est la fonction que le moniteur
   appelle (étape 7).
-- **Rendu à l'export** (`core/grade_render.py`, `core/grade_tables.py`) : contraste et saturation par `eq=…:eval=frame`, teinte par
-  `hue=h='…'` (expressions du temps local du clip, comme les effets) ; ombres et hautes lumières par `colorbalance`, température par
-  `colorchannelmixer`, exposition et roues par `curves`, ces trois derniers par un **fichier de commandes `sendcmd`** (un seul par
+- **Rendu à l'export** (`core/grade_render.py`, `core/grade_tables.py`, `core/eq_lut.py`) : teinte par `hue=h='…'` (expression du temps local du clip,
+  comme les effets) ; contraste et saturation par une table `lut` (le remplaçant LGPL d'`eq`, qui est GPL : ADR-0013), ombres et hautes lumières par
+  `colorbalance`, température par `colorchannelmixer`, exposition et roues par `curves`, tous par un **fichier de commandes `sendcmd`** (un seul par
   étalonnage, une instruction par image, une demi-image avant l'image visée). Pourquoi `curves` et pas `lutrgb` (le filtre de l'export
   fixe) pour l'exposition et les roues : `lutrgb` recalcule sa table à chaque commande (×30 à ×150 le temps d'export), `curves` reçoit sa
   courbe pour le prix du fixe ; on lui envoie un point par niveau d'entrée (256 points) et le résultat égale la table de `lutrgb`
   niveau par niveau (testé sur FFmpeg 6.1, 7.1 et 9.0). Mesures : ADR-0008, « Résultats de l'étape 6 ».
 - **Un étage animé est toujours émis**, même aux images où sa valeur est neutre (là où la chaîne fixe l'omet) : `curves`, `colorbalance` et
-  `colorchannelmixer` neutres sont l'identité exacte ; `eq` et `hue` neutres peuvent ajouter l'arrondi d'une conversion YUV (écart mesuré
+  `colorchannelmixer` neutres sont l'identité exacte ; `lut` (`val`) et `hue` neutres peuvent ajouter l'arrondi d'une conversion YUV (écart mesuré
   dans l'ADR).
 - **Taille du fichier de commandes** : ~4,6 Ko par image pour l'exposition (une table de 256 points), trois fois plus pour des roues
   colorées (la molette seule suffit à un seul canal `master`). Le texte est écrit ligne à ligne, **par fenêtres de 192 Ko** (un `sendcmd`

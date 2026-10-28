@@ -1,12 +1,16 @@
 """Paramètres d'effet animés rendus **par expression FFmpeg** (ADR-0008, étape 3).
 
-Trois filtres de l'export acceptent une expression du temps pour leurs options et la réévaluent à chaque image :
+Deux filtres de l'export acceptent une expression du temps pour leurs options et la réévaluent à chaque image :
 
-- ``eq`` (``eval=frame``) : ``brightness``, ``contrast``, ``saturation`` de la correction colorimétrique ;
 - ``vignette`` (``eval=frame``) : ``angle``, qui vaut ``intensité × π/4`` ;
 - ``geq`` : la brume de chaleur (``amplitude``, ``frequency``, ``top``, ``span``). Rendu écrit et vérifié, mais **pas
   enregistré** : voir :data:`core.effect_targets.PENDING_EFFECT_PARAMS` (coût de ``geq`` par pixel). ``speed`` n'y figure pas
   (saut de phase).
+
+La correction colorimétrique (``brightness``, ``contrast``, ``saturation``) ne passe plus ici : son filtre ``eq`` (``eval=frame``) est GPL et
+ne peut pas figurer dans le FFmpeg LGPL de la version App Store (ADR-0013). Elle est rendue par ``lut`` et ``sendcmd``
+(:mod:`core.eq_lut`) ; le registre (:data:`core.effect_targets.EXPRESSION_EFFECT_PARAMS`) la garde dans ce groupe, qui décide aussi
+de la version du fichier ``.kut`` : la changer de groupe obligerait à relever le format.
 
 Seuls les paramètres de :data:`core.effect_targets.ANIMATABLE_EFFECT_PARAMS` produisent une expression, hors ceux de
 :data:`core.effect_targets.SENDCMD_EFFECT_PARAMS` (flou, aberration chromatique, rayon de la lueur : fichier de commandes,
@@ -14,7 +18,7 @@ Seuls les paramètres de :data:`core.effect_targets.ANIMATABLE_EFFECT_PARAMS` pr
 
 **Base de temps.** Les images clés d'un effet sont en temps local du clip. L'export remet ``PTS`` à zéro au début du clip
 (``setpts=PTS-STARTPTS``, plus le temps déjà écoulé à l'origine d'un segment d'aperçu) *avant* les effets ; le décalage de
-la timeline (``PTS+timeline_start``) n'est posé qu'après. ``t`` (``eq``, ``vignette``) et ``T`` (``geq``) sont donc le
+la timeline (``PTS+timeline_start``) n'est posé qu'après. ``t`` (``vignette``) et ``T`` (``geq``) sont donc le
 temps local du clip, comme ``t`` pour l'échelle et la rotation animées.
 
 Aucun fichier d'effet sans image clé ne passe par ici : :func:`animated_effect_expressions` renvoie alors ``{}`` et les
@@ -28,10 +32,10 @@ from typing import Any
 
 from .animation import AnimationCurve, ValueKind
 from .animation_ffmpeg import curve_expression
-from .effects_model import ClipEffect, fx_property_id
+from .effects_model import ClipEffect, EffectType, fx_property_id
 
 EQ_TIME = "t"
-"""Variable de temps de ``eq`` et de ``vignette`` (``eval=frame``)."""
+"""Variable de temps de ``vignette`` (``eval=frame``)."""
 GEQ_TIME = "T"
 """Variable de temps de ``geq``."""
 VIGNETTE_ANGLE_PER_INTENSITY = 0.7853981633974483
@@ -49,7 +53,7 @@ def animated_effect_expressions(
     """
     from .effect_targets import ANIMATABLE_EFFECT_PARAMS, SENDCMD_EFFECT_PARAMS, _fx_spec
 
-    if not animation:
+    if not animation or effect.type is EffectType.COLOR_CORRECTION:      # lut + sendcmd (core.eq_lut), jamais une expression
         return {}
     keyframes = list(animation)
     result: dict[str, str] = {}
@@ -67,14 +71,6 @@ def animated_effect_expressions(
         curve = AnimationCurve(frames, ValueKind.FLOAT)
         result[name] = curve_expression(curve, time_var=time_var, minimum=spec.minimum, maximum=spec.maximum)
     return result
-
-
-def eq_filter(params: Mapping[str, float], expressions: Mapping[str, str], fmt: Callable[[float], str]) -> str:
-    """``eq`` d'une correction colorimétrique dont au moins un paramètre est animé (``eval=frame``)."""
-    parts = []
-    for name in ("brightness", "contrast", "saturation"):
-        parts.append(f"{name}='{expressions[name]}'" if name in expressions else f"{name}={fmt(params[name])}")
-    return "eq=" + ":".join(parts) + ":eval=frame"
 
 
 def vignette_filter(params: Mapping[str, float], expressions: Mapping[str, str]) -> str:
@@ -108,7 +104,6 @@ __all__ = [
     "EQ_TIME",
     "GEQ_TIME",
     "animated_effect_expressions",
-    "eq_filter",
     "heat_haze_shift",
     "vignette_filter",
 ]

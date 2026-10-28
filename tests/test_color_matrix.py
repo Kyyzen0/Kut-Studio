@@ -375,7 +375,7 @@ def test_the_lut_baking_and_the_cache_key_follow_the_rule_version(monkeypatch):
     key = gpu_grade.lut_key(grade, colorspace="bt709")
     monkeypatch.setattr(gpu_grade, "RULE_VERSION", cm.RULE_VERSION + 1)               # une LUT cuite avec une autre règle
     assert gpu_grade.lut_key(grade, colorspace="bt709") != key
-    command = gpu_grade.bake_command("ffmpeg", "eq=contrast=1.1", domain=gpu_grade.DOMAIN_YUV, colorspace="bt709")
+    command = gpu_grade.bake_command("ffmpeg", "hue=s=1.1", domain=gpu_grade.DOMAIN_YUV, colorspace="bt709")
     assert "setparams=colorspace=bt709:range=tv," in command[command.index("-vf") + 1]
 
 

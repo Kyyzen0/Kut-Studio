@@ -42,3 +42,9 @@ junit-*.xml
 
 # Spike Kut-3D : images et shaders générés.
 experiments/kut3d-spike/out/
+
+# Spike bac à sable / Store : jamais de certificat ni de profil dans le dépôt.
+*.p12
+*.mobileprovision
+*.provisionprofile
+packaging/store-spike/**/build/
