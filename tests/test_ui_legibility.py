@@ -15,8 +15,8 @@ from __future__ import annotations
 import contextlib
 
 import pytest
-from PySide6.QtCore import QPoint, QRect
-from PySide6.QtWidgets import QScrollArea
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtWidgets import QScrollArea, QWidget
 
 from tools import ui_audit as audit
 from tools import ui_legibility as legibility
@@ -584,7 +584,7 @@ def test_audio_timeline_shows_three_tracks_of_56_px(windows, size):
 
 
 def test_track_height_belongs_to_the_page_not_to_the_project(windows):
-    """56 px sur la page Audio, 60 px sur le Montage, 48 px ailleurs : le mode de hauteur des pistes (dans le projet) n'est jamais modifié."""
+    """56 px sur les pages Audio et Composition, 60 px sur le Montage, 48 px ailleurs : le mode de hauteur des pistes (dans le projet) n'est jamais modifié."""
     window = windows((1222, 738))
     timeline = window.timeline_panel
     modes_before = [track.height_mode for track in window.project.tracks]
@@ -595,6 +595,9 @@ def test_track_height_belongs_to_the_page_not_to_the_project(windows):
     audit.settle(window)
     assert timeline.row_height_override == MONTAGE_ROW and timeline.clip_height_of(window.project.tracks[0]) == MONTAGE_ROW
     window.switch_page("composition")
+    audit.settle(window)
+    assert timeline.row_height_override == TRACK_ROW and timeline.clip_height_of(window.project.tracks[0]) == TRACK_ROW
+    window.switch_page("color")
     audit.settle(window)
     assert timeline.row_height_override is None and timeline.clip_height_of(window.project.tracks[0]) == 48
     window.switch_page("edit")
@@ -683,8 +686,8 @@ def _montage(window, *, mixer_open: bool = False, lanes: bool = False):
         audit.settle(window)
 
 
-def _montage_timeline_problems(window, label: str, slack: int = MONTAGE_MARGIN, tracks: int = 4) -> list[str]:
-    """Les ``tracks`` premières pistes ont 60 px au moins et tiennent dans la zone des pistes, avec une marge ; nom et type lisibles."""
+def _montage_timeline_problems(window, label: str, slack: int = MONTAGE_MARGIN, tracks: int = 4, row: int = MONTAGE_ROW) -> list[str]:
+    """Les ``tracks`` premières pistes ont ``row`` px (60 sur le Montage, 56 sur la page Composition) au moins et tiennent dans la zone des pistes, avec une marge ; nom et type lisibles."""
     from PySide6.QtWidgets import QLabel
 
     from ui.timeline_widgets.track_header import TrackRowHeader
@@ -696,7 +699,7 @@ def _montage_timeline_problems(window, label: str, slack: int = MONTAGE_MARGIN, 
     for index, track in enumerate(wanted):
         height = timeline.clip_height_of(track)
         bottom = timeline.row_top(index) + height
-        if height < MONTAGE_ROW:
+        if height < row:
             problems.append(f"{label} piste {track.id} : {height} px")
         if bottom + slack > viewport.height():
             problems.append(f"{label} piste {track.id} : bas à {bottom} px pour {viewport.height()} px de zone (marge {slack} px)")
@@ -948,3 +951,295 @@ def test_montage_track_count_follows_the_work_area_with_hysteresis(windows):
         assert manager._montage_visible_tracks(MONTAGE_THREE_TRACKS_BELOW - 1) == 3 and manager._montage_visible_tracks(725) == 3
     finally:
         manager._montage_four = saved
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Page Composition « Air d'abord » : éditeur de nœuds de 290 px, 7 nœuds de 112x56 px, réglage à champs de 36 px, 2 pistes de 56 px
+# ---------------------------------------------------------------------------------------------------------------
+
+COMPOSITION_SIZES = [(1440, 900), (1440, 790), (1222, 738)]
+COMPOSITION_SIZE_IDS = [f"{w}x{h}" for w, h in COMPOSITION_SIZES]
+EDITOR_HEIGHT = 290
+NODE_SIZE = (112, 56)
+PORT_SIZE = 12
+FIELD_HEIGHT = 36
+#: Marge sous la 2e piste : 12 px structurels (la timeline mesure son chrome réel) ; polices +20 % / +35 % : 10 px (chrome plus haut).
+COMPOSITION_MARGIN = 12
+COMPOSITION_FONT_MARGIN = 10
+#: Image du moniteur (macOS mesure 593x334 en 1440x900 et 1440x790, 374x212 en 1222x738 ; avant : 554x313, 458x258, 411x232).
+#: Planchers à 85 % de la mesure : Windows et Linux mesurent un peu moins (le moniteur cède de la largeur aux nœuds).
+COMPOSITION_PICTURE_FLOOR = {(1440, 900): (500, 280), (1440, 790): (500, 280), (1222, 738): (318, 180)}
+#: Les quatre types de nœuds de la maquette : média bleu, texte violet, traitement menthe, fusion ambre.
+COMPOSITION_TONES = {"m1": "track_video", "g1": "track_subtitle", "t1": "accent", "f1": "warning"}
+
+
+@contextlib.contextmanager
+def _composition(window):
+    """Page Composition avec le clip aux 7 nœuds de la maquette (créé une seule fois par fenêtre), Fusion 1 choisie."""
+    clip = legibility.seven_node_composition(window)
+    window.switch_page("composition")
+    audit.settle(window)
+    try:
+        yield window.composition_panel, clip
+    finally:
+        window.switch_page("edit")
+        audit.settle(window)
+
+
+def _near(first, second, tolerance: int = 12) -> bool:
+    return max(abs(first.red() - second.red()), abs(first.green() - second.green()), abs(first.blue() - second.blue())) <= tolerance
+
+
+def _node_view_problems(window, label: str) -> list[str]:
+    """7 nœuds de 112x56 px entiers sans défiler ni zoomer ; liens et sorties de la couleur de leur type (mesure sur l'image rendue)."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor
+
+    from core.composition import kind_of
+    from ui.composition_page.node_view import node_tone
+    from ui.theme import COLORS
+
+    view = window.composition_panel.nodes
+    problems: list[str] = []
+    if view.height() != EDITOR_HEIGHT:
+        problems.append(f"{label} éditeur de {view.height()} px (attendu {EDITOR_HEIGHT})")
+    if abs(view.transform().m11() - 1.0) > 1e-9 or abs(view.transform().m22() - 1.0) > 1e-9:
+        problems.append(f"{label} zoom {view.transform().m11():.2f} : les nœuds doivent garder leur taille")
+    if view.horizontalScrollBar().isVisible() or view.verticalScrollBar().isVisible():
+        problems.append(f"{label} l'éditeur défile : les 7 nœuds ne sont pas tous visibles")
+    if len(view._items) != 7:
+        problems.append(f"{label} {len(view._items)} nœuds")
+    viewport = view.viewport().rect()
+    for node_id, item in view._items.items():
+        outer = view.mapFromScene(item.sceneBoundingRect()).boundingRect()
+        corner = view.mapFromScene(item.pos())
+        opposite = view.mapFromScene(item.pos() + QPointF(*NODE_SIZE))
+        if (opposite.x() - corner.x(), opposite.y() - corner.y()) != NODE_SIZE:
+            problems.append(f"{label} nœud {node_id} : {opposite.x() - corner.x()}x{opposite.y() - corner.y()} px")
+        if not viewport.contains(outer):
+            problems.append(f"{label} nœud {node_id} (avec ses ports) sort de l'éditeur : {outer} pour {viewport}")
+    image = view.viewport().grab().toImage()
+    for node_id, token in COMPOSITION_TONES.items():
+        port = view.mapFromScene(view._items[node_id].output_port())
+        centre = QColor(image.pixel(port.x(), port.y()))
+        if not _near(centre, QColor(COLORS[token])):
+            problems.append(f"{label} sortie de {node_id} : {centre.name()} au lieu de {QColor(COLORS[token]).name()} (couleur du type)")
+    for wire, source, _target, _port in view._wires:
+        expected = node_tone(view.graph.node(source))
+        if wire.pen().color().name() != expected.name() or wire.pen().widthF() < 2.0:
+            problems.append(f"{label} lien de {source} ({kind_of(view.graph.node(source))}) : {wire.pen().color().name()}")
+    return problems
+
+
+@pytest.mark.parametrize("size", COMPOSITION_SIZES, ids=COMPOSITION_SIZE_IDS)
+def test_composition_node_editor_is_290px_with_seven_whole_nodes(windows, size):
+    """Éditeur de 290 px, 7 nœuds de 112x56 px entiers (sans zoom ni défilement), liens colorés par type."""
+    window = windows(size)
+    with _composition(window) as (panel, clip):
+        assert panel.nodes.graph == clip.composition.graph and panel.splitter.orientation() == Qt.Vertical
+        problems = _node_view_problems(window, f"{size[0]}x{size[1]}")
+        from ui.theme import COLORS
+
+        colours = {wire.pen().color().name().lower() for wire, *_rest in panel.nodes._wires}
+        assert colours == {COLORS[token].lower() for token in ("track_video", "track_subtitle", "accent", "warning")}, colours
+    assert not problems, "\n".join(problems)
+
+
+def test_a_port_is_12px_across():
+    """Le disque du port (liseré compris) fait 12 px de diamètre, mesuré sur le dessin."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    from ui.composition_page.node_view import _NodeItem
+    from ui.theme import COLORS
+
+    image = QImage(40, 40, QImage.Format_ARGB32)
+    background = QColor(COLORS["panel_alt"])
+    image.fill(background)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing)
+    _NodeItem._paint_port(painter, QPointF(20.0, 20.0), QColor("#ff00ff"))
+    painter.end()
+    row = [x for x in range(40) if not _near(QColor(image.pixel(x, 20)), background, 4)]
+    column = [y for y in range(40) if not _near(QColor(image.pixel(20, y)), background, 4)]
+    assert PORT_SIZE - 1 <= max(row) - min(row) + 1 <= PORT_SIZE + 1 and PORT_SIZE - 1 <= max(column) - min(column) + 1 <= PORT_SIZE + 1
+    assert _near(QColor(image.pixel(20, 20)), QColor("#ff00ff"))
+
+
+def _sample_nodes() -> list:
+    """Un nœud de chaque type : le réglage de chacun (le projet de démonstration n'en a que quatre types)."""
+    from core.compositing import Mask
+    from core.composition import (
+        EffectsNode,
+        GradeNode,
+        GraphicNode,
+        KeyNode,
+        MaskNode,
+        MediaNode,
+        MergeNode,
+        OutputNode,
+        SolidNode,
+        TransformNode,
+    )
+    from core.effects_model import EffectType, create_effect
+    from core.graphics import GraphicType, graphic_defaults
+
+    graphic = graphic_defaults(GraphicType.TEXT, project_width=1920, project_height=1080)
+    return [MediaNode("m", "", 0.0, 0.0, 1.0, label="Média"), GraphicNode("g", graphic, 0.0, 1.0, label="Texte"), SolidNode("s"),
+            TransformNode("t"), MergeNode("f"), MaskNode("k", (Mask(),)), KeyNode("i"),
+            EffectsNode("e", (create_effect(EffectType.BLUR),)), GradeNode("c"), OutputNode()]
+
+
+def _settings_problems(window, label: str) -> list[str]:
+    """Pour chaque type de nœud : champs de 36 px, boutons de 30 px, textes de 12 px au moins (widgets montrés dans la page courante)."""
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QAbstractButton, QAbstractSpinBox, QComboBox, QLabel, QLineEdit
+
+    panel = window.composition_panel
+    inspector = panel.inspector
+    problems: list[str] = []
+    for node in _sample_nodes():
+        inspector.set_node(node, editable=True)
+        audit.settle(window)
+        for widget in inspector.findChildren(QWidget):
+            if not widget.isVisibleTo(inspector) or widget.width() <= 0:
+                continue
+            parent = widget.parentWidget()
+            kind = type(node).__name__
+            name = widget.objectName() or type(widget).__name__
+            if isinstance(widget, (QAbstractSpinBox, QComboBox, QLineEdit)) and not isinstance(parent, (QAbstractSpinBox, QComboBox)):
+                if widget.height() < FIELD_HEIGHT:
+                    problems.append(f"{label} {kind} : champ {name} de {widget.height()} px")
+            elif isinstance(widget, QAbstractButton) and widget.height() < MIN_CONTROL:
+                problems.append(f"{label} {kind} : bouton {name} « {widget.text()[:12]} » de {widget.height()} px")
+            if isinstance(widget, (QLabel, QAbstractButton)) and widget.text().strip() and QFontInfo(widget.font()).pixelSize() < MIN_TEXT_PX:
+                problems.append(f"{label} {kind} : texte {QFontInfo(widget.font()).pixelSize()} px « {widget.text()[:16]} »")
+    window._refresh_composition_panel()
+    audit.settle(window)
+    return problems
+
+
+def _composition_floor_problems(window, label: str) -> list[str]:
+    """En-tête du panneau (boutons de 30 px au moins) et textes de 12 px au moins dans toute la colonne Composition."""
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QAbstractButton, QLabel
+
+    panel = window.composition_panel
+    problems: list[str] = []
+    for widget in [*panel.findChildren(QLabel), *panel.findChildren(QAbstractButton)]:
+        if not widget.isVisibleTo(panel) or widget.width() <= 0:
+            continue
+        text = widget.text()
+        if text.strip() and QFontInfo(widget.font()).pixelSize() < MIN_TEXT_PX:
+            problems.append(f"{label} texte {QFontInfo(widget.font()).pixelSize()} px : « {text[:16]} »")
+        if isinstance(widget, QAbstractButton) and widget.parentWidget() is panel.header and widget.height() < MIN_CONTROL:
+            problems.append(f"{label} bouton d'en-tête de {widget.height()} px")
+    return problems
+
+
+@pytest.mark.parametrize("size", COMPOSITION_SIZES, ids=COMPOSITION_SIZE_IDS)
+def test_composition_settings_have_36px_fields_and_30px_buttons(windows, size):
+    window = windows(size)
+    with _composition(window) as (panel, _clip):
+        problems = _settings_problems(window, f"{size[0]}x{size[1]}") + _composition_floor_problems(window, f"{size[0]}x{size[1]}")
+        assert panel.inspector.stack.currentWidget() is panel.inspector.pages["merge"]     # revenu sur Fusion 1
+    assert not problems, "\n".join(sorted(set(problems))[:10])
+
+
+@pytest.mark.parametrize("size", COMPOSITION_SIZES, ids=COMPOSITION_SIZE_IDS)
+def test_composition_timeline_shows_two_tracks_of_56_px_with_a_margin(windows, size):
+    window = windows(size)
+    with _composition(window) as (_panel, _clip):
+        problems = _montage_timeline_problems(window, f"{size[0]}x{size[1]}", tracks=2, row=TRACK_ROW)
+        timeline = window.timeline_panel
+        assert timeline.row_height_override == TRACK_ROW
+        assert window.workspace._root_splitter.sizes()[1] <= 280, "la timeline ne prend que ses 2 pistes : le reste va aux nœuds"
+        assert window.minimumHeight() <= MAX_MINIMUM_HEIGHT and window.height() <= size[1]
+        modes = [track.height_mode for track in window.project.tracks]
+    assert [track.height_mode for track in window.project.tracks] == modes, "le modèle des pistes ne change pas"
+    assert not problems, "\n".join(problems)
+
+
+@pytest.mark.parametrize("size", COMPOSITION_SIZES, ids=COMPOSITION_SIZE_IDS)
+def test_composition_viewer_keeps_a_reasonable_picture(windows, size):
+    """Le moniteur reste au centre : l'image garde au moins 85 % de la mesure de macOS (qui cède de la largeur aux nœuds)."""
+    window = windows(size)
+    with _composition(window) as (panel, _clip):
+        view = window.preview_panel.canvas_item.scene().views()[0]
+        picture = view.mapFromScene(window.preview_panel.canvas_item.sceneBoundingRect()).boundingRect()
+        floor = COMPOSITION_PICTURE_FLOOR[size]
+        assert picture.width() >= floor[0] and picture.height() >= floor[1], f"image {picture.width()}x{picture.height()}"
+        from core.workspace_state import DockArea
+
+        center = window.workspace._zones[DockArea.CENTER].width()
+        assert center >= 320, "le moniteur garde au moins sa largeur minimale"
+        timecode = window.preview_panel.timecode_label
+        assert timecode.width() >= timecode.sizeHint().width(), "le timecode n'est jamais rogné par la barre de transport"
+    window.switch_page("edit")
+    audit.settle(window)
+    assert window.preview_panel.duration_label.isVisibleTo(window.preview_panel), "hors de la page Composition la barre de transport est entière"
+
+
+@pytest.mark.parametrize("scale", [1.2, 1.35], ids=["police+20%", "police+35%"])
+def test_composition_page_keeps_its_guarantees_with_taller_fonts(scale):
+    """Polices plus larges (Windows, Linux) : éditeur de 290 px, 7 nœuds entiers, champs, 2 pistes et leur marge, fenêtre qui ne grandit pas."""
+    from PySide6.QtWidgets import QApplication
+
+    from qt_cleanup import deliver_deferred_deletes
+
+    window = audit.make_main_window(1222, 738, scopes=False, font_scale=scale)
+    try:
+        audit.select_first_clip(window)
+        label = f"x{scale}"
+        with _composition(window):
+            window.workspace.balance_vertical_split()
+            audit.settle(window)
+            problems = _node_view_problems(window, label) + _settings_problems(window, label) + _composition_floor_problems(window, label)
+            problems += _montage_timeline_problems(window, label, slack=COMPOSITION_FONT_MARGIN, tracks=2, row=TRACK_ROW)
+            assert window.height() <= 738 and window.minimumHeight() <= MAX_MINIMUM_HEIGHT, f"minimum {window.minimumHeight()} px"
+            for panel in (window.composition_panel, window.timeline_panel):
+                problems += [str(f) for f in legibility.legibility_findings(panel, f"{label} ") if f.blocking]
+        assert not problems, "\n".join(sorted(set(problems))[:10])
+    finally:
+        window.close()
+        window.deleteLater()
+        deliver_deferred_deletes()
+        app = QApplication.instance()
+        base = app.property("_kut_audit_base_stylesheet")
+        if base is not None:
+            app.setStyleSheet(base)
+
+
+def test_a_graph_wider_than_the_editor_scrolls_instead_of_shrinking(qtbot):
+    """Plus de colonnes que la vue n'en montre : barre de défilement, jamais de zoom arrière ; la position survit à une modification."""
+    from core.composition import CompositionGraph, MediaNode, TransformNode
+    from ui.composition_page.node_view import CompositionNodeView
+
+    graph = CompositionGraph.empty().inserted(MediaNode("m", "v", 0.0, 0.0, 1.0))
+    for index in range(8):
+        graph = graph.inserted(TransformNode(f"t{index}"), "m" if index == 0 else f"t{index - 1}")
+    view = CompositionNodeView()
+    qtbot.addWidget(view)
+    view.resize(600, 290)
+    view.show()
+    qtbot.waitExposed(view)
+    view.set_graph(graph, "m")
+    assert view.transform().m11() == 1.0 and view.horizontalScrollBar().maximum() > 0
+    view.horizontalScrollBar().setValue(120)
+    view.set_graph(graph.inserted(TransformNode("x"), "m"), "m")
+    assert view.horizontalScrollBar().value() == 120 and view.transform().m11() == 1.0
+
+
+def test_the_panel_is_stacked_with_a_fixed_editor_or_a_free_band(qtbot):
+    """Colonne (haute) : éditeur de 290 px fixes ; bande très large : l'éditeur prend la hauteur qu'on lui laisse, jamais 290 px imposés."""
+    from ui.composition_page.panel import CompositionPanel
+
+    panel = CompositionPanel()
+    qtbot.addWidget(panel)
+    panel.resize(720, 560)
+    panel.show()
+    qtbot.waitExposed(panel)
+    assert panel.splitter.orientation() == Qt.Vertical and panel.nodes.minimumHeight() == panel.nodes.maximumHeight() == EDITOR_HEIGHT
+    panel.resize(1100, 300)
+    qtbot.waitUntil(lambda: panel.splitter.orientation() == Qt.Horizontal)
+    assert panel.nodes.minimumHeight() < EDITOR_HEIGHT and panel.nodes.maximumHeight() > EDITOR_HEIGHT

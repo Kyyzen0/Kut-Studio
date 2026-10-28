@@ -45,6 +45,7 @@ from core.workspace_state import (
     MIN_SIZE,
     PAGE_AUDIO,
     PAGE_COLOR,
+    PAGE_COMPOSITION,
     PAGE_EDIT,
     PAGES,
     DockArea,
@@ -282,6 +283,9 @@ class _Zone(QWidget):
 #: s'ajoute à la zone des pistes (mesurée : 114 px de chrome pour un viewport de pistes).
 AUDIO_VISIBLE_TRACKS = 3
 AUDIO_TIMELINE_CHROME = 36
+#: Zone de travail (hauteur du séparateur racine) à partir de laquelle la page Audio montre ses 3 pistes entières : 1222x738 mesure 667 px,
+#: 1280x690 (hors cible) 619 px. Dessous, la rangée du haut garde ses 200 px et la timeline cède.
+AUDIO_THREE_TRACKS_FROM = 640
 #: Réserve structurelle sous la 3e piste : les polices plus larges (Windows, Linux) grandissent la barre d'outils et l'en-tête de
 #: la timeline de quelques pixels ; sans réserve, la 3e piste frôlait le bas de la zone (7 px de marge mesurés sous Windows).
 AUDIO_TIMELINE_RESERVE = 16
@@ -774,8 +778,8 @@ class WorkspaceManager(QObject):
             _close_floating_window(window, self._hosts[panel])
         self._page = page
         self._apply_state(target)
-        if page in (PAGE_AUDIO, PAGE_EDIT):
-            # 3 pistes de 56 px (Audio) ou 4 de 60 px (Montage), puis le mixeur : à la première visite la rangée du haut prend aussi
+        if page in (PAGE_AUDIO, PAGE_EDIT, PAGE_COMPOSITION):
+            # 3 pistes de 56 px (Audio), 4 de 60 px (Montage) ou 2 de 56 px (Composition), puis le mixeur : à la première visite la rangée du haut prend aussi
             # sa hauteur ; ensuite le partage choisi entre le haut et le bas est repris tel quel, seule la timeline retrouve ses pistes.
             QTimer.singleShot(0, self, lambda: self.balance_vertical_split(resize_root=first_visit))
         self._refresh_dependents()
@@ -816,8 +820,11 @@ class WorkspaceManager(QObject):
         track_count = len(self._project_tracks()) or 1
         audio_page = self._page == PAGE_AUDIO
         edit_page = self._page == PAGE_EDIT
+        composition_page = self._page == PAGE_COMPOSITION
         if audio_page:
             track_count = min(track_count, AUDIO_VISIBLE_TRACKS)       # 3 pistes visibles : les autres défilent
+        elif composition_page:
+            track_count = min(track_count, Sizes.composition_visible_tracks)   # 2 pistes : l'éditeur de nœuds et leur réglage ont la hauteur
         elif edit_page:
             track_count = min(track_count, self._montage_visible_tracks(total))   # 4 pistes (3 sur une zone basse) : les autres défilent
         pitch = (timeline.row_height_override or timeline.track_height) + timeline.track_gap
@@ -829,7 +836,7 @@ class WorkspaceManager(QObject):
             + 34  # marges + barres de défilement
             + (AUDIO_TIMELINE_CHROME + AUDIO_TIMELINE_RESERVE if audio_page else 0)
         )
-        if edit_page:
+        if edit_page or composition_page:
             timeline_needed = self._montage_timeline_height(timeline, pitch * max(track_count, 1))
         # La zone basse peut héberger d'autres panneaux (le mixeur) :
         # chacun réclame son minimum, sinon l'un se fait écraser.
@@ -862,9 +869,19 @@ class WorkspaceManager(QObject):
             # Page Audio : la rangée du haut (moniteur, bibliothèque, inspecteur : des zones qui défilent) cède pour que la
             # timeline montre 3 pistes de 56 px et que le mixeur garde ses canaux ; le reste de la hauteur va au mixeur.
             wanted = max(Sizes.audio_top_row_height, min(int(total * 0.31), 260))
-            bottom = max(total - wanted - root.handleWidth(), timeline_needed + extras)
+            bottom = total - wanted - root.handleWidth()
+            if total >= AUDIO_THREE_TRACKS_FROM:
+                bottom = max(bottom, timeline_needed + extras)
+            else:
+                # Fenêtre sous la cible (1280x690) : 3 pistes de 56 px ET un mixeur ne tiennent pas ; la rangée du haut garde sa hauteur
+                # (la bibliothèque y montre sa liste) et la timeline cède, sans jamais passer sous son minimum.
+                bottom = max(bottom, timeline.minimumHeight() + extras)
         if edit_page:
             bottom = self._montage_bottom_height(total, root.handleWidth(), timeline, timeline_needed, extras)
+        if composition_page:
+            # Composition : la timeline prend ses 2 pistes et leur marge, tout le reste de la hauteur va à la rangée du haut (moniteur,
+            # éditeur de nœuds de 290 px et réglage du nœud).
+            bottom = max(timeline_needed + extras, timeline.minimumHeight() + extras)
         top = max(total - bottom, 160)
         if resize_root:
             root.setSizes([top, bottom])
@@ -1204,8 +1221,8 @@ class WorkspaceManager(QObject):
         total = max(top.width(), left + center + right)
         if total <= 0:
             return
-        if self._page == PAGE_COLOR and top.width() > 0:
-            # Page Couleur : le moniteur cède (jusqu'à son minimum) aux roues, qui gardent leur taille entière.
+        if self._page in (PAGE_COLOR, PAGE_COMPOSITION) and top.width() > 0:
+            # Pages Couleur et Composition : le moniteur cède (jusqu'à son minimum) aux roues, ou aux nœuds entiers, qui gardent leur taille.
             center = max(MIN_SIZE[PanelId.VIEWER], top.width() - left - right - 2 * top.handleWidth())
         top.setSizes([left, center, right])
         root = getattr(self, "_root_splitter", None)
