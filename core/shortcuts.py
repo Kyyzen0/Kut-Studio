@@ -557,6 +557,18 @@ COMMANDS: tuple[Command, ...] = (
 
 COMMANDS_BY_ID: dict[str, Command] = {command.id: command for command in COMMANDS}
 
+STORE_ABSENT_COMMANDS: frozenset[str] = frozenset({"auto_subtitles", "auto_karaoke"})
+"""Commandes absentes de la version Mac App Store (Whisper : ADR-0013, étape 8) : ni éditeur de raccourcis, ni fonction."""
+
+
+def available_commands() -> tuple[Command, ...]:
+    """Commandes de cette construction : toutes, sauf celles de :data:`STORE_ABSENT_COMMANDS` dans la version Store."""
+    from .build_flavor import is_store
+
+    if is_store():
+        return tuple(command for command in COMMANDS if command.id not in STORE_ABSENT_COMMANDS)
+    return COMMANDS
+
 
 # ---------------------------------------------------------------------------
 # Carte des raccourcis
@@ -614,10 +626,10 @@ class ShortcutMap:
         self,
         overrides: Mapping[str, object] | None = None,
         *,
-        commands: Iterable[Command] = COMMANDS,
+        commands: Iterable[Command] | None = None,
         platform: str | None = None,
     ) -> None:
-        self._commands: dict[str, Command] = {c.id: c for c in commands}
+        self._commands: dict[str, Command] = {c.id: c for c in (available_commands() if commands is None else commands)}
         self._platform = platform
         self._effective: dict[str, tuple[str, ...]] = {}
         self._load(overrides or {})
@@ -847,6 +859,8 @@ def validate_defaults(commands: Iterable[Command] = COMMANDS) -> list[str]:
 
 __all__ = [
     "COMMANDS",
+    "STORE_ABSENT_COMMANDS",
+    "available_commands",
     "COMMANDS_BY_ID",
     "MAX_CHORD_STEPS",
     "MAX_SEQUENCES_PER_COMMAND",

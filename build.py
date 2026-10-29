@@ -40,6 +40,10 @@ STORE_EXCLUDED_MODULES = (
     "core.update_signature", "ui.update_auto_install", "ui.update_dialog", "ui.main_window_mixins.updates",
 )
 """Modules de mise à jour absents du bundle Store (la liste de l'ADR-0013 §3 ; ``core.ed25519`` reste, il est générique)."""
+STORE_EXCLUDED_CLI_MODULES = ("core.cli", "core.scripting")
+"""Ligne de commande et mode script, absents du bundle Store (ADR-0013, étape 8 ; ``main.py`` ne les importe pas en Store).
+Deux noms précis, pas de préfixe large : ``core.film``, ``core.film_render`` et le moteur d'export restent (rien dans
+``core.scripting`` n'est importé par l'interface ; recherche faite le 2026-10-29)."""
 MICROPHONE_USAGE = "Kut-Studio uses the microphone only while you record a voice-over."
 """Exigé par macOS pour l'enregistrement de voix off (et par le runtime renforcé d'une application notarisée)."""
 
@@ -145,7 +149,7 @@ def build_command(
         # Le module généré est importé dans un ``try`` (``core/build_flavor.py``) : l'inclure explicitement ne dépend
         # pas de l'analyse de PyInstaller. Les modules de mise à jour ne sont pas embarqués.
         command.extend(["--hidden-import", FLAVOR_HIDDEN_IMPORT])
-        for module in STORE_EXCLUDED_MODULES:
+        for module in (*STORE_EXCLUDED_MODULES, *STORE_EXCLUDED_CLI_MODULES):
             command.extend(["--exclude-module", module])
     icon = _icon_for(platform_name)
     if icon is not None:

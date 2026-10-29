@@ -6,6 +6,18 @@ from core.process_supervisor import helper_mode_exit_code
 from core.tool_paths import extend_search_path, log_tool_search
 
 
+def cli_requested(argv):
+    """``True`` si ``argv`` demande la ligne de commande. Jamais dans la version Mac App Store (ADR-0013, étape 8) : le
+    module ``core.cli`` n'y est pas livré (ni le mode script), donc il n'est même pas importé."""
+    from core.build_flavor import is_store
+
+    if is_store():
+        return False
+    from core.cli import is_cli_invocation
+
+    return is_cli_invocation(argv)
+
+
 def main():
     # Processus auxiliaire de la supervision des enfants (gardien, enfant d'auto-contrôle) : l'application se
     # relance elle-même avec un argument dédié, en source comme gelée. Traité avant le journal et avant Qt.
@@ -14,9 +26,7 @@ def main():
         return helper
     # Ligne de commande (« Kut-Studio info | validate | presets | export ») : le même binaire, sans fenêtre, traitée avant Qt et
     # avant la fenêtre. FFmpeg (Homebrew…) se cherche avec le PATH complet, comme pour l'interface.
-    from core.cli import is_cli_invocation
-
-    if is_cli_invocation(sys.argv):
+    if cli_requested(sys.argv):
         extend_search_path()
         from core.cli import main as cli_main
 

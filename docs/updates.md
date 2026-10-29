@@ -406,3 +406,13 @@ Quand `STORE` est vrai :
 
 Tests : `tests/test_build_flavor_store.py` (sous-processus hors écran qui démarre l'application dans chaque saveur).
 
+### Étape 8 : sans Whisper ni ligne de commande (ADR-0013)
+
+Le bac à sable n'exécute pas de programme installé par l'utilisateur : en construction Store, `core.transcription.transcription_available()` est faux et **toutes** les entrées sont fermées.
+
+* **Interface** : pas de sous-menu « Sous-titres automatiques » (donc rien dans la palette), commandes `auto_subtitles` / `auto_karaoke` absentes de la table des raccourcis (`core.shortcuts.available_commands`), pas de groupe « Transcription » dans les préférences. Les réglages `whisper_path` / `whisper_model` déjà enregistrés sont conservés tels quels, sans être lus ni écrasés.
+* **Modèle** : `find_whisper` et `find_whisper_model` rendent `None` sans rien chercher (ni réglage, ni variable `KUT_STUDIO_WHISPER`, ni `PATH`) ; `TranscriptionJob` refuse d'être construit (`StoreRestrictionError`) et son lancement de sous-processus re-vérifie ; `transcribe_voice` affiche « indisponible dans cette version » (fr / en / es) ; `set_whisper_*` ne fait rien.
+* **Ligne de commande et scripts** : `main.cli_requested` rend toujours faux, `core.cli` et `core.scripting` ne sont jamais importés, et `build.py --flavor store` les exclut du bundle (`STORE_EXCLUDED_CLI_MODULES` : deux noms précis, jamais `core` en entier ; `core.film` et le moteur d'export restent). Aucun module livré n'importe ces deux modules (test AST). Les scripts n'ont d'ailleurs jamais appelé Whisper (`core/scripting/auto_rules.py`).
+* **Projets existants** : des sous-titres déjà générés sont des clips ordinaires ; ils s'ouvrent, s'affichent et s'exportent (testé en saveur Store).
+* **Garde** : `tests/test_store_whisper.py` contient un inventaire (AST) : toute fonction livrée qui nomme le moteur (`TranscriptionJob`, `find_whisper`, `find_whisper_model`, `whisper_command`) doit appeler une garde, et seul `core/transcription.py` peut lancer un processus ou chercher le programme.
+* **Limite** : le texte d'aide des préférences et les messages « programme introuvable » restent dans les tables de traduction ; ils ne s'affichent jamais en Store. Whisper embarqué (option (a) de l'ADR, §4) est hors de cette série.
