@@ -66,6 +66,7 @@ from ui.i18n import translate
 from ui.icons import IconName, make_icon
 from ui.keyboard_navigation import set_single_default
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 
 # Identifiants Qt ``UserRole`` utilisés pour mapper les entrées
@@ -270,13 +271,13 @@ class FolderTreeWidget(QWidget):
             return
 
         # Entrée « Tous » — affiche l'intégralité des médias.
-        all_item = QTreeWidgetItem([_label_with_count(translate("library.filter.all"), 0)])
+        all_item = retain(QTreeWidgetItem([_label_with_count(translate("library.filter.all"), 0)]))
         all_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_ALL)
         all_item.setData(0, _FOLDER_NAME_ROLE, translate("library.filter.all"))
         self.tree.addTopLevelItem(all_item)
 
         # Entrée « Racine » — médias sans dossier.
-        root_item = QTreeWidgetItem([_label_with_count(translate("library.folder.root"), 0)])
+        root_item = retain(QTreeWidgetItem([_label_with_count(translate("library.folder.root"), 0)]))
         root_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_ROOT)
         root_item.setData(0, _FOLDER_NAME_ROLE, translate("library.folder.root"))
         self.tree.addTopLevelItem(root_item)
@@ -284,9 +285,9 @@ class FolderTreeWidget(QWidget):
         # Entrée « Manquants » — apparaît seulement si le projet a au
         # moins un média sans fichier source.
         if has_missing:
-            missing_item = QTreeWidgetItem(
+            missing_item = retain(QTreeWidgetItem(
                 [_label_with_count(translate("library.filter.missing"), 0)]
-            )
+            ))
             missing_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_MISSING)
             missing_item.setData(0, _FOLDER_NAME_ROLE, translate("library.filter.missing"))
             self.tree.addTopLevelItem(missing_item)
@@ -396,7 +397,7 @@ class FolderTreeWidget(QWidget):
         *,
         count: int,
     ) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([_label_with_count(folder.name, count)])
+        item = retain(QTreeWidgetItem([_label_with_count(folder.name, count)]))
         item.setData(0, _FOLDER_ID_ROLE, folder.id)
         item.setData(0, _FOLDER_KIND_ROLE, self._KIND_FOLDER)
         item.setData(0, _FOLDER_NAME_ROLE, folder.name)

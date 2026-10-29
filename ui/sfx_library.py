@@ -13,6 +13,7 @@ from core.sfx_synth import CATALOG
 from ui import i18n
 from ui.design_system import Spacing
 from ui.theme import label_style
+from ui.qt_item_lifetime import retain
 
 ON_CUTS_DEFAULT = ("whoosh", "whoosh_long", "whoosh_short")
 """Sons qui tournent sur les cuts quand aucun n'est sélectionné (trois whooshes : le montage respire)."""
@@ -34,7 +35,7 @@ class SfxLibraryView(QWidget):
         self.list = QListWidget(objectName="sfxList")
         self.list.setSelectionMode(QListWidget.ExtendedSelection)
         for spec, _render in CATALOG:
-            item = QListWidgetItem()
+            item = retain(QListWidgetItem())
             item.setData(Qt.UserRole, spec.id)
             item.setData(Qt.UserRole + 1, spec.category)
             self.list.addItem(item)

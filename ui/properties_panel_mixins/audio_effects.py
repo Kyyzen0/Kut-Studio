@@ -27,6 +27,7 @@ from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing, Typography
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 
 class AudioEffectsMixin:
@@ -230,7 +231,7 @@ class AudioEffectsMixin:
             name = _tr(f"audio_effects.preset.{effect.type.value}.name")
             if not effect.enabled:
                 name = f"{name} · {_tr('effects.disabled_suffix')}"
-            item = QListWidgetItem(name)
+            item = retain(QListWidgetItem(name))
             item.setData(Qt.UserRole, effect.id)
             self.audio_effects_list.addItem(item)
         self.audio_effects_list.blockSignals(False)

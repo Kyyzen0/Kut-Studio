@@ -18,6 +18,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - **Miroir GitLab optionnel.** Un workflow recopie `main` et les tags vers un dépôt GitLab privé si les secrets `GITLAB_MIRROR_URL` et `GITLAB_MIRROR_TOKEN` existent ; sinon il se termine sans échec (`docs/gitlab-mirror.md`).
 
+### Fixed
+
+- **Plantage natif intermittent à la fermeture d'une fenêtre ou au vidage d'une liste.** PySide libérait l'objet Python d'un élément de liste (`QListWidgetItem`…) *dans* le destructeur C++ de cet élément, puis relisait la mémoire libérée : segfault sans trace, au hasard du ramasse-miettes (« worker crashed » sur la CI, tous systèmes). Chaque élément créé dans `ui/` est maintenant retenu jusqu'à la destruction de son objet C++ (`ui/qt_item_lifetime.py`) ; garde `tests/test_qt_item_lifetime.py`.
+
 ### Changed
 
 - **Page Montage plus aérée** (maquettes « Air d'abord »). Le mixeur est **replié en une barre de 40 px** sous la timeline : un clic le rouvre (il garde alors le comportement de la page Audio), « Replier » le referme, et le choix est retenu le temps de la session ; la timeline montre **4 pistes de 60 px** (3 quand la fenêtre est basse, sous ~730 px de zone de travail) avec leur nom et leur type (votre choix de hauteur de piste n'est jamais modifié) ; la bibliothèque a des **vignettes de 72 px** ; les onglets du réglage tiennent sur **une seule ligne** (Graphiques, Compositing et Suivi sont sous « Plus ») ; la barre du haut passe à 40 px ; plus aucun texte sous 12 px ni bouton sous 30 px dans ces zones. La visionneuse garde une image de 542 x 306 px à 1440x900, 348 x 197 px à 1440x790 et 362 x 204 px à 1222x738.

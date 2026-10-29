@@ -20,6 +20,7 @@ from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import COLORS, label_style
 from ui.project_panel_widgets.text_presets_view import TextPresetLibraryView
+from ui.qt_item_lifetime import retain
 
 
 class SubtitleLibraryView(QWidget):
@@ -180,7 +181,7 @@ class SubtitleLibraryView(QWidget):
     def set_clips(self, clips: list) -> None:
         self.list_widget.clear()
         for clip in clips:
-            item = QListWidgetItem(self._format_label(clip))
+            item = retain(QListWidgetItem(self._format_label(clip)))
             item.setData(Qt.UserRole, clip.id)
             self.list_widget.addItem(item)
 

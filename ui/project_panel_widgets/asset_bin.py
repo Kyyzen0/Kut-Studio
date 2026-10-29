@@ -20,6 +20,7 @@ from ui.icons import IconName, make_icon
 from ui.library_organization_widgets import AssetUsageBadge
 from ui.theme import COLORS
 from ui.i18n import translate
+from ui.qt_item_lifetime import retain
 
 
 class AssetBin(QWidget):
@@ -293,7 +294,7 @@ class AssetBin(QWidget):
             self._list.addItem(self._make_item(asset))
 
     def _make_item(self, asset: MediaAsset) -> QListWidgetItem:
-        item = QListWidgetItem()
+        item = retain(QListWidgetItem())
         item.setData(Qt.UserRole, asset.id)
         item.setData(Qt.UserRole + 1, asset)
         item.setData(Qt.UserRole + 2, _format_duration(asset.duration))

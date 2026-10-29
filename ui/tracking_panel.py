@@ -37,6 +37,7 @@ from ui.adaptive_layout import FlowLayout, WrappingCheckBox, allow_shrinking, ma
 from ui.design_system import Iconography, Spacing
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS, OVERLAY, overlay_qcolor
+from ui.qt_item_lifetime import retain
 
 
 def _swatch(color: str, health: str = "") -> QIcon:
@@ -407,7 +408,7 @@ class TrackingPanel(QGroupBox):
         if current_ids != [t["id"] for t in trackers]:
             self.tracker_list.clear()
             for tracker in trackers:
-                item = QListWidgetItem(tracker["name"])
+                item = retain(QListWidgetItem(tracker["name"]))
                 item.setData(Qt.UserRole, tracker["id"])
                 item.setFlags(item.flags() | Qt.ItemIsEditable | Qt.ItemIsUserCheckable)
                 self.tracker_list.addItem(item)
@@ -471,7 +472,7 @@ class TrackingPanel(QGroupBox):
         previous = self.selected_link_id()
         self.links_list.clear()
         for link in links:
-            item = QListWidgetItem(link["label"])
+            item = retain(QListWidgetItem(link["label"]))
             item.setData(Qt.UserRole, link["id"])
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if link["enabled"] else Qt.Unchecked)
@@ -483,7 +484,7 @@ class TrackingPanel(QGroupBox):
             rows = [i for i, link in enumerate(links) if link["id"] == previous]
             self.links_list.setCurrentRow(rows[0] if rows else 0)
         else:
-            self.links_list.addItem(QListWidgetItem(_tr("tracking.links.empty")))
+            self.links_list.addItem(retain(QListWidgetItem(_tr("tracking.links.empty"))))
             self.links_list.item(0).setFlags(Qt.NoItemFlags)
         has_links = bool(state.get("links"))
         self.freeze_button.setEnabled(has_links and not busy)

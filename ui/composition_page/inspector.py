@@ -49,6 +49,7 @@ from core.effects_model import EFFECT_PARAMETER_SPECS, EffectType, create_effect
 from ui.design_system import Spacing
 from ui.i18n import translate
 from ui.theme import set_role
+from ui.qt_item_lifetime import retain
 
 _GRADE_FIELDS = (("exposure", -2.0, 2.0, 0.05), ("contrast", -1.0, 1.0, 0.05), ("saturation", 0.0, 2.0, 0.05),
                  ("temperature", -100.0, 100.0, 1.0), ("hue", -180.0, 180.0, 1.0), ("shadows", -1.0, 1.0, 0.05),
@@ -314,7 +315,7 @@ class NodeInspector(QWidget):
             row = self.effects_list.currentRow()
             self.effects_list.clear()
             for effect in node.effects:
-                QListWidgetItem(translate(f"effects.name.{effect.type.value}"), self.effects_list)
+                retain(QListWidgetItem(translate(f"effects.name.{effect.type.value}"), self.effects_list))
             self.effects_list.setCurrentRow(min(max(row, 0), len(node.effects) - 1) if node.effects else -1)
             self._load_effect()
         elif isinstance(node, GradeNode):

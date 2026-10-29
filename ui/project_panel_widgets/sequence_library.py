@@ -29,6 +29,7 @@ from ui.design_system import Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 SEQUENCE_MIME = "application/x-kut-studio-sequence-id"
 
@@ -146,7 +147,7 @@ class SequenceLibraryView(QWidget):
             if entry.usage_count:
                 # Ligne à part : le panneau est étroit, rien ne doit être tronqué.
                 details += "\n" + translate("sequence.library.usage", count=entry.usage_count)
-            item = QListWidgetItem(f"{entry.name}\n{details}")
+            item = retain(QListWidgetItem(f"{entry.name}\n{details}"))
             if entry.issue:
                 item.setIcon(make_icon(IconName.WARNING))          # un problème prime sur « active » : il demande une action
             elif entry.active:
