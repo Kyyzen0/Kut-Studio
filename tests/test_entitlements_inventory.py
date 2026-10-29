@@ -213,3 +213,35 @@ def test_the_documentation_lists_every_inventoried_entry():
     text = (ROOT / "docs" / "entitlements.md").read_text(encoding="utf-8")
     missing = [f"{path} : {qualname}" for path, qualname, _g in GUARDED if qualname.split(".")[-1] not in text]
     assert not missing, f"docs/entitlements.md ne cite pas : {missing}"
+
+
+# -- le pont StoreKit (ADR-0013, étape 13) : qui l'installe, qui l'appelle -----------------------------------------------------
+
+
+def test_only_the_store_controller_installs_the_entitlement_service():
+    """``install_service`` n'est appelé, en production, que par le contrôleur du build Store (jamais hors Store)."""
+    installers = {c for c in _callers({"install_service"}, calls_only=True) if c[0] != "core/entitlements/guard.py"}
+    assert installers == {("ui/store_entitlements.py", "StoreEntitlementsController.__init__")}, sorted(installers)
+    creators = {c for c in _callers({"StoreEntitlementsController"}, calls_only=True) if c[0] != "ui/store_entitlements.py"}
+    assert creators == {("ui/main_window_mixins/entitlements.py", "EntitlementsMixin._start_store_entitlements")}, sorted(creators)
+    starters = _callers({"_start_store_entitlements"}, calls_only=True)
+    assert starters == {("ui/main_window_mixins/entitlements.py", "EntitlementsMixin._init_entitlements")}, sorted(starters)
+    node = _find(_parse("ui/main_window_mixins/entitlements.py"), "EntitlementsMixin._init_entitlements")
+    assert node is not None and {"is_store", "_start_store_entitlements"} <= _names(node)       # derrière is_store()
+
+
+def test_the_storekit_bridge_is_only_driven_by_the_worker_modules():
+    """Les appels BLOQUANTS du pont (``call``, ``poll_update``, ``shutdown``) ne sont écrits que dans les deux modules du thread de
+    travail ; le chargement (``StoreKitBridge.load``) que par le contrôleur Store. Aucun appel depuis ``ui/`` hors chargement."""
+    bridge_modules = {"core/entitlements/storekit_bridge.py", "core/entitlements/storekit_verifier.py",
+                      "core/entitlements/storekit_source.py"}
+    blocking = {c for c in _callers({"poll_update", "shutdown"}, receiver={"bridge", "_bridge"}, calls_only=True)} | \
+        {c for c in _callers({"call"}, receiver={"bridge"}, calls_only=True)}
+    assert {c for c in blocking if c[0] not in bridge_modules} == set(), sorted(blocking)
+    loaders = {c for c in _callers({"load"}, receiver={"StoreKitBridge"}, calls_only=True) if c[0] != "core/entitlements/storekit_bridge.py"}
+    assert loaders == {("ui/store_entitlements.py", "bundled_bridge_loader")}, sorted(loaders)
+    for path in ("core/entitlements/storekit_bridge.py", "core/entitlements/storekit_verifier.py",
+                 "core/entitlements/storekit_source.py"):
+        imports = {n.module for n in ast.walk(_parse(path)) if isinstance(n, ast.ImportFrom)} | \
+            {a.name for n in ast.walk(_parse(path)) if isinstance(n, ast.Import) for a in n.names}
+        assert not any(name and name.startswith(("PySide6", "ui")) for name in imports), (path, imports)        # sans Qt

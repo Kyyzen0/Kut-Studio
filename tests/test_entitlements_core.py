@@ -1,4 +1,4 @@
-"""Module de droits (ADR-0013, étape 12) : états, essai à J / J+14 / J+15, horloge reculée, état illisible, signature invalide.
+"""Module de droits (ADR-0013, étape 12) : états, essai à J / J+13 / J+14, horloge reculée, état illisible, signature invalide.
 
 Sans Qt, sans réseau : l'horloge est injectée, le fichier d'état est signé (HMAC de test).
 """
@@ -73,12 +73,12 @@ def test_default_enforced_reads_the_store_flag(monkeypatch):
 
 
 @pytest.mark.parametrize("elapsed, days_left, kind", [
-    (0 * DAY, 15, K.TRIAL),                       # jour J : il reste les 15 jours
-    (1 * DAY, 14, K.TRIAL),
-    (14 * DAY, 1, K.TRIAL),                       # J+14 : dernier jour
-    (14 * DAY + 23 * 3600, 1, K.TRIAL),           # J+14 à 23 h : toujours le dernier jour
-    (15 * DAY - 1, 1, K.TRIAL),                   # une seconde avant la fin
-    (15 * DAY, None, K.EXPIRED),                  # J+15 : fini (fin exclue)
+    (0 * DAY, 14, K.TRIAL),                       # jour J : il reste les 14 jours
+    (1 * DAY, 13, K.TRIAL),
+    (13 * DAY, 1, K.TRIAL),                       # J+13 : dernier jour
+    (13 * DAY + 23 * 3600, 1, K.TRIAL),           # J+13 à 23 h : toujours le dernier jour
+    (14 * DAY - 1, 1, K.TRIAL),                   # une seconde avant la fin
+    (14 * DAY, None, K.EXPIRED),                  # J+14 : fini (fin exclue)
     (40 * DAY, None, K.EXPIRED),
 ])
 def test_trial_days(tmp_path, elapsed, days_left, kind):
@@ -106,7 +106,7 @@ def test_trial_length_is_a_policy_parameter(tmp_path):
 def test_trial_started_in_the_future_is_never_longer_than_the_trial(tmp_path):
     service, _s, clock = make_service(tmp_path)
     service.publish(trial(started=T0 + 100 * DAY, verified=T0))      # début annoncé dans le futur : pas de rallonge
-    assert service.state().days_left == 15
+    assert service.state().days_left == 14
 
 
 # -- horloge reculée ----------------------------------------------------------------------------------------------------------
@@ -115,19 +115,19 @@ def test_trial_started_in_the_future_is_never_longer_than_the_trial(tmp_path):
 def test_clock_rolled_back_does_not_extend_the_trial(tmp_path):
     service, _s, clock = make_service(tmp_path)
     service.publish(trial(T0))
-    clock.now = T0 + 14 * DAY
+    clock.now = T0 + 13 * DAY
     assert service.state().days_left == 1
     clock.now = T0 + 2 * DAY                                         # l'utilisateur recule la date
     back = service.state()
     assert back.days_left == 1 and back.clock_rollback is True       # aucune rallonge, et on le dit
-    clock.now = T0 + 15 * DAY
+    clock.now = T0 + 14 * DAY
     assert service.state().kind is K.EXPIRED
 
 
 def test_clock_rollback_survives_a_restart(tmp_path):
     service, store, clock = make_service(tmp_path)
     service.publish(trial(T0))
-    clock.now = T0 + 14 * DAY
+    clock.now = T0 + 13 * DAY
     service.state()                                                  # la plus grande date vue est écrite (signée)
     clock.now = T0 + 1 * DAY                                         # on recule, puis on relance l'application
     relaunched = EntitlementService(store, clock, enforced=lambda: True)

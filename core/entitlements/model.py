@@ -73,7 +73,7 @@ class EntitlementPolicy:
     """Les chiffres de la politique économique. **Aucun n'est figé** : D11 de l'ADR-0013 reste ouvert.
 
     Attributes:
-        trial_days: durée de l'essai (D3 : 15 jours).
+        trial_days: durée de l'essai (D3, précisé le 2026-10-29 : 14 jours).
         grace_seconds: délai de grâce d'un abonnement dont l'échéance est passée sans confirmation (proposition de l'ADR :
             7 jours ; **valeur par défaut documentée, à décider**).
         clock_tolerance: écart toléré (secondes) entre l'horloge et la plus grande date vue avant de conclure à un recul.
@@ -83,7 +83,7 @@ class EntitlementPolicy:
             (``SUBSCRIBER`` avec ``in_grace``), mais sans dernier état vérifié lisible il n'y a rien à conserver.
     """
 
-    trial_days: int = 15
+    trial_days: int = 14
     grace_seconds: float = 7 * DAY_SECONDS
     clock_tolerance: float = 300.0
     persist_interval: float = 3600.0

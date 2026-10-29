@@ -8,8 +8,8 @@ Ce que le service garantit :
   l'abonnement ; l'état porte ``clock_rollback=True`` pour qu'on le dise à l'utilisateur. La plus grande date vue est écrite
   (signée) au plus une fois par ``persist_interval``. Une nouvelle vérification du pont (:meth:`publish`) refait foi : sa
   ``verified_at`` vient d'Apple et remplace la plus grande date vue, ce qui guérit une horloge poussée trop loin par erreur ;
-* l'essai : ``trial_started_at`` (donné par Apple) + ``trial_days`` ; au jour J il reste ``trial_days`` jours, à J+14 il en
-  reste 1, à J+15 l'essai est fini (fin exclue) ;
+* l'essai : ``trial_started_at`` (donné par Apple) + ``trial_days`` ; au jour J il reste ``trial_days`` jours, à J+13 il en
+  reste 1, à J+14 l'essai est fini (fin exclue) ;
 * un abonnement échu mais dans le délai de grâce reste ``SUBSCRIBER`` (``in_grace``) ; au-delà, ``UNKNOWN(stale)`` : on ne sait
   pas s'il a été renouvelé, on ne dit pas « expiré ».
 """

@@ -3,7 +3,7 @@
 Voir ``docs/entitlements.md``. Points d'entrée :
 
 * :class:`EntitlementService` (état courant, horloge injectée) ; :class:`EntitlementStore` (état signé dans le conteneur) ;
-* :class:`EntitlementVerifier` (à implémenter par le pont StoreKit, étape 13) ;
+* :class:`EntitlementVerifier` (réalisé par ``storekit_verifier.StoreKitVerifier``, étape 13 ; le pont est dans ``storekit_*``) ;
 * :func:`require_edit` / :func:`require_export` (les gardes des trois entrées) ; :func:`install_service`.
 """
 
