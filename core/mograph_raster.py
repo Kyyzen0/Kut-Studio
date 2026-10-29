@@ -48,7 +48,7 @@ from PySide6.QtGui import (
 )
 
 from .blend_modes import BlendMode, coerce_blend_mode, qt_composition_mode
-from .security_scope import scoped_access
+from .security_scope import scoped_access, scoped_argument
 from .bundled_fonts import register_bundled_fonts
 from .text_runs import WORD, is_plain, reveal_state, split_emoji
 from .compositing import MaskMode, MaskShape
@@ -389,29 +389,30 @@ class _ImageCache:
         self._size = size
 
     def get(self, path: str) -> QImage | None:
-        try:
-            stat = os.stat(path)
-        except OSError:
-            return None
-        key = (path, stat.st_mtime_ns, stat.st_size)
-        image = self._items.get(key)
-        if image is None:
-            with scoped_access(path):                      # Store : accès par signet à l'image (ADR-0013 étape 5)
-                image = QImage(path)
-            if image.isNull():
+        with scoped_access(path):                          # Store : accès par signet, stat COMPRIS (le bac à sable refuse stat sans accès)
+            try:
+                stat = os.stat(path)
+            except OSError:
                 return None
-            image = image.convertToFormat(_FORMAT)
-            self._items[key] = image
-            if len(self._items) > self._size:
-                self._items.popitem(last=False)
-        else:
-            self._items.move_to_end(key)
+            key = (path, stat.st_mtime_ns, stat.st_size)
+            image = self._items.get(key)
+            if image is not None:
+                self._items.move_to_end(key)
+                return image
+            loaded = QImage(path)
+        if loaded.isNull():
+            return None
+        image = loaded.convertToFormat(_FORMAT)
+        self._items[key] = image
+        if len(self._items) > self._size:
+            self._items.popitem(last=False)
         return image
 
 
 IMAGES = _ImageCache()
 
 
+@scoped_argument(0)
 def image_signature(path: str) -> str:
     try:
         stat = os.stat(path)

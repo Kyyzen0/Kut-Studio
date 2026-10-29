@@ -6,7 +6,7 @@ l'utilisateur. Écriture atomique (``core.atomic_io``). Entrées indexées par *
 
 Bornes : :data:`MAX_ENTRIES` entrées, :data:`MAX_BOOKMARK_CHARS` caractères par signet, :data:`MAX_FILE_BYTES` octets pour le
 fichier, vérifiés avant toute lecture complète. Un fichier trop gros, illisible ou mal formé se lit comme vide (aucun accès) et
-n'est PAS réécrit tant qu'on n'ajoute rien. Quand la table est pleine, un nouveau signet est refusé (rien n'est évincé en silence :
+n'est PAS réécrit tant qu'on n'ajoute rien. Quand la table est pleine, ou que le fichier sérialisé dépasserait :data:`MAX_FILE_BYTES` (vérifié AVANT d'écrire : l'ancien fichier reste intact), un nouveau signet est refusé (rien n'est évincé en silence :
 un signet perdu ferait perdre un média à l'utilisateur).
 """
 
@@ -18,7 +18,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..atomic_io import atomic_write_json
+from ..atomic_io import atomic_write_text
 
 FILE_NAME = "security_scope.json"
 FORMAT_VERSION = 1
@@ -87,7 +87,13 @@ class BookmarkStore:
 
     def _write(self, table: dict[str, str]) -> None:
         payload = {"version": FORMAT_VERSION, "entries": {key: {"bookmark": mark} for key, mark in sorted(table.items())}}
-        atomic_write_json(self._file, payload, indent=None)
+        text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+            # Refus AVANT de toucher au fichier : écrit, il serait relu comme vide (limite de lecture) et toutes les permissions
+            # disparaîtraient. L'ancien fichier reste intact ; rien n'est évincé en silence.
+            raise ValueError("table des signets trop grande")
+        atomic_write_text(self._file, text)
+        self._cache = None
 
     def entries(self) -> list[BookmarkEntry]:
         with self._lock:

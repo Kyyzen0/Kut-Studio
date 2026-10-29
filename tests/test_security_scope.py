@@ -299,3 +299,14 @@ def test_bundled_dylib_path_is_fixed_and_ignores_the_environment(monkeypatch, tm
         assert path is not None and path.name == "libkutscope.dylib" and path.parent.name == "Frameworks"
     else:
         assert path is None
+
+
+def test_a_table_that_would_exceed_the_read_limit_is_refused_and_the_old_file_kept(tmp_path, monkeypatch):
+    store = BookmarkStore(tmp_path)
+    monkeypatch.setattr(store_module, "MAX_FILE_BYTES", 400)
+    assert store.put("/x/1", "a" * 100) and store.put("/x/2", "b" * 100)
+    before = (tmp_path / store_module.FILE_NAME).read_bytes()
+    assert store.put("/x/3", "c" * 300) is False                      # dépasserait la limite de lecture : refusé AVANT d'écrire
+    assert (tmp_path / store_module.FILE_NAME).read_bytes() == before
+    assert [e.path for e in store.entries()] == [canonical("/x/1"), canonical("/x/2")]   # _read relit exactement ce qui a été écrit
+    assert store.put("/x/2", "d" * 100) is True and BookmarkStore(tmp_path).find("/x/2").bookmark == "d" * 100

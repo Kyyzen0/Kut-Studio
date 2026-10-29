@@ -433,3 +433,37 @@ def test_status_messages_carry_counts_never_paths(store):
     assert announce_launch_report(window, LaunchReport(lost=("/a",), stale=("/a", "/b"))) == 2
     assert announce_launch_report(window, LaunchReport()) == 0
     assert "{count}" not in i18n.translate("sandbox.access.offline", count=3)
+
+
+def test_metadata_lookups_happen_inside_the_access(store, monkeypatch):
+    """Le bac à sable refuse stat / isfile sans accès : chaque recherche de métadonnées doit se faire sous le signet."""
+    import os
+
+    from core import media_probe, mograph_raster, scene3d
+
+    manager, bridge, user = store
+    image, scene = user / "i.png", user / "s.kut3d"
+    for path in (image, scene):
+        path.write_bytes(b"x")
+        manager.remember(str(path))
+    guarded = str(user)
+    real_stat, real_isfile = os.stat, os.path.isfile
+
+    def stat(path, *args, **kwargs):
+        if str(path).startswith(guarded) and bridge.open_count() == 0:
+            raise PermissionError("Operation not permitted")
+        return real_stat(path, *args, **kwargs)
+
+    def isfile(path):
+        if str(path).startswith(guarded) and bridge.open_count() == 0:
+            return False
+        return real_isfile(path)
+
+    monkeypatch.setattr(os, "stat", stat)
+    monkeypatch.setattr(os.path, "isfile", isfile)
+    assert mograph_raster.image_signature(str(image)) != "missing"
+    assert mograph_raster.IMAGES.get(str(image)) is None            # octets non valides : None, mais le stat a eu lieu sous accès
+    assert bridge.opened_log.count(canonical(str(image))) >= 2      # stat et lecture, chacun sous accès (jamais « missing » par refus)
+    assert media_probe._color_key(str(image)) is not None
+    assert scene3d.scene_signature(str(scene)) != scene3d.MISSING_SIGNATURE
+    assert bridge.open_count() == 0
