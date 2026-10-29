@@ -138,6 +138,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.btn.retry_cpu": {"fr": "Relancer en CPU", "en": "Retry on CPU", "es": "Reintentar con CPU"},
     "render.export.encoder": {"fr": "Encodeur", "en": "Encoder", "es": "Codificador"},
     "render.encoder.auto": {"fr": "Automatique", "en": "Automatic", "es": "Automático"},
+    "render.encoder.none": {
+        "fr": "Aucun encodeur disponible pour ce format",
+        "en": "No encoder available for this format",
+        "es": "Ningún codificador disponible para este formato",
+    },
     "encoding.detecting": {"fr": "Détection des capacités matérielles en cours…", "en": "Detecting hardware capabilities…", "es": "Detectando capacidades de hardware…"},
     "encoding.fallback_notice": {"fr": "Encodage matériel indisponible, bascule sur le CPU. {reason}", "en": "Hardware encoding unavailable, switching to CPU. {reason}", "es": "Codificación por hardware no disponible, cambiando a CPU. {reason}"},
     "perf.encoding.title": {"fr": "Encodage matériel (export)", "en": "Hardware encoding (export)", "es": "Codificación por hardware (exportación)"},

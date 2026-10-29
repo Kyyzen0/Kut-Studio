@@ -84,6 +84,7 @@ from .video_encoders import (
     HardwareEncoder,
     cpu_choice,
     resolve_video_encoder,
+    software_fallback_possible,
 )
 from .visual_effects import (
     max_transform_value,
@@ -758,6 +759,7 @@ def hardware_fallback_applies(choice: EncoderChoice | None, *, progress_seen: bo
         and choice.requested is HardwareEncoder.AUTO
         and not fallback_used
         and not progress_seen
+        and software_fallback_possible(choice.codec)   # construction LGPL : pas de libx264 vers lequel se replier
     )
 
 

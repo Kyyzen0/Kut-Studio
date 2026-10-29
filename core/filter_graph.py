@@ -110,6 +110,7 @@ def build_preview_command(plan, **kwargs):
         with_output_color_stage,
     )
     from .preview_render import preview_crf, preview_preset
+    from .video_encoders import auxiliary_h264_args
 
     width = int(kwargs.get("width", 1920))
     height = int(kwargs.get("height", 1080))
@@ -140,14 +141,12 @@ def build_preview_command(plan, **kwargs):
     # Reglages x264 propres a la qualite d'apercu (brouillon rapide,
     # haute fidelite plus lente). Le graphe de filtres, lui, reste
     # exactement celui de l'export.
+    # Sans libx264 (construction LGPL du Mac App Store) : VideoToolbox, au débit tiré du même CRF.
     command.extend(
         [
-            "-c:v",
-            "libx264",
-            "-preset",
-            preview_preset(quality),
-            "-crf",
-            str(preview_crf(quality)),
+            *auxiliary_h264_args(
+                speed_preset=preview_preset(quality), crf=preview_crf(quality), width=out_w, height=out_h, fps=fps
+            ),
             *OUTPUT_COLOR_TAGS,
         ]
     )

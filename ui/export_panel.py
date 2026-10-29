@@ -396,7 +396,7 @@ class ExportPanel(QWidget):
     def current_encoder(self) -> str:
         """Valeur sérialisable de l'encodeur sélectionné (``auto``, ``cpu``, ``videotoolbox``…)."""
         data = self.encoder_combo.currentData()
-        return data if isinstance(data, str) else self._encoder_choice
+        return data if isinstance(data, str) and data else self._encoder_choice
 
     def _codec_family(self) -> str:
         codec = self._base_spec().video_codec
@@ -405,12 +405,16 @@ class ExportPanel(QWidget):
     def _rebuild_encoder_options(self) -> None:
         options = encoder_options(self._codec_family(), self._capabilities or HardwareCapabilities())
         wanted = self._encoder_choice
-        if wanted not in {backend.value for backend, _label in options}:
+        if options and wanted not in {backend.value for backend, _label in options}:
             # Choix indisponible pour ce format (ex. ProRes : CPU seulement) : on affiche
             # une valeur valable sans modifier la préférence enregistrée.
-            wanted = HardwareEncoder.AUTO.value if options[0][0] is HardwareEncoder.AUTO else HardwareEncoder.CPU.value
+            wanted = HardwareEncoder.AUTO.value if options[0][0] is HardwareEncoder.AUTO else options[0][0].value
         self.encoder_combo.blockSignals(True)
         self.encoder_combo.clear()
+        if not options:
+            # Construction LGPL sans encodeur matériel validé pour ce format : rien à proposer qui ne soit un échec.
+            self.encoder_combo.addItem(i18n.translate("render.encoder.none"), userData="")
+            self.encoder_combo.model().item(0).setEnabled(False)       # information, pas un choix
         for backend, label in options:
             text = i18n.translate("render.encoder.auto") if backend is HardwareEncoder.AUTO else label
             self.encoder_combo.addItem(text, userData=backend.value)
