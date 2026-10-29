@@ -45,6 +45,7 @@ private func transactionDict(_ t: Transaction) -> [String: Any] {
         "purchaseDate": iso(t.purchaseDate),
         "expirationDate": iso(t.expirationDate),
         "revocationDate": iso(t.revocationDate),
+        "signedDate": iso(t.signedDate),
         "isUpgraded": t.isUpgraded,
         "ownershipType": t.ownershipType.rawValue,
         "environment": t.environment.rawValue,
@@ -85,6 +86,7 @@ private func runOperation(_ op: Int32, _ arg: String) async -> (Int32, String) {
             case .verified(let a):
                 return (0, json([
                     "originalPurchaseDate": iso(a.originalPurchaseDate),
+                    "signedDate": iso(a.signedDate),
                     "originalAppVersion": a.originalAppVersion,
                     "environment": a.environment.rawValue,
                     "appVersion": a.appVersion,

@@ -11,6 +11,10 @@ module ``core/_build_flavor_generated.py`` avant PyInstaller (jamais une variabl
 bundle, exclut les modules de mise à jour, exige FFmpeg et ffprobe dans le bundle, puis retire le module généré (une
 exécution depuis les sources ne devient jamais « Store » par accident). Aucun ``.pkg`` ni signature Store ici : c'est
 l'étape 7. ``--flavor developer-id`` (défaut) ne change rien.
+
+Sous macOS, ``--flavor store`` compile aussi le pont StoreKit 2 (``libkutstore.dylib``, Swift, ``swiftc`` requis, ADR-0013
+étape 13) et l'ajoute au bundle (``Contents/Frameworks``) : PyInstaller le signe avec le reste (même identité, runtime renforcé,
+sans ``--deep``). Ni certificat ni profil ici ; ce qu'il reste pour l'étape 7 est dans ``docs/entitlements.md``.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import plistlib
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -44,6 +49,10 @@ STORE_EXCLUDED_CLI_MODULES = ("core.cli", "core.scripting")
 """Ligne de commande et mode script, absents du bundle Store (ADR-0013, étape 8 ; ``main.py`` ne les importe pas en Store).
 Deux noms précis, pas de préfixe large : ``core.film``, ``core.film_render`` et le moteur d'export restent (rien dans
 ``core.scripting`` n'est importé par l'interface ; recherche faite le 2026-10-29)."""
+STOREKIT_SOURCE = ROOT / "packaging" / "store-spike" / "storekit"
+"""Source Swift du pont StoreKit et son ``build.sh`` (ADR-0013, étape 13)."""
+STOREKIT_BUILD_DIR = ROOT / "build" / "storekit"
+STOREKIT_DYLIB_NAME = "libkutstore.dylib"
 MICROPHONE_USAGE = "Kut-Studio uses the microphone only while you record a voice-over."
 """Exigé par macOS pour l'enregistrement de voix off (et par le runtime renforcé d'une application notarisée)."""
 
@@ -81,6 +90,25 @@ def store_bundle_problem(binaries: Sequence[Path]) -> str | None:
     )
 
 
+def storekit_bridge_problem(platform_name: str | None = None, which: Callable[[str], str | None] = shutil.which) -> str | None:
+    """Message d'erreur si la construction Store sous macOS ne peut pas compiler le pont StoreKit (``swiftc`` absent), sinon ``None``."""
+    if (platform_name or sys.platform) != "darwin" or which("swiftc") is not None:
+        return None
+    return "Construction Store : swiftc absent. Le pont StoreKit (Swift) doit être compilé : installez les outils Xcode (xcode-select --install)."
+
+
+def build_storekit_bridge(
+    output: Path = STOREKIT_BUILD_DIR, *, run: Callable[[Sequence[str]], object] = subprocess.check_call,
+) -> Path:
+    """Compile ``libkutstore.dylib`` (arm64, macOS 13+) dans ``output`` avec ``build.sh`` du spike et rend son chemin."""
+    output.mkdir(parents=True, exist_ok=True)
+    run(["sh", str(STOREKIT_SOURCE / "build.sh"), str(output)])
+    dylib = output / STOREKIT_DYLIB_NAME
+    if not dylib.is_file():
+        raise RuntimeError(f"Construction Store : {STOREKIT_DYLIB_NAME} n'a pas été produite.")
+    return dylib
+
+
 def _icon_for(platform_name: str) -> Path | None:
     icons = ROOT / "assets" / "icons"
     candidates = {
@@ -114,8 +142,12 @@ def build_command(
     platform_name: str | None = None,
     environment: dict[str, str] | None = None,
     flavor: str = FLAVOR_DEVELOPER_ID,
+    storekit_dylib: Path | None = None,
 ) -> list[str]:
-    """Retourne la commande PyInstaller adaptée au système courant (et à la saveur : Developer ID ou Store)."""
+    """Retourne la commande PyInstaller adaptée au système courant (et à la saveur : Developer ID ou Store).
+
+    ``storekit_dylib`` (Store sous macOS seulement) : le pont StoreKit, ajouté à la racine du bundle (``Contents/Frameworks``).
+    Ignoré hors Store : le pont n'existe pas dans la version Developer ID."""
     if flavor not in FLAVORS:
         raise ValueError(f"saveur inconnue : {flavor!r} (attendu : {', '.join(FLAVORS)})")
     platform_name = platform_name or sys.platform
@@ -151,6 +183,8 @@ def build_command(
         command.extend(["--hidden-import", FLAVOR_HIDDEN_IMPORT])
         for module in (*STORE_EXCLUDED_MODULES, *STORE_EXCLUDED_CLI_MODULES):
             command.extend(["--exclude-module", module])
+        if storekit_dylib is not None and platform_name == "darwin":
+            command.extend(["--add-binary", f"{storekit_dylib}{separator}."])
     icon = _icon_for(platform_name)
     if icon is not None:
         command.extend(["--icon", str(icon)])
@@ -230,6 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     flavor = parse_arguments(argv).flavor
     if flavor == FLAVOR_STORE:
         problem = store_bundle_problem(_bundled_binaries(sys.platform, dict(os.environ)))
+        problem = problem or storekit_bridge_problem()
         if problem:
             print(problem, file=sys.stderr)
             return 2
@@ -246,7 +281,8 @@ def _build(flavor: str) -> int:
     config_dir.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ)
     environment.setdefault("PYINSTALLER_CONFIG_DIR", str(config_dir))
-    subprocess.check_call(build_command(flavor=flavor), cwd=ROOT, env=environment)
+    dylib = build_storekit_bridge() if flavor == FLAVOR_STORE and sys.platform == "darwin" else None
+    subprocess.check_call(build_command(flavor=flavor, storekit_dylib=dylib), cwd=ROOT, env=environment)
     if sys.platform == "darwin":
         identity = environment.get(CODESIGN_IDENTITY_ENV, "").strip() or None
         finalize_macos_bundle(

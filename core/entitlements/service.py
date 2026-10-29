@@ -6,10 +6,10 @@ Ce que le service garantit :
 * l'horloge est injectée (``clock``) : aucun ``time.time()`` direct ;
 * **horloge reculée** : le calcul utilise ``max(horloge, plus grande date vue)``. Reculer la date ne rallonge ni l'essai ni
   l'abonnement ; l'état porte ``clock_rollback=True`` pour qu'on le dise à l'utilisateur. La plus grande date vue est écrite
-  (signée) au plus une fois par ``persist_interval``. Une nouvelle vérification du pont (:meth:`publish`) refait foi : sa
-  ``verified_at`` vient d'Apple et remplace la plus grande date vue, ce qui guérit une horloge poussée trop loin par erreur ;
-* l'essai : ``trial_started_at`` (donné par Apple) + ``trial_days`` ; au jour J il reste ``trial_days`` jours, à J+14 il en
-  reste 1, à J+15 l'essai est fini (fin exclue) ;
+  (signée) au plus une fois par ``persist_interval``. Le filigrane ne recule jamais à la republication (:meth:`publish`) : seule une vérification
+  fraîche et de confiance (``fresh=True``) le remplace par sa ``verified_at`` ;
+* l'essai : ``trial_started_at`` (donné par Apple) + ``trial_days`` ; au jour J il reste ``trial_days`` jours, à J+13 il en
+  reste 1, à J+14 l'essai est fini (fin exclue) ;
 * un abonnement échu mais dans le délai de grâce reste ``SUBSCRIBER`` (``in_grace``) ; au-delà, ``UNKNOWN(stale)`` : on ne sait
   pas s'il a été renouvelé, on ne dit pas « expiré ».
 """
@@ -117,13 +117,25 @@ class EntitlementService:
 
     # -- ce que le pont publie ----------------------------------------------------------------------------------------------
 
-    def publish(self, verified: VerifiedEntitlement) -> None:
-        """Enregistre un état **vérifié par le pont** (étape 13). Sa ``verified_at`` remplace la plus grande date vue."""
+    def publish(self, verified: VerifiedEntitlement, *, fresh: bool = False) -> None:
+        """Enregistre un état **vérifié par le pont** (étape 13).
+
+        Le filigrane (plus grande date vue) est **monotone** : ``max(verified_at, filigrane enregistré, plus grande date de la
+        session)``. Une réponse du pont peut venir d'un cache (``signedDate`` ancienne) : la republier ne fait jamais reculer le
+        filigrane, donc ne rallonge ni n'« efface » un recul d'horloge. Seul ``fresh=True`` (l'appelant dispose d'un temps frais
+        **et de confiance**, ce que le pont actuel ne fournit pas) remplace le filigrane par ``verified_at`` et guérit ainsi une
+        horloge poussée trop loin par erreur."""
         with self._lock:
-            record = verified.with_last_seen(verified.verified_at)
+            if fresh:
+                watermark = verified.verified_at
+                self._session_max = float("-inf")
+            else:
+                previous = self._loaded if self._loaded is not None else self._store.load()
+                known = previous.record.watermark if previous.record is not None else float("-inf")
+                watermark = max(verified.verified_at, known, self._session_max)
+            record = verified.with_last_seen(watermark)
             self._store.save(record)
             self._loaded = LoadResult(record)
-            self._session_max = float("-inf")
 
     # -- ce que l'état permet -----------------------------------------------------------------------------------------------
 
