@@ -19,6 +19,7 @@ Rien de secret n'est versionné : pas de `.p12`, pas de profil (`*.mobileprovisi
 | `make_testdata.py` | crée `demo.kut` + `clip.mp4` dans le bundle (le bac à sable lit son bundle : seul moyen de donner un projet sans boîte de dialogue). |
 | `probe.py`, `build_probe.sh` | `Probe.app` : sonde stdlib qui s'exécute dans le bac à sable et imprime un JSON par mesure. |
 | `probe_gui.py`, `build_probe_gui.sh` | `ProbeGui.app` : même chose, avec Qt et la réception de `FileOpen` (essai d'extension de fichier ; voir l'ADR). |
+| `storekit/` | Spike de l'étape 13 : pont StoreKit 2 en Swift appelé par `ctypes`, tests `SKTestSession`, sonde de bundle. Résultats : [storekit/STOREKIT.md](storekit/STOREKIT.md). |
 | `replay.sh` | enchaîne tout (coquille, construction, signature, mesures avec et sans `allow-unsigned-executable-memory`, journal des refus). |
 
 ## Rejouer
