@@ -93,20 +93,23 @@ def main():
         if problem:
             print(f"Smoke test : Kut-3D indisponible — {problem}", file=sys.stderr)
             return 1
-        # Mises à jour : l'application construite doit pouvoir parler HTTPS (moteur TLS de Qt embarqué).
-        from core.update_service import tls_self_check
+        # Mises à jour (absentes de la version Store, ADR-0013) : l'application construite doit pouvoir parler HTTPS
+        # (moteur TLS de Qt embarqué) et vérifier les signatures (Ed25519 en Python pur, ADR-0012).
+        from core.build_flavor import is_store
 
-        problem = tls_self_check()
-        if problem:
-            print(f"Smoke test : HTTPS indisponible — {problem}", file=sys.stderr)
-            return 1
-        # Signature des mises à jour (Ed25519 en Python pur, ADR-0012) : l'application construite doit savoir vérifier.
-        from core.update_signature import self_check as update_signature_check
+        if not is_store():
+            from core.update_service import tls_self_check
 
-        problem = update_signature_check()
-        if problem:
-            print(f"Smoke test : vérification des signatures de mise à jour indisponible — {problem}", file=sys.stderr)
-            return 1
+            problem = tls_self_check()
+            if problem:
+                print(f"Smoke test : HTTPS indisponible — {problem}", file=sys.stderr)
+                return 1
+            from core.update_signature import self_check as update_signature_check
+
+            problem = update_signature_check()
+            if problem:
+                print(f"Smoke test : vérification des signatures de mise à jour indisponible — {problem}", file=sys.stderr)
+                return 1
         # Supervision des FFmpeg : gardien (macOS, Linux) ou objet Job (Windows) réellement déclenché.
         from core.process_supervisor import supervision_self_check
 

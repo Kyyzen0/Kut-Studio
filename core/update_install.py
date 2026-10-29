@@ -36,6 +36,7 @@ from typing import Protocol
 
 from .process_supervisor import supervised_run
 from .release_assets import Architecture
+from .build_flavor import require_not_store
 from .update_helper import PREVIOUS_PREFIX, STAGING_PREFIX
 from .update_keys import UPDATE_PUBLIC_KEYS, PublicKey
 from .update_signature import SignatureStatus
@@ -353,6 +354,7 @@ def stage_update(
 
     Aucun fichier existant n'est modifié ; au moindre défaut, le staging est supprimé avant de lever l'erreur.
     """
+    require_not_store("Installation de mise à jour")
     if not signature_verified:
         raise StageError(StageProblem.NOT_VERIFIED, "la signature n'est pas vérifiée : la quarantaine reste")
     staging = app.parent / f"{STAGING_PREFIX}{pid}"

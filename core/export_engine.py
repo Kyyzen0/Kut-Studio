@@ -75,7 +75,7 @@ from .retime_graph import RetimeError, audio_stage, video_stage
 from .time_map import time_map_for
 from .timecode import ffmpeg_rate
 from .time_remapping import FreezeFrameMode, TimeInterpolation, get_ffmpeg_freeze_filter
-from .tool_paths import find_media_tool
+from .tool_paths import find_media_tool, missing_tool_message
 from .hardware_encoding import looks_like_encoder_failure, redact_command
 from .optical_flow import BackendPreference
 from .video_encoders import (
@@ -165,9 +165,9 @@ def _ffmpeg_command_prefix() -> list[str]:
     """
     path = _ffmpeg_path or find_media_tool("ffmpeg")
     if path is None:
-        raise ImportError(
-            "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
-        )
+        raise ImportError(missing_tool_message(
+            "ffmpeg", "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
+        ))
     if isinstance(path, (tuple, list)):
         command = [str(item) for item in path if str(item)]
     else:

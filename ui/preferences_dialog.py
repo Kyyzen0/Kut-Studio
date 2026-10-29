@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.app_version import APP_VERSION
+from core.build_flavor import is_store
 from core.file_association import file_association_supported
 from core.user_settings import (
     DEFAULT_CHECK_UPDATES,
@@ -222,6 +223,7 @@ class PreferencesDialog(QDialog):
     restore_defaults_requested = Signal()
     # Groupe « Fichiers de projet » : construit seulement sous Windows et Linux (voir _build_ui).
     files_box: QGroupBox | None = None
+    updates_box: QGroupBox | None = None      # reste ``None`` dans la version Store (aucune préférence de mises à jour)
 
     def __init__(
         self,
@@ -323,7 +325,8 @@ class PreferencesDialog(QDialog):
 
         for choice in _CHOICE_GROUPS:
             layout.addWidget(self._build_choice_group(choice))
-        layout.addWidget(self._build_updates_group())
+        if not is_store():                     # version Store : aucune recherche de mises à jour, donc aucune préférence
+            layout.addWidget(self._build_updates_group())
         self.transcription_box = TranscriptionSettingsGroup(self.current_whisper_path, self.current_whisper_model)
         self.transcription_box.whisper_path_changed.connect(self.whisper_path_changed)
         self.transcription_box.whisper_model_changed.connect(self.whisper_model_changed)
@@ -502,10 +505,11 @@ class PreferencesDialog(QDialog):
                 self.shortcuts_editor.retranslate()
             if self.performance_tab is not None:
                 self.performance_tab.retranslate()
-        self.updates_box.setTitle(translate("prefs.updates"))
-        self.check_updates_box.setText(translate("prefs.updates.check"))
-        self.prereleases_box.setText(translate("prefs.updates.prereleases"))
-        self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
+        if self.updates_box is not None:
+            self.updates_box.setTitle(translate("prefs.updates"))
+            self.check_updates_box.setText(translate("prefs.updates.check"))
+            self.prereleases_box.setText(translate("prefs.updates.prereleases"))
+            self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
         self.transcription_box.retranslate()
         if self.files_box is not None:
             self.files_box.setTitle(translate("prefs.files.title"))
@@ -637,10 +641,11 @@ class PreferencesDialog(QDialog):
             buttons[code].setChecked(True)
             setattr(self, choice.current_attribute, code)
         # Les cases suivent sans réémettre : ``restore_defaults_requested`` applique tout d'un coup.
-        for box, value, attribute in (
-            (self.check_updates_box, DEFAULT_CHECK_UPDATES, "current_check_updates"),
-            (self.prereleases_box, DEFAULT_INCLUDE_PRERELEASES, "current_include_prereleases"),
-        ):
-            setattr(self, attribute, value)
-            box.setChecked(value)
+        if self.updates_box is not None:
+            for box, value, attribute in (
+                (self.check_updates_box, DEFAULT_CHECK_UPDATES, "current_check_updates"),
+                (self.prereleases_box, DEFAULT_INCLUDE_PRERELEASES, "current_include_prereleases"),
+            ):
+                setattr(self, attribute, value)
+                box.setChecked(value)
         self.restore_defaults_requested.emit()
