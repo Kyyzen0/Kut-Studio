@@ -152,10 +152,11 @@ class ColorPageMixin:
     def switch_page(self, page: str) -> None:
         """Passe à la page ``page`` : sa disposition, l'onglet Couleur et les scopes sur la page Couleur."""
         self._finalize_color_history()
-        # Pistes « normales » de 56 px sur la page Audio (3 visibles) et de 60 px sur le Montage (4 visibles, nom et type lisibles),
+        # Pistes « normales » de 56 px sur la page Audio (3 visibles) et Composition (2 visibles) et de 60 px sur le Montage (4 visibles),
         # 48 px ailleurs : la hauteur est celle de la page, le modèle des pistes ne change pas.
         self._apply_page_density(page)
         self._viewer_host.set_compact(page == PAGE_AUDIO)
+        self.preview_panel.set_adaptive_transport(page == PAGE_COMPOSITION)       # colonne des nœuds large : la barre de transport s'allège
         if self.workspace.switch_page(page):
             self._sync_workspace_menu()
         self._apply_mixer_fold()
@@ -183,8 +184,9 @@ class ColorPageMixin:
         self._refresh_window_editing()
 
     def _apply_page_density(self, page: str) -> None:
-        """Hauteur des pistes « normales » (Montage 60 px, Audio 56 px, ailleurs celle du modèle) et vignettes de la bibliothèque (72 px sur le Montage)."""
-        height = {PAGE_EDIT: Sizes.montage_track_height, PAGE_AUDIO: Sizes.timeline_track_min_height}.get(page)
+        """Hauteur des pistes « normales » (Montage 60 px, Audio et Composition 56 px, ailleurs celle du modèle) et vignettes de la bibliothèque (72 px sur le Montage)."""
+        height = {PAGE_EDIT: Sizes.montage_track_height, PAGE_AUDIO: Sizes.timeline_track_min_height,
+                  PAGE_COMPOSITION: Sizes.timeline_track_min_height}.get(page)
         self.timeline_panel.set_row_height_override(height)
         self.project_panel.set_montage_density(page == PAGE_EDIT)
 

@@ -9,6 +9,11 @@ Gestes : clic pour choisir ; glisser la sortie d'un nœud sur l'entrée d'un aut
 nouveau lien) ; glisser un lien par son entrée pour le reporter sur une autre entrée, ou le lâcher dans le vide pour le
 défaire ; Suppr retire le nœud choisi (pas la sortie) ; clic droit : ajouter, supprimer.
 
+Page « Air d'abord » (écran de portable) : l'éditeur fait 290 px de haut quand il est empilé au-dessus de l'inspecteur, les nœuds
+gardent leur taille (112 x 56 px, ports de 12 px, textes d'au moins 12 px) et la vue défile si le graphe est plus grand : jamais
+de zoom arrière qui rendrait le texte illisible. Chaque lien prend la couleur du TYPE de son nœud d'origine (média bleu, texte
+violet, traitement menthe, fusion ambre).
+
 La vue ne modifie rien : elle émet des demandes que la fenêtre applique (une étape d'historique chacune), puis
 réaffiche le graphe (:meth:`CompositionNodeView.set_graph`). Les demandes partent après la fin de l'événement : la scène
 reconstruite détruit les éléments qui le traitaient.
@@ -27,17 +32,26 @@ from core.composition import (
     input_count,
     kind_of,
 )
-from ui.design_system import Radius, Typography, Weights
+from ui.design_system import Radius, Sizes, Typography, Weights
 from ui.i18n import translate
 from ui.theme import COLORS
 
-NODE_WIDTH = 116.0
-NODE_HEIGHT = 50.0
-COLUMN_GAP = 46.0
-ROW_GAP = 18.0
-PORT_RADIUS = 4.5
-PORT_HIT = 9.0
-MIN_ZOOM = 0.45
+NODE_WIDTH = float(Sizes.node_width)
+NODE_HEIGHT = float(Sizes.node_height)
+COLUMN_GAP = 32.0
+ROW_GAP = 24.0
+PORT_RADIUS = Sizes.node_port / 2          # 6 px : un port de 12 px de diamètre, liseré compris
+PORT_BORDER = 1.5
+PORT_HIT = 10.0
+SCENE_MARGIN = 4.0
+EDITOR_HEIGHT = Sizes.node_editor_height
+STACKED_MIN_HEIGHT = int(NODE_HEIGHT) + 60            # éditeur en bande large : il défile s'il est plus bas que le graphe
+
+#: Couleur d'un type de nœud (nom d'un jeton de thème) : sources (média, couleur) bleu, texte violet, traitements menthe,
+#: fusion ambre, sortie en texte.
+_TONES: dict[str, str] = {"media": "track_video", "solid": "track_video", "graphic": "track_subtitle", "merge": "warning",
+                          "output": "text"}
+_TONE_DEFAULT = "accent"
 
 ADDABLE_KINDS = ("media", "graphic", "solid", "transform", "merge", "mask", "key", "effects", "grade")
 """Les nœuds que l'on peut ajouter (la sortie existe toujours, une seule)."""
@@ -60,6 +74,11 @@ def layout(graph: CompositionGraph) -> dict[str, tuple[int, int]]:
         places[node.id] = (col, rows.get(col, 0))
         rows[col] = rows.get(col, 0) + 1
     return places
+
+
+def node_tone(node) -> QColor:
+    """La couleur du type du nœud : celle de son bandeau, de sa sortie et des liens qui en partent."""
+    return QColor(COLORS[_TONES.get(kind_of(node), _TONE_DEFAULT)])
 
 
 def node_title(node) -> str:
@@ -96,38 +115,54 @@ class _NodeItem(QGraphicsItem):
         return self.pos() + QPointF(NODE_WIDTH, NODE_HEIGHT / 2)
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - API Qt
-        return QRectF(-PORT_RADIUS - 2, -3, NODE_WIDTH + 2 * PORT_RADIUS + 4, NODE_HEIGHT + 6)
+        return QRectF(-PORT_RADIUS - 2, -2, NODE_WIDTH + 2 * PORT_RADIUS + 4, NODE_HEIGHT + 4)
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         current = self.view.current_id == self.node.id
         rect = QRectF(0, 0, NODE_WIDTH, NODE_HEIGHT)
-        border = QColor(COLORS["accent"] if current else (COLORS["success"] if self.is_output else COLORS["border_strong"]))
+        tone = node_tone(self.node)
+        border = QColor(COLORS["accent"] if current else COLORS["border_strong"])
+        painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(border, 2.0 if current else 1.0))
         painter.setBrush(QColor(COLORS["panel_elevated"]))
-        painter.drawRoundedRect(rect, Radius.md, Radius.md)
-        caption = QFont(painter.font())
-        caption.setPixelSize(Typography.caption)
-        caption.setWeight(QFont.Weight(Weights.bold))
-        painter.setFont(caption)
-        painter.setPen(QColor(COLORS["muted_strong"]))
-        painter.drawText(QRectF(9, 5, NODE_WIDTH - 18, 14), Qt.AlignLeft | Qt.AlignVCenter,
-                         translate(f"comp.node.{kind_of(self.node)}").upper())
+        painter.drawRoundedRect(rect, Radius.lg, Radius.lg)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(tone)
+        painter.drawRoundedRect(QRectF(10, 0, NODE_WIDTH - 20, 4), Radius.sm, Radius.sm)             # bandeau de la couleur du type
         title = QFont(painter.font())
         title.setPixelSize(Typography.small)
-        title.setWeight(QFont.Weight(Weights.medium))
+        title.setWeight(QFont.Weight(Weights.bold))
         painter.setFont(title)
         painter.setPen(QColor(COLORS["text"]))
-        text = QFontMetricsF(title).elidedText(node_title(self.node), Qt.ElideRight, NODE_WIDTH - 18)
-        painter.drawText(QRectF(9, 20, NODE_WIDTH - 18, NODE_HEIGHT - 24), Qt.AlignLeft | Qt.AlignVCenter, text)
-        painter.setPen(QPen(QColor(COLORS["panel"]), 1))
+        text_width = NODE_WIDTH - 20
+        caption = translate(f"comp.node.{kind_of(self.node)}")
+        name = node_title(self.node)
+        named = bool(getattr(self.node, "label", ""))
+        top = QRectF(10, 8, text_width, 18) if named else QRectF(10, 4, text_width, NODE_HEIGHT - 8)
+        painter.drawText(top, Qt.AlignLeft | Qt.AlignVCenter, QFontMetricsF(title).elidedText(name, Qt.ElideRight, text_width))
+        if named:                                       # le type sous le nom, quand le nœud en a un
+            small = QFont(painter.font())
+            small.setPixelSize(Typography.caption)
+            small.setWeight(QFont.Weight(Weights.regular))
+            painter.setFont(small)
+            painter.setPen(QColor(COLORS["muted_strong"]))
+            painter.drawText(QRectF(10, 28, text_width, 16), Qt.AlignLeft | Qt.AlignVCenter,
+                             QFontMetricsF(small).elidedText(caption, Qt.ElideRight, text_width))
         graph = self.view.graph
         for port in range(input_count(self.node)):
-            linked = graph is not None and graph.input_of(self.node.id, port) is not None
-            painter.setBrush(QColor(COLORS["accent"] if linked else COLORS["muted"]))
-            painter.drawEllipse(self.input_port(port) - self.pos(), PORT_RADIUS, PORT_RADIUS)
+            source = graph.input_of(self.node.id, port) if graph is not None else None
+            linked_tone = node_tone(graph.node(source)) if source is not None and graph is not None else QColor(COLORS["border_strong"])
+            self._paint_port(painter, self.input_port(port) - self.pos(), linked_tone)
         if not self.is_output:
-            painter.setBrush(QColor(COLORS["muted_strong"]))
-            painter.drawEllipse(self.output_port() - self.pos(), PORT_RADIUS, PORT_RADIUS)
+            self._paint_port(painter, self.output_port() - self.pos(), tone)
+
+    @staticmethod
+    def _paint_port(painter: QPainter, center: QPointF, color: QColor) -> None:
+        """Un port de 12 px (liseré compris) : disque de la couleur du lien, liseré sombre qui le détache du nœud et du fond."""
+        painter.setPen(QPen(QColor(COLORS["background"]), PORT_BORDER))
+        painter.setBrush(color)
+        radius = PORT_RADIUS - PORT_BORDER / 2
+        painter.drawEllipse(center, radius, radius)
 
 
 class CompositionNodeView(QGraphicsView):
@@ -148,7 +183,9 @@ class CompositionNodeView(QGraphicsView):
         self.setFrameShape(QFrame.NoFrame)
         self.setAlignment(Qt.AlignCenter)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setMinimumHeight(int(NODE_HEIGHT) + 60)
+        self.setMinimumHeight(STACKED_MIN_HEIGHT)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setAccessibleName(translate("comp.nodes.title"))
         self.graph: CompositionGraph | None = None
         self.current_id: str | None = None
@@ -171,6 +208,7 @@ class CompositionNodeView(QGraphicsView):
             self.scene().update()
             return
         scene = self.scene()
+        bars = (self.horizontalScrollBar().value(), self.verticalScrollBar().value())
         scene.clear()
         self._items, self._wires, self._preview = {}, [], None
         if graph is None:
@@ -182,31 +220,24 @@ class CompositionNodeView(QGraphicsView):
             self._items[node_id] = item
         for link in graph.links:
             wire = QGraphicsPathItem()
-            wire.setPen(QPen(QColor(COLORS["muted"]), 1.5))
+            wire.setPen(QPen(node_tone(graph.node(link.source)), 2.0))        # la couleur du type du nœud d'origine
             wire.setZValue(-1)
             scene.addItem(wire)
             self._wires.append((wire, link.source, link.target, link.port))
         self._trace_wires()
-        scene.setSceneRect(scene.itemsBoundingRect().adjusted(-16, -16, 16, 16))
-        self._fit()
+        scene.setSceneRect(scene.itemsBoundingRect().adjusted(-SCENE_MARGIN, -SCENE_MARGIN, SCENE_MARGIN, SCENE_MARGIN))
+        self.resetTransform()                                     # jamais de zoom : les nœuds gardent leur taille
+        self.horizontalScrollBar().setValue(bars[0])
+        self.verticalScrollBar().setValue(bars[1])
 
     def _trace_wires(self) -> None:
         for wire, source, target, port in self._wires:
             wire.setPath(_curve(self._items[source].output_port(), self._items[target].input_port(port)))
 
-    def _fit(self) -> None:
-        bounds = self.scene().sceneRect()
-        viewport = self.viewport().rect()
-        if bounds.isEmpty() or viewport.isEmpty():
-            return
-        zoom = max(MIN_ZOOM, min(1.0, viewport.width() / bounds.width(), viewport.height() / bounds.height()))
-        self.resetTransform()
-        self.scale(zoom, zoom)
-        self.centerOn(bounds.center())
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
-        super().resizeEvent(event)
-        self._fit()
+    def set_stacked(self, stacked: bool) -> None:
+        """Éditeur empilé au-dessus de l'inspecteur : 290 px de haut, fixes ; en bande large il prend la hauteur qu'on lui laisse."""
+        self.setMinimumHeight(EDITOR_HEIGHT if stacked else STACKED_MIN_HEIGHT)
+        self.setMaximumHeight(EDITOR_HEIGHT if stacked else 16777215)
 
     def _paint_background(self) -> None:
         self.setBackgroundBrush(QColor(COLORS["panel_alt"]))

@@ -122,7 +122,7 @@ def legibility_findings(root, label: str = "") -> list[Finding]:
 
 
 def page_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
-    """Un scénario par onglet de la page Couleur et par onglet d'inspecteur de la page Audio (un clip est sélectionné)."""
+    """Un scénario par onglet de la page Couleur et par onglet d'inspecteur de la page Audio (un clip est sélectionné), puis la page Composition."""
     from tools.ui_audit import INSPECTOR_TABS, select_first_clip, settle
 
     select_first_clip(window)
@@ -151,6 +151,52 @@ def page_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
         yield f"audio-inspecteur-{name}", lambda i=index: (
             colour_tab(0, False), window.switch_page("audio"), window.properties_panel._select_inspector_tab(i), settle(window))
 
+    def composition_page() -> None:
+        seven_node_composition(window)
+        window.switch_page("composition")
+        settle(window)
+
+    yield "composition-noeuds", composition_page                       # en dernier : le clip de composition devient le clip choisi
+
+
+def seven_node_composition(window):
+    """Le clip de composition aux 7 nœuds de la maquette « Air d'abord », choisi sur la page Composition (créé une seule fois).
+
+    Fond et Plan A (médias), Titre (texte), Transformation, Fusion 1, Fusion 2 et la Sortie : trois sources, un traitement, deux
+    fusions, la sortie (5 colonnes, 3 rangées). Posé à la suite du montage, sur la première piste vidéo libre.
+    """
+    from dataclasses import replace
+
+    from core.composition import CompositionGraph, GraphicNode, MediaNode, MergeNode, TransformNode
+    from core.composition_ops import create_composition
+    from core.graphics import GraphicType, graphic_defaults
+    from tools.ui_audit import settle
+
+    clips = [clip for track in window.project.tracks for clip in track.clips]
+    clip = next((item for item in clips if item.composition is not None), None)
+    if clip is None:
+        track = next(item for item in window.project.tracks if item.type == "video" and not item.locked)
+        end = max((item.timeline_start + item.duration for item in clips), default=0.0)
+        clip = create_composition(window.project, track.id, end, 5.0, "Titre animé")
+        asset = next(item for item in window.project.media_assets if item.media_type == "video")
+        seconds = min(float(asset.duration), clip.composition.duration)
+        graphic = graphic_defaults(GraphicType.TEXT, project_width=window.project.width, project_height=window.project.height)
+        graph = CompositionGraph.empty()
+        for node in (MediaNode("m1", asset.id, 0.0, 0.0, seconds, label="Fond"), MediaNode("m2", asset.id, 0.0, 0.0, seconds, label="Plan A"),
+                     GraphicNode("g1", graphic, 0.0, clip.composition.duration, label="Titre"),
+                     TransformNode("t1", label="Transformation"), MergeNode("f1", label="Fusion 1"), MergeNode("f2", label="Fusion 2")):
+            graph = graph.with_added(node)
+        for source, target, port in (("m1", "f1", 0), ("m2", "t1", 0), ("t1", "f1", 1), ("f1", "f2", 0), ("g1", "f2", 1),
+                                     ("f2", graph.output.id, 0)):
+            graph = graph.connected(source, target, port)
+        clip.composition = replace(clip.composition, graph=graph)
+        window._after_sequence_edit(select_clip_id=clip.id)
+    window._comp_node_id = "f1"
+    window.open_composition(clip.id)
+    window._refresh_composition_panel()
+    settle(window)
+    return clip
+
 
 def run(sizes: Iterable[tuple[int, int]], out_dir: Path | None = None, level: str = "advanced") -> list[Finding]:
     from tools.ui_audit import make_main_window, settle
@@ -170,6 +216,7 @@ def run(sizes: Iterable[tuple[int, int]], out_dir: Path | None = None, level: st
                     out_dir.mkdir(parents=True, exist_ok=True)
                     window.grab().save(str(out_dir / f"{width}x{height}-{name}.png"))
         finally:
+            window._confirm_discard_changes = lambda: True            # le scénario Composition modifie le projet : pas de question à la fermeture
             window.close()
     return findings
 

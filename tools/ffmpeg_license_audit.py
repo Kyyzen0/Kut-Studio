@@ -145,7 +145,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--ffmpeg", help="exécutable à auditer (par défaut celui que l'application résout)")
     parser.add_argument("--list", action="store_true", help="n'affiche que les filtres employés par le code")
+    parser.add_argument("--codecs", action="store_true",
+                        help="tableau Markdown des encodeurs, décodeurs, muxers et accélérations employés (tools.ffmpeg_capabilities)")
+    parser.add_argument("--strict", action="store_true", help="avec --codecs : échoue aussi pour un élément absent qui n'est pas GPL")
     args = parser.parse_args(argv)
+    if args.codecs:
+        return _codecs_report(args.ffmpeg, args.strict)
 
     used = scan_tree()
     if args.list:
@@ -178,6 +183,20 @@ def main(argv: list[str] | None = None) -> int:
         print("  aucun")
     print(f"\n{len(used)} noms lus dans le code, {len(set(used) & available)} sont des filtres de ce FFmpeg.")
     return 1 if failures else 0
+
+
+def _codecs_report(explicit: str | None, strict: bool) -> int:
+    from tools.ffmpeg_capabilities import table
+
+    ffmpeg = _resolve_ffmpeg(explicit)
+    if ffmpeg is None:
+        print("FFmpeg introuvable.")
+        return 1
+    text, missing = table(ffmpeg)
+    print(text)
+    for item in missing:
+        print(f"absent et non GPL : {item.category} {item.name}", file=sys.stderr)
+    return 1 if strict and missing else 0
 
 
 def _looks_like_filter(name: str, used: dict[str, dict[str, list[int]]]) -> bool:
