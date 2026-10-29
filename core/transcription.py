@@ -31,10 +31,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from .build_flavor import is_store, require_not_store
 from .platform_paths import user_data_dir
 from .process_supervisor import supervised_popen
 from .tool_paths import bundled_tool_path
 
+FEATURE_NAME = "Sous-titres automatiques (Whisper)"
+"""Nom de la fonction dans le message de refus de la version Store (ADR-0013, étape 8)."""
 WHISPER_ENV = "KUT_STUDIO_WHISPER"
 MODEL_ENV = "KUT_STUDIO_WHISPER_MODEL"
 SAMPLE_RATE = 16000
@@ -74,8 +77,18 @@ class Transcript:
 # ---------------------------------------------------------------------------
 
 
+def transcription_available() -> bool:
+    """``False`` dans la version Mac App Store : le bac à sable n'exécute pas de programme installé par l'utilisateur
+    (ADR-0013, étape 8). Hors Store, la fonction est inchangée. Point d'entrée de toute l'interface (menus, préférences)."""
+    return not is_store()
+
+
 def find_whisper(configured: str = "", *, environment: Mapping[str, str] | None = None) -> str | None:
-    """Chemin de ``whisper-cli`` : réglage, variable ``KUT_STUDIO_WHISPER``, dossier ``bin/`` embarqué, ``PATH``."""
+    """Chemin de ``whisper-cli`` : réglage, variable ``KUT_STUDIO_WHISPER``, dossier ``bin/`` embarqué, ``PATH``.
+
+    Version Store : ``None`` sans rien chercher (ni réglage, ni variable, ni ``PATH``)."""
+    if is_store():
+        return None
     env = environment if environment is not None else os.environ
     for candidate in (configured, env.get(WHISPER_ENV, "")):
         if candidate and Path(candidate).expanduser().is_file():
@@ -90,7 +103,9 @@ def model_directory(*, environment: Mapping[str, str] | None = None) -> Path:
 
 def find_whisper_model(configured: str = "", *, environment: Mapping[str, str] | None = None) -> str | None:
     """Modèle à utiliser : réglage, variable ``KUT_STUDIO_WHISPER_MODEL``, puis le premier ``ggml-*.bin`` (par ordre
-    alphabétique) du :func:`model_directory`."""
+    alphabétique) du :func:`model_directory`. Version Store : ``None`` sans toucher au disque."""
+    if is_store():
+        return None
     env = environment if environment is not None else os.environ
     for candidate in (configured, env.get(MODEL_ENV, "")):
         if candidate and Path(candidate).expanduser().is_file():
@@ -190,6 +205,7 @@ class TranscriptionJob:
         self, ffmpeg: str, whisper: str, model: str, media: str, *, start: float, duration: float,
         language: str = "auto", session_id: str = "",
     ) -> None:
+        require_not_store(FEATURE_NAME)               # aucune tâche en Store : rien ne peut lancer le programme
         self.session_id = session_id
         self._start = float(start)
         self._ffmpeg, self._whisper, self._model, self._media = ffmpeg, whisper, model, media
@@ -256,6 +272,7 @@ class TranscriptionJob:
 
     def _execute(self, command: list[str], base: float, share: float) -> tuple[str, int]:
         """Lance ``command`` (stderr lu ligne à ligne pour la progression) ; l'annulation tue le processus."""
+        require_not_store(FEATURE_NAME)               # dernier rempart, juste avant le seul lancement de sous-processus
         collected: list[str] = []
         with supervised_popen(
             command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
@@ -303,6 +320,6 @@ def _last_lines(text: str, fallback: str, count: int = 3) -> str:
 
 __all__ = [
     "MAX_LINE_CHARS", "MAX_LINE_SECONDS", "MAX_PAUSE", "MODEL_ENV", "SAMPLE_RATE", "Transcript", "TranscriptionJob",
-    "TranscriptionSnapshot", "WHISPER_ENV", "Word", "extraction_command", "find_whisper", "find_whisper_model",
+    "TranscriptionSnapshot", "WHISPER_ENV", "Word", "FEATURE_NAME", "transcription_available", "extraction_command", "find_whisper", "find_whisper_model",
     "group_words", "model_directory", "parse_whisper_json", "whisper_command",
 ]

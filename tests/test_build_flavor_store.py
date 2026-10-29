@@ -314,7 +314,7 @@ def test_default_command_is_unchanged_and_store_command_adds_flag_and_exclusions
     store = build.build_command(platform_name="darwin", environment={}, flavor="store")
     assert store[store.index("--hidden-import") + 1] == "core._build_flavor_generated"
     excluded = {store[i + 1] for i, part in enumerate(store) if part == "--exclude-module"}
-    assert excluded == set(build.STORE_EXCLUDED_MODULES)
+    assert excluded == set(build.STORE_EXCLUDED_MODULES) | set(build.STORE_EXCLUDED_CLI_MODULES)
     assert "--codesign-identity" not in store and not any(str(part).endswith(".pkg") for part in store)
     with pytest.raises(ValueError):
         build.build_command(flavor="inconnue")

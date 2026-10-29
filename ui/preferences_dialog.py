@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 from core.app_version import APP_VERSION
 from core.build_flavor import is_store
 from core.file_association import file_association_supported
+from core.transcription import transcription_available
 from core.user_settings import (
     DEFAULT_CHECK_UPDATES,
     DEFAULT_INCLUDE_PRERELEASES,
@@ -327,10 +328,12 @@ class PreferencesDialog(QDialog):
             layout.addWidget(self._build_choice_group(choice))
         if not is_store():                     # version Store : aucune recherche de mises à jour, donc aucune préférence
             layout.addWidget(self._build_updates_group())
-        self.transcription_box = TranscriptionSettingsGroup(self.current_whisper_path, self.current_whisper_model)
-        self.transcription_box.whisper_path_changed.connect(self.whisper_path_changed)
-        self.transcription_box.whisper_model_changed.connect(self.whisper_model_changed)
-        layout.addWidget(self.transcription_box)
+        self.transcription_box: TranscriptionSettingsGroup | None = None
+        if transcription_available():          # version Store : pas de programme installé par l'utilisateur (ADR-0013, étape 8)
+            self.transcription_box = TranscriptionSettingsGroup(self.current_whisper_path, self.current_whisper_model)
+            self.transcription_box.whisper_path_changed.connect(self.whisper_path_changed)
+            self.transcription_box.whisper_model_changed.connect(self.whisper_model_changed)
+            layout.addWidget(self.transcription_box)
         if file_association_supported():
             layout.addWidget(self._build_file_association_group())
 
@@ -510,7 +513,8 @@ class PreferencesDialog(QDialog):
             self.check_updates_box.setText(translate("prefs.updates.check"))
             self.prereleases_box.setText(translate("prefs.updates.prereleases"))
             self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
-        self.transcription_box.retranslate()
+        if self.transcription_box is not None:
+            self.transcription_box.retranslate()
         if self.files_box is not None:
             self.files_box.setTitle(translate("prefs.files.title"))
             self.files_note.setText(translate("prefs.files.note"))

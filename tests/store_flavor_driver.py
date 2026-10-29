@@ -20,6 +20,61 @@ UPDATE_MODULES = (
 )
 
 
+def _titles(menu) -> list[str]:
+    """Titres de tous les menus et actions sous ``menu``, sous-menus compris."""
+    titles: list[str] = []
+    for action in menu.actions():
+        if action.isSeparator():
+            continue
+        titles.append(action.text())
+        if action.menu() is not None:
+            titles.extend(_titles(action.menu()))
+    return titles
+
+
+def _inspect_whisper(window, dialog, report: dict, application) -> None:
+    """Whisper (ADR-0013, étape 8) : ce qui est visible, et ce qu'un appel direct fait (aucun sous-processus)."""
+    import shutil
+    import subprocess
+
+    from core import transcription
+
+    report["cli_modules"] = sorted(m for m in ("core.cli", "core.scripting") if m in sys.modules)
+    report["social_titles"] = _titles(window.social_menu)
+    report["palette_titles"] = [entry.title for entry in window.command_palette_entries()]
+    report["command_ids"] = [command.id for command in window.shortcuts.shortcut_map.commands]
+    report["missing_handlers"] = window.shortcuts.missing_handlers()
+    report["prefs_transcription_box"] = dialog.transcription_box is not None
+    report["found_tool"] = transcription.find_whisper(sys.executable)
+    report["found_model"] = transcription.find_whisper_model(sys.executable)
+    window._whisper_path = "reglage-existant"
+    window.set_whisper_path("/autre")
+    window.set_whisper_model("/autre.bin")
+    report["whisper_setting_kept"] = window._whisper_path == "reglage-existant"
+    spawned: list[object] = []
+
+    def spy(*args, **kwargs):
+        spawned.append(args[:1])
+        raise RuntimeError("aucun sous-processus attendu")
+
+    real_popen, real_which = subprocess.Popen, shutil.which
+    subprocess.Popen, shutil.which = spy, spy               # type: ignore[assignment,misc]
+    transcription.supervised_popen = spy                    # type: ignore[assignment]
+    try:
+        window.transcribe_voice("subtitles")
+        window.transcribe_voice("karaoke")
+        report["status"] = window.statusBar().currentMessage()
+        try:
+            transcription.TranscriptionJob("ffmpeg", sys.executable, sys.executable, "m.wav", start=0.0, duration=1.0)
+            report["job_refused"] = False
+        except Exception as error:  # noqa: BLE001
+            report["job_refused"] = type(error).__name__ == "StoreRestrictionError"
+    finally:
+        subprocess.Popen, shutil.which = real_popen, real_which
+    report["spawned"] = len(spawned)
+    report["cli_requested"] = application.cli_requested(["main.py", "info", "projet.kut"])
+
+
 def main(flavor: str) -> int:
     if flavor == "store":
         generated = types.ModuleType("core._build_flavor_generated")
@@ -49,6 +104,7 @@ def main(flavor: str) -> int:
         window.set_update_check_enabled(True)
         report["check_enabled_after_signal"] = bool(window._update_check_enabled)
         report["modules"] = sorted(m for m in UPDATE_MODULES if m in sys.modules)
+        _inspect_whisper(window, dialog, report, application)
         return 0
 
     QApplication.exec = inspect  # type: ignore[method-assign,assignment]

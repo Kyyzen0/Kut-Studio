@@ -45,6 +45,10 @@ STORE_EXCLUDED_MODULES = (
     "core.update_signature", "ui.update_auto_install", "ui.update_dialog", "ui.main_window_mixins.updates",
 )
 """Modules de mise à jour absents du bundle Store (la liste de l'ADR-0013 §3 ; ``core.ed25519`` reste, il est générique)."""
+STORE_EXCLUDED_CLI_MODULES = ("core.cli", "core.scripting")
+"""Ligne de commande et mode script, absents du bundle Store (ADR-0013, étape 8 ; ``main.py`` ne les importe pas en Store).
+Deux noms précis, pas de préfixe large : ``core.film``, ``core.film_render`` et le moteur d'export restent (rien dans
+``core.scripting`` n'est importé par l'interface ; recherche faite le 2026-10-29)."""
 STOREKIT_SOURCE = ROOT / "packaging" / "store-spike" / "storekit"
 """Source Swift du pont StoreKit et son ``build.sh`` (ADR-0013, étape 13)."""
 STOREKIT_BUILD_DIR = ROOT / "build" / "storekit"
@@ -177,7 +181,7 @@ def build_command(
         # Le module généré est importé dans un ``try`` (``core/build_flavor.py``) : l'inclure explicitement ne dépend
         # pas de l'analyse de PyInstaller. Les modules de mise à jour ne sont pas embarqués.
         command.extend(["--hidden-import", FLAVOR_HIDDEN_IMPORT])
-        for module in STORE_EXCLUDED_MODULES:
+        for module in (*STORE_EXCLUDED_MODULES, *STORE_EXCLUDED_CLI_MODULES):
             command.extend(["--exclude-module", module])
         if storekit_dylib is not None and platform_name == "darwin":
             command.extend(["--add-binary", f"{storekit_dylib}{separator}."])
