@@ -45,6 +45,7 @@ from .film_render import (
     short,
 )
 from .film_scene import ScenePlacement, write_scene
+from .video_encoders import prime_capabilities
 
 if TYPE_CHECKING:
     from .project_model import MediaAsset, Project
@@ -437,6 +438,7 @@ class Film:
             return output
         try:
             self.assets_dir.mkdir(parents=True, exist_ok=True)
+            prime_capabilities()
             make_background_video(spec, self.size, self.fps, count, output)
         except OSError as error:
             raise FilmError(f"Écriture impossible : {short(str(error), 200)}") from error
@@ -497,6 +499,7 @@ class Film:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as error:
             raise FilmError(f"Impossible de créer le dossier de sortie : {short(str(error), 200)}") from error
+        prime_capabilities()           # hors interface : libx264 absent (construction LGPL) doit être connu avant de choisir l'encodeur
         request = ExportRequest(render_plan=plan, output_path=str(target), format=export_format, preset=export_preset, fps=fps)
         result = run_export(request)
         if result.status is not ExportStatus.OK:

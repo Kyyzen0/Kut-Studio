@@ -72,8 +72,13 @@ pytestmark = pytest.mark.skipif(LGPL is None, reason=SKIP_REASON or "FFmpeg LGPL
 
 @pytest.fixture(autouse=True)
 def _hardware_encoding_on(monkeypatch):
-    """``conftest.py`` coupe l'encodage matériel pour les tests ; ici VideoToolbox est le seul encodeur H.264 de la construction."""
+    """``conftest.py`` coupe l'encodage matériel pour les tests ; ici VideoToolbox est le seul encodeur H.264 de la construction.
+
+    La détection est faite d'emblée, comme l'interface la fait au démarrage : « CPU » n'en lance jamais une lui-même."""
     monkeypatch.delenv("KUT_STUDIO_HARDWARE_ENCODING", raising=False)
+    from core.video_encoders import prime_capabilities
+
+    prime_capabilities()
 
 
 def _reference() -> str | None:
@@ -288,10 +293,115 @@ def test_the_export_does_not_depend_on_the_path(media, tmp_path, monkeypatch):
     assert result.ok, result.message
 
 
-def test_explicit_cpu_h264_fails_clearly_since_libx264_is_not_in_a_lgpl_build(media, tmp_path):
-    """Étape 3 de l'ADR : le CPU H.264 (libx264) n'existe pas ici ; l'échec est signalé, jamais masqué ni silencieux."""
-    result = _export(_project(media), tmp_path / "cpu.mp4", hardware="cpu")
-    assert not result.ok and not (tmp_path / "cpu.mp4").exists()
+def _export_as(project: Project, output: Path, export_format: ExportFormat, hardware: str):
+    request = ExportRequest(render_plan=build_render_plan(project), output_path=str(output), format=export_format,
+                            preset=ExportPreset(name="lgpl", resolution=(W, H), crf=23, audio_bitrate="96k"), fps=float(FPS),
+                            hardware=hardware)
+    return run_export(request)
+
+
+@pytest.mark.parametrize("hardware", ["cpu", "auto", "videotoolbox"])
+def test_h264_is_encoded_by_videotoolbox_whatever_the_request_since_libx264_is_not_in_a_lgpl_build(media, tmp_path, hardware):
+    """Étape 3 : « CPU » et « auto » ne construisent plus une ligne avec libx264 (échec FFmpeg) : VideoToolbox, et c'est dit."""
+    result = _export_as(_project(media), tmp_path / f"{hardware}.mp4", ExportFormat.MP4_H264, hardware)
+    assert result.ok, result.message
+    assert result.encoder is not None and result.encoder.encoder == "h264_videotoolbox"
+    if hardware == "cpu":
+        assert result.encoder.fallback_reason and "libx264" in result.encoder.fallback_reason
+    video = next(stream for stream in _probe(tmp_path / f"{hardware}.mp4")["streams"] if stream["codec_type"] == "video")
+    assert video["codec_name"] == "h264" and video["pix_fmt"] == "yuv420p" and video["width"] == W
+
+
+def test_hevc_is_encoded_by_videotoolbox_and_playable_by_quicktime_tag(media, tmp_path):
+    result = _export_as(_project(media), tmp_path / "hevc.mp4", ExportFormat.MP4_HEVC, "cpu")
+    assert result.ok, result.message
+    assert result.encoder is not None and result.encoder.encoder == "hevc_videotoolbox"
+    video = next(stream for stream in _probe(tmp_path / "hevc.mp4")["streams"] if stream["codec_type"] == "video")
+    assert video["codec_name"] == "hevc" and video["codec_tag_string"] == "hvc1"
+
+
+def test_prores_is_encoded_in_software_by_the_native_encoder(media, tmp_path):
+    result = _export_as(_project(media), tmp_path / "pro.mov", ExportFormat.MOV_PRORES, "cpu")
+    assert result.ok, result.message
+    video = next(stream for stream in _probe(tmp_path / "pro.mov")["streams"] if stream["codec_type"] == "video")
+    assert video["codec_name"] == "prores"
+
+
+def test_the_requested_quality_changes_the_videotoolbox_bitrate(media, tmp_path):
+    """Le CRF du préréglage est traduit en débit (documenté, borné) : un CRF plus bas donne un fichier plus gros."""
+    sizes = {}
+    project = _project(media)
+    project.width, project.height = 640, 360          # assez grand pour dépasser le débit plancher de 500 kbit/s
+    for crf in (30, 14):
+        request = ExportRequest(render_plan=build_render_plan(project), output_path=str(tmp_path / f"q{crf}.mp4"),
+                                format=ExportFormat.MP4_H264, fps=float(FPS), hardware="cpu",
+                                preset=ExportPreset(name="lgpl", resolution=(640, 360), crf=crf, audio_bitrate="96k"))
+        assert run_export(request).ok
+        sizes[crf] = (tmp_path / f"q{crf}.mp4").stat().st_size
+    assert sizes[14] > sizes[30]
+
+
+def test_the_application_knows_that_libx264_is_missing_and_offers_only_possible_encoders():
+    from core.hardware_cache import default_service
+    from core.video_encoders import encoder_options
+
+    capabilities = default_service().capabilities()
+    assert capabilities.software_known and capabilities.software_missing("h264") and capabilities.software_missing("hevc")
+    assert [backend.value for backend, _label in encoder_options("h264", capabilities)] == ["auto", "videotoolbox"]
+    assert [backend.value for backend, _label in encoder_options("prores_ks", capabilities)] == ["cpu"]
+
+
+def test_hardware_decoding_h264_and_hevc_are_now_verifiable_and_vp9_av1_are_unverifiable(tmp_path):
+    """Les échantillons de validation sont faits par VideoToolbox : H.264, HEVC et HEVC 10 bits deviennent utilisables (ils étaient jugés
+    inutilisables à tort). VP9 et AV1 n'ont aucun encodeur dans ce build : « non vérifiable » (``None``), jamais « inutilisable »."""
+    from core.hardware_cache import default_service
+    from core.hardware_decoding import DecodeMode
+
+    capabilities = default_service().capabilities()
+    decoders = {item.codec: item for item in capabilities.decoders if item.backend is DecodeMode.VIDEOTOOLBOX}
+    assert {"h264", "hevc", "hevc10", "prores"} <= {name for name, item in decoders.items() if item.usable}, capabilities.describe()
+    for name in ("vp9", "av1"):
+        assert decoders[name].validated is None and not decoders[name].usable
+
+
+def test_social_preview_copy_is_written_with_videotoolbox(media, tmp_path):
+    from core.social_deliverables import make_preview_copy
+
+    source = tmp_path / "master.mp4"
+    assert _export_as(_project(media), source, ExportFormat.MP4_H264, "auto").ok
+    copy = make_preview_copy(str(source), W, H, float(SECONDS))
+    assert copy.is_file() and copy.stat().st_size < 10_000_000
+    video = next(stream for stream in _probe(copy)["streams"] if stream["codec_type"] == "video")
+    assert video["codec_name"] == "h264" and video["pix_fmt"] == "yuv420p"
+
+
+def test_film_background_video_is_written_with_videotoolbox(tmp_path):
+    from core.film_render import BackgroundSpec, make_background_video
+
+    output = tmp_path / "background.mp4"
+    make_background_video(BackgroundSpec(color=(0.2, 0.4, 0.6)), (W, H), float(FPS), 10, output)
+    video = next(stream for stream in _probe(output)["streams"] if stream["codec_type"] == "video")
+    assert video["codec_name"] == "h264" and int(video["nb_frames"]) == 10
+
+
+def test_a_preview_segment_is_written_with_videotoolbox(media, tmp_path):
+    from core.filter_graph import build_preview_command
+
+    project = _project(media)
+    project.width, project.height = 640, 360
+    plan = build_render_plan(project)
+    output = tmp_path / "preview.mp4"
+    command = build_preview_command(plan, width=640, height=360, fps=FPS, quality="standard", output_path=str(output), duration=1.0)
+    assert "h264_videotoolbox" in command and "libx264" not in command
+    _run(command)
+    assert _probe(output)["streams"][0]["codec_name"] in {"h264", "aac"}
+
+
+def test_proxy_generation_arguments_use_videotoolbox():
+    from core.proxy_profiles import PROXY_CODECS, get_profile
+
+    args = PROXY_CODECS["h264"].build_video_args(get_profile("medium"))
+    assert args[:2] == ["-c:v", "h264_videotoolbox"] and "-g" in args
 
 
 # Sans la marque ``libass`` : le job « libass » de la CI exige zéro saut parmi ses tests, et celui-ci se saute sans l'artefact LGPL.

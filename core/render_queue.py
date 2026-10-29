@@ -358,6 +358,11 @@ class RenderQueue(QObject):
         job = self.job(job_id)
         if job is None or not job.can_retry:
             return False
+        from .render_job import _codec_family
+        from .video_encoders import software_fallback_possible
+
+        if not software_fallback_possible(_codec_family(job.video_codec)):
+            return False          # construction LGPL : « CPU » serait le même encodeur matériel qui vient d'échouer
         job.hardware = HardwareEncoder.CPU.value
         return self.retry(job_id)
 

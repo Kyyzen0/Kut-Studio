@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import process_supervisor
+from .video_encoders import EncoderUnavailableError, auxiliary_h264_args
 
 PREVIEW_MAX_BYTES = 30_000_000
 """Plafond de la copie d'aperçu : 30 Mo (décimaux, la lecture la plus stricte de « 30 Mo »)."""
@@ -94,9 +95,14 @@ def _ffmpeg() -> list[str]:
 
 def preview_copy_command(source: str, dest: str, width: int, height: int, video_kbps: int) -> list[str]:
     out_w, out_h = preview_size(width, height)
+    try:
+        # libx264 d'un FFmpeg complet ; dans la construction LGPL du Mac App Store, VideoToolbox au même débit imposé.
+        encoder = auxiliary_h264_args(speed_preset="veryfast")
+    except EncoderUnavailableError as error:
+        raise DeliverableError(str(error)) from error
     return [
         *_ffmpeg(), "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
-        "-vf", f"scale={out_w}:{out_h}:flags=lanczos", "-c:v", "libx264", "-preset", "veryfast",
+        "-vf", f"scale={out_w}:{out_h}:flags=lanczos", *encoder,
         "-b:v", f"{video_kbps}k", "-maxrate", f"{video_kbps}k", "-bufsize", f"{2 * video_kbps}k",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{PREVIEW_AUDIO_KBPS}k", "-movflags", "+faststart", str(dest),
     ]

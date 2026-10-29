@@ -46,8 +46,9 @@ from .process_supervisor import supervised_run
 LOGGER = logging.getLogger("kut_studio.encoding")
 DECODE_LOGGER = logging.getLogger("kut_studio.decode")
 
-SCHEMA_VERSION = 2
-"""v2 : décodeurs ajoutés. Un cache v1 est ignoré (redétection automatique)."""
+SCHEMA_VERSION = 3
+"""v2 : décodeurs ajoutés. v3 : ``software_known`` (la liste ``-encoders`` a été lue : l'absence de libx264 / libx265 est
+alors un fait, pas une inconnue). Un cache d'un schéma antérieur est ignoré (redétection automatique)."""
 VALIDATION_TIMEOUT_SECONDS = 20.0
 LIST_TIMEOUT_SECONDS = 20.0
 
@@ -245,6 +246,9 @@ class HardwareCapabilities:
         machine: architecture (``arm64``, ``x86_64``…).
         encoders: encodeurs matériels **listés** par FFmpeg (utilisables ou non).
         software: codecs logiciels (libx264, libx265) présents dans la liste.
+        software_known: la liste ``-encoders`` a été lue. ``False`` (détection coupée, FFmpeg introuvable, capacités
+            vides) : on ignore si libx264 existe et on le suppose présent, comme avant. ``True`` : l'absence de
+            libx264 / libx265 dans ``software`` est un fait (construction LGPL du Mac App Store).
         scanned_at: horodatage Unix de la détection.
         fingerprint: identité de l'installation au moment de la détection.
         error: ``""`` ou ``"ffmpeg_missing"`` / ``"ffmpeg_failed"`` / ``"disabled"``.
@@ -266,6 +270,7 @@ class HardwareCapabilities:
     hwaccels: tuple[str, ...] = ()
     decoders: tuple[DecoderCapability, ...] = ()
     decoding_disabled: bool = False
+    software_known: bool = False
 
     @property
     def ffmpeg_available(self) -> bool:
@@ -280,6 +285,19 @@ class HardwareCapabilities:
     def is_usable(self, codec: str, backend: HardwareEncoder) -> bool:
         item = self.capability(codec, backend)
         return item is not None and item.usable
+
+    def software_missing(self, codec: str) -> bool:
+        """``True`` si ce FFmpeg **n'a pas** l'encodeur logiciel de ``codec`` (libx264, libx265).
+
+        Faux tant que l'on ne sait pas (:attr:`software_known`) : le comportement d'une installation complète
+        (Homebrew, GPL) est exactement celui d'avant. Faux aussi pour ProRes, dont l'encodeur est natif.
+        """
+        name = FFMPEG_ENCODER_NAMES.get((codec, HardwareEncoder.CPU))
+        return bool(self.software_known and name and name not in self.software)
+
+    def software_name(self, codec: str) -> str:
+        """Nom FFmpeg de l'encodeur logiciel de ``codec`` (``libx264``…), ``""`` s'il n'y en a pas."""
+        return FFMPEG_ENCODER_NAMES.get((codec, HardwareEncoder.CPU), "")
 
     def usable_backends(self, codec: str) -> tuple[HardwareEncoder, ...]:
         """Backends matériels utilisables pour ``codec``, dans l'ordre de préférence d'Auto."""
@@ -306,6 +324,11 @@ class HardwareCapabilities:
             return "L'encodage matériel est désactivé (KUT_STUDIO_HARDWARE_ENCODING=off)."
         if not self.ffmpeg_available:
             return "FFmpeg est introuvable."
+        if backend is HardwareEncoder.CPU and self.software_missing(codec):
+            return (
+                f"Ce FFmpeg ne contient pas l'encodeur logiciel {self.software_name(codec)} ({codec_label}) "
+                "et aucun encodeur matériel validé ne peut le remplacer."
+            )
         if (codec, backend) not in FFMPEG_ENCODER_NAMES:
             return f"{label} ne prend pas en charge {codec_label} dans Kut-Studio."
         item = self.capability(codec, backend)
@@ -381,6 +404,7 @@ class HardwareCapabilities:
             "hwaccels": list(self.hwaccels),
             "decoders": [item.to_dict() for item in self.decoders],
             "decoding_disabled": self.decoding_disabled,
+            "software_known": self.software_known,
         }
 
     @classmethod
@@ -424,6 +448,7 @@ class HardwareCapabilities:
                 if item is not None
             ),
             decoding_disabled=bool(data.get("decoding_disabled", False)),
+            software_known=bool(data.get("software_known", False)),
         )
 
     # -- Diagnostic ----------------------------------------------------------------------------------------
@@ -720,6 +745,7 @@ def detect_capabilities(
         ffmpeg_version=parse_version(version_output.stdout) if version_output.returncode == 0 else "",
         encoders=tuple(listed),
         software=software,
+        software_known=True,
         hwaccels=hwaccels,
         decoders=decoders,
         decoding_disabled=not decode,

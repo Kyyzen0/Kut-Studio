@@ -220,6 +220,9 @@ class PerformanceSettingsTab(QWidget):
         wanted = getattr(host, "_export_encoder", HardwareEncoder.AUTO.value)
         self.encoder_combo.blockSignals(True)
         self.encoder_combo.clear()
+        if not options:
+            self.encoder_combo.addItem(i18n.translate("render.encoder.none"), userData="")
+            self.encoder_combo.model().item(0).setEnabled(False)       # information, pas un choix
         for backend, label in options:
             text = i18n.translate("render.encoder.auto") if backend is HardwareEncoder.AUTO else label
             self.encoder_combo.addItem(text, userData=backend.value)

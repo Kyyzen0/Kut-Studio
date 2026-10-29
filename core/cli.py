@@ -643,6 +643,9 @@ def _build_request(project, sequence, spec, output_path: Path, args: argparse.Na
 
         output.warning(_t("cli.export.loudness", lufs=spec.loudness_lufs))
         plan, _measure = normalized_plan(plan, fps, float(spec.loudness_lufs))
+    from .video_encoders import prime_capabilities
+
+    prime_capabilities()           # hors interface : personne n'a détecté (libx264 absent d'une construction LGPL ?)
     return ExportRequest(
         render_plan=plan, output_path=str(output_path), format=export_format, preset=export_preset, fps=fps,
         hardware=spec.hardware,

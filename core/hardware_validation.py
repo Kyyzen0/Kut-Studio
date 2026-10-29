@@ -174,6 +174,8 @@ def skip_reason(
     if not capabilities.ffmpeg_available:
         return f"{label} : FFmpeg introuvable"
     if backend is HardwareEncoder.CPU:
+        if capabilities.software_missing(codec):    # construction LGPL : le témoin logiciel n'existe pas, il serait remplacé
+            return f"{label} : encodeur logiciel absent de ce FFmpeg ({capabilities.software_name(codec)})"
         return None
     name = FFMPEG_ENCODER_NAMES.get((codec, backend), "")
     if capabilities.error == "disabled":
@@ -527,8 +529,11 @@ def validate_encoder(
     fallback = ""
     if backend is not HardwareEncoder.CPU:
         # Le repli d'Auto est construit par la même fonction que celle du moteur d'export.
-        fallback = cpu_choice(codec, speed_preset=export_format.preset, quality=VALIDATION_CRF,
-                              requested=HardwareEncoder.AUTO).encoder
+        try:
+            fallback = cpu_choice(codec, speed_preset=export_format.preset, quality=VALIDATION_CRF,
+                                  requested=HardwareEncoder.AUTO, capabilities=capabilities).encoder
+        except EncoderUnavailableError:
+            fallback = ""                            # pas de repli logiciel dans ce FFmpeg (LGPL)
     base = EncoderValidation(
         backend=backend, container=export_format.container, codec=codec,
         encoder=FFMPEG_ENCODER_NAMES.get((codec, backend), ""), outcome=Outcome.SKIPPED,
