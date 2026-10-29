@@ -73,6 +73,18 @@ class EntitlementsMixin:
         self._show_refusal_message(refusal.user_message())
         return True
 
+    def _settle_forbidden_edits(self) -> None:
+        """Lecture seule : défait toute édition encore différée ou non enregistrée AVANT d'écrire le projet (Enregistrer, sauvegarde auto).
+
+        Une édition différée (minuteur de 400 ms de la couleur, du transform, des titres, du sous-titre) ou un geste en cours a déjà modifié
+        le projet vivant ; sans cela un enregistrement immédiat l'écrirait avant que la garde de l'historique la remette en place.
+        Hors Store ou si l'état permet d'éditer : ne fait rien."""
+        if edit_refusal() is None:
+            return
+        self._finalize_pending_edit_sessions()  # type: ignore[attr-defined]   # chaque ``record`` refusé remet le projet en place
+        if self.history.discard_uncommitted(self.project):  # type: ignore[attr-defined]   # gestes sans minuteur
+            self._apply_history_snapshot(self.project, "")  # type: ignore[attr-defined]
+
     def _on_edit_refused(self, refusal: EntitlementRefused) -> None:
         """``ProjectHistory`` a refusé un enregistrement et remis le projet en place : les vues relisent le modèle."""
         self._show_refusal_message(refusal.user_message())

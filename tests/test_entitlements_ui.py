@@ -207,3 +207,119 @@ def test_every_menu_entry_not_whitelisted_is_disabled_in_read_only(make_window):
                    else keys.get(id(action)) in READ_ONLY_MENU_KEYS)
         if not allowed:
             assert not action.isEnabled(), action.text()
+
+
+# -- éditions différées et dialogues qui modifient le projet vivant (revue Codex, PR 295) ---------------------------------------
+
+
+def _set_service(record):
+    import tempfile
+    from pathlib import Path
+
+    service, _store, _clock = make_service(Path(tempfile.mkdtemp()))
+    service.publish(record)
+    entitlements.install_service(service)
+
+
+def _saved_window(make_window, tmp_path):
+    from core.project_io import load_project, project_payload, save_project
+
+    window = make_window(lifetime())
+    path = str(tmp_path / "p.kut")
+    save_project(window.project, path)
+    window.current_project_path = path
+    window.history.reset(window.project)
+    window._mark_clean()
+    return window, path, lambda: project_payload(load_project(path))
+
+
+@pytest.mark.parametrize("save", ["save_project_file", "autosave"])
+def test_a_deferred_color_edit_never_reaches_the_file_in_read_only(make_window, tmp_path, monkeypatch, save):
+    window, path, on_disk = _saved_window(make_window, tmp_path)
+    clean = on_disk()
+    window.on_clip_selected("intro")
+    _set_service(expired())                               # l'essai finit ; la page Couleur est encore ouverte
+    window.on_color_grade_field_changed("intro", "saturation", 1.7)    # l'enregistrement est différé de 400 ms
+    assert window._color_session_active, "l'édition est bien différée (sinon ce test ne prouve rien)"
+    assert window.history.is_dirty is False
+    if save == "save_project_file":
+        window.save_project_file()                        # Enregistrer tout de suite, avant les 400 ms
+    else:
+        captured = []
+        monkeypatch.setattr(window._autosave, "submit", lambda project, target: captured.append(
+            __import__("core.project_io", fromlist=["x"]).project_payload(project)))
+        window.project_dirty = True
+        window._write_autosave()
+        assert all(item == clean for item in captured), "la sauvegarde auto n'écrit jamais l'édition interdite"
+    assert on_disk() == clean, "l'ajustement interdit n'est pas dans le fichier"
+    assert window.project_dirty is False
+    assert window._color_session_active is False
+
+
+def test_a_gesture_without_timer_does_not_reach_the_file_either(make_window, tmp_path):
+    window, path, on_disk = _saved_window(make_window, tmp_path)
+    clean = on_disk()
+    _set_service(expired())
+    window.project.name = "geste en cours"                # modifié en place, rien d'enregistré (glisser sans minuteur)
+    window.save_project_file()
+    assert on_disk() == clean and window.project.name != "geste en cours"
+
+
+def test_saving_is_unchanged_when_editing_is_allowed(make_window, tmp_path):
+    window, path, on_disk = _saved_window(make_window, tmp_path)
+    clean = on_disk()
+    window.on_clip_selected("intro")
+    window.on_color_grade_field_changed("intro", "saturation", 1.7)
+    window.save_project_file()
+    assert on_disk() != clean and window.history.is_dirty is False
+
+
+def _tag_dialog(monkeypatch, *, switch_to_expired: bool, result):
+    from ui.library_organization_widgets import TagManagerDialog
+
+    calls = []
+
+    def fake_exec(self):
+        calls.append("opened")
+        self._organization.create_tag("interdit")
+        if switch_to_expired:
+            _set_service(expired())
+        return result
+
+    monkeypatch.setattr(TagManagerDialog, "exec", fake_exec)
+    return calls
+
+
+def test_the_tag_manager_does_not_open_in_read_only(make_window, monkeypatch):
+    from core.project_io import project_payload
+    from PySide6.QtWidgets import QDialog
+
+    window = make_window(expired())
+    calls = _tag_dialog(monkeypatch, switch_to_expired=False, result=QDialog.Rejected)
+    before = project_payload(window.project)
+    window._on_tag_manager_requested()
+    assert calls == [] and project_payload(window.project) == before
+    assert "lecture seule" in window.statusBar().currentMessage()
+
+
+@pytest.mark.parametrize("result_name", ["Rejected", "Accepted"])
+def test_tag_changes_do_not_survive_a_close_when_rights_ended_while_open(make_window, monkeypatch, result_name):
+    from core.project_io import project_payload
+    from PySide6.QtWidgets import QDialog
+
+    window = make_window(lifetime())
+    before = project_payload(window.project)
+    calls = _tag_dialog(monkeypatch, switch_to_expired=True, result=getattr(QDialog, result_name))
+    window._on_tag_manager_requested()
+    assert calls == ["opened"] and project_payload(window.project) == before, "Fermer ne laisse pas les changements"
+
+
+def test_the_tag_manager_is_unchanged_outside_read_only(make_window, monkeypatch):
+    from core.project_io import project_payload
+    from PySide6.QtWidgets import QDialog
+
+    window = make_window(lifetime())
+    before = project_payload(window.project)
+    _tag_dialog(monkeypatch, switch_to_expired=False, result=QDialog.Accepted)
+    window._on_tag_manager_requested()
+    assert project_payload(window.project) != before and window.history.can_undo

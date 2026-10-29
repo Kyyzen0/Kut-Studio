@@ -224,14 +224,25 @@ class ProjectHistory:
         self._project = project
         self.revision += 1
 
-    def _discard_uncommitted(self, project: Project) -> None:
-        """Remet ``project`` (sans changer son identité) dans l'état du sommet de la pile ; sans pile, ne touche à rien."""
+    def _discard_uncommitted(self, project: Project) -> bool:
+        """Remet ``project`` (sans changer son identité) dans l'état du sommet de la pile ; sans pile, ne touche à rien.
+
+        Rend vrai si ``project`` différait de cet état (une modification non enregistrée a été défaite)."""
         if not self._undo_stack:
-            return
+            return False
         restored = _deepcopy_project(self._undo_stack[-1].project)
         _keep_active_sequence(restored, project.active_sequence_id)
+        if restored == project:
+            return False
         project.__dict__.clear()
         project.__dict__.update(restored.__dict__)
+        return True
+
+    def discard_uncommitted(self, project: Project) -> bool:
+        """Défait toute modification de ``project`` qui n'est pas dans l'historique (édition différée, geste en cours).
+
+        Sert en lecture seule (ADR-0013 étape 12) avant d'écrire le projet sur disque : seul l'état enregistré est écrit."""
+        return self._discard_uncommitted(project)
 
     def undo(self) -> Optional[Project]:
         """Annule la dernière opération enregistrée.

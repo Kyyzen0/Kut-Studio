@@ -55,6 +55,12 @@ GUARDED: list[tuple[str, str, frozenset[str]]] = [
     ("ui/main_window_mixins/social.py", "SocialMixin.export_format_versions", frozenset({"_export_refused_ui"})),
     ("ui/main_window_mixins/subtitles_graphics.py", "SubtitlesGraphicsMixin.export_subtitles_via_dialog", frozenset({"_export_refused_ui"})),
     ("ui/main_window_mixins/subtitles_graphics.py", "SubtitlesGraphicsMixin.export_subtitles_to_path", frozenset({"require_export"})),
+    ("ui/main_window_mixins/entitlements.py", "EntitlementsMixin._settle_forbidden_edits", frozenset({"edit_refusal"})),
+    ("ui/main_window_mixins/project_files.py", "ProjectFilesMixin.save_project_file", frozenset({"_settle_forbidden_edits"})),
+    ("ui/main_window_mixins/project_files.py", "ProjectFilesMixin.save_project_as", frozenset({"_settle_forbidden_edits"})),
+    ("ui/main_window_mixins/project_files.py", "ProjectFilesMixin._write_autosave", frozenset({"_settle_forbidden_edits"})),
+    ("ui/main_window_mixins/library_organization.py", "LibraryOrganizationMixin._on_tag_manager_requested",
+     frozenset({"_edit_refused_ui"})),
     ("ui/main_window_mixins/recording.py", "RecordingMixin.on_record_toggled", frozenset({"_edit_refused_ui"})),
     ("ui/main_window_mixins/history.py", "HistoryMixin.undo_last", frozenset({"EntitlementRefused"})),
     ("ui/main_window_mixins/history.py", "HistoryMixin.redo_last", frozenset({"EntitlementRefused"})),
@@ -164,6 +170,31 @@ def test_no_new_writer_of_deliverables_or_subtitles():
 def test_script_sessions_are_only_opened_by_the_cli():
     sessions = {c for c in _callers({"Session"}, calls_only=True) if not c[0].startswith("core/scripting/")}
     assert sessions == {("core/cli.py", "_apply_script_to_project")}, sorted(sessions)
+
+
+def test_only_one_dialog_edits_the_live_project_and_it_is_guarded():
+    """Un dialogue qui reçoit le projet vivant et le modifie lui-même (hors signaux) échappe à l'historique : seul
+    ``TagManagerDialog`` le fait (recherche de ``create_tag`` / ``rename_tag`` / ``delete_tag`` hors du cœur)."""
+    writers = {path for path, tree in _sources("ui") for _q, node in _enclosing(tree)
+               if isinstance(node, ast.Attribute) and node.attr in {"create_tag", "rename_tag", "delete_tag"}}
+    assert writers == {"ui/library_organization_widgets.py"}, sorted(writers)
+    assert _callers({"TagManagerDialog"}, calls_only=True) == {
+        ("ui/main_window_mixins/library_organization.py", "LibraryOrganizationMixin._on_tag_manager_requested")}
+
+
+def test_every_deferred_edit_timer_is_flushed_by_finalize_pending_edit_sessions():
+    """Les minuteurs d'édition différée (``*_session_timer``, ``_subtitle_edit_timer``) sont tous clos par
+    ``_finalize_pending_edit_sessions`` : c'est ce que ``_settle_forbidden_edits`` appelle avant d'écrire le projet."""
+    timers = set()
+    for _path, tree in _sources("ui"):
+        for _q, node in _enclosing(tree):
+            if isinstance(node, ast.Attribute) and node.attr.endswith(("_session_timer", "_edit_timer")):
+                timers.add(node.attr)
+    assert timers == {"_color_session_timer", "_graphic_session_timer", "_transform_session_timer", "_subtitle_edit_timer"}, \
+        sorted(timers)
+    node = _find(_parse("ui/main_window_mixins/history.py"), "HistoryMixin._finalize_pending_edit_sessions")
+    assert node is not None and {"_flush_subtitle_history_record", "_finalize_transform_session", "_finalize_color_history",
+                                 "_finalize_graphic_history"} <= _names(node)
 
 
 def test_apply_script_goes_through_the_guarded_session():
