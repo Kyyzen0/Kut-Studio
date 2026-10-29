@@ -36,8 +36,8 @@ def dylib(tmp_path_factory) -> Path:
         pytest.skip("swiftc absent (outils Xcode non installés)")
     out = tmp_path_factory.mktemp("kutstore")
     done = subprocess.run(["sh", str(SPIKE / "build.sh"), str(out)], capture_output=True, text=True, timeout=300)
-    if done.returncode != 0:
-        pytest.skip(f"compilation Swift impossible ici : {done.stderr[-300:]}")
+    # Seule l'absence de chaîne d'outils justifie un saut ; une compilation qui échoue est une régression à voir.
+    assert done.returncode == 0, f"build.sh a échoué (code {done.returncode}) :\n{done.stdout[-2000:]}\n{done.stderr[-2000:]}"
     return out / "libkutstore.dylib"
 
 
