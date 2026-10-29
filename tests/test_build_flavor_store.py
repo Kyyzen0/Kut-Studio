@@ -357,3 +357,38 @@ def test_parse_arguments_defaults_to_developer_id():
     assert build.parse_arguments(["--flavor", "store"]).flavor == "store"
     with pytest.raises(SystemExit):
         build.parse_arguments(["--flavor", "autre"])
+
+
+# -- le pont StoreKit dans le bundle Store (ADR-0013, étape 13) -------------------------------------------------------------
+
+
+def test_storekit_bridge_is_added_only_to_the_store_bundle_on_macos(tmp_path):
+    dylib = tmp_path / "libkutstore.dylib"
+    store = build.build_command(platform_name="darwin", environment={}, flavor="store", storekit_dylib=dylib)
+    assert f"{dylib}:." in store and store[store.index(f"{dylib}:.") - 1] == "--add-binary"
+    developer_id = build.build_command(platform_name="darwin", environment={}, flavor="developer-id", storekit_dylib=dylib)
+    assert not any("libkutstore" in str(part) for part in developer_id)                 # Developer ID : rien ne change
+    assert developer_id == build.build_command(platform_name="darwin", environment={})
+    assert not any("libkutstore" in str(part) for part in build.build_command(platform_name="linux", environment={}, flavor="store", storekit_dylib=dylib))
+    assert not any("libkutstore" in str(part) for part in build.build_command(platform_name="darwin", environment={}, flavor="store"))
+
+
+def test_build_storekit_bridge_runs_the_spike_script_and_checks_the_product(tmp_path):
+    calls = []
+
+    def fake_run(command):
+        calls.append(list(command))
+        (tmp_path / "out" / "libkutstore.dylib").write_bytes(b"x")
+
+    dylib = build.build_storekit_bridge(tmp_path / "out", run=fake_run)
+    assert dylib == tmp_path / "out" / "libkutstore.dylib"
+    assert calls == [["sh", str(build.STOREKIT_SOURCE / "build.sh"), str(tmp_path / "out")]]
+    assert (build.STOREKIT_SOURCE / "build.sh").is_file()
+    with pytest.raises(RuntimeError, match="n'a pas été produite"):
+        build.build_storekit_bridge(tmp_path / "vide", run=lambda command: None)
+
+
+def test_store_build_on_macos_needs_swiftc():
+    assert build.storekit_bridge_problem("darwin", which=lambda name: None) is not None
+    assert build.storekit_bridge_problem("darwin", which=lambda name: "/usr/bin/swiftc") is None
+    assert build.storekit_bridge_problem("linux", which=lambda name: None) is None

@@ -105,12 +105,12 @@ que Python et n'appellent que son interface C. `./run_tests.sh` : **9 tests, 0 �
 * Le chemin `.unverified` (JWS invalide) **n'est pas déclenchable** sous `SKTestSession` : les transactions de test sont signées par
   la clé locale d'Xcode et vérifiées [S]. Le code refuse bien `.unverified` (lecture), mais aucun test ne l'exerce [A].
 * **`AppTransaction` réelle** : sous Xcode, `originalPurchaseDate` vaut 1970 et `environment` = `Xcode`. La date **réelle** d'installation
-  (qui doit dater l'essai de 15 jours) n'existe qu'avec une app signée Store : TestFlight (`Sandbox`) puis production. **Règle à
+  (qui doit dater l'essai de 14 jours) n'existe qu'avec une app signée Store : TestFlight (`Sandbox`) puis production. **Règle à
   retenir pour l'étape 15 : ne dater un essai qu'avec `environment` = `Production` ou `Sandbox` et une date postérieure à 2007 ;** sinon
   se comporter comme « essai en cours de développement ». Que `originalPurchaseDate` soit renseignée pour une **app gratuite** en
   production est **[A]**.
 * Dates d'essai Apple (offre d'introduction, `Product.SubscriptionInfo.Status`) : non exercées (aucune offre dans le fichier de test).
-  L'essai de 15 jours reste géré par l'application (ADR-0013 D3).
+  L'essai de 14 jours reste géré par l'application (ADR-0013 D3).
 
 Sans configuration ni compte (processus de développement ordinaire, signé ou non), **le pont rend proprement** : `entitlements` = `[]`,
 `products` = `[]`, `AppTransaction` en `STOREKIT_ERROR` (« noAccount » / « unknown »), jamais d'exception ni de blocage [V].
@@ -169,6 +169,8 @@ travail, mettre le résultat en cache signé, et lire ce cache pour décider (l'
 vérification locale d'un reçu et l'absence de `currentEntitlements` coûteraient plus cher que ce module.
 
 ## Ce qui reste à faire dans le produit (hors de ce spike)
+
+> **2026-10-29 :** points 2 et 3 (état pur, cache signé) et l'intégration à `build.py` (point 1) sont faits dans le produit : voir ADR-0013 « Étape 13 : pont de production » et `docs/entitlements.md`. Le Swift et `build.sh` restent ici ; le champ `signedDate` a été ajouté aux réponses (transaction et `AppTransaction`). Le contrat Python de ce dossier (`storekit_contract.py`) reste le module jetable du spike ; le produit utilise `core/entitlements/storekit_bridge.py`.
 
 1. Déplacer le module hors du dossier jetable (par exemple `packaging/store/storekit/`) et ajouter son étape de construction et de
    signature à `build.py` (avant la signature du `.app`, `--add-binary` PyInstaller).

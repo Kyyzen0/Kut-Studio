@@ -17,6 +17,7 @@ créé.
 
 from __future__ import annotations
 
+from core.build_flavor import is_store
 from core.entitlements import (
     EntitlementRefused, edit_refusal, enforced, export_refusal, is_read_only_command, READ_ONLY_MENU_KEYS,
 )
@@ -50,7 +51,17 @@ class EntitlementsMixin:
         self._entitlement_timer.setInterval(CHECK_INTERVAL_MS)
         self._entitlement_timer.timeout.connect(self.refresh_entitlements)
         self._entitlement_timer.start()
+        if is_store():                                            # pont StoreKit : seulement dans le build Store
+            self._start_store_entitlements()
         self.refresh_entitlements()
+
+    def _start_store_entitlements(self) -> None:
+        """Installe le service de droits du Store et démarre la lecture StoreKit (thread de travail, signal Qt vers cette fenêtre)."""
+        from ui.store_entitlements import StoreEntitlementsController
+
+        self._store_entitlements = StoreEntitlementsController(self)  # type: ignore[arg-type]
+        self._store_entitlements.state_changed.connect(self.refresh_entitlements)
+        self._store_entitlements.start()
 
     # -- refus --------------------------------------------------------------------------------------------------------------
 

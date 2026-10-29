@@ -2,7 +2,7 @@
 
 Étape 12 de l'[ADR-0013](adr/0013-publication-mac-app-store.md) (décision D3 du 2026-10-28). Le module `core/entitlements/` dit **ce que l'état de
 l'utilisateur permet** : ouvrir et visualiser est **toujours** permis ; modifier et exporter dépendent de l'état. Il ne connaît ni Qt, ni StoreKit, ni le
-réseau : le pont StoreKit (étape 13) lui fournira l'état vérifié.
+réseau : le pont StoreKit (étape 13, section « Pont StoreKit » ci-dessous) lui fournit l'état vérifié.
 
 **Hors Store, rien ne change.** Le contrôle n'est exigé que si `core.build_flavor.STORE` est vrai (le drapeau est créé par l'étape 4, autre PR ; tant qu'il
 n'existe pas, `enforced()` est faux : import tolérant). `can_edit` et `can_export` sont alors toujours vrais, aucune garde ne lève, aucun widget n'est
@@ -12,14 +12,14 @@ touché, aucun minuteur n'est créé (testé : `tests/test_entitlements_*.py`).
 
 | État (ADR) | `EntitlementKind` | Modifier / exporter | Détail |
 |---|---|---|---|
-| ESSAI(jours restants) | `TRIAL` | oui | `days_left` de 15 à 1 ; début de l'essai fourni par le pont (Apple), jamais par un fichier local |
+| ESSAI(jours restants) | `TRIAL` | oui | `days_left` de 14 à 1 ; début de l'essai fourni par le pont (Apple), jamais par un fichier local |
 | ABONNE(échéance) | `SUBSCRIBER` | oui | `expires_at` ; `in_grace` quand l'échéance est passée sans confirmation, dans le délai de grâce |
 | ACHAT_UNIQUE | `LIFETIME` | oui | |
 | EXPIRE | `EXPIRED` | **non** (lecture seule, export bloqué) | essai fini sans achat, ou fin vérifiée par le pont |
 | INCONNU | `UNKNOWN` | **non** par défaut (paramètre) | jamais vérifié, fichier illisible, signature invalide, abonnement trop ancien pour être cru ; `reason` dit pourquoi |
 
-L'essai se compte en secondes sur l'instant donné par l'horloge injectée : à J (début) il reste 15 jours ; à J+14 (même heure) il en reste 1 ; à J+15 l'essai
-est fini (fin exclue). Testé pour J, J+1, J+14, J+14 à 23 h, J+15 − 1 s, J+15, J+40.
+L'essai se compte en secondes sur l'instant donné par l'horloge injectée : à J (début) il reste 14 jours ; à J+13 (même heure) il en reste 1 ; à J+14 l'essai
+est fini (fin exclue). Testé pour J, J+1, J+13, J+13 à 23 h, J+14 − 1 s, J+14, J+40.
 
 ## Politique : paramètres, jamais figés (D11 reste ouvert)
 
@@ -27,7 +27,7 @@ est fini (fin exclue). Testé pour J, J+1, J+14, J+14 à 23 h, J+15 − 1 s, J+1
 
 | Paramètre | Défaut | Statut |
 |---|---|---|
-| `trial_days` | 15 | décidé (D3) |
+| `trial_days` | 14 | décidé (D3 : 15 jours le 2026-10-28, **14 jours** le 2026-10-29) |
 | `grace_seconds` | 7 jours | **proposition de l'ADR, D11 à décider** |
 | `unknown_allows_edit` | faux (lecture seule) | **D11 à décider** : la proposition « conserver le dernier état vérifié jusqu'au délai de grâce » est réalisée pour un abonnement (`SUBSCRIBER` avec `in_grace`, puis `UNKNOWN(stale)`) ; sans dernier état vérifié lisible (fichier absent, illisible, signature fausse) il n'y a rien à conserver, donc lecture seule jusqu'à la prochaine vérification du pont |
 | `clock_tolerance` | 300 s | technique |
@@ -42,10 +42,32 @@ est fini (fin exclue). Testé pour J, J+1, J+14, J+14 à 23 h, J+15 − 1 s, J+1
 * `VerifiedEntitlement` est ce que le pont vérifie : `verified_at` et `trial_started_at` doivent venir de la **transaction signée** (date signée,
   `originalPurchaseDate`), jamais de l'horloge locale.
 * **Horloge reculée** : le calcul utilise `max(horloge, plus grande date vue)` ; la plus grande date vue est écrite (signée) au plus une fois par
-  `persist_interval`. Reculer la date ne rallonge ni l'essai ni l'abonnement ; `EntitlementState.clock_rollback` le signale. Une nouvelle vérification du
-  pont (`EntitlementService.publish`) remplace la plus grande date vue par sa `verified_at` : une horloge poussée trop loin par erreur se guérit en ligne.
+  `persist_interval`. Reculer la date ne rallonge ni l'essai ni l'abonnement ; `EntitlementState.clock_rollback` le signale. Le filigrane est **monotone** : `EntitlementService.publish` le fixe à `max(verified_at, filigrane enregistré, plus grande date de la session)`, car une réponse du pont peut venir d'un cache (ancien `signedDate`) ; republier la même transaction ne rallonge donc rien. Seul `publish(..., fresh=True)` (temps frais **et de confiance**, que le pont actuel ne fournit pas) remplace le filigrane par `verified_at`.
 * Limite assumée (ADR, § Intégrité) : un contrôle côté application est contournable par qui modifie l'application ; le sandbox et la signature du Store
   empêchent cette modification dans le canal Store. Pas de protection anti-contournement supplémentaire.
+
+## Pont StoreKit (étape 13)
+
+Le service ci-dessus est alimenté, dans le **build Store seulement**, par le pont StoreKit 2 (`libkutstore.dylib`, Swift, appelé par `ctypes`).
+
+| Module | Rôle |
+|---|---|
+| `core/entitlements/storekit_bridge.py` | Contrat `ctypes` : chargement depuis `Contents/Frameworks` (jamais par variable d'environnement ni `PATH`), ABI lue avant tout (une autre version est refusée), appels bloquants, argument et réponse bornés (8 Ko / 1 Mo), chaîne du pont libérée une seule fois, erreurs réduites à un mot court (aucune donnée de l'utilisateur), arrêt idempotent |
+| `core/entitlements/storekit_verifier.py` | `StoreKitVerifier` : implémentation réelle de `EntitlementVerifier`. `fetch(bridge)` lit `Transaction.currentEntitlements` puis `AppTransaction`, et rend l'état vérifié à publier ; `sign` / `verify` : HMAC avec une clé aléatoire du conteneur (0600) |
+| `core/entitlements/storekit_source.py` | Thread de travail Python (`kut-storekit`, daemon) : charge le pont, lit, **sonde** `Transaction.updates`, relit à chaque événement vérifié et toutes les 6 h, restaure (`request_restore`), s'arrête (`stop`) |
+| `ui/store_entitlements.py` | `StoreEntitlementsController` : crée et **installe** le service (avant toute lecture), lance la source, émet `state_changed` (signal Qt) ; arrêt sur `aboutToQuit`. Branché par `EntitlementsMixin._start_store_entitlements`, derrière `is_store()` |
+
+**Du pont à l'état.** Droit d'achat unique vérifié : `LIFETIME` ; abonnement actif (le plus long) : `SUBSCRIBER` ; sinon `AppTransaction.originalPurchaseDate` date l'essai : `TRIAL` (le service calcule les jours restants, ou `EXPIRED` après 14 jours). Les transactions remboursées (`revocationDate`), remplacées, de produit inconnu ou échues ne comptent pas ; des transactions seulement *non vérifiées* ne débloquent rien et ne rendent pas non plus un essai.
+
+**Une lecture ratée se retente vite** : repli croissant 2 s, 4 s, … plafonné à 5 min (`RETRY_INITIAL_S`, `RETRY_MAX_S`), indépendant de la relecture de 6 h qui ne court qu'après un succès. Rien d'autre n'est publié sur un échec.
+
+**Échec, délai, pont absent : rien n'est publié.** Le service relit alors son dernier enregistrement signé : un abonnement échu reste `SUBSCRIBER` pendant le délai de grâce (`in_grace`), puis `UNKNOWN(stale)` ; sans enregistrement lisible, `UNKNOWN(missing)`, donc lecture seule. Le pont absent (sources, dylib manquante ou d'une autre ABI) donne le même résultat : **jamais un déblocage**.
+
+**`originalPurchaseDate` sous Xcode.** Elle vaut 1970 et `environment` = `Xcode` (mesuré) ; seules `Production` et `Sandbox` (TestFlight), avec une date postérieure à 2007 et non postérieure à `signedDate`, datent un essai. Autrement : pas de publication (`untrusted_trial_date`). Un build Store lancé depuis Xcode reste donc en lecture seule ; on teste les états avec le faux pont (`tests/storekit_fakes.py`), jamais avec un StoreKit réel en CI.
+
+**Hors Store**, rien de tout cela n'est importé, aucun thread n'est créé et le service reste celui qu'installe l'appelant (testé).
+
+**Construction.** `python build.py --flavor store` (macOS) compile le pont avec `packaging/store-spike/storekit/build.sh` (`swiftc` requis) et l'ajoute au bundle avec `--add-binary` ; la signature de la bibliothèque, l'identité Store et le profil de provisionnement sont l'étape 7 (rien n'est créé ici).
 
 ## Les gardes
 

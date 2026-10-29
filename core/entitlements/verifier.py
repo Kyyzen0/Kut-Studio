@@ -1,11 +1,11 @@
-"""Signature de l'état de droits : l'interface que le pont StoreKit (étape 13) implémentera.
+"""Signature de l'état de droits : l'interface qu'implémente ``StoreKitVerifier`` (étape 13).
 
 L'état persisté dans le conteneur est une **enveloppe signée** : ``{"v": 1, "payload": <base64>, "signature": <base64>}``.
 Le module de droits ne calcule **jamais** un état à partir d'un fichier librement modifiable : sans signature valide,
 l'état est ``UNKNOWN`` (jamais un essai neuf).
 
-:class:`EntitlementVerifier` est abstraite. L'étape 13 fournira une implémentation adossée à ce que le pont peut garder
-secret (clé dans le trousseau, signature asymétrique) ; :class:`HmacVerifier` ne sert qu'aux tests et au développement
+:class:`EntitlementVerifier` est abstraite. L'étape 13 la réalise avec ``StoreKitVerifier`` (``storekit_verifier.py`` : clé
+aléatoire du conteneur ; le trousseau reste un durcissement possible) ; :class:`HmacVerifier` ne sert qu'aux tests et au développement
 (clé symétrique : qui lit l'application lit la clé). Ce module ne choisit pas d'algorithme pour le Store.
 """
 
