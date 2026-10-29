@@ -238,3 +238,60 @@ def test_a_failing_subscriber_does_not_stop_the_reader(tmp_path):
         assert wait_for(lambda: bridge.polls >= 1) and source.running
     finally:
         source.stop()
+
+
+# -- relecture après un échec (revue Codex) ------------------------------------------------------------------------------------
+
+
+class Ticker:
+    """Horloge monotone injectée : avance seulement quand le test le décide."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_failed_first_read_is_retried_without_waiting_for_the_six_hour_interval(make_source):
+    ticker = Ticker()
+    bridge = FakeBridge(ent=failure(sb.TIMEOUT, "timeout"))
+    source, service, _c = make_source(loader_for(bridge), monotonic=ticker, refresh_interval=6 * 3600.0)
+    source.start()
+    assert wait_for(lambda: source.last_reason == "storekit_unavailable")
+    assert service.state().kind is K.UNKNOWN and source.retry_delays == [2.0]
+    bridge.results[sb.OP_ENTITLEMENTS] = entitlements()
+    bridge.results[sb.OP_APP_TRANSACTION] = app_transaction(T0 - DAY, T0)
+    ticker.now = 2.5                                              # 2,5 s : très loin des 6 h
+    assert wait_for(lambda: service.state().kind is K.TRIAL)
+
+
+def test_repeated_failures_back_off_with_a_cap_then_a_success_resets_to_the_long_interval(make_source):
+    ticker = Ticker()
+    bridge = FakeBridge(ent=failure(sb.STOREKIT_ERROR))
+    source, service, _c = make_source(loader_for(bridge), monotonic=ticker, retry_initial=2.0, retry_max=10.0, refresh_interval=1000.0)
+    source.start()
+    for expected in (1, 2, 3, 4, 5):
+        assert wait_for(lambda: len(source.retry_delays) >= expected)
+        ticker.now += 100.0
+    assert source.retry_delays[:5] == [2.0, 4.0, 8.0, 10.0, 10.0]
+    bridge.results[sb.OP_APP_TRANSACTION] = app_transaction(T0 - DAY, T0)
+    bridge.results[sb.OP_ENTITLEMENTS] = entitlements()
+    ticker.now += 100.0
+    assert wait_for(lambda: service.state().kind is K.TRIAL)
+    reads = sum(1 for call in bridge.calls if call[0] == sb.OP_ENTITLEMENTS)
+    ticker.now += 500.0                                           # moins que l'intervalle de succès : pas de relecture
+    time.sleep(0.2)
+    assert sum(1 for call in bridge.calls if call[0] == sb.OP_ENTITLEMENTS) == reads
+    ticker.now += 600.0
+    assert wait_for(lambda: sum(1 for call in bridge.calls if call[0] == sb.OP_ENTITLEMENTS) > reads)
+
+
+def test_stop_during_a_retry_backoff_is_clean(make_source):
+    bridge = FakeBridge(ent=failure(sb.TIMEOUT))
+    source, _service, _c = make_source(loader_for(bridge), monotonic=Ticker(), poll_timeout_ms=60_000)
+    source.start()
+    assert wait_for(lambda: source.retry_delays)
+    started = time.monotonic()
+    source.stop()
+    assert time.monotonic() - started < 2.0 and not source.running and bridge.shutdown_count >= 1

@@ -154,13 +154,13 @@ def test_small_clock_jitter_is_not_a_rollback(tmp_path):
     assert service.state().clock_rollback is False
 
 
-def test_a_fresh_verification_resets_a_poisoned_watermark(tmp_path):
+def test_a_trusted_fresh_verification_resets_a_poisoned_watermark(tmp_path):
     service, _s, clock = make_service(tmp_path)
     service.publish(trial(T0))
     clock.now = T0 + 400 * DAY                                       # horloge poussée par erreur très loin
     assert service.state().kind is K.EXPIRED
     clock.now = T0 + DAY                                             # remise à l'heure
-    service.publish(lifetime(verified=T0 + DAY))                     # le pont revérifie (date signée par Apple)
+    service.publish(lifetime(verified=T0 + DAY), fresh=True)         # temps frais et de confiance : seul cas qui guérit
     healed = service.state()
     assert healed.kind is K.LIFETIME and healed.clock_rollback is False
 
@@ -323,3 +323,26 @@ def test_the_watermark_is_written_at_most_once_per_interval(tmp_path):
     clock.now = T0 + 2 * 3600.0
     service.state()
     assert store.path.read_text(encoding="utf-8") != before
+
+
+def test_republishing_a_cached_transaction_never_lowers_the_watermark(tmp_path):
+    service, _s, clock = make_service(tmp_path)
+    service.publish(trial(T0))
+    clock.now = T0 + 20 * DAY
+    assert service.state().kind is K.EXPIRED
+    clock.now = T0 + DAY                                             # l'utilisateur recule l'horloge
+    service.publish(trial(T0))                                       # même réponse en cache (ancien signedDate)
+    state = service.state()
+    assert state.kind is K.EXPIRED and state.clock_rollback is True and service.can_edit() is False
+
+
+def test_republishing_after_a_restart_keeps_the_persisted_watermark(tmp_path):
+    service, store, clock = make_service(tmp_path)
+    service.publish(trial(T0))
+    clock.now = T0 + 20 * DAY
+    assert service.state().kind is K.EXPIRED                         # filigrane écrit (signé)
+    clock.now = T0 + DAY
+    relaunched = EntitlementService(store, clock, enforced=lambda: True)    # session neuve : seul le fichier se souvient
+    relaunched.publish(trial(T0))                                    # le pont rend la même transaction en cache
+    state = relaunched.state()
+    assert state.kind is K.EXPIRED and state.clock_rollback is True

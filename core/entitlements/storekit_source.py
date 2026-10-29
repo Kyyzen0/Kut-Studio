@@ -32,6 +32,9 @@ REFRESH_INTERVAL_S = 6 * 3600.0
 POLL_TIMEOUT_MS = 5_000
 RESTORE_TIMEOUT_MS = 60_000
 ERROR_BACKOFF_S = 1.0
+RETRY_INITIAL_S = 2.0
+RETRY_MAX_S = 300.0
+"""Après une lecture ratée : nouvel essai après 2 s, 4 s, 8 s… plafonné à 5 min ; remis à zéro par un succès."""
 REASON_BRIDGE_UNAVAILABLE = "bridge_unavailable"
 
 
@@ -49,6 +52,8 @@ class StoreKitEntitlementSource:
         refresh_interval: float = REFRESH_INTERVAL_S,
         poll_timeout_ms: int = POLL_TIMEOUT_MS,
         error_backoff: float = ERROR_BACKOFF_S,
+        retry_initial: float = RETRY_INITIAL_S,
+        retry_max: float = RETRY_MAX_S,
     ) -> None:
         self._service = service
         self._verifier = verifier
@@ -58,6 +63,12 @@ class StoreKitEntitlementSource:
         self._refresh_interval = refresh_interval
         self._poll_timeout_ms = poll_timeout_ms
         self._error_backoff = error_backoff
+        self._retry_initial = retry_initial
+        self._retry_max = retry_max
+        self._retry_delay = 0.0
+        self._next_attempt = 0.0
+        self.retry_delays: list[float] = []
+        """Délais successifs programmés après un échec (diagnostic, tests)."""
         self._stop = threading.Event()
         self._refresh_requested = threading.Event()
         self._restore_requested = threading.Event()
@@ -127,19 +138,18 @@ class StoreKitEntitlementSource:
                 bridge.shutdown()
 
     def _loop(self, bridge: StoreKitBridge) -> None:
-        last_refresh = self._monotonic()
         while not self._stop.is_set():
             if self._restore_requested.is_set():
                 self._restore_requested.clear()
                 bridge.call(OP_SYNC, "", RESTORE_TIMEOUT_MS)
                 self._refresh_requested.set()
-            if self._refresh_requested.is_set() or self._monotonic() - last_refresh >= self._refresh_interval:
+            if self._refresh_requested.is_set() or self._monotonic() >= self._next_attempt:
                 self._refresh_requested.clear()
                 self._refresh()
-                last_refresh = self._monotonic()
             if self._stop.is_set():
                 break
-            result = bridge.poll_update(self._poll_timeout_ms)
+            wait_ms = int((self._next_attempt - self._monotonic()) * 1000) + 1     # ne pas dormir au-delà du prochain essai
+            result = bridge.poll_update(max(1, min(self._poll_timeout_ms, wait_ms)))
             if result.status == SHUTDOWN:
                 break
             if result.status == POLL_TIMEOUT:
@@ -164,7 +174,18 @@ class StoreKitEntitlementSource:
                 self.last_reason = "not_persisted"
         elif outcome.reason != REASON_OK:
             LOGGER.info("Droits : lecture StoreKit sans résultat (%s)", outcome.reason)
+        self._schedule_next(self.last_reason == REASON_OK)
         self._notify_if_changed()
+
+    def _schedule_next(self, success: bool) -> None:
+        """Succès : prochaine relecture dans ``refresh_interval``. Échec : repli croissant plafonné, indépendant de cet intervalle."""
+        if success:
+            self._retry_delay = 0.0
+            self._next_attempt = self._monotonic() + self._refresh_interval
+            return
+        self._retry_delay = self._retry_initial if self._retry_delay <= 0 else min(self._retry_delay * 2, self._retry_max)
+        self.retry_delays.append(self._retry_delay)
+        self._next_attempt = self._monotonic() + self._retry_delay
 
     def _notify_if_changed(self) -> None:
         state = self._service.state()
@@ -178,6 +199,6 @@ class StoreKitEntitlementSource:
 
 
 __all__ = [
-    "ERROR_BACKOFF_S", "POLL_TIMEOUT_MS", "REASON_BRIDGE_UNAVAILABLE", "REFRESH_INTERVAL_S", "RESTORE_TIMEOUT_MS",
+    "ERROR_BACKOFF_S", "POLL_TIMEOUT_MS", "RETRY_INITIAL_S", "RETRY_MAX_S", "REASON_BRIDGE_UNAVAILABLE", "REFRESH_INTERVAL_S", "RESTORE_TIMEOUT_MS",
     "StoreKitEntitlementSource",
 ]

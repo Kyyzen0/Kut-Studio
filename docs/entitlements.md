@@ -42,8 +42,7 @@ est fini (fin exclue). Testé pour J, J+1, J+13, J+13 à 23 h, J+14 − 1 s, J+1
 * `VerifiedEntitlement` est ce que le pont vérifie : `verified_at` et `trial_started_at` doivent venir de la **transaction signée** (date signée,
   `originalPurchaseDate`), jamais de l'horloge locale.
 * **Horloge reculée** : le calcul utilise `max(horloge, plus grande date vue)` ; la plus grande date vue est écrite (signée) au plus une fois par
-  `persist_interval`. Reculer la date ne rallonge ni l'essai ni l'abonnement ; `EntitlementState.clock_rollback` le signale. Une nouvelle vérification du
-  pont (`EntitlementService.publish`) remplace la plus grande date vue par sa `verified_at` : une horloge poussée trop loin par erreur se guérit en ligne.
+  `persist_interval`. Reculer la date ne rallonge ni l'essai ni l'abonnement ; `EntitlementState.clock_rollback` le signale. Le filigrane est **monotone** : `EntitlementService.publish` le fixe à `max(verified_at, filigrane enregistré, plus grande date de la session)`, car une réponse du pont peut venir d'un cache (ancien `signedDate`) ; republier la même transaction ne rallonge donc rien. Seul `publish(..., fresh=True)` (temps frais **et de confiance**, que le pont actuel ne fournit pas) remplace le filigrane par `verified_at`.
 * Limite assumée (ADR, § Intégrité) : un contrôle côté application est contournable par qui modifie l'application ; le sandbox et la signature du Store
   empêchent cette modification dans le canal Store. Pas de protection anti-contournement supplémentaire.
 
@@ -59,6 +58,8 @@ Le service ci-dessus est alimenté, dans le **build Store seulement**, par le po
 | `ui/store_entitlements.py` | `StoreEntitlementsController` : crée et **installe** le service (avant toute lecture), lance la source, émet `state_changed` (signal Qt) ; arrêt sur `aboutToQuit`. Branché par `EntitlementsMixin._start_store_entitlements`, derrière `is_store()` |
 
 **Du pont à l'état.** Droit d'achat unique vérifié : `LIFETIME` ; abonnement actif (le plus long) : `SUBSCRIBER` ; sinon `AppTransaction.originalPurchaseDate` date l'essai : `TRIAL` (le service calcule les jours restants, ou `EXPIRED` après 14 jours). Les transactions remboursées (`revocationDate`), remplacées, de produit inconnu ou échues ne comptent pas ; des transactions seulement *non vérifiées* ne débloquent rien et ne rendent pas non plus un essai.
+
+**Une lecture ratée se retente vite** : repli croissant 2 s, 4 s, … plafonné à 5 min (`RETRY_INITIAL_S`, `RETRY_MAX_S`), indépendant de la relecture de 6 h qui ne court qu'après un succès. Rien d'autre n'est publié sur un échec.
 
 **Échec, délai, pont absent : rien n'est publié.** Le service relit alors son dernier enregistrement signé : un abonnement échu reste `SUBSCRIBER` pendant le délai de grâce (`in_grace`), puis `UNKNOWN(stale)` ; sans enregistrement lisible, `UNKNOWN(missing)`, donc lecture seule. Le pont absent (sources, dylib manquante ou d'une autre ABI) donne le même résultat : **jamais un déblocage**.
 
