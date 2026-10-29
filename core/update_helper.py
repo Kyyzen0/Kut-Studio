@@ -38,6 +38,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from .build_flavor import require_not_store
 from .updates import updates_directory
 
 STAGING_PREFIX = ".Kut-Studio-update-"
@@ -561,6 +562,7 @@ def launch_helper(
     popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
 ) -> int:
     """Lance l'assistant détaché (nouvelle session) ; ses sorties vont dans ``install.log`` (recréé). Retourne son pid."""
+    require_not_store("Installation de mise à jour")
     plan.log.parent.mkdir(parents=True, exist_ok=True)
     plan.status.unlink(missing_ok=True)
     script = write_helper_script(plan.log.parent, pid=plan.pid)

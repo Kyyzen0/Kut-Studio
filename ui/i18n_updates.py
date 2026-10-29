@@ -448,6 +448,17 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
         "es": "Kut-Studio {version}\nEditor de vídeo de código abierto (licencia MIT).\n\nInstalación: {install}\n"
               "Sistema: {system}\nQt {qt} · PySide6 {pyside} · Python {python}\n\n{website}",
     },
+    "update.about.store_text": {
+        "fr": "Kut-Studio {version}\nÉditeur vidéo open source (licence MIT).\n\nDistribution : Mac App Store "
+              "(les mises à jour passent par le Mac App Store)\nSystème : {system}\n"
+              "Qt {qt} · PySide6 {pyside} · Python {python}",
+        "en": "Kut-Studio {version}\nOpen-source video editor (MIT license).\n\nDistribution: Mac App Store "
+              "(updates are delivered by the Mac App Store)\nSystem: {system}\n"
+              "Qt {qt} · PySide6 {pyside} · Python {python}",
+        "es": "Kut-Studio {version}\nEditor de vídeo de código abierto (licencia MIT).\n\nDistribución: Mac App Store "
+              "(las actualizaciones las entrega el Mac App Store)\nSistema: {system}\n"
+              "Qt {qt} · PySide6 {pyside} · Python {python}",
+    },
     "update.install.source": {
         "fr": "depuis les sources ({path})",
         "en": "from source ({path})",

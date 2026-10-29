@@ -36,6 +36,7 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from urllib.parse import quote
 
 from .app_version import APP_NAME, APP_VERSION, GITHUB_REPOSITORY
+from .build_flavor import is_store
 from .platform_paths import user_cache_dir
 from .release_assets import (
     CHECKSUMS_FILE,
@@ -377,7 +378,9 @@ def auto_check_due(*, enabled: bool, last_check: float, now: float | None = None
 
 
 def automatic_checks_allowed(environment: Mapping[str, str] | None = None) -> bool:
-    """``False`` quand ``KUT_STUDIO_UPDATE_CHECK=off`` (tests, outils de capture, smoke test)."""
+    """``False`` quand ``KUT_STUDIO_UPDATE_CHECK=off`` (tests, outils de capture, smoke test), et toujours en version Store."""
+    if is_store():
+        return False
     env = os.environ if environment is None else environment
     return env.get(UPDATE_CHECK_ENV, "").strip().lower() not in {"0", "off", "false", "no"}
 

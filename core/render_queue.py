@@ -47,6 +47,7 @@ from .render_job import ErrorKind, JobStatus, RenderJob, RenderResult
 from .render_plan import build_render_plan
 from .render_presets import RenderPresetSpec
 from .render_queue_store import RenderQueueStore
+from .tool_paths import missing_tool_message
 from .video_encoders import HardwareEncoder
 
 LOGGER = logging.getLogger("kut_studio.encoding")
@@ -511,7 +512,7 @@ class RenderQueue(QObject):
         if not self.ffmpeg_available():
             self._finish_current(
                 lambda: job.mark_failed(
-                    "FFmpeg est introuvable. Installez FFmpeg puis relancez ce job.",
+                    missing_tool_message("FFmpeg", "FFmpeg est introuvable. Installez FFmpeg puis relancez ce job."),
                     ErrorKind.FFMPEG_MISSING,
                 )
             )

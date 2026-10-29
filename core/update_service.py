@@ -38,6 +38,7 @@ from .release_assets import (
     detect_target,
     parse_asset_name,
 )
+from .build_flavor import require_not_store
 from .updates import (
     GITHUB_API,
     MAX_RELEASES_BYTES,
@@ -303,6 +304,7 @@ class HttpClient(QObject):
     """Requêtes HTTPS sans cookies ni identifiants : ``User-Agent`` Kut-Studio, redirections sûres uniquement."""
 
     def __init__(self, parent: QObject | None = None, *, agent: str | None = None) -> None:
+        require_not_store("Réseau des mises à jour")      # avant tout QNetworkAccessManager (ADR-0013)
         super().__init__(parent)
         self._manager = QNetworkAccessManager(self)
         self._agent = (agent or user_agent()).encode("ascii")
@@ -399,6 +401,7 @@ class UpdateChecker(QObject):
 
     def check(self, *, mode: CheckMode, include_prereleases: bool, skipped_version: Version | None) -> bool:
         """Lance une recherche ; ``False`` si une autre est en cours (elle donnera son résultat)."""
+        require_not_store("Recherche de mises à jour")
         if self._transfer is not None:
             return False
         if not tls_available() and self._api_base.startswith("https:"):
@@ -535,6 +538,7 @@ class UpdateDownloader(QObject):
 
     def start(self, offer: UpdateOffer) -> bool:
         """Démarre ; ``False`` si un téléchargement est déjà en cours."""
+        require_not_store("Téléchargement de mise à jour")
         if self._offer is not None:
             return False
         self._offer, self._cancelled, self._expected = offer, False, ""

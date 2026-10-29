@@ -122,6 +122,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.empty": {"fr": "Choisissez un preset puis « Ajouter à la file ».", "en": "Pick a preset, then “Add to queue”.", "es": "Elija un preset y pulse «Añadir a la cola»."},
     "render.empty.title": {"fr": "Aucun export", "en": "No exports", "es": "Sin exportaciones"},
     "render.ffmpeg_missing": {"fr": "FFmpeg est introuvable : les exports sont impossibles. Installez FFmpeg, puis relancez les jobs en échec.", "en": "FFmpeg was not found: exports are unavailable. Install FFmpeg, then retry failed jobs.", "es": "No se encontró FFmpeg: las exportaciones no están disponibles. Instale FFmpeg y reintente los trabajos fallidos."},
+    "render.ffmpeg_missing_store": {"fr": "FFmpeg est introuvable dans l'application : les exports sont impossibles. Réinstallez Kut-Studio depuis le Mac App Store.", "en": "FFmpeg was not found inside the application: exports are unavailable. Reinstall Kut-Studio from the Mac App Store.", "es": "No se encontró FFmpeg dentro de la aplicación: las exportaciones no están disponibles. Reinstale Kut-Studio desde la Mac App Store."},
     "render.detail.none": {"fr": "Sélectionnez un export pour voir ses détails.", "en": "Select an export to see its details.", "es": "Seleccione una exportación para ver sus detalles."},
     "render.detail.output": {"fr": "Fichier : {path}", "en": "File: {path}", "es": "Archivo: {path}"},
     "render.detail.render_time": {"fr": "Durée du rendu : {time}", "en": "Render time: {time}", "es": "Duración del render: {time}"},

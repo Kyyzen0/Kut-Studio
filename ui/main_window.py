@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.autosave import AutosaveCoordinator
+from core.build_flavor import is_store
 from core.audio_effects_library import AudioEffectPresetStore
 from core.effect_targets import evaluated_effects
 from core.effects_library import UserPresetStore
@@ -110,7 +111,7 @@ from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
-from ui.main_window_mixins.updates import UpdatesMixin
+from ui.main_window_mixins.update_flavor import UpdatesMixin
 from ui.main_window_mixins.social import SocialMixin
 from ui.main_window_mixins.social_audio import SocialAudioMixin
 from ui.main_window_mixins.templates import TemplatesMixin
@@ -1199,7 +1200,9 @@ class MainWindow(
         layout_btn.clicked.connect(self.workspace.reset_layout)
         layout.addWidget(layout_btn)
 
-        layout.addWidget(self._build_update_notice())
+        update_notice = self._build_update_notice()
+        if update_notice is not None:               # absent de la version Store (aucune recherche de mises à jour)
+            layout.addWidget(update_notice)
 
         layout.addWidget(self._build_usage_level_chip())
 
@@ -1676,10 +1679,11 @@ class MainWindow(
         # Aide : mises à jour et version installée.
         help_menu = QMenu(i18n.translate("menu.help"), self)
         help_menu.setObjectName("help_menu")
-        self.check_updates_action = self._labelled_action("update.menu.check")
-        self.check_updates_action.triggered.connect(lambda _checked=False: self.check_for_updates())
-        help_menu.addAction(self.check_updates_action)
-        help_menu.addSeparator()
+        if not is_store():                              # version Store : le Store est le seul canal de mise à jour
+            self.check_updates_action = self._labelled_action("update.menu.check")
+            self.check_updates_action.triggered.connect(lambda _checked=False: self.check_for_updates())
+            help_menu.addAction(self.check_updates_action)
+            help_menu.addSeparator()
         self.about_action = self._labelled_action("update.menu.about")
         self.about_action.triggered.connect(lambda _checked=False: self.show_about())
         help_menu.addAction(self.about_action)

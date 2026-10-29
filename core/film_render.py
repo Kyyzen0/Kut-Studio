@@ -127,7 +127,10 @@ def ffmpeg_tool() -> str:
 
     found = find_media_tool("ffmpeg")
     if found is None:
-        raise FilmError("FFmpeg est introuvable : installez-le (ou ajoutez-le au PATH) pour encoder un film.")
+        from .tool_paths import missing_tool_message
+
+        raise FilmError(missing_tool_message(
+            "FFmpeg", "FFmpeg est introuvable : installez-le (ou ajoutez-le au PATH) pour encoder un film."))
     return found
 
 

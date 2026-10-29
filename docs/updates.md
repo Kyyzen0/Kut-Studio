@@ -377,3 +377,32 @@ refusée dès que la liste ne la contient plus. Perte sans fuite : même procéd
 signe et vérifie ; il est testé contre les vecteurs de la RFC et d'OpenSSL, et le smoke test de l'application construite
 vérifie une signature de démonstration. Le code n'est pas à temps constant : la graine ne doit tourner que dans le workflow
 isolé de GitHub Actions et sur la machine du mainteneur pour `gen-update-key`.
+
+## 11. Version Mac App Store (ADR-0013, étape 4)
+
+Le Mac App Store est le seul canal de mise à jour d'un bundle Store (Guideline 2.4.5 [A]). `core/build_flavor.py` expose
+`STORE` (faux par défaut : sources, `python build.py`, CI, Developer ID : **aucun changement**). Il n'est vrai que dans un
+bundle construit par `python build.py --flavor store`, qui écrit `core/_build_flavor_generated.py` (ignoré par git, retiré après
+la construction, ajouté au bundle par `--hidden-import`). **Jamais** une variable d'environnement ni une option de
+l'utilisateur.
+
+Quand `STORE` est vrai :
+
+* pas d'entrée Aide › « Rechercher des mises à jour… » (donc pas dans la palette), pas de bouton « Mise à jour X » dans la barre,
+  pas de groupe « Mises à jour » dans les préférences, pas de recherche au démarrage ;
+* `core.updates`, `core.update_service`, `core.update_install`, `core.update_helper`, `core.update_keys`,
+  `core.update_signature`, `ui.update_auto_install`, `ui.update_dialog` et `ui.main_window_mixins.updates` ne sont **pas importés**
+  (`ui/main_window_mixins/update_flavor.py` choisit le mixin léger `updates_store.py`) et sont exclus du bundle ; aucun
+  `QNetworkAccessManager` n'est construit ; le smoke test ne vérifie plus TLS ni les signatures de mise à jour ;
+* gardes côté modèle (un signal ou un appel direct ne passe pas) : `HttpClient`, `UpdateChecker.check`, `UpdateDownloader.start`,
+  `update_helper.launch_helper`, `update_install.stage_update` lèvent `StoreRestrictionError` ; `automatic_checks_allowed` répond
+  toujours faux (même sans `KUT_STUDIO_UPDATE_CHECK=off`) ;
+* Aide › À propos dit « Mac App Store » : ni page de releases, ni lien du site, ni clés de signature ;
+* les quatre champs de réglages « mises à jour » sont relus et réécrits tels quels (format du fichier inchangé), jamais lus ;
+* FFmpeg et ffprobe ne se résolvent que dans le bundle (`core/tool_paths.py`) : ni `PATH`, ni Homebrew / MacPorts, ni
+  `KUT_STUDIO_FFMPEG`, `KUT_STUDIO_FFPROBE`, `KUT_STUDIO_FFMPEG_DIR`. S'ils manquent : « FFmpeg est introuvable dans l'application…
+  réinstallez depuis le Mac App Store », sans repli. `--flavor store` refuse de construire sans eux (`KUT_STUDIO_FFMPEG_DIR` au moment
+  de la construction, voir [ffmpeg-lgpl.md](ffmpeg-lgpl.md)).
+
+Tests : `tests/test_build_flavor_store.py` (sous-processus hors écran qui démarre l'application dans chaque saveur).
+
