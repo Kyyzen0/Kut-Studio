@@ -36,6 +36,7 @@ from ui.i18n import translate
 from ui.shortcut_manager import ShortcutManager
 from ui.theme import label_style
 from ui.search_field import SearchField
+from ui.qt_item_lifetime import retain
 
 _COMMAND_ID_ROLE = Qt.UserRole
 
@@ -144,7 +145,7 @@ class ShortcutsEditor(QWidget):
         self.tree.clear()
         self._items.clear()
         for command in self._manager.shortcut_map.commands:
-            item = QTreeWidgetItem()
+            item = retain(QTreeWidgetItem())
             item.setData(0, _COMMAND_ID_ROLE, command.id)
             self.tree.addTopLevelItem(item)
             self._items[command.id] = item

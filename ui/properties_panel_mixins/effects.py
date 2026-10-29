@@ -32,6 +32,7 @@ from ui.design_system import Sizes, Spacing, Typography
 from ui.properties_widgets.keyframe_row import field_with_keyframes
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 
 class EffectsMixin(EffectKeyframesMixin):
@@ -219,7 +220,7 @@ class EffectsMixin(EffectKeyframesMixin):
             name = translate(f"effects.name.{effect.type.value}")
             if not effect.enabled:
                 name = f"{name} · {translate('effects.disabled_suffix')}"
-            item = QListWidgetItem(name)
+            item = retain(QListWidgetItem(name))
             item.setData(Qt.UserRole, effect.id)
             self.effects_list.addItem(item)
         self.effects_list.blockSignals(False)

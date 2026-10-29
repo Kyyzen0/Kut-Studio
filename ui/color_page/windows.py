@@ -41,6 +41,7 @@ from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import set_role
+from ui.qt_item_lifetime import retain
 
 _SHAPES = ((MaskShape.RECTANGLE, IconName.WINDOW_RECT), (MaskShape.ELLIPSE, IconName.WINDOW_ELLIPSE),
            (MaskShape.POLYGON, IconName.WINDOW_POLYGON))
@@ -164,7 +165,7 @@ class WindowsEditor(QWidget):
         try:
             self.list.clear()
             for index, window in enumerate(windows):
-                item = QListWidgetItem(window_label(window, index), self.list)
+                item = retain(QListWidgetItem(window_label(window, index), self.list))
                 item.setData(Qt.UserRole, window.id)
             ids = [window.id for window in windows]
             row = ids.index(current) if current in ids else (len(ids) - 1 if ids else -1)

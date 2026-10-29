@@ -28,6 +28,7 @@ from ui.design_system import DIALOG_MARGINS, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
 from ui.theme import label_style
+from ui.qt_item_lifetime import retain
 
 ROW_COLORS = ("blue", "white", "red", "steel", "blue_deep")
 """Couleurs d'accent proposées (clés de :data:`core.project_templates.NIGHT_PALETTE`)."""
@@ -85,7 +86,7 @@ class LeaderboardDialog(QDialog):
         index = self.table.rowCount()
         self.table.insertRow(index)
         for column, value in enumerate((row.rank, row.name, row.value)):
-            self.table.setItem(index, column, QTableWidgetItem(value))
+            self.table.setItem(index, column, retain(QTableWidgetItem(value)))
         combo = QComboBox()
         for key in ROW_COLORS:
             combo.addItem(translate(f"leaderboard.color.{key}"), NIGHT_PALETTE[key])

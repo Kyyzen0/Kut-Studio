@@ -18,6 +18,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - **Miroir GitLab optionnel.** Un workflow recopie `main` et les tags vers un dépôt GitLab privé si les secrets `GITLAB_MIRROR_URL` et `GITLAB_MIRROR_TOKEN` existent ; sinon il se termine sans échec (`docs/gitlab-mirror.md`).
 
+### Fixed
+
+- **Plantage natif intermittent à la fermeture d'une fenêtre ou au vidage d'une liste.** PySide libérait l'objet Python d'un élément de liste (`QListWidgetItem`…) *dans* le destructeur C++ de cet élément, puis relisait la mémoire libérée : segfault sans trace, au hasard du ramasse-miettes (« worker crashed » sur la CI, tous systèmes). Chaque élément créé dans `ui/` est maintenant retenu jusqu'à la destruction de son objet C++ (`ui/qt_item_lifetime.py`) ; garde `tests/test_qt_item_lifetime.py`.
+
 ### Changed
 
 - **Export : H.264 / HEVC par VideoToolbox quand `libx264` / `libx265` manquent, décodage matériel vérifiable** (préparation de la version Mac App Store, ADR-0013 étape 3). L'application choisit l'encodeur selon ce que le FFmpeg sait faire : avec le FFmpeg LGPL du Store, « CPU » et « Auto » passent par `h264_videotoolbox` / `hevc_videotoolbox` (le CRF du préréglage devient un débit, borné de 500 à 500 000 kbit/s ; une demande « CPU » le dit dans le résumé de l'encodeur), pour l'export, la file de rendu, les proxies, l'aperçu, le fond d'un film et la copie d'aperçu des livrables sociaux ; sans encodeur matériel validé l'export est refusé avec un message clair, la liste des encodeurs ne propose que le possible (« Aucun encodeur disponible pour ce format » sinon) et « Relancer en CPU » n'est pas offert. La détection du décodage matériel fabrique ses échantillons H.264 / HEVC avec VideoToolbox quand il n'y a pas d'encodeur logiciel : H.264, HEVC et HEVC 10 bits sont validés avec le FFmpeg LGPL (mesuré), VP9 et AV1 sont « non vérifiables » (décodés en logiciel). **Aucun changement avec un FFmpeg complet** (Homebrew) : mêmes arguments, mêmes options (testé).

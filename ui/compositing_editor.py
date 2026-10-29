@@ -33,6 +33,7 @@ from ui.compositing_sections import (
 )
 from ui.design_system import Spacing
 from ui.properties_widgets.level_gate import AdvancedFold, gated
+from ui.qt_item_lifetime import retain
 
 
 class CompositingEditor(QGroupBox):
@@ -184,7 +185,7 @@ class CompositingEditor(QGroupBox):
         self.mask_list.blockSignals(True)
         self.mask_list.clear()
         for index, mask in enumerate(self._value.masks, start=1):
-            QListWidgetItem(self._mask_label(mask, index), self.mask_list)
+            retain(QListWidgetItem(self._mask_label(mask, index), self.mask_list))
         count = len(self._value.masks)
         if count:
             self.mask_list.setCurrentRow(min(max(row, 0), count - 1))

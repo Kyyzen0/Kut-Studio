@@ -31,6 +31,12 @@ chevauchait la liste.
 * Toute géométrie qui vient d'un réglage ou d'une taille d'origine passe par `ui.screen_fit.apply_fitted_geometry`.
 * Un panneau empilé dans la zone basse déclare sa hauteur dans `core.workspace_state.MIN_HEIGHT` (la même que son
   `setMinimumHeight` réel, sinon il déborde de son hôte).
+* Tout élément de liste / d'arbre / de tableau créé en Python s'écrit `retain(QListWidgetItem(...))`
+  (`ui.qt_item_lifetime.retain`, garde `tests/test_qt_item_lifetime.py`). Sans cela, la liste ne tient que la dernière
+  référence Python de l'élément ; quand Qt le détruit (`clear()`, fermeture d'une fenêtre), PySide libère l'objet Python
+  *dans* son propre destructeur puis le relit : segfault intermittent sans trace, qui frappait la CI (« worker 'gwN'
+  crashed ») sur tous les systèmes, au hasard du ramasse-miettes. Cause mesurée avec `PYTHONMALLOC=debug` : la mémoire
+  libérée relue par `Shiboken::Object::destroy` (voir la docstring du module).
 
 ## Lisibilité avec un clip sélectionné (pages Couleur et Audio)
 

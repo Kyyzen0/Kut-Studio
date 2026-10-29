@@ -36,6 +36,7 @@ from ui.design_system import ButtonVariant, Iconography, Sizes, Spacing, StatusK
 from ui.empty_state import EmptyState
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS, set_role, set_state, set_variant
+from ui.qt_item_lifetime import retain
 
 _JOB_ID_ROLE = Qt.UserRole
 _COLUMNS = ("name", "preset", "status", "progress", "output", "encoder")
@@ -271,7 +272,7 @@ class RenderQueuePanel(QWidget):
         self._items.clear()
         self._bars.clear()
         for job in self._queue.jobs:
-            item = QTreeWidgetItem()
+            item = retain(QTreeWidgetItem())
             item.setData(0, _JOB_ID_ROLE, job.id)
             self.tree.addTopLevelItem(item)
             bar = QProgressBar()

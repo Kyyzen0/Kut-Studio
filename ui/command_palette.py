@@ -40,6 +40,7 @@ from ui import i18n
 from ui.design_system import Typography
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS
+from ui.qt_item_lifetime import retain
 
 BOX_WIDTH = 620
 BOX_TOP = 72
@@ -306,7 +307,7 @@ class CommandPalette(QWidget):
             empty = i18n.translate("palette.empty")
         self.results.clear()
         for result in self._results:
-            item = QListWidgetItem()
+            item = retain(QListWidgetItem())
             item.setSizeHint(QSize(0, ROW_HEIGHT))
             row_index = self.results.count()
             row = _ResultRow(result, lambda index=row_index: self._activate(index))

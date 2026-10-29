@@ -26,6 +26,7 @@ from core.audio_effects_model import AudioEffect, AudioEffectType, parameter_spe
 from ui.design_system import Spacing
 from ui.i18n import translate
 from ui.theme import label_style
+from ui.qt_item_lifetime import retain
 
 
 class TrackInsertsDialog(QDialog):
@@ -145,7 +146,7 @@ class TrackInsertsDialog(QDialog):
             name = translate(f"audio_effects.preset.{effect.type.value}.name")
             if not effect.enabled:
                 name = f"{name} · {translate('effects.disabled_suffix')}"
-            item = QListWidgetItem(name)
+            item = retain(QListWidgetItem(name))
             item.setData(Qt.UserRole, effect.id)
             self.list.addItem(item)
         ids = [effect.id for effect in self._inserts]
