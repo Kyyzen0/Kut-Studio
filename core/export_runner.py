@@ -35,6 +35,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
+from .entitlements import require_export
 from .export_engine import (
     _PREPARATION_SHARE,
     ExportRequest,
@@ -125,7 +126,12 @@ def run_export(
         flow_cache: cache des images intermédiaires ; celui de l'application s'il est absent.
         flow_preference: backend de flux optique demandé.
         atomic: écrire dans un fichier ``.partial`` puis le renommer (par défaut) ; ``False`` écrit directement la sortie.
+
+    Raises:
+        core.entitlements.ExportBlockedError: l'export est refusé par les droits (lecture seule, build Store). Ce n'est pas un
+            échec d'export (ni dans le résultat, ni à réessayer sur CPU) : aucun fichier n'est touché. Hors Store, jamais levée.
     """
+    require_export()
 
     def report(message: str) -> None:
         if status is not None:

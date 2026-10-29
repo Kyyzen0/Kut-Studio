@@ -92,6 +92,8 @@ class TemplatesMixin:
 
     def fill_slots_from_photo_drop(self, paths: list, track_id: str, seconds: float) -> None:
         """Photos glissées sur un emplacement : lui, puis les emplacements vides qui le suivent (une photo chacun)."""
+        if self._edit_refused_ui():                  # lecture seule (Store)
+            return
         slot = slot_at(self.project, track_id, float(seconds))
         if slot is None:
             return

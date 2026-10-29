@@ -347,9 +347,10 @@ class RenderQueuePanel(QWidget):
         self.empty_label.setVisible(not jobs)
         self.tree.setVisible(bool(jobs))
         has_waiting = any(j.status is JobStatus.WAITING for j in jobs)
-        self.start_all_button.setEnabled(available and has_waiting and not queue.is_running)
+        allowed = getattr(queue, "export_allowed", True)                    # lecture seule (Store) : les démarrages sont grisés, jamais hors Store
+        self.start_all_button.setEnabled(available and allowed and has_waiting and not queue.is_running)
         self.start_button.setEnabled(
-            available and job is not None and job.status is JobStatus.WAITING
+            available and allowed and job is not None and job.status is JobStatus.WAITING
         )
         self.stop_button.setEnabled(queue.is_running)
         self.up_button.setEnabled(job is not None and job.status is JobStatus.WAITING)

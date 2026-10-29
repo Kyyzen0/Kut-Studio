@@ -145,6 +145,7 @@ class ProjectFilesMixin:
 
     def save_project_file(self) -> None:
         """Enregistre le projet courant. Délègue à ``save_project_as`` si aucun chemin."""
+        self._settle_forbidden_edits()       # lecture seule (Store) : jamais une édition interdite dans le fichier
         self._flush_subtitle_history_record()
         if self.current_project_path is None:
             self.save_project_as()
@@ -163,6 +164,7 @@ class ProjectFilesMixin:
 
     def save_project_as(self) -> None:
         """Ouvre un dialogue pour choisir un chemin ``.kut`` et enregistre le projet."""
+        self._settle_forbidden_edits()
         self._flush_subtitle_history_record()
         if self.current_project_path is not None:
             default_path = self.current_project_path
@@ -306,6 +308,8 @@ class ProjectFilesMixin:
         peut continuer à monter (ou fermer le projet) pendant que la file
         rend la version ajoutée.
         """
+        if self._export_refused_ui():                 # lecture seule (Store) : pas de dialogue, pas de job
+            return None
         spec = self.export_panel.current_spec()
         path = self._ask_export_path(spec)
         if not path:
@@ -455,6 +459,7 @@ class ProjectFilesMixin:
         timer.start()
 
     def _write_autosave(self) -> None:
+        self._settle_forbidden_edits()
         if not self.project_dirty or not self.current_project_path:
             return
         try:

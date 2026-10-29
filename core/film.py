@@ -44,6 +44,7 @@ from .film_render import (
     shot_frame_count,
     short,
 )
+from .entitlements import require_edit, require_export
 from .film_scene import ScenePlacement, write_scene
 from .video_encoders import prime_capabilities
 
@@ -159,6 +160,7 @@ class Film:
         supprimées après l'encodage (sauf ``keep_frames``). Un nom déjà pris (dans ce film ou sur le disque) est refusé sans
         ``overwrite=True``. En cas d'erreur ou d'interruption, aucun fichier partiel ne reste.
         """
+        require_edit()                                          # lecture seule (Store) : un plan rendu est un média écrit dans le projet
         label = check_name(name)
         count = shot_frame_count(duration, self.fps)
         samples = check_samples(samples)
@@ -449,6 +451,7 @@ class Film:
         """Écrit le ``.kut`` (le format ordinaire du moment) et retourne son chemin."""
         from .project_io import save_project
 
+        require_edit()                                          # lecture seule (Store, ADR-0013 étape 12)
         project = self.project()
         try:
             save_project(project, str(self.path))
@@ -466,6 +469,7 @@ class Film:
         from .export_runner import ExportStatus, run_export
         from .render_plan import build_render_plan
 
+        require_export()                                        # avant tout travail ; ``run_export`` garde aussi, en dernier recours
         text = check_path_text(output, "output")
         target = Path(text).expanduser()
         if preset is None:

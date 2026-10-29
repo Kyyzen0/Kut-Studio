@@ -25,6 +25,8 @@ class MediaImportMixin:
         La compatibilité asset / piste est vérifiée ; un dépôt invalide
         n'est pas appliqué au projet.
         """
+        if self._edit_refused_ui():                  # lecture seule (Store)
+            return
         asset = next(
             (a for a in self.project.media_assets if a.id == asset_id),
             None,
@@ -51,6 +53,8 @@ class MediaImportMixin:
         acceptés par ``probe_media``. Chaque fichier est analysé pour
         déterminer son type (vidéo, audio) avant d'être ajouté au projet.
         """
+        if self._edit_refused_ui():                  # lecture seule (Store) : pas de dialogue pour importer
+            return
         paths, _ = _main_window().QFileDialog.getOpenFileNames(
             self,
             translate("dialog.import.title"),
@@ -70,6 +74,8 @@ class MediaImportMixin:
         ni le projet ni la bibliothèque ne sont modifiés ; une boîte de
         dialogue claire est affichée à l'utilisateur.
         """
+        if self._edit_refused_ui():                  # lecture seule (Store) : ni sonde ni ajout
+            return False
         normalized = os.path.normpath(os.path.abspath(path))
         for asset in self.project.media_assets:
             if os.path.normpath(os.path.abspath(asset.path)) == normalized:

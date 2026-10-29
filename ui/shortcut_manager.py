@@ -83,6 +83,8 @@ class ShortcutManager(QObject):
         self._map = shortcut_map if shortcut_map is not None else ShortcutMap()
         self._handlers: dict[str, Callable[[], object]] = {}
         self._actions: dict[str, QAction] = {}
+        self.command_guard: Callable[[str], bool] | None = None
+        """Optionnel (``None`` : rien ne change) : appelée avant chaque commande, elle rend ``False`` pour la refuser (lecture seule)."""
         self._pending: list[str] = []  # étapes d'accord déjà tapées
         self._pending_timer = QTimer(self)
         self._pending_timer.setSingleShot(True)
@@ -154,6 +156,9 @@ class ShortcutManager(QObject):
         handler = self._handlers.get(command_id)
         if handler is None:
             return False
+        guard = self.command_guard
+        if guard is not None and not guard(command_id):
+            return True                    # refusée (lecture seule) : consommée, le garde a dit pourquoi
         handler()
         return True
 
