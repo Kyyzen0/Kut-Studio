@@ -243,6 +243,10 @@ def _coerce_timestamp(value: object) -> float:
 
 def _coerce_skipped_version(value: object) -> str:
     """Version ignorée : une version SemVer valide, ou ``""`` (aucune)."""
+    from .build_flavor import is_store
+
+    if is_store():
+        return ""           # version Store : core.updates n'est pas importé (ADR-0013), la version ignorée ne sert à rien
     from .updates import coerce_skipped_version
 
     return coerce_skipped_version(value)

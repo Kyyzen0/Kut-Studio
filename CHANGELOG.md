@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Version Mac App Store : drapeau de construction `STORE`** (ADR-0013, étape 4). `python build.py --flavor store` fabrique un bundle sans aucune recherche de mises à jour (ni menu, ni bouton, ni préférence, ni module de mise à jour importé, ni accès réseau pour cela) et qui n'utilise que le FFmpeg et le ffprobe de son propre bundle. Sources, CI et version Developer ID sont inchangées (`docs/updates.md`, §11). Aucun `.pkg` ni signature Store pour l'instant (étape 7).
 - **Miroir GitLab optionnel.** Un workflow recopie `main` et les tags vers un dépôt GitLab privé si les secrets `GITLAB_MIRROR_URL` et `GITLAB_MIRROR_TOKEN` existent ; sinon il se termine sans échec (`docs/gitlab-mirror.md`).
 
 ### Fixed

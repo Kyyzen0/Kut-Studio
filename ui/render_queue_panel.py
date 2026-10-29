@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.build_flavor import is_store
 from core.render_job import JobStatus, RenderJob
 from core.render_presets import get_preset
 from core.timecode import format_fps
@@ -226,7 +227,7 @@ class RenderQueuePanel(QWidget):
     def retranslate(self) -> None:
         self.title_label.setText(i18n.translate("render.title"))
         self.empty_label.set_title_and_text(i18n.translate("render.empty.title"), i18n.translate("render.empty"))
-        self.ffmpeg_banner.setText(i18n.translate("render.ffmpeg_missing"))
+        self.ffmpeg_banner.setText(i18n.translate("render.ffmpeg_missing_store" if is_store() else "render.ffmpeg_missing"))
         self.tree.setHeaderLabels([i18n.translate(f"render.col.{name}") for name in _COLUMNS])
         for button in self.findChildren(QPushButton):
             key = button.property("i18n_key")
