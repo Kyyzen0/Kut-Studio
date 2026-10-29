@@ -147,6 +147,8 @@ class SocialMixin:
         from core.render_presets import get_preset
         from core.social_formats import SOCIAL_FORMATS, social_format
 
+        if self._edit_refused_ui() or self._export_refused_ui():   # lecture seule (Store) : crée des séquences, puis exporte
+            return
         self._finalize_pending_edit_sessions()
         project = self.project
         source = project.active_sequence

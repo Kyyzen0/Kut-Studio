@@ -34,6 +34,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional
 
+from .entitlements import EntitlementRefused, edit_refusal, require_edit
 from .project_model import Project
 
 
@@ -87,6 +88,9 @@ class ProjectHistory:
         self._clock = clock
         self._merge_key: Optional[str] = None
         self._merge_time = 0.0
+        self.on_edit_refused: Optional[Callable[[EntitlementRefused], None]] = None
+        """Appelée quand un enregistrement est refusé par les droits (lecture seule, ADR-0013 étape 12) : l'interface y
+        rafraîchit ses vues. Absente, :meth:`record` lève l'exception après avoir remis le projet dans son dernier état enregistré."""
         self.revision = 0
         """Augmente à chaque changement de l'état courant (enregistrement, fusion d'un geste, annulation, rétablissement,
         saut, remise à zéro) : un lecteur en cours (mixage en direct) sait ainsi que le projet a changé."""
@@ -169,6 +173,15 @@ class ProjectHistory:
         """
         if project is None:
             raise ValueError("Impossible d'enregistrer un projet None.")
+        refusal = edit_refusal()
+        if refusal is not None:
+            # Lecture seule : l'édition a déjà modifié ``project`` en place (l'interface écrit, puis enregistre). On remet le projet
+            # *en place* dans son dernier état enregistré : rien ne reste modifié, et personne ne perd la référence à l'objet.
+            self._discard_uncommitted(project)
+            if self.on_edit_refused is None:
+                raise refusal
+            self.on_edit_refused(refusal)
+            return
         now = self._clock()
         top = len(self._undo_stack) - 1
         if (
@@ -211,6 +224,15 @@ class ProjectHistory:
         self._project = project
         self.revision += 1
 
+    def _discard_uncommitted(self, project: Project) -> None:
+        """Remet ``project`` (sans changer son identité) dans l'état du sommet de la pile ; sans pile, ne touche à rien."""
+        if not self._undo_stack:
+            return
+        restored = _deepcopy_project(self._undo_stack[-1].project)
+        _keep_active_sequence(restored, project.active_sequence_id)
+        project.__dict__.clear()
+        project.__dict__.update(restored.__dict__)
+
     def undo(self) -> Optional[Project]:
         """Annule la dernière opération enregistrée.
 
@@ -220,6 +242,7 @@ class ProjectHistory:
         """
         if not self.can_undo:
             return None
+        require_edit()                              # annuler modifie le projet : refusé en lecture seule
         self._merge_key = None                      # un undo clôt le geste en cours
         current = self._undo_stack.pop()
         self._redo_stack.append(current)
@@ -239,6 +262,7 @@ class ProjectHistory:
         """
         if not self._redo_stack:
             return None
+        require_edit()
         self._merge_key = None
         next_snapshot = self._redo_stack.pop()
         self._undo_stack.append(next_snapshot)
@@ -280,6 +304,7 @@ class ProjectHistory:
         current = len(self._undo_stack) - 1
         if not 0 <= index < current + 1 + len(self._redo_stack) or index == current:
             return None
+        require_edit()
         self._merge_key = None
         if index < current:
             for _step in range(current - index):

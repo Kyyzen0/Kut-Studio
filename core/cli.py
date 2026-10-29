@@ -401,8 +401,10 @@ def _apply_target(args: argparse.Namespace, output: _Output) -> tuple[Path | Non
 
 
 def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
+    from .entitlements import require_edit
     from .project_lock import ProjectLock, ProjectLockedError
 
+    require_edit()               # lecture seule (Store, ADR-0013 étape 12) : avant de lire, de verrouiller ou d'écrire quoi que ce soit
     script = _read_script(args.script, output)
     if script is None:
         return output.exit
@@ -526,8 +528,11 @@ def _pick_sequence(project, wanted: str | None):
 
 
 def _cmd_export(args: argparse.Namespace, output: _Output) -> int:
+    from .entitlements import require_export
     from .render_presets import builtin_presets, default_preset, get_preset, with_hardware
     from .tool_paths import find_media_tool
+
+    require_export()             # lecture seule (Store, ADR-0013 étape 12) : avant de charger le projet ou de construire la requête
 
     spec = default_preset() if args.preset is None else get_preset(args.preset)
     if spec is None:
@@ -675,7 +680,13 @@ def run(argv: Sequence[str], *, out: Any = None, err: Any = None) -> int:
         return int(stop.code or 0)
     _choose_language(getattr(args, "lang", None))
     output = _Output(bool(getattr(args, "json", False)), out, err)
-    return _HANDLERS[args.command](args, output)
+    from .entitlements import ACTION_EDIT, EntitlementRefused
+
+    try:
+        return _HANDLERS[args.command](args, output)
+    except EntitlementRefused as refusal:              # lecture seule : un état de l'application, pas une erreur d'usage ni de projet
+        kind = "read_only" if refusal.action == ACTION_EDIT else "export_blocked"
+        return output.failure(kind, refusal.user_message(), EXIT_FAILED)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

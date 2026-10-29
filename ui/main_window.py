@@ -67,6 +67,7 @@ from ui.viewer_host import ViewerHostSplitter
 from ui.export_panel import ExportPanel
 from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
+from ui.main_window_mixins.entitlements import EntitlementsMixin
 from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
 from ui.main_window_mixins.menu_levels import MenuLevelsMixin
@@ -194,6 +195,7 @@ class MainWindow(
     MenuLevelsMixin,
     CommandPaletteMixin,
     HistoryMixin,
+    EntitlementsMixin,
     QMainWindow,
 ):
     # Niveau d'usage changé (ADR-0006 étape 4) : valeur de chaîne du niveau. Suivi par la bascule (Préférences, menu Fenêtre, barre du haut).
@@ -783,6 +785,7 @@ class MainWindow(
         self._refresh_shortcut_tooltips()
         self._install_menu_levels()         # niveau d'usage : entrées des menus, rail, barre et menus contextuels
         self._install_command_palette()     # « Rechercher une fonction » : lit les menus à l'ouverture
+        self._init_entitlements()           # droits d'usage (Store) : lecture seule, export bloqué ; sans effet hors Store
         if os.environ.get("KUT_STUDIO_DEBUG") == "1":
             self.diagnostics_action.setChecked(True)
 
@@ -2339,6 +2342,8 @@ class MainWindow(
             event.accept()
 
     def dropEvent(self, event):
+        if self._edit_refused_ui():                  # lecture seule (Store) : le dépôt importerait un média
+            return
         for url in event.mimeData().urls():
             local_path = url.toLocalFile()
             if local_path and not handle_scene3d_drop(self, local_path, event.position().toPoint()):   # .kut3d : clip 3D

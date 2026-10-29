@@ -306,6 +306,8 @@ class ProjectFilesMixin:
         peut continuer à monter (ou fermer le projet) pendant que la file
         rend la version ajoutée.
         """
+        if self._export_refused_ui():                 # lecture seule (Store) : pas de dialogue, pas de job
+            return None
         spec = self.export_panel.current_spec()
         path = self._ask_export_path(spec)
         if not path:

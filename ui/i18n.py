@@ -1978,6 +1978,7 @@ from ui.i18n_cli import CLI_TRANSLATIONS as _CLI  # noqa: E402
 from ui.i18n_color import COLOR_TRANSLATIONS as _COLOR  # noqa: E402
 from ui.i18n_composition import COMPOSITION_TRANSLATIONS as _COMPOSITION  # noqa: E402
 from ui.i18n_dialogs import DIALOGS_TRANSLATIONS as _DIALOGS  # noqa: E402
+from ui.i18n_entitlements import ENTITLEMENTS_TRANSLATIONS as _ENTITLEMENTS  # noqa: E402
 from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 from ui.i18n_history import HISTORY_TRANSLATIONS as _HISTORY  # noqa: E402
 from ui.i18n_mask_edit import MASK_EDIT_TRANSLATIONS as _MASK_EDIT  # noqa: E402
@@ -2001,6 +2002,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_panels": _PANELS,
     "ui.i18n_palette": _PALETTE,
     "ui.i18n_dialogs": _DIALOGS,
+    "ui.i18n_entitlements": _ENTITLEMENTS,
     "ui.i18n_history": _HISTORY,
     "ui.i18n_multicam": _MULTICAM,
     "ui.i18n_time": _TIME,

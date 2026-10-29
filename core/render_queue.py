@@ -39,6 +39,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from .entitlements import export_refusal, require_export
 from .export_engine import ExportEngine, ExportRequest, require_ffmpeg
 from .project_io import load_project
 from .project_model import Project
@@ -87,6 +88,8 @@ class RenderQueue(QObject):
     run_finished = Signal(dict)
     encoder_fallback = Signal(str, str)
     """``(job_id, raison)`` : le mode Auto a basculé ce job de l'encodeur matériel vers le CPU."""
+    export_refused = Signal(str)
+    """Message pour l'utilisateur : un démarrage a été refusé par les droits (lecture seule, ADR-0013 étape 12)."""
 
     def __init__(
         self,
@@ -150,6 +153,11 @@ class RenderQueue(QObject):
     def is_running(self) -> bool:
         """``True`` tant qu'une exécution (toute la file ou un job) est active."""
         return self._mode is not None or self._current is not None
+
+    @property
+    def export_allowed(self) -> bool:
+        """Faux quand les droits interdisent de démarrer un rendu (lecture seule, Store) ; toujours vrai hors Store."""
+        return export_refusal() is None
 
     @staticmethod
     def ffmpeg_available() -> bool:
@@ -218,7 +226,9 @@ class RenderQueue(QObject):
         Raises:
             ValueError: réglage ou projet inexploitable.
             OSError: l'instantané n'a pas pu être écrit.
+            core.entitlements.ExportBlockedError: export refusé par les droits (lecture seule, Store), avant tout effet.
         """
+        require_export()
         output = Path(output_path).expanduser()
         if not output.parent.exists():
             raise ValueError(f"Le dossier de sortie est introuvable : {output.parent}")
@@ -271,8 +281,10 @@ class RenderQueue(QObject):
     # ------------------------------------------------------------------
 
     def start_all(self) -> bool:
-        """Lance tous les jobs en attente, dans l'ordre. ``False`` s'il n'y en a pas."""
+        """Lance tous les jobs en attente, dans l'ordre. ``False`` s'il n'y en a pas (ou si les droits l'interdisent)."""
         if self._closing or self._mode is not None:
+            return False
+        if self._export_refused():
             return False
         if not any(job.status is JobStatus.WAITING for job in self._jobs):
             return False
@@ -288,6 +300,8 @@ class RenderQueue(QObject):
         job = self.job(job_id)
         if self._closing or job is None or job.status is not JobStatus.WAITING:
             return False
+        if self._export_refused():
+            return False
         if self._mode is None:
             self._begin_run("single", job_id)
             return True
@@ -298,6 +312,14 @@ class RenderQueue(QObject):
             self._targets.add(job_id)
             self._batch.add(job_id)
             self._emit_overall()
+        return True
+
+    def _export_refused(self) -> bool:
+        """Vrai (et message émis) si les droits interdisent d'exporter ; faux hors Store."""
+        refusal = export_refusal()
+        if refusal is None:
+            return False
+        self.export_refused.emit(refusal.user_message())
         return True
 
     def stop(self) -> None:
@@ -459,6 +481,9 @@ class RenderQueue(QObject):
             return
         if self._mode is None:  # arrêt demandé : on clôt l'exécution
             self._emit_summary()
+            return
+        if self._export_refused():  # les droits ont changé en cours de route : les jobs en attente ne démarrent plus (ils restent en file)
+            self._finish_run()
             return
         if self._mode == "single":
             job = next(

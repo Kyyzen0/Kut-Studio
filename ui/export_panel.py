@@ -452,6 +452,12 @@ class ExportPanel(QWidget):
         "ready": StatusKind.IDLE, "running": StatusKind.WORKING, "done": StatusKind.SUCCESS, "error": StatusKind.ERROR,
     }
 
+    def set_export_blocked(self, blocked: bool, message: str = "") -> None:
+        """Lecture seule (Store) : « Ajouter à la file » et « Lancer » sont grisés, avec l'explication en infobulle."""
+        for button in (self.add_button, self.launch_button):
+            button.setEnabled(not blocked)
+            button.setToolTip(message if blocked else "")
+
     def set_status(self, message, state="ready"):
         kind = self._STATE_FOR.get(state, StatusKind.IDLE)
         self.status_label.setText(message)

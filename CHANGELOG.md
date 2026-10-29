@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Droits d'usage (préparation de la version Mac App Store, ADR-0013 étape 12).** Nouveau module `core/entitlements` : essai de 15 jours, abonnement, achat unique, et **lecture seule** quand l'essai est fini sans achat (ouvrir et visualiser un projet reste toujours permis). Le contrôle ne s'applique qu'au build Store : **dans l'application actuelle rien ne change**. Quand il s'applique, la lecture seule vaut pour toutes les entrées : menus, raccourcis, palette, glisser-déposer et garde du modèle ; export, file de rendu et livrables ; scripts et ligne de commande. Messages en français, anglais et espagnol. Voir `docs/entitlements.md`.
 - **Miroir GitLab optionnel.** Un workflow recopie `main` et les tags vers un dépôt GitLab privé si les secrets `GITLAB_MIRROR_URL` et `GITLAB_MIRROR_TOKEN` existent ; sinon il se termine sans échec (`docs/gitlab-mirror.md`).
 
 ### Fixed

@@ -59,6 +59,7 @@ from .blend_modes import BlendMode, coerce_blend_mode
 from .chroma_siting import CHROMA_SITING_444, CHROMA_SITING_SCALE, CHROMA_SITING_TO_RGBA, siting_before_rgb
 from .color_matrix import setparams_filter
 from .effects_model import ClipEffect, EffectType
+from .entitlements import export_refusal
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
 from .render_plan import (
     AudioLayer,
@@ -914,6 +915,12 @@ class ExportEngine(QObject):
         """
         if self._preparing or self._process.state() != QProcess.ProcessState.NotRunning:
             self.failed.emit("Un export est déjà en cours.")
+            return
+
+        refusal = export_refusal()               # lecture seule (Store, ADR-0013 étape 12) : aucun fichier, aucun processus
+        if refusal is not None:
+            self.last_error_kind = "entitlement"
+            self.failed.emit(refusal.user_message())
             return
 
         self.last_error_kind = ""                # un échec de préparation ne doit pas hériter de l'« encodeur » du job précédent
