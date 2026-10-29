@@ -152,7 +152,10 @@ def test_update_chain_refuses_in_the_store(monkeypatch, tmp_path):
         update_install.stage_update(tmp_path / "a.zip", tmp_path / "K.app", expected_version=Version.parse("1.0.0"),
                                     installed_version=Version.parse("0.9.0"), required_arch="arm64", pid=1,
                                     signature_verified=True)
-    assert user_settings._coerce_skipped_version("1.2.3") == ""
+    assert user_settings._coerce_skipped_version("1.2.3") == "1.2.3"       # conservé, pas effacé (hors Store il servait)
+    assert user_settings._coerce_skipped_version("pas une version !") == ""
+    assert user_settings._coerce_skipped_version(123) == ""
+    assert user_settings._coerce_skipped_version("1" * 65) == ""
 
 
 def test_checker_and_downloader_refuse_in_the_store(monkeypatch):
