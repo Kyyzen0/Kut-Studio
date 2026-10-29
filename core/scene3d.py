@@ -33,6 +33,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from .security_scope import scoped_argument
+
 LOGGER = logging.getLogger("kut_studio.scene3d")
 
 SCENE_SUFFIX = ".kut3d"
@@ -269,6 +271,7 @@ def clear_signature_cache() -> None:
 # --- Scène chargée (mémoire bornée, revalidée par la signature) -------------------------------------------------------------
 
 
+@scoped_argument(0)
 def load_scene(path: str | os.PathLike[str]) -> tuple[Any, bool]:
     """``(scène, animée)`` du fichier ``path`` ; au plus :data:`_SCENES_LIMIT` scènes restent en mémoire.
 

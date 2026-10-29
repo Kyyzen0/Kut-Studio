@@ -55,8 +55,16 @@ def main():
     from core.bundled_fonts import register_bundled_fonts
 
     register_bundled_fonts()
+    # Version Store : les signets rangés dans le conteneur sont résolus AVANT toute lecture de fichier de l'utilisateur (ADR-0013,
+    # étape 5). Ailleurs, sans effet.
+    from core.security_scope import start_for_store
+
+    scope_report = start_for_store()
     window = MainWindow()
     window.show()
+    from ui.sandbox_access import announce_launch_report
+
+    announce_launch_report(window, scope_report)
     # Projet confié par le système : Finder (macOS), double-clic ou « Ouvrir avec » (Windows, Linux).
     from ui.external_open import install_external_open, project_path_from_arguments
 

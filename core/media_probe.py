@@ -43,6 +43,7 @@ from typing import Any
 from .color_matrix import label_from_ffprobe
 from .process_supervisor import supervised_run
 from .project_model import MediaAsset
+from .security_scope import scoped_argument
 from .timecode import SECONDS_PER_DAY, FrameRate, normalize_timecode_text
 from .tool_paths import find_media_tool
 
@@ -58,6 +59,7 @@ class MediaProbeError(Exception):
 # ---------------------------------------------------------------------------
 
 
+@scoped_argument(0)
 def probe_media(path: str) -> MediaAsset:
     """Analyse ``path`` via ``ffprobe`` et retourne un :class:`MediaAsset`.
 

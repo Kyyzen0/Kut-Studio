@@ -12,6 +12,9 @@ bundle, exclut les modules de mise à jour, exige FFmpeg et ffprobe dans le bund
 exécution depuis les sources ne devient jamais « Store » par accident). Aucun ``.pkg`` ni signature Store ici : c'est
 l'étape 7. ``--flavor developer-id`` (défaut) ne change rien.
 
+Sous macOS, ``--flavor store`` compile aussi les signets à portée de sécurité (``libkutscope.dylib``, ADR-0013 étape 5), au même
+endroit du bundle, sur le même patron.
+
 Sous macOS, ``--flavor store`` compile aussi le pont StoreKit 2 (``libkutstore.dylib``, Swift, ``swiftc`` requis, ADR-0013
 étape 13) et l'ajoute au bundle (``Contents/Frameworks``) : PyInstaller le signe avec le reste (même identité, runtime renforcé,
 sans ``--deep``). Ni certificat ni profil ici ; ce qu'il reste pour l'étape 7 est dans ``docs/entitlements.md``.
@@ -53,6 +56,10 @@ STOREKIT_SOURCE = ROOT / "packaging" / "store-spike" / "storekit"
 """Source Swift du pont StoreKit et son ``build.sh`` (ADR-0013, étape 13)."""
 STOREKIT_BUILD_DIR = ROOT / "build" / "storekit"
 STOREKIT_DYLIB_NAME = "libkutstore.dylib"
+SCOPE_SOURCE = ROOT / "packaging" / "store-spike" / "scope"
+"""Source Swift des signets à portée de sécurité (``libkutscope.dylib``, ADR-0013, étape 5) et son ``build.sh``."""
+SCOPE_BUILD_DIR = ROOT / "build" / "scope"
+SCOPE_DYLIB_NAME = "libkutscope.dylib"
 MICROPHONE_USAGE = "Kut-Studio uses the microphone only while you record a voice-over."
 """Exigé par macOS pour l'enregistrement de voix off (et par le runtime renforcé d'une application notarisée)."""
 
@@ -109,6 +116,19 @@ def build_storekit_bridge(
     return dylib
 
 
+def build_scope_bridge(
+    output: Path = SCOPE_BUILD_DIR, *, run: Callable[[Sequence[str]], object] = subprocess.check_call,
+) -> Path:
+    """Compile ``libkutscope.dylib`` (arm64, macOS 13+) dans ``output`` avec ``build.sh`` et rend son chemin. Même patron que
+    :func:`build_storekit_bridge` ; ``libkutstore`` (ABI 1) n'est pas touchée."""
+    output.mkdir(parents=True, exist_ok=True)
+    run(["sh", str(SCOPE_SOURCE / "build.sh"), str(output)])
+    dylib = output / SCOPE_DYLIB_NAME
+    if not dylib.is_file():
+        raise RuntimeError(f"Construction Store : {SCOPE_DYLIB_NAME} n'a pas été produite.")
+    return dylib
+
+
 def _icon_for(platform_name: str) -> Path | None:
     icons = ROOT / "assets" / "icons"
     candidates = {
@@ -143,11 +163,13 @@ def build_command(
     environment: dict[str, str] | None = None,
     flavor: str = FLAVOR_DEVELOPER_ID,
     storekit_dylib: Path | None = None,
+    scope_dylib: Path | None = None,
 ) -> list[str]:
     """Retourne la commande PyInstaller adaptée au système courant (et à la saveur : Developer ID ou Store).
 
     ``storekit_dylib`` (Store sous macOS seulement) : le pont StoreKit, ajouté à la racine du bundle (``Contents/Frameworks``).
-    Ignoré hors Store : le pont n'existe pas dans la version Developer ID."""
+    Ignoré hors Store : le pont n'existe pas dans la version Developer ID.
+    ``scope_dylib`` (Store sous macOS seulement) : les signets à portée de sécurité (``libkutscope``), au même endroit."""
     if flavor not in FLAVORS:
         raise ValueError(f"saveur inconnue : {flavor!r} (attendu : {', '.join(FLAVORS)})")
     platform_name = platform_name or sys.platform
@@ -185,6 +207,8 @@ def build_command(
             command.extend(["--exclude-module", module])
         if storekit_dylib is not None and platform_name == "darwin":
             command.extend(["--add-binary", f"{storekit_dylib}{separator}."])
+        if scope_dylib is not None and platform_name == "darwin":
+            command.extend(["--add-binary", f"{scope_dylib}{separator}."])
     icon = _icon_for(platform_name)
     if icon is not None:
         command.extend(["--icon", str(icon)])
@@ -281,8 +305,10 @@ def _build(flavor: str) -> int:
     config_dir.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ)
     environment.setdefault("PYINSTALLER_CONFIG_DIR", str(config_dir))
-    dylib = build_storekit_bridge() if flavor == FLAVOR_STORE and sys.platform == "darwin" else None
-    subprocess.check_call(build_command(flavor=flavor, storekit_dylib=dylib), cwd=ROOT, env=environment)
+    store_macos = flavor == FLAVOR_STORE and sys.platform == "darwin"
+    dylib = build_storekit_bridge() if store_macos else None
+    scope_dylib = build_scope_bridge() if store_macos else None
+    subprocess.check_call(build_command(flavor=flavor, storekit_dylib=dylib, scope_dylib=scope_dylib), cwd=ROOT, env=environment)
     if sys.platform == "darwin":
         identity = environment.get(CODESIGN_IDENTITY_ENV, "").strip() or None
         finalize_macos_bundle(

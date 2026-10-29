@@ -392,3 +392,35 @@ def test_store_build_on_macos_needs_swiftc():
     assert build.storekit_bridge_problem("darwin", which=lambda name: None) is not None
     assert build.storekit_bridge_problem("darwin", which=lambda name: "/usr/bin/swiftc") is None
     assert build.storekit_bridge_problem("linux", which=lambda name: None) is None
+
+
+# -- les signets à portée de sécurité dans le bundle Store (ADR-0013, étape 5) ---------------------------------------------------
+
+
+def test_scope_bridge_is_added_only_to_the_store_bundle_on_macos(tmp_path):
+    scope = tmp_path / "libkutscope.dylib"
+    store = build.build_command(platform_name="darwin", environment={}, flavor="store", scope_dylib=scope)
+    assert f"{scope}:." in store and store[store.index(f"{scope}:.") - 1] == "--add-binary"
+    developer_id = build.build_command(platform_name="darwin", environment={}, flavor="developer-id", scope_dylib=scope)
+    assert not any("libkutscope" in str(part) for part in developer_id)                 # Developer ID : rien ne change
+    assert developer_id == build.build_command(platform_name="darwin", environment={})
+    assert not any("libkutscope" in str(part) for part in build.build_command(platform_name="linux", environment={}, flavor="store", scope_dylib=scope))
+    assert not any("libkutscope" in str(part) for part in build.build_command(platform_name="darwin", environment={}, flavor="store"))
+    both = build.build_command(platform_name="darwin", environment={}, flavor="store", scope_dylib=scope,
+                               storekit_dylib=tmp_path / "libkutstore.dylib")
+    assert sum(1 for part in both if part == "--add-binary") == 2                       # les deux bibliothèques, côte à côte
+
+
+def test_build_scope_bridge_runs_its_script_and_checks_the_product(tmp_path):
+    calls = []
+
+    def fake_run(command):
+        calls.append(list(command))
+        (tmp_path / "out" / "libkutscope.dylib").write_bytes(b"x")
+
+    dylib = build.build_scope_bridge(tmp_path / "out", run=fake_run)
+    assert dylib == tmp_path / "out" / "libkutscope.dylib"
+    assert calls == [["sh", str(build.SCOPE_SOURCE / "build.sh"), str(tmp_path / "out")]]
+    assert (build.SCOPE_SOURCE / "build.sh").is_file() and build.SCOPE_SOURCE != build.STOREKIT_SOURCE
+    with pytest.raises(RuntimeError, match="n'a pas été produite"):
+        build.build_scope_bridge(tmp_path / "vide", run=lambda command: None)

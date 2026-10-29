@@ -23,6 +23,7 @@ Ce que l'interface n'a pas et qu'un script veut : **le fichier final est atomiqu
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import queue
@@ -31,6 +32,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from typing import Any, TypeVar, cast
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -55,6 +57,7 @@ from .optical_flow import BackendPreference
 from .process_supervisor import supervised_popen
 from .process_tree import kill_process_tree
 from .retime_prepare import PrepareCancelled, PrepareReport
+from .security_scope import plan_scope
 from .video_encoders import EncoderChoice, EncoderUnavailableError
 
 LOGGER = logging.getLogger("kut_studio.export_runner")
@@ -104,6 +107,21 @@ def partial_output_path(output_path: str) -> str:
     return str(final.with_name(f".{final.stem}.{uuid.uuid4().hex[:8]}.partial{final.suffix}"))
 
 
+_RunExport = TypeVar("_RunExport", bound=Callable[..., Any])
+
+
+def _with_user_files(function: _RunExport) -> _RunExport:
+    """``run_export`` s'exécute avec l'accès aux médias du plan et à la sortie (Store, ADR-0013 étape 5) ; hors Store, bloc vide."""
+
+    @functools.wraps(function)
+    def wrapper(request: ExportRequest, *args: Any, **kwargs: Any) -> ExportResult:
+        with plan_scope(request.render_plan, request.output_path):
+            return function(request, *args, **kwargs)
+
+    return cast(_RunExport, wrapper)
+
+
+@_with_user_files
 def run_export(
     request: ExportRequest,
     *,

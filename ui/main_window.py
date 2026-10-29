@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core.autosave import AutosaveCoordinator
 from core.build_flavor import is_store
+from core.security_scope import remember_user_path
 from core.audio_effects_library import AudioEffectPresetStore
 from core.effect_targets import evaluated_effects
 from core.effects_library import UserPresetStore
@@ -2350,6 +2351,7 @@ class MainWindow(
             return
         for url in event.mimeData().urls():
             local_path = url.toLocalFile()
+            remember_user_path(local_path)           # Store : le dépôt donne un accès, le signet le garde (ADR-0013 étape 5)
             if local_path and not handle_scene3d_drop(self, local_path, event.position().toPoint()):   # .kut3d : clip 3D
                 self.import_video_to_project(local_path)
 

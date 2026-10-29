@@ -48,6 +48,7 @@ from PySide6.QtGui import (
 )
 
 from .blend_modes import BlendMode, coerce_blend_mode, qt_composition_mode
+from .security_scope import scoped_access
 from .bundled_fonts import register_bundled_fonts
 from .text_runs import WORD, is_plain, reveal_state, split_emoji
 from .compositing import MaskMode, MaskShape
@@ -395,7 +396,8 @@ class _ImageCache:
         key = (path, stat.st_mtime_ns, stat.st_size)
         image = self._items.get(key)
         if image is None:
-            image = QImage(path)
+            with scoped_access(path):                      # Store : accès par signet à l'image (ADR-0013 étape 5)
+                image = QImage(path)
             if image.isNull():
                 return None
             image = image.convertToFormat(_FORMAT)

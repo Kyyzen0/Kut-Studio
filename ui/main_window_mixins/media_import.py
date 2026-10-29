@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError
+from core.security_scope import remember_user_path
 from core.timeline_operations import add_clip_to_track
 from ui.i18n import translate
 
@@ -64,6 +65,7 @@ class MediaImportMixin:
         if not paths:
             return
         for path in paths:
+            remember_user_path(path)             # Store : signet de chaque fichier choisi (ADR-0013 étape 5)
             self.import_media_to_project(path)
 
     def import_media_to_project(self, path: str) -> bool:
@@ -76,6 +78,7 @@ class MediaImportMixin:
         """
         if self._edit_refused_ui():                  # lecture seule (Store) : ni sonde ni ajout
             return False
+        remember_user_path(path)                     # glisser-déposer, dialogue, scripts : tous passent ici
         normalized = os.path.normpath(os.path.abspath(path))
         for asset in self.project.media_assets:
             if os.path.normpath(os.path.abspath(asset.path)) == normalized:

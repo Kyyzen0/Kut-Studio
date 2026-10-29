@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from .platform_paths import user_cache_dir
+from .security_scope import command_scope
 from .process_platform import (
     KillOnCloseJob,
     KillOutcome,
@@ -68,6 +69,8 @@ CHILD_SUFFIX = ".child"
 REGISTRY_FORMAT = 1
 ORPHAN_REGISTRY_MAX_AGE_SECONDS = 24 * 3600.0
 """Un dossier d'instance sans ``owner.json`` lisible (création interrompue) est supprimé après ce délai."""
+_SCOPE_ATTRIBUTE = "_kut_security_scope"
+"""Accès aux fichiers de l'utilisateur (signets, ADR-0013 étape 5) ouvert pour la vie de l'enfant ; refermé par :meth:`finish`."""
 _REGISTRATION_ATTRIBUTE = "_kut_supervision"
 _REAPER_LAUNCH_ATTEMPTS = 3
 
@@ -578,6 +581,19 @@ class ProcessSupervisor:
         console ne s'ouvre. Sous POSIX l'enfant rejoint le groupe du gardien **avant** ``exec``.
         """
         arguments = list(command)
+        # Version Store : les chemins de l'utilisateur de la commande (FFmpeg hérite du bac à sable) restent accessibles jusqu'à
+        # ``finish`` ; hors Store, bloc vide. Ouvert AVANT le lancement, refermé si le lancement échoue.
+        scope = command_scope(arguments)
+        scope.__enter__()
+        try:
+            process = self._popen_unscoped(arguments, options)
+        except BaseException:
+            scope.__exit__(None, None, None)
+            raise
+        setattr(process, _SCOPE_ATTRIBUTE, scope)
+        return process
+
+    def _popen_unscoped(self, arguments: list[Any], options: dict[str, Any]) -> subprocess.Popen[Any]:
         options.setdefault("stdin", subprocess.DEVNULL)
         if sys.platform.startswith("win"):
             options["creationflags"] = int(options.get("creationflags") or 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -599,7 +615,7 @@ class ProcessSupervisor:
         return process
 
     def finish(self, process: subprocess.Popen[Any]) -> None:
-        """Tue l'enfant s'il tourne encore, attend sa fin, puis le retire du registre."""
+        """Tue l'enfant s'il tourne encore, attend sa fin, puis le retire du registre (et referme ses accès aux fichiers)."""
         try:
             if process.poll() is None:
                 process.kill()
@@ -608,6 +624,10 @@ class ProcessSupervisor:
             pass
         finally:
             self.release(getattr(process, _REGISTRATION_ATTRIBUTE, None))
+            scope = getattr(process, _SCOPE_ATTRIBUTE, None)
+            if scope is not None:
+                setattr(process, _SCOPE_ATTRIBUTE, None)       # une seule fermeture, même si finish est rappelé
+                scope.__exit__(None, None, None)
 
     @contextmanager
     def supervised(self, command: Sequence[str | os.PathLike[str]], **options: Any) -> Iterator[subprocess.Popen[Any]]:

@@ -61,6 +61,7 @@ from .color_matrix import setparams_filter
 from .effects_model import ClipEffect, EffectType
 from .entitlements import export_refusal
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
+from .security_scope import plan_scope
 from .render_plan import (
     AudioLayer,
     GraphicLayer,
@@ -826,6 +827,7 @@ class ExportEngine(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
+        self._scope: Any = None            # accès aux fichiers de l'utilisateur de l'export en cours (Store, ADR-0013 étape 5)
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._read_progress)
@@ -928,6 +930,7 @@ class ExportEngine(QObject):
             self._duration_seconds = request.render_plan.duration
             check_export_request(request)
             self._prepare_temporary_files(request.render_plan)
+            self._open_scope(request)         # tout l'export, préparation et FFmpeg compris ; refermé par _cleanup_temporary_files
             self._prepared = {}
             self.last_preparation = None
             self._progress_floor = 0
@@ -1231,8 +1234,22 @@ class ExportEngine(QObject):
         if path:
             self._temporary_files.append(path)
 
+    def _open_scope(self, request: ExportRequest) -> None:
+        """Version Store : ouvre l'accès aux médias du plan et à la sortie pour toute la durée de l'export (FFmpeg hérite du bac à
+        sable). Hors Store : bloc vide."""
+        self._close_scope()
+        scope = plan_scope(request.render_plan, request.output_path)
+        scope.__enter__()
+        self._scope = scope
+
+    def _close_scope(self) -> None:
+        scope, self._scope = self._scope, None
+        if scope is not None:
+            scope.__exit__(None, None, None)
+
     def _cleanup_temporary_files(self) -> None:
-        """Supprime tous les fichiers temporaires créés pour cet export."""
+        """Supprime tous les fichiers temporaires créés pour cet export (et referme l'accès aux fichiers de l'utilisateur)."""
+        self._close_scope()
         for path in self._temporary_files:
             try:
                 os.remove(path)
