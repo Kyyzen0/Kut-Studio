@@ -25,6 +25,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **Version Mac App Store : un enregistrement raté ne vide plus le projet.** Quand le bac à sable interdit le fichier temporaire à côté du `.kut`, l'enregistrement écrit le fichier en place. Si cette écriture échoue (disque plein, volume coupé), le contenu précédent est remis : le projet ne reste pas vide ou coupé. Une coupure de l'application au milieu de l'écriture peut encore laisser un fichier incomplet.
 - **Plantage natif intermittent à la fermeture d'une fenêtre ou au vidage d'une liste.** PySide libérait l'objet Python d'un élément de liste (`QListWidgetItem`…) *dans* le destructeur C++ de cet élément, puis relisait la mémoire libérée : segfault sans trace, au hasard du ramasse-miettes (« worker crashed » sur la CI, tous systèmes). Chaque élément créé dans `ui/` est maintenant retenu jusqu'à la destruction de son objet C++ (`ui/qt_item_lifetime.py`) ; garde `tests/test_qt_item_lifetime.py`.
 
 ### Changed
