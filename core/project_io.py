@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import math
 import os
 import shutil
@@ -107,6 +108,8 @@ if TYPE_CHECKING:
 # ``library_organization`` est importé paresseusement dans les helpers
 # de sérialisation pour éviter une boucle d'imports (les modèles du
 # module ``project_model`` n'en dépendent pas).
+
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -2326,8 +2329,31 @@ def _deserialize_automation_points(raw: Any) -> list:
 # ---------------------------------------------------------------------------
 
 
+def _restore_previous_file(target: Path, original: bytes | None) -> None:
+    """Remet ``target`` comme avant une écriture en place interrompue. Ne masque pas l'erreur d'origine."""
+    try:
+        if original is None:
+            if target.is_file():
+                target.unlink()
+            return
+        with target.open("wb") as handle:
+            handle.write(original)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        LOGGER.warning(
+            "Enregistrement du projet : le fichier n'a pas pu être remis dans son état précédent",
+            exc_info=True,
+        )
+
+
 def _write_in_place(payload: dict[str, Any], target: Path) -> None:
-    """Écriture en place (Store seulement, quand le dossier de la cible est inaccessible) : sérialise d'abord, écrit ensuite."""
+    """Écriture en place (Store seulement, quand le dossier de la cible est inaccessible).
+
+    Le JSON est produit avant d'ouvrir la cible. ``open("w")`` tronque tout de suite : les octets précédents sont donc
+    gardés et réécrits si l'écriture échoue (disque plein, volume coupé), pour qu'un enregistrement raté ne laisse pas
+    un projet vide. Une coupure du processus pendant l'écriture reste non atomique (pas de voisin temporaire).
+    """
     try:
         text = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False)
     except ValueError as error:
@@ -2335,10 +2361,15 @@ def _write_in_place(payload: dict[str, Any], target: Path) -> None:
             "Le projet contient une valeur non finie (NaN ou infinie) : il ne peut pas être "
             f"enregistré tel quel ({error})."
         ) from error
-    with target.open("w", encoding="utf-8") as handle:
-        handle.write(text)
-        handle.flush()
-        os.fsync(handle.fileno())
+    original = target.read_bytes() if target.is_file() else None
+    try:
+        with target.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        _restore_previous_file(target, original)
+        raise
 
 
 def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
@@ -2359,7 +2390,8 @@ def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
         if not is_store():
             raise
         # Version Store : le bac à sable ne donne accès qu'au fichier choisi, pas à son dossier (ADR-0013 §1, point 1) ; un
-        # voisin ne se crée pas. Le JSON est entièrement produit AVANT d'ouvrir la cible, qui est ensuite écrite en place.
+        # voisin ne se crée pas. Le JSON est produit avant d'ouvrir la cible ; si l'écriture échoue, l'ancien contenu
+        # est réécrit (voir ``_write_in_place``).
         _write_in_place(payload, target)
         return
     tmp_path = Path(tmp_name)
