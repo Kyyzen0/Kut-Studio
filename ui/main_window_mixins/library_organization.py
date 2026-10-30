@@ -202,6 +202,9 @@ class LibraryOrganizationMixin:
         from dataclasses import replace
 
         from core.library_organization import LibraryOrganization, relink_differences
+        from core.security_scope import remember_user_path
+
+        remember_user_path(path)                 # Store : « Relier » donne un nouveau signet (ADR-0013 étape 5)
 
         before = replace(asset)
         org = LibraryOrganization(self.project)

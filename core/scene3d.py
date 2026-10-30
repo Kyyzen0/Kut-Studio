@@ -33,6 +33,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from .security_scope import scoped_argument
+
 LOGGER = logging.getLogger("kut_studio.scene3d")
 
 SCENE_SUFFIX = ".kut3d"
@@ -128,6 +130,7 @@ def ensure_fixed_speed(clip: object) -> None:
         raise ValueError("Une scène 3D se joue à sa propre vitesse : elle ne se ralentit, ne s'accélère, ne s'inverse ni ne se fige.")
 
 
+@scoped_argument(0)
 def dependencies(path: str | os.PathLike[str]) -> tuple[Path, ...]:
     """Le ``.kut3d`` puis ses fichiers de modèle, MTL / .bin et textures (chemins absolus, triés, sans doublon).
 
@@ -144,6 +147,7 @@ def dependencies(path: str | os.PathLike[str]) -> tuple[Path, ...]:
         raise Scene3DError(str(exc)) from exc
 
 
+@scoped_argument(0)
 def validate(path: str | os.PathLike[str]) -> None:
     """Vérifie que ``path`` est une scène lisible (forme, bornes, modèles confinés) sans rien rendre.
 
@@ -183,6 +187,7 @@ def _stat_keys(files: tuple[Path, ...]) -> tuple[tuple[str, int, int], ...] | No
         return None
 
 
+@scoped_argument(0)
 def scene_signature(path: str | os.PathLike[str]) -> str:
     """Empreinte des fichiers dont dépend la scène : change dès que l'un d'eux change (date, taille, début ou fin du contenu).
 
@@ -269,6 +274,7 @@ def clear_signature_cache() -> None:
 # --- Scène chargée (mémoire bornée, revalidée par la signature) -------------------------------------------------------------
 
 
+@scoped_argument(0)
 def load_scene(path: str | os.PathLike[str]) -> tuple[Any, bool]:
     """``(scène, animée)`` du fichier ``path`` ; au plus :data:`_SCENES_LIMIT` scènes restent en mémoire.
 

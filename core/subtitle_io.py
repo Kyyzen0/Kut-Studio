@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .atomic_io import atomic_write_text
+from .security_scope import scoped_argument
 from .text_decoding import decode_text_bytes
 
 
@@ -189,6 +190,7 @@ def _format_timecode(seconds: float) -> str:
 # ---------------------------------------------------------------------------
 
 
+@scoped_argument(0)
 def load_srt(file_path: str) -> list[SubtitleCue]:
     """Charge un fichier SRT et retourne la liste des cues.
 
@@ -198,6 +200,7 @@ def load_srt(file_path: str) -> list[SubtitleCue]:
     return parse_srt(decode_text_bytes(Path(file_path).read_bytes()))
 
 
+@scoped_argument(1)
 def save_srt(cues: list[SubtitleCue], file_path: str) -> None:
     """Sérialise ``cues`` dans ``file_path`` au format SRT UTF-8, de façon atomique (le dossier est créé)."""
     atomic_write_text(file_path, format_srt(cues))

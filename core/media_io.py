@@ -14,11 +14,14 @@ from __future__ import annotations
 import logging
 import math
 import tempfile
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .color_matrix import setparams_filter
 from .process_supervisor import supervised_run
+from .security_scope import scoped_access, scoped_argument
 from .tool_paths import find_media_tool
 
 LOGGER = logging.getLogger(__name__)
@@ -112,6 +115,7 @@ def _parse_probe_csv(stdout: str) -> tuple[int, int, float, float]:
     return width_px, height_px, fps, duration
 
 
+@scoped_argument(0)
 def probe(path: str | Path) -> MediaInfo:
     """Métadonnées minimales (durée, taille, cadence) via ffprobe."""
     ffprobe = find_media_tool("ffprobe")
@@ -136,7 +140,14 @@ class MediaHandle:
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
-        self.info = probe(self.path)
+        # Store : l'accès au fichier reste ouvert tant que la poignée l'est (PyAV lit à chaque image) ; hors Store, bloc vide.
+        self._scope: AbstractContextManager[Any] | None = scoped_access(self.path)
+        self._scope.__enter__()
+        try:
+            self.info = probe(self.path)
+        except BaseException:
+            self._release_scope()
+            raise
         self._container = None
         if _av is not None:
             try:
@@ -149,10 +160,18 @@ class MediaHandle:
     def backend(self) -> str:
         return "pyav" if self._container is not None else "ffmpeg-cli"
 
+    def _release_scope(self) -> None:
+        scope, self._scope = self._scope, None
+        if scope is not None:
+            scope.__exit__(None, None, None)
+
     def close(self) -> None:
-        if self._container is not None:
-            self._container.close()
-            self._container = None
+        try:
+            if self._container is not None:
+                self._container.close()
+                self._container = None
+        finally:
+            self._release_scope()
 
     def __enter__(self) -> MediaHandle:
         return self

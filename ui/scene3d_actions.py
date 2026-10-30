@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from core.graphics import GraphicType, add_graphic_clip
 from core.scene3d import SCENE_SUFFIX, Scene3DError, has_scene_suffix, reload_scene, validate
+from core.security_scope import remember_user_path
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ def add_scene3d_from_dialog(window: Any) -> Any | None:
     )
     if not path:
         return None
+    remember_user_path(path)                     # Store : signet du fichier choisi (ADR-0013 étape 5) ; ailleurs, sans effet
     return add_scene3d_clip(window, path)
 
 
@@ -90,6 +92,7 @@ def handle_scene3d_drop(window: Any, local_path: str, position: QPoint | None = 
     """
     if not has_scene_suffix(local_path):
         return False
+    remember_user_path(local_path)
     at: float | None = None
     track_id: str | None = None
     timeline = getattr(window, "timeline_panel", None)

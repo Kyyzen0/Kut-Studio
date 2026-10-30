@@ -44,6 +44,7 @@ from ui.design_system import Sizes, Spacing, Typography, Weights
 from ui.empty_state import EmptyState
 from ui.icons import IconButton, IconName
 from ui.panel_header import PanelHeader
+from ui.source_scope import SourceScope
 from ui.theme import COLORS, monospace_font_family, set_role
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
@@ -180,6 +181,7 @@ class PreviewPanel(QWidget):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self._source_scope = SourceScope()
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(1.0)
@@ -463,6 +465,7 @@ class PreviewPanel(QWidget):
         self._library_preview_path = path
         self._timeline_preview_path = None
         self.set_source_color("")        # un média de la bibliothèque : la matrice de l'image décodée (étiquette, sinon taille)
+        self._source_scope.hold(path)    # Store : l'accès au fichier dure autant que la source (ADR-0013 étape 5)
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
 
@@ -482,6 +485,7 @@ class PreviewPanel(QWidget):
         target_ms = int(source_time_seconds * 1000)
         if self._timeline_preview_path != path:
             self._timeline_preview_path = path
+            self._source_scope.hold(path)
             self.player.setSource(QUrl.fromLocalFile(path))
         elif playing and self.player.playbackState() == QMediaPlayer.PlayingState:
             if abs(self.player.position() - target_ms) <= PLAYBACK_DRIFT_SECONDS * 1000:
@@ -722,6 +726,7 @@ class PreviewPanel(QWidget):
         try:
             self.player.stop()
             self.player.setSource(QUrl())
+            self._source_scope.release()
         except Exception:  # pragma: no cover
             LOGGER.debug(
                 "Libération du lecteur du moniteur en échec : le décodeur peut rester attaché au fichier précédent",

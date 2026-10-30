@@ -6,6 +6,7 @@ import os
 from PySide6.QtCore import QTimer
 from core.entitlements import EntitlementRefused, require_export
 from core.project_model import Clip
+from core.security_scope import remember_user_path
 from core.subtitle_io import load_srt, save_srt
 from core.text_style import TextStyle, default_text_style
 from core.timeline_editing import apply_solo
@@ -219,6 +220,7 @@ class SubtitlesGraphicsMixin:
         )
         if not path:
             return
+        remember_user_path(path)
         from core.graphics import add_graphic_clip
 
         try:
@@ -350,6 +352,7 @@ class SubtitlesGraphicsMixin:
         )
         if not path:
             return
+        remember_user_path(path)
         try:
             self.import_subtitles_from_path(path)
         except (OSError, ValueError, KeyError) as exc:
@@ -372,6 +375,7 @@ class SubtitlesGraphicsMixin:
             return
         try:
             self.export_subtitles_to_path(path)
+            remember_user_path(path)             # le fichier existe maintenant : un signet est possible
         except EntitlementRefused as refusal:        # les droits ont changé depuis le dialogue
             self._show_refusal_message(refusal.user_message())
         except OSError as exc:

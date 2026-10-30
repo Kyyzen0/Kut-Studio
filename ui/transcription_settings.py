@@ -11,6 +11,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFileDialog, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton
 
 from core.transcription import find_whisper, find_whisper_model, model_directory, transcription_available
+from core.security_scope import remember_user_path
 from ui.i18n import translate
 from ui.design_system import TextRoles
 from ui.theme import set_role
@@ -57,6 +58,7 @@ class TranscriptionSettingsGroup(QGroupBox):
         pattern = translate("transcription.prefs.model_filter") if name == "model" else ""
         path, _filter = QFileDialog.getOpenFileName(self, title, self._values[name], pattern)
         if path:
+            remember_user_path(path)
             self._set(name, path)
 
     def _set(self, name: str, value: str) -> None:

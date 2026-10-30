@@ -21,6 +21,7 @@ from core.color_grading import (
     ColorPresetStore,
 )
 from core.color_nodes import as_graph
+from core.security_scope import remember_user_path
 from core.usage_level import UsageLevel
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Spacing, Typography
@@ -286,6 +287,7 @@ class ColorMixin(ColorKeyframesMixin):
             self, translate("dialog.lut.import_title"), "", "LUT 3D (*.cube)"
         )
         if path:
+            remember_user_path(path)
             self.color_lut_import_requested.emit(self.selected_clip.id, path)
 
     def _request_color_lut_remove(self) -> None:

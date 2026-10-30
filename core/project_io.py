@@ -69,7 +69,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .build_flavor import is_store
 from .effects_model import ClipEffect, EffectType
+from .security_scope import scoped_access
 from .animation import Keyframe
 from .audio_automation import TrackAutomation
 from .beat_grid import beat_grid_from_dict, beat_grid_to_dict
@@ -324,8 +326,9 @@ def write_project_payload(payload: dict[str, Any], file_path: str) -> None:
     Un lien symbolique est suivi : le renommage final remplacerait sinon le lien par un fichier ordinaire, et le projet visé (celui que
     le verrou, les autres copies et les sauvegardes automatiques désignent) ne changerait pas."""
     target = Path(os.path.realpath(file_path))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_json(payload, target)
+    with scoped_access(file_path, target):       # Store : accès par signet à ce fichier (ADR-0013 étape 5) ; ailleurs, bloc vide
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_json(payload, target)
 
 
 def save_project(project: Project, file_path: str) -> None:
@@ -336,8 +339,9 @@ def save_project(project: Project, file_path: str) -> None:
     laisse ni fichier cible tronqué, ni fichier temporaire résiduel.
     """
     target = Path(os.path.realpath(file_path))
-    _materialize_project_luts(project, target.parent)
-    write_project_payload(project_payload(project), str(target))
+    with scoped_access(file_path, target):
+        _materialize_project_luts(project, target.parent)
+        write_project_payload(project_payload(project), str(target))
 
 
 def _materialize_project_luts(project: Project, project_root: Path) -> None:
@@ -450,7 +454,8 @@ def load_project(file_path: str, *, report: LoadReport | None = None) -> Project
     """
     source = Path(file_path)
     try:
-        raw = source.read_text(encoding="utf-8")
+        with scoped_access(file_path):          # Store : accès par signet au fichier (ADR-0013 étape 5) ; ailleurs, bloc vide
+            raw = source.read_text(encoding="utf-8")
     except FileNotFoundError as error:
         raise FileNotFoundError(
             f"Fichier projet Kut-Studio introuvable : {source}"
@@ -2321,6 +2326,21 @@ def _deserialize_automation_points(raw: Any) -> list:
 # ---------------------------------------------------------------------------
 
 
+def _write_in_place(payload: dict[str, Any], target: Path) -> None:
+    """Écriture en place (Store seulement, quand le dossier de la cible est inaccessible) : sérialise d'abord, écrit ensuite."""
+    try:
+        text = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False)
+    except ValueError as error:
+        raise ValueError(
+            "Le projet contient une valeur non finie (NaN ou infinie) : il ne peut pas être "
+            f"enregistré tel quel ({error})."
+        ) from error
+    with target.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
     """Écrit ``payload`` dans ``target`` de manière atomique.
 
@@ -2329,11 +2349,19 @@ def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
     avant un ``os.replace`` final. Si une étape échoue, le fichier
     temporaire résiduel est nettoyé et la cible reste intacte.
     """
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f"{target.name}.",
-        suffix=".tmp",
-        dir=str(target.parent),
-    )
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f"{target.name}.",
+            suffix=".tmp",
+            dir=str(target.parent),
+        )
+    except PermissionError:
+        if not is_store():
+            raise
+        # Version Store : le bac à sable ne donne accès qu'au fichier choisi, pas à son dossier (ADR-0013 §1, point 1) ; un
+        # voisin ne se crée pas. Le JSON est entièrement produit AVANT d'ouvrir la cible, qui est ensuite écrite en place.
+        _write_in_place(payload, target)
+        return
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
