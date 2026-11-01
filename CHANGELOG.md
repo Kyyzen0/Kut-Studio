@@ -25,6 +25,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **Version Mac App Store : enregistrer un projet ne retire plus sa LUT.** Importer une LUT puis enregistrer (ou rouvrir le projet) marquait le fichier « manquant » : le bac à sable refuse un `stat` sans accès ouvert, et ce refus était écrit dans le `.kut` comme si le fichier avait disparu. L'import lit la LUT sous son signet ; si le dossier `luts/` à côté du projet ne peut pas être créé, la référence d'origine est conservée. Hors Store, rien ne change.
 - **Plantage natif intermittent à la fermeture d'une fenêtre ou au vidage d'une liste.** PySide libérait l'objet Python d'un élément de liste (`QListWidgetItem`…) *dans* le destructeur C++ de cet élément, puis relisait la mémoire libérée : segfault sans trace, au hasard du ramasse-miettes (« worker crashed » sur la CI, tous systèmes). Chaque élément créé dans `ui/` est maintenant retenu jusqu'à la destruction de son objet C++ (`ui/qt_item_lifetime.py`) ; garde `tests/test_qt_item_lifetime.py`.
 
 ### Changed

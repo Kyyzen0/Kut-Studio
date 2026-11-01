@@ -45,7 +45,9 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from .atomic_io import atomic_write_json
+from .build_flavor import is_store
 from .platform_paths import user_config_dir
+from .security_scope import probe_user_file, scoped_access, scoped_argument
 
 LOGGER = logging.getLogger(__name__)
 
@@ -385,6 +387,7 @@ class LUTResource:
             raise ColorGradingError("La taille du LUT ne peut pas être négative.")
 
     @classmethod
+    @scoped_argument(1)
     def from_path(
         cls, path: str | os.PathLike[str], *, title: str | None = None,
         project_root: str | os.PathLike[str] | None = None,
@@ -432,9 +435,15 @@ def copy_lut_into_project(
     Le nom inclut le début du hash afin d'éviter qu'un autre LUT portant le
     même nom écrase silencieusement le premier. Une référence déjà copiée est
     réutilisée. Si la source est absente, aucune copie factice n'est créée et
-    la ressource retournée est marquée manquante.
+    la ressource retournée est marquée manquante. En Store, un ``stat`` refusé ou un dossier
+    ``luts/`` qu'on ne peut pas créer conservent la référence : ce n'est pas une LUT supprimée.
     """
-    root = Path(project_root).resolve()
+    try:
+        root = Path(project_root).resolve()
+    except OSError:
+        if not is_store():
+            raise
+        root = Path(project_root)
     candidates: list[Path] = []
     if lut.source_path:
         candidates.append(Path(lut.source_path))
@@ -443,36 +452,57 @@ def copy_lut_into_project(
         candidates.append(stored)
     else:
         candidates.append(root / stored)
-    source = next((path for path in candidates if path.is_file()), None)
-    if source is None:
-        return LUTResource(
-            path=lut.path,
-            title=lut.title,
-            sha1=lut.sha1,
-            size=lut.size,
-            missing=True,
-            source_path=lut.source_path,
-        )
-
-    if not stored.is_absolute() and (root / stored).resolve() == source.resolve():
-        relative = stored
-    else:
-        suffix = source.suffix.lower() or ".cube"
-        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-._")
-        safe_stem = safe_stem or "lut"
-        relative = Path("luts") / f"{lut.sha1[:12]}-{safe_stem}{suffix}"
-    destination = root / relative
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if source.resolve() != destination.resolve():
-        shutil.copy2(source, destination)
-    return LUTResource(
-        path=relative.as_posix(),
-        title=lut.title,
-        sha1=lut.sha1,
-        size=destination.stat().st_size,
-        missing=False,
-        source_path=str(destination.resolve()),
-    )
+    # Le bac à sable refuse ``stat`` sans accès ouvert. ``Path.is_file`` rend alors False, et le premier
+    # enregistrement écrivait ``missing: true`` : à l'ouverture cette valeur n'est plus revérifiée, la LUT
+    # disparaît du projet alors que le fichier est toujours là.
+    with scoped_access(*(os.fspath(path) for path in candidates)):
+        source: Path | None = None
+        denied = False
+        for path in candidates:
+            kind = probe_user_file(path)
+            if kind == "file":
+                source = path
+                break
+            if kind == "denied":
+                denied = True
+        if source is None:
+            if is_store() and denied:
+                return lut
+            return LUTResource(
+                path=lut.path,
+                title=lut.title,
+                sha1=lut.sha1,
+                size=lut.size,
+                missing=True,
+                source_path=lut.source_path,
+            )
+        try:
+            if not stored.is_absolute() and (root / stored).resolve() == source.resolve():
+                relative = stored
+            else:
+                suffix = source.suffix.lower() or ".cube"
+                safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-._")
+                safe_stem = safe_stem or "lut"
+                relative = Path("luts") / f"{lut.sha1[:12]}-{safe_stem}{suffix}"
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source.resolve() != destination.resolve():
+                shutil.copy2(source, destination)
+            copied = LUTResource(
+                path=relative.as_posix(),
+                title=lut.title,
+                sha1=lut.sha1,
+                size=destination.stat().st_size,
+                missing=False,
+                source_path=str(destination.resolve()),
+            )
+        except PermissionError:
+            # Le signet du ``.kut`` n'autorise pas à créer ``luts/`` à côté. On garde la référence d'origine
+            # (le fichier choisi reste lisible par son propre signet) au lieu de faire échouer tout l'enregistrement.
+            if not is_store():
+                raise
+            return lut
+    return copied
 
 
 # ---------------------------------------------------------------------------

@@ -242,6 +242,101 @@ def test_subtitles_and_luts_are_read_and_written_inside_the_access(store, monkey
     assert bridge.open_count() == 0                                                   # fermé même sur l'exception
 
 
+def _cube_file(path: Path) -> None:
+    path.write_text('TITLE "Look"\nLUT_3D_SIZE 2\n' + "\n".join("0 0 0" for _ in range(8)) + "\n", encoding="utf-8")
+
+
+def test_lut_import_reads_run_inside_the_access(store, monkeypatch):
+    """L'import relit le ``.cube`` après ``parse_cube_lut`` : ces lectures doivent tenir le signet ouvert."""
+    from core.color_grading import LUTResource
+
+    manager, bridge, user = store
+    cube = user / "look.cube"
+    _cube_file(cube)
+    manager.remember(str(cube))
+    from core import lut_importer
+
+    seen = _watch_open_count(monkeypatch, bridge, Path, "read_bytes")
+    assert lut_importer.ffmpeg_readable_lut(cube) == cube and seen == [1] and bridge.open_count() == 0
+    seen.clear()
+    resource = LUTResource.from_path(cube)
+    assert resource.missing is False and seen == [1] and bridge.open_count() == 0
+
+
+def test_store_save_keeps_a_lut_when_the_sandbox_refuses_the_stat(store, monkeypatch):
+    """Un ``stat`` refusé n'est pas une LUT supprimée : l'enregistrer ne doit pas figer ``missing``."""
+    import os
+
+    from core.color_grading import ColorGrade, ColorGradingService, LUTResource
+    from core.project_factory import create_default_project
+
+    _manager, _bridge, user = store
+    cube = user / "look.cube"
+    _cube_file(cube)
+    real_stat = os.stat
+
+    def gated(path, *args, **kwargs):
+        if os.path.basename(os.fspath(path)) == "look.cube":
+            raise PermissionError(1, "Operation not permitted")
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", gated)
+    project = create_default_project()
+    grade = ColorGrade(lut=LUTResource(path=str(cube), title="Look", sha1="0" * 40, size=10, source_path=str(cube)))
+    ColorGradingService().set_grade(project, "intro", grade)
+    target = user / "film.kut"
+    save_project(project, str(target))
+    kept = ColorGradingService().get_grade(project, "intro")
+    assert kept.lut is not None and kept.lut.missing is False and kept.lut.path == str(cube)
+    loaded = load_project(str(target))
+    again = ColorGradingService().get_grade(loaded, "intro")
+    assert again.lut is not None and again.lut.missing is False and again.lut.path == str(cube)
+
+
+def test_store_save_still_marks_a_lut_that_is_really_gone(store):
+    from core.color_grading import ColorGrade, ColorGradingService, LUTResource
+    from core.project_factory import create_default_project
+
+    _manager, _bridge, user = store
+    project = create_default_project()
+    ColorGradingService().set_grade(
+        project, "intro",
+        ColorGrade(lut=LUTResource(path="luts/ghost.cube", title="Ghost", sha1="0" * 40, size=10)),
+    )
+    target = user / "film.kut"
+    save_project(project, str(target))
+    loaded = load_project(str(target))
+    lut = ColorGradingService().get_grade(loaded, "intro").lut
+    assert lut is not None and lut.missing is True and lut.path == "luts/ghost.cube"
+
+
+def test_store_save_keeps_the_lut_when_the_sibling_folder_is_refused(store, monkeypatch):
+    from core.color_grading import ColorGrade, ColorGradingService, LUTResource
+    from core.project_factory import create_default_project
+
+    manager, _bridge, user = store
+    cube = user / "look.cube"
+    _cube_file(cube)
+    manager.remember(str(cube))
+    project = create_default_project()
+    ColorGradingService().set_grade(project, "intro", ColorGrade(lut=LUTResource.from_path(cube)))
+    real_mkdir = Path.mkdir
+
+    def refused(self, *args, **kwargs):
+        if self.name == "luts":
+            raise PermissionError(1, "Operation not permitted")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", refused)
+    target = user / "projet" / "film.kut"
+    save_project(project, str(target))
+    lut = ColorGradingService().get_grade(project, "intro").lut
+    assert lut is not None and lut.missing is False and Path(lut.path).is_absolute()
+    loaded = load_project(str(target))
+    again = ColorGradingService().get_grade(loaded, "intro").lut
+    assert again is not None and again.missing is False and again.path == lut.path
+
+
 def test_media_handle_holds_the_access_until_closed(store, monkeypatch):
     from core import media_io
 
