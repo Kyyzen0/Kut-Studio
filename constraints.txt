@@ -16,7 +16,7 @@ macholib==1.16.4
 pefile==2024.8.26
 pywin32-ctypes==0.2.3
 packaging==26.3
-pytest==9.1.1
+pytest==9.2.0
 pytest-qt==4.5.0
 pytest-xdist==3.8.0
 pytest-timeout==2.4.0
