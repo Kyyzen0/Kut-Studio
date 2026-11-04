@@ -21,13 +21,18 @@ d'un contexte Qt, en CLI ou dans les tests.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from .atomic_io import atomic_write_text
+from .build_flavor import is_store
 from .security_scope import scoped_argument
 from .text_decoding import decode_text_bytes
+
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -200,10 +205,55 @@ def load_srt(file_path: str) -> list[SubtitleCue]:
     return parse_srt(decode_text_bytes(Path(file_path).read_bytes()))
 
 
+def _restore_previous_file(target: Path, original: bytes | None) -> None:
+    """Remet ``target`` comme avant une écriture en place interrompue. Ne masque pas l'erreur d'origine."""
+    try:
+        if original is None:
+            if target.is_file():
+                target.unlink()
+            return
+        with target.open("wb") as handle:
+            handle.write(original)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        LOGGER.warning(
+            "Export des sous-titres : le fichier n'a pas pu être remis dans son état précédent",
+            exc_info=True,
+        )
+
+
+def _write_text_in_place(target: Path, text: str) -> None:
+    """Écrit ``text`` dans ``target`` quand le bac à sable refuse un fichier voisin.
+
+    ``open("w")`` tronque tout de suite : les octets précédents sont gardés et réécrits si l'écriture échoue
+    (disque plein, volume coupé). Une coupure du processus pendant l'écriture reste non atomique.
+    """
+    original = target.read_bytes() if target.is_file() else None
+    try:
+        with target.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        _restore_previous_file(target, original)
+        raise
+
+
 @scoped_argument(1)
 def save_srt(cues: list[SubtitleCue], file_path: str) -> None:
-    """Sérialise ``cues`` dans ``file_path`` au format SRT UTF-8, de façon atomique (le dossier est créé)."""
-    atomic_write_text(file_path, format_srt(cues))
+    """Sérialise ``cues`` dans ``file_path`` au format SRT UTF-8.
+
+    Écriture atomique (fichier temporaire voisin, puis remplacement ; le dossier est créé). Version Store : le bac à
+    sable n'autorise que le fichier choisi, pas un voisin. On écrit alors en place, et un échec remet l'ancien contenu.
+    """
+    text = format_srt(cues)
+    try:
+        atomic_write_text(file_path, text)
+    except PermissionError:
+        if not is_store():
+            raise
+        _write_text_in_place(Path(os.path.realpath(file_path)), text)
 
 
 # ---------------------------------------------------------------------------

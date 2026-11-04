@@ -242,6 +242,67 @@ def test_subtitles_and_luts_are_read_and_written_inside_the_access(store, monkey
     assert bridge.open_count() == 0                                                   # fermé même sur l'exception
 
 
+def test_srt_export_writes_in_place_when_the_sandbox_refuses_a_sibling(store, monkeypatch):
+    """Le bac à sable n'autorise que le .srt choisi : un voisin temporaire est refusé, l'export écrit le fichier lui-même."""
+    from core import subtitle_io
+
+    _manager, _bridge, user = store
+    target = user / "sous-titres.srt"
+    target.write_text("ancien", encoding="utf-8")
+    monkeypatch.setattr(
+        "core.atomic_io.tempfile.mkstemp", lambda *a, **k: (_ for _ in ()).throw(PermissionError("sandbox")),
+    )
+    cues = [subtitle_io.SubtitleCue(start=0.0, end=1.0, text="Nouveau")]
+    subtitle_io.save_srt(cues, str(target))
+    assert subtitle_io.load_srt(str(target)) == cues
+    created = user / "nouveau.srt"
+    subtitle_io.save_srt(cues, str(created))
+    assert subtitle_io.load_srt(str(created)) == cues
+
+
+def test_srt_export_outside_the_store_keeps_the_file_when_a_sibling_is_refused(store, monkeypatch):
+    from core import subtitle_io
+
+    monkeypatch.setattr(build_flavor, "STORE", False)
+    _manager, _bridge, user = store
+    target = user / "sous-titres.srt"
+    target.write_text("ancien", encoding="utf-8")
+    monkeypatch.setattr(
+        "core.atomic_io.tempfile.mkstemp", lambda *a, **k: (_ for _ in ()).throw(PermissionError("sandbox")),
+    )
+    with pytest.raises(PermissionError):
+        subtitle_io.save_srt([subtitle_io.SubtitleCue(start=0.0, end=1.0, text="Nouveau")], str(target))
+    assert target.read_text(encoding="utf-8") == "ancien"
+
+
+def test_srt_in_place_write_restores_the_previous_file_when_the_write_fails(store, monkeypatch):
+    """``open("w")`` tronque avant d'écrire : un disque plein ne doit pas laisser le .srt vide."""
+    from core import subtitle_io
+
+    _manager, _bridge, user = store
+    target = user / "plein.srt"
+    previous = "1\n00:00:00,000 --> 00:00:01,000\nAncien\n\n"
+    target.write_text(previous, encoding="utf-8")
+    monkeypatch.setattr(
+        "core.atomic_io.tempfile.mkstemp", lambda *a, **k: (_ for _ in ()).throw(PermissionError("sandbox")),
+    )
+    real_open = Path.open
+
+    def fail_the_text_write(self, mode="r", *args, **kwargs):
+        handle = real_open(self, mode, *args, **kwargs)
+        if self == target and "w" in mode and "b" not in mode:
+            def boom(_data):
+                raise OSError(28, "No space left on device")
+
+            handle.write = boom
+        return handle
+
+    monkeypatch.setattr(Path, "open", fail_the_text_write)
+    with pytest.raises(OSError, match="No space left"):
+        subtitle_io.save_srt([subtitle_io.SubtitleCue(start=0.0, end=1.0, text="Nouveau")], str(target))
+    assert target.read_text(encoding="utf-8") == previous
+
+
 def test_media_handle_holds_the_access_until_closed(store, monkeypatch):
     from core import media_io
 
