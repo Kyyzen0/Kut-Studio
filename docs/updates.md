@@ -47,7 +47,7 @@ Avant même de télécharger le paquet, si la release publie `SHA256SUMS.txt.sig
 `SHA256SUMS.txt` est vérifiée (section 10) : fausse ou faite par une clé inconnue, elle refuse tout, sans rien écrire sur
 le disque. Une version égale ou plus ancienne que celle installée n'est jamais téléchargée.
 
-Sinon le fichier est supprimé, jamais ouvert. Une release sans `SHA256SUMS.txt`, ou qui n'y liste pas le paquet, n'est
+Sinon, le fichier est supprimé, jamais ouvert. Une release sans `SHA256SUMS.txt`, ou qui n'y liste pas le paquet, n'est
 pas téléchargeable depuis l'application (seule la page de la version est proposée).
 
 **Intégrité, pas authenticité — sauf si la release est signée.** `SHA256SUMS.txt` vient de la même release que le
@@ -62,7 +62,7 @@ sur les signatures vérifiées par le système, et l'application le dit dans le 
   (l'utilitaire d'archive le propage à `Kut-Studio.app`) : Gatekeeper contrôle la signature Developer ID et la
   notarisation à la première ouverture. Kut-Studio ne retire jamais cet attribut et ne désactive aucune protection. Une
   version non notarisée est bloquée par macOS ; l'utilisateur seul peut l'autoriser (Réglages Système › Confidentialité
-  et sécurité), ce que le dialogue réserve au cas où il fait confiance à sa provenance.
+  et sécurité), ce que le dialogue réserve au cas où il ferait confiance à sa provenance.
 * **Windows** : le paquet reçoit le flux `Zone.Identifier` (« Mark of the Web », zone Internet) : SmartScreen et les
   protections liées s'appliquent. Les paquets Windows ne sont **pas encore signés** (Authenticode) : SmartScreen peut
   signaler un éditeur inconnu, et le dialogue le dit.
@@ -126,11 +126,11 @@ d'installation sans clic).
 4. **Fermeture par le chemin normal** (`close`) : projet non enregistré proposé à l'enregistrement, rendu en cours confirmé.
    **Annuler arrête tout** : le staging est supprimé, rien n'est lancé.
 5. **Assistant** (`core/update_helper.py`). Un script `/bin/sh` **généré à l'exécution** dans `<cache>/updates/helper-<pid>/`
-   (droits 0700), plutôt qu'un fichier des ressources : il ne peut pas vivre dans le bundle qu'il remplace, et un fichier de
+   (droits 0700), plutôt qu'un fichier de ressources : il ne peut pas vivre dans le bundle qu'il remplace, et un fichier de
    plus dans le bundle changerait sa signature. Son texte est constant ; les chemins arrivent par des variables
    `KUT_UPD_*` (espaces, accents, guillemets, `$` : de simples valeurs). Lancé détaché (`start_new_session`, entrée
    `/dev/null`, sorties vers `install.log`, environnement minimal sans `DYLD_*`) **après** la fermeture. Il :
-   * attend la fin du processus de l'application, **120 s au plus** ; au-delà il abandonne **sans rien modifier** (statut
+   * attend la fin du processus de l'application, **120 s au plus** ; au-delà, il abandonne **sans rien modifier** (statut
      `wait_timeout`) ;
    * renomme `Kut-Studio.app` en `.Kut-Studio.app.previous-<version>`, puis le staging en `Kut-Studio.app` (renommages
      atomiques ; si le second échoue, la précédente est remise aussitôt) ;
@@ -144,7 +144,7 @@ d'installation sans clic).
      `safe_rm`, qui refuse un nom qui n'est pas un staging ou une sauvegarde de Kut-Studio.
 6. **Idempotence et interruption.** Le script lit l'état des dossiers (neuf / à moitié échangé / échangé) au lieu de
    supposer où il en était : relancé après un arrêt brutal à n'importe quelle étape, il termine ou remet l'ancienne.
-   Il prend d'abord un **verrou exclusif** : `install.lock` est un dossier créé par `mkdir` (atomique) qui contient son pid. Un second assistant (deux instances de Kut-Studio) ne l'obtient pas et sort avec le code 6 **avant d'examiner ou de modifier quoi que ce soit** (journal, et statut `already_running` s'il n'y en a pas déjà un) ; l'application ne lance d'ailleurs pas d'assistant si un verrou vivant existe (avant même de fermer la fenêtre). Un verrou dont le propriétaire est mort est renommé vers un nom unique puis supprimé, jamais supprimé en place ni pris s'il est vivant ; il est libéré à toute sortie (`trap EXIT`, y compris SIGTERM), sauf SIGKILL (couvert par la reprise du verrou périmé). Tous les renommages passent par `safe_mv` : jamais vers une destination existante (`mv` y imbriquerait le dossier ; macOS n'a pas `mv -T`) — test avant, passage par un nom unique, test juste avant le dernier renommage, vérification après. Les variables `KUT_UPD_*` sont refusées (code 2, rien de touché) si elles sont vides, relatives, avec `..`, `//` ou `/` final, si le staging et la sauvegarde ne sont pas des frères nommés comme attendu de `Kut-Studio.app`, ou si le pid est ≤ 1. Au démarrage suivant, `recover_leftovers` : verrou vivant → ne touche à
+   Il prend d'abord un **verrou exclusif** : `install.lock` est un dossier créé par `mkdir` (atomique) qui contient son pid. Un second assistant (deux instances de Kut-Studio) ne l'obtient pas et sort avec le code 6 **avant d'examiner ou de modifier quoi que ce soit** (journal, et statut `already_running` s'il n'y en a pas déjà un) ; l'application ne lance d'ailleurs pas d'assistant si un verrou vivant existe (avant même de fermer la fenêtre). Un verrou dont le propriétaire est mort est renommé vers un nom unique puis supprimé, jamais supprimé en place ni pris s'il est vivant ; il est libéré à toute sortie (`trap EXIT`, y compris SIGTERM), sauf SIGKILL (couvert par la reprise du verrou périmé). Tous les renommages passent par `safe_mv` : jamais vers une destination existante (`mv` y imbriquerait le dossier ; macOS n'a pas `mv -T`) — test avant, passage par un nom unique, test juste avant le dernier renommage, vérification après. Les variables `KUT_UPD_*` sont refusées (code 2, rien de touché) si elles sont vides, relatives, avec `..`, `//` ou `/` final, si le staging et la sauvegarde ne sont pas des dossiers frères nommés comme attendu de `Kut-Studio.app`, ou si le pid est ≤ 1. Au démarrage suivant, `recover_leftovers` : verrou vivant → ne touche à
    rien ; `Kut-Studio.app` absent ou invalide et sauvegarde valide → **restaurée** ; application valide et sauvegarde d'une
    autre version (assistant mort après l'échange) → l'application qui tourne prouve que la nouvelle version démarre, la
    sauvegarde est supprimée ; stagings et dossiers d'assistant orphelins supprimés.
@@ -301,7 +301,7 @@ dépôt.
 
 * la logique pure (versions, convention, choix, empreintes, limites GitHub, contextes des trois systèmes) ;
 * le transport Qt réel contre un faux GitHub local (`tests/update_server.py`) : succès, limites 403/429, 404/500,
-  réponses illisibles, hors ligne, délais total et d'inactivité, annulation, taille et empreinte fausses, empreinte
+  réponses illisibles, hors ligne, délai total et délai d'inactivité, annulation, taille et empreinte fausses, empreinte
   absente, redirection, erreurs disque ;
 * le parcours complet dans la vraie fenêtre, la traduction stricte de chaque état dans les trois langues, l'attribut
   de quarantaine réellement posé et relu ;
@@ -340,9 +340,9 @@ détenteur de la clé privée Ed25519 dont la moitié publique est dans `core/up
 paquet et l'empreinte sur GitHub, ou qui modifie `SHA256SUMS.txt` après coup, ne sait pas fabriquer une signature
 valide. Elle ne dit **rien** de plus : voir l'ADR, « Ce que la signature ne protège pas ».
 
-**Fichier.** `SHA256SUMS.txt.sig` : une ligne ASCII `ed25519 <identifiant de clé> <signature en base64>`. L'identifiant est
-les 16 premiers caractères hexadécimaux du SHA-256 de la clé publique. Il permet de distinguer une clé inconnue de cette
-version (release signée par une clé plus récente) d'une signature fausse.
+**Fichier.** `SHA256SUMS.txt.sig` : une ligne ASCII `ed25519 <identifiant de clé> <signature en base64>`. L'identifiant
+correspond aux 16 premiers caractères hexadécimaux du SHA-256 de la clé publique. Il permet de distinguer une clé inconnue
+de cette version (release signée par une clé plus récente) d'une signature fausse.
 
 **Résultat dans l'application.** `VERIFIED` (signature valide d'une clé connue), `ABSENT` (pas de `.sig` : comportement
 d'avant, installation assistée, pas une erreur), `INVALID` (illisible, clé inconnue, signature fausse, ou
