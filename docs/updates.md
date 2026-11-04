@@ -62,7 +62,7 @@ sur les signatures vérifiées par le système, et l'application le dit dans le 
   (l'utilitaire d'archive le propage à `Kut-Studio.app`) : Gatekeeper contrôle la signature Developer ID et la
   notarisation à la première ouverture. Kut-Studio ne retire jamais cet attribut et ne désactive aucune protection. Une
   version non notarisée est bloquée par macOS ; l'utilisateur seul peut l'autoriser (Réglages Système › Confidentialité
-  et sécurité), ce que le dialogue réserve au cas où il ferait confiance à sa provenance.
+  et sécurité), ce que le dialogue réserve au cas où il fait confiance à sa provenance.
 * **Windows** : le paquet reçoit le flux `Zone.Identifier` (« Mark of the Web », zone Internet) : SmartScreen et les
   protections liées s'appliquent. Les paquets Windows ne sont **pas encore signés** (Authenticode) : SmartScreen peut
   signaler un éditeur inconnu, et le dialogue le dit.
