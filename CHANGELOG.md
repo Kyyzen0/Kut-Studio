@@ -25,6 +25,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **Enregistrement sous Windows : un `.kut` encore ouvert n'est plus vidé si la copie de secours échoue.** Quand Windows refuse de remplacer le fichier (il est ouvert par un autre programme), l'enregistrement recopie dedans. Si cette copie échoue (disque plein), l'ancien montage est remis et l'enregistrement est signalé comme raté.
 - **Version Mac App Store : l'export de sous-titres n'échoue plus.** Le bac à sable n'autorise pas un fichier temporaire à côté du `.srt` choisi. L'export écrit alors le fichier en place ; si l'écriture échoue (disque plein, volume coupé), le contenu précédent est remis.
 - **Plantage natif intermittent à la fermeture d'une fenêtre ou au vidage d'une liste.** PySide libérait l'objet Python d'un élément de liste (`QListWidgetItem`…) *dans* le destructeur C++ de cet élément, puis relisait la mémoire libérée : segfault sans trace, au hasard du ramasse-miettes (« worker crashed » sur la CI, tous systèmes). Chaque élément créé dans `ui/` est maintenant retenu jusqu'à la destruction de son objet C++ (`ui/qt_item_lifetime.py`) ; garde `tests/test_qt_item_lifetime.py`.
 
