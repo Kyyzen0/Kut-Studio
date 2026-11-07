@@ -117,6 +117,38 @@ def _reusable(target: Path) -> bool:
 SHARED_WRITE_ATTEMPTS = 5
 """Essais pour publier une entrée du cache qu'un autre thread publie au même instant (refus de Windows)."""
 
+_PNG_LOCKS = tuple(threading.Lock() for _ in range(64))
+"""Verrous par nom d'image. Une même clé désigne à la fois le dessin réussi et l'image vide d'un échec : les deux
+écrivains (aperçu, scopes, export) ne doivent pas s'entrelacer."""
+
+
+def _png_lock(target: Path) -> threading.Lock:
+    return _PNG_LOCKS[hash(target.name) % len(_PNG_LOCKS)]
+
+
+def _unlink_quiet(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _replace_exclusive(temporary: Path, target: Path) -> None:
+    """Remplace ``target`` par ``temporary``.
+
+    Un fichier déjà présent n'est pas accepté à la place : depuis qu'un échec de dessin écrit sous le même nom qu'une
+    image réussie, « le fichier existe » ne veut plus dire « c'est notre copie ». Windows peut refuser le remplacement
+    le temps qu'un lecteur lâche le fichier ; on réessaie, puis on échoue sans retirer la marque d'échec.
+    """
+    for attempt in range(SHARED_WRITE_ATTEMPTS):
+        try:
+            os.replace(temporary, target)
+            return
+        except PermissionError:
+            if attempt == SHARED_WRITE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.01 * (attempt + 1))
+
 
 def _publish_shared(target: Path, publish: Callable[[], object]) -> None:
     """Publie une entrée du cache **nommée d'après son contenu**, que d'autres threads peuvent publier en même temps.
@@ -140,33 +172,30 @@ def _publish_shared(target: Path, publish: Callable[[], object]) -> None:
 def _write_png(image, target: Path, failed: bool = False) -> None:
     """Écrit ``image`` dans ``target``. ``failed`` : le dessin a échoué, le fichier ne doit pas être resservi.
 
-    Une image déjà réussie (sans marque) n'est pas remplacée : un échec concurrent ne l'empoisonne pas. Une image marquée
-    est réécrite. La marque est posée AVANT le PNG : un plantage entre les deux laisse une marque, jamais un vide réutilisable.
+    L'aperçu, les scopes et l'export écrivent la même clé, parfois en même temps. Le verrou couvre toute l'écriture :
+    un échec ne publie pas son image vide par-dessus un dessin qui vient de réussir, et ne retire la marque qu'une fois
+    le PNG réussi en place. La marque d'un échec est posée avant le PNG : un plantage entre les deux laisse une marque,
+    jamais un vide réutilisable.
     """
-    if _reusable(target):
-        # Déjà une image réussie : un échec de dessin ne l'écrase pas (l'aperçu montre celle du cache).
-        _touch(target)
-        return
-    marker = _unusable_marker(target)
-    _discard_cached(target)
-    if failed:
-        marker.write_bytes(b"1")
-    # Processus **et** thread : l'aperçu fidèle et les scopes rastérisent chacun dans leur thread, parfois la même image.
-    temporary = target.with_name(f".{target.stem}.{os.getpid()}.{threading.get_ident()}.tmp.png")
-    try:
-        if not image.save(str(temporary), "PNG", 80):
-            raise OSError(f"Impossible d'écrire l'image de calque : {temporary}")
-        _publish_shared(target, lambda: os.replace(temporary, target))
-    except OSError:
-        if failed:
-            _discard_cached(target)            # la marque sans image réussie ne doit pas bloquer ; le vide non plus
-        raise
-    finally:
-        if temporary.exists():         # un écrivain concurrent l'a emporté : notre copie identique est en trop
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+    with _png_lock(target):
+        if _reusable(target):
+            # Déjà une image réussie : un échec de dessin ne l'écrase pas (l'aperçu montre celle du cache).
+            _touch(target)
+            return
+        marker = _unusable_marker(target)
+        # Processus **et** thread : l'aperçu fidèle et les scopes rastérisent chacun dans leur thread, parfois la même image.
+        temporary = target.with_name(f".{target.stem}.{os.getpid()}.{threading.get_ident()}.tmp.png")
+        try:
+            if not image.save(str(temporary), "PNG", 80):
+                raise OSError(f"Impossible d'écrire l'image de calque : {temporary}")
+            if failed:
+                marker.write_bytes(b"1")
+            _replace_exclusive(temporary, target)
+            if not failed:
+                _unlink_quiet(marker)          # seulement après le PNG réussi : sinon le vide redevient réutilisable
+        finally:
+            if temporary.exists():
+                _unlink_quiet(temporary)
 
 
 def content_png_name(state: object, *, width: int, height: int, salt: str = "content") -> str:

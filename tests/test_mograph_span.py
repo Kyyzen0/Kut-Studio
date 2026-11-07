@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -156,6 +158,58 @@ def test_parallel_png_writes_produce_the_bytes_of_a_serial_write(tmp_path, monke
     parallel = write(tmp_path / "parallele")
     assert len(serial) == 32                                   # 30 images, l'image vide, la liste
     assert parallel == serial
+
+
+def test_a_failed_writer_cannot_publish_over_a_frame_drawn_while_it_encodes(tmp_path, monkeypatch):
+    """L'échec et le succès de la même clé s'entrelacent : l'image vide ne doit pas rester sans sa marque.
+
+    L'aperçu encode l'échec (image transparente) pendant que l'export, lui, dessine la scène. Sans verrou, l'export
+    retire la marque puis publie le dessin, et l'échec remplace ce dessin ensuite : le cache sert le vide à l'export.
+    """
+    target = tmp_path / "f-same.png"
+    bad = QImage(4, 4, QImage.Format_ARGB32)
+    bad.fill(QColor(0, 0, 0, 0))
+    good = QImage(4, 4, QImage.Format_ARGB32)
+    good.fill(QColor(220, 10, 10, 255))
+    real_save = QImage.save
+    holder: dict[str, threading.Thread] = {}
+
+    def save(self, path, fmt=None, quality=-1):
+        if self is bad and "worker" not in holder:
+            holder["worker"] = threading.Thread(target=lambda: mograph_stream._write_png(good, target, False))
+            holder["worker"].start()
+            time.sleep(0.1)                                # laisse l'export publier si rien ne le retient
+        return real_save(self, path, fmt, quality)
+
+    monkeypatch.setattr(QImage, "save", save)
+    mograph_stream._write_png(bad, target, True)
+    holder["worker"].join(5)
+    assert not holder["worker"].is_alive()
+    loaded = QImage(str(target))
+    assert loaded.pixelColor(0, 0) == QColor(220, 10, 10, 255)
+    assert mograph_stream._reusable(target)
+    assert not mograph_stream._unusable_marker(target).is_file()
+
+
+def test_a_locked_empty_frame_is_not_accepted_as_the_redraw(tmp_path, monkeypatch):
+    """Windows refuse de remplacer un PNG encore ouvert. Ce refus ne doit pas effacer la marque et garder le vide."""
+    target = tmp_path / "f-locked.png"
+    marker = mograph_stream._unusable_marker(target)
+    target.write_bytes(b"empty-frame")
+    marker.write_bytes(b"1")
+    monkeypatch.setattr(mograph_stream, "SHARED_WRITE_ATTEMPTS", 1)
+
+    def blocked(*_args, **_kwargs):
+        raise PermissionError("fichier ouvert")
+
+    monkeypatch.setattr(mograph_stream.os, "replace", blocked)
+    good = QImage(4, 4, QImage.Format_ARGB32)
+    good.fill(QColor(220, 10, 10, 255))
+    with pytest.raises(PermissionError):
+        mograph_stream._write_png(good, target, False)
+    assert target.read_bytes() == b"empty-frame"
+    assert marker.is_file()
+    assert not mograph_stream._reusable(target)
 
 
 def test_a_failed_png_write_is_reported_after_the_others_finish(tmp_path, monkeypatch):
