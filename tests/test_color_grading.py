@@ -519,6 +519,74 @@ def test_store_toggle_favorite() -> None:
     assert store.toggle_favorite("cinema") is False
 
 
+def test_store_preset_keeps_a_lut_when_the_sandbox_refuses_stat(tmp_path, monkeypatch) -> None:
+    """Build Store : un ``stat`` refusé n'écrit pas ``missing`` dans les préréglages utilisateur.
+
+    Le bac à sable refuse ``stat`` sans signet ouvert. ``Path.is_file`` rend alors False. Le chargement
+    marquait la LUT manquante, et le prochain favori réécrivait ce drapeau : la LUT du préréglage disparaissait.
+    """
+    import json
+
+    from core import build_flavor
+
+    cube = tmp_path / "look.cube"
+    cube.write_text("TITLE \"Look\"\n", encoding="utf-8")
+    grade = ColorGrade(
+        lut=LUTResource(path=str(cube), title="Look", sha1="0" * 40, size=cube.stat().st_size, source_path=str(cube)),
+    )
+    preset = make_user_color_preset("Look", "", grade)
+    save_color_preset_data([preset], [], settings_dir=tmp_path)
+    real_stat = os.stat
+
+    def gated(path, *args, **kwargs):
+        if os.path.basename(os.fspath(path)) == "look.cube":
+            raise PermissionError(1, "Operation not permitted")
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", gated)
+    monkeypatch.setattr(build_flavor, "STORE", True)
+    loaded, _favorites = load_color_preset_data(settings_dir=tmp_path)
+    assert loaded[0].grade.lut is not None and loaded[0].grade.lut.missing is False
+    assert loaded[0].grade.lut.path == str(cube)
+
+    kept = ColorPresetStore(user_presets=loaded, favorites=[], settings_dir=tmp_path)
+    kept.toggle_favorite(loaded[0].id)
+    raw = json.loads((tmp_path / COLOR_PRESETS_FILE).read_text(encoding="utf-8"))
+    assert raw["user_presets"][0]["grade"]["lut"]["missing"] is False
+    assert raw["user_presets"][0]["grade"]["lut"]["path"] == str(cube)
+
+
+def test_store_preset_still_marks_a_lut_that_is_really_gone(tmp_path, monkeypatch) -> None:
+    from core import build_flavor
+
+    monkeypatch.setattr(build_flavor, "STORE", True)
+    grade = ColorGrade(lut=LUTResource(path=str(tmp_path / "ghost.cube"), title="Ghost", sha1="0" * 40, size=10))
+    preset = make_user_color_preset("Ghost", "", grade)
+    save_color_preset_data([preset], [], settings_dir=tmp_path)
+    loaded, _favorites = load_color_preset_data(settings_dir=tmp_path)
+    assert loaded[0].grade.lut is not None
+    assert loaded[0].grade.lut.missing is True
+    assert loaded[0].grade.lut.path == str(tmp_path / "ghost.cube")
+
+
+def test_preset_load_outside_the_store_still_treats_a_refused_stat_as_missing(tmp_path, monkeypatch) -> None:
+    cube = tmp_path / "look.cube"
+    cube.write_text("TITLE \"Look\"\n", encoding="utf-8")
+    grade = ColorGrade(lut=LUTResource(path=str(cube), title="Look", sha1="0" * 40, size=8, source_path=str(cube)))
+    preset = make_user_color_preset("Look", "", grade)
+    save_color_preset_data([preset], [], settings_dir=tmp_path)
+    real_stat = os.stat
+
+    def gated(path, *args, **kwargs):
+        if os.path.basename(os.fspath(path)) == "look.cube":
+            raise PermissionError(1, "Operation not permitted")
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", gated)
+    loaded, _favorites = load_color_preset_data(settings_dir=tmp_path)
+    assert loaded[0].grade.lut is not None and loaded[0].grade.lut.missing is True
+
+
 def test_store_persistence_roundtrip(tmp_path) -> None:
     preset = make_user_color_preset(
         name="Perso",

@@ -1141,14 +1141,34 @@ def _dict_to_grade(raw: object) -> ColorGrade:
     if isinstance(lut_raw, dict):
         try:
             path = str(lut_raw.get("path", ""))
-            exists = bool(path) and Path(path).is_file()
+            stored_missing = bool(lut_raw.get("missing", False))
+            # ``Path.is_file`` avale un ``PermissionError``. Dans le build Store, le bac à sable refuse
+            # ``stat`` tant que le signet n'est pas ouvert : un préréglage utilisateur serait marqué
+            # ``missing``, et le prochain enregistrement (un favori, un autre préréglage) figerait ce
+            # drapeau. Une LUT vraiment absente reste manquante. Hors Store, un refus reste une absence.
+            kind = "absent"
+            source: str | None = None
+            if path and not stored_missing:
+                with scoped_access(path):
+                    kind = probe_user_file(path)
+                    if kind == "file":
+                        try:
+                            source = str(Path(path).resolve())
+                        except OSError:
+                            source = path
+            if not path or stored_missing:
+                missing = True
+            elif kind == "denied" and is_store():
+                missing = False
+            else:
+                missing = kind != "file"
             lut = LUTResource(
                 path=path,
                 title=str(lut_raw.get("title", "") or "LUT"),
                 sha1=str(lut_raw.get("sha1", "")),
                 size=int(lut_raw.get("size", 0)),
-                missing=bool(lut_raw.get("missing", False)) or not exists,
-                source_path=str(Path(path).resolve()) if exists else None,
+                missing=missing,
+                source_path=source,
             )
         except (ColorGradingError, ValueError, TypeError):
             lut = None

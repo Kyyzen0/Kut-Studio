@@ -64,6 +64,7 @@ GUARDED: list[tuple[str, str, frozenset[str]]] = [
     ("core/color_grading.py", "LUTResource.from_path", frozenset({"scoped_argument"})),
     ("core/color_grading.py", "copy_lut_into_project", frozenset({"scoped_access"})),
     ("core/project_io.py", "_deserialize_color_grade", frozenset({"scoped_access"})),
+    ("core/color_grading.py", "_dict_to_grade", frozenset({"scoped_access"})),
     ("core/subtitle_io.py", "load_srt", frozenset({"scoped_argument"})),
     ("core/subtitle_io.py", "save_srt", frozenset({"scoped_argument"})),
     ("core/scene3d.py", "load_scene", frozenset({"scoped_argument"})),

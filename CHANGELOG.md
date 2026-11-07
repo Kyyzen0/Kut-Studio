@@ -26,6 +26,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Fixed
 
 - **Version Mac App Store : enregistrer un projet ne retire plus sa LUT.** Importer une LUT puis enregistrer (ou rouvrir le projet) marquait le fichier « manquant » : le bac à sable refuse un `stat` sans accès ouvert, et ce refus était écrit dans le `.kut` comme si le fichier avait disparu. L'import lit la LUT sous son signet ; si le dossier `luts/` à côté du projet ne peut pas être créé, la référence d'origine est conservée. Hors Store, rien ne change.
+- **Préréglages couleur du build Store : une LUT encore là n'est plus notée manquante.** Au redémarrage, le bac à sable refuse de voir le fichier `.cube` tant que son signet n'est pas ouvert. Ce refus était pris pour une LUT absente, et le prochain enregistrement d'un préréglage (ajouter un favori, en créer un autre) figeait « manquante » dans les préréglages : le look s'appliquait sans sa LUT. Un fichier vraiment absent reste signalé. Hors Store, rien ne change.
 - **Version Mac App Store : relier un fichier dans un dossier dont l'accès a été refusé le retient vraiment.** Au lancement, un signet de dossier que le système refuse d'ouvrir était encore traité comme sain. Choisir ensuite un fichier de ce dossier (Relier, import) ne créait pas de signet : au redémarrage suivant le média était de nouveau hors ligne. Le signet refusé est maintenant marqué cassé, et le fichier choisi est retenu. Hors Store, rien ne change.
 - **Version Mac App Store : un enregistrement raté ne vide plus le projet.** Quand le bac à sable interdit le fichier temporaire à côté du `.kut`, l'enregistrement écrit le fichier en place. Si cette écriture échoue (disque plein, volume coupé), le contenu précédent est remis : le projet ne reste pas vide ou coupé. Une coupure de l'application au milieu de l'écriture peut encore laisser un fichier incomplet.
 - **Version Mac App Store : l'export de sous-titres n'échoue plus.** Le bac à sable n'autorise pas un fichier temporaire à côté du `.srt` choisi. L'export écrit alors le fichier en place ; si l'écriture échoue (disque plein, volume coupé), le contenu précédent est remis.
@@ -142,6 +143,7 @@ Version qui ouvre le **mode script** à presque tout le montage et qui apporte u
 
 ### Fixed
 
+- Une scène 3D animée qu'un aperçu ou les scopes n'ont pas réussi à dessiner (mémoire, texture un instant illisible) n'est plus remplacée en silence par une image vide dans l'export suivant : le film la redessine. Un export annoncé réussi ne peut plus la perdre.
 - Mode script : un script ne supprime, ne déplace ni ne désactive plus un calque verrouillé sur une piste libre (`delete_clip`, `move_clip`, `set_clip_enabled`), et ne réécrit plus, en coupant, supprimant ou déplaçant la source d'un suivi, les liaisons d'un clip suiveur verrouillé (calque, piste ou autre séquence) : le script est refusé avant toute modification.
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
 
