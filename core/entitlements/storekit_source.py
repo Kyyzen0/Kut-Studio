@@ -23,6 +23,7 @@ from .service import EntitlementService
 from .storekit_bridge import (
     OK, OP_START_UPDATES, OP_SYNC, POLL_TIMEOUT, SHUTDOWN, StoreBridgeError, StoreKitBridge,
 )
+from .storekit_actions import PAID_KINDS, ActionResult, StoreActions
 from .storekit_verifier import REASON_OK, StoreKitVerifier
 
 LOGGER = logging.getLogger("kut_studio.entitlements")
@@ -48,6 +49,7 @@ class StoreKitEntitlementSource:
         bridge_loader: Callable[[], StoreKitBridge],
         *,
         on_change: Callable[[], None] | None = None,
+        on_action: Callable[[ActionResult], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         refresh_interval: float = REFRESH_INTERVAL_S,
         poll_timeout_ms: int = POLL_TIMEOUT_MS,
@@ -73,6 +75,11 @@ class StoreKitEntitlementSource:
         self._refresh_requested = threading.Event()
         self._restore_requested = threading.Event()
         self._lock = threading.Lock()
+        self._refresh_lock = threading.RLock()                      # la boucle et un fil d'action (étape 15) relisent, jamais ensemble
+        self.actions = StoreActions(
+            lambda: self._bridge, self._refresh, self._is_paid, on_action or (lambda _result: None), verifier.products,
+        )
+        """Produits, achat, restauration (étape 15) : fils courts, résultat par ``on_action`` ; l'état ne change que par relecture."""
         self._thread: threading.Thread | None = None
         self._bridge: StoreKitBridge | None = None
         self._last_state: EntitlementState | None = None
@@ -109,8 +116,12 @@ class StoreKitEntitlementSource:
         self._refresh_requested.set()
 
     def request_restore(self) -> None:
-        """Demande « Restaurer les achats » (``AppStore.sync()``) puis une relecture ; en arrière-plan."""
+        """Demande « Restaurer les achats » (``AppStore.sync()``) puis une relecture ; en arrière-plan (boucle du lecteur).
+        L'interface passe par :attr:`actions` (résultat rendu) ; cette voie reste pour les appelants qui n'en veulent pas."""
         self._restore_requested.set()
+
+    def _is_paid(self) -> bool:
+        return self._service.state().kind in PAID_KINDS
 
     # -- le thread ----------------------------------------------------------------------------------------------------------
 
@@ -161,6 +172,10 @@ class StoreKitEntitlementSource:
                 self._refresh_requested.set()
 
     def _refresh(self) -> None:
+        with self._refresh_lock:
+            self._refresh_locked()
+
+    def _refresh_locked(self) -> None:
         bridge = self._bridge
         if bridge is None:
             return

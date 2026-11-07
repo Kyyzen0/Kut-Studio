@@ -37,7 +37,7 @@ def main() -> int:
     bridge = contract.StoreBridge(path)
     emit(step="load", abi=bridge.abi_version, ms=round((time.perf_counter() - t0) * 1000, 1), path=str(path))
     for name, op, arg in (("entitlements", contract.OP_ENTITLEMENTS, ""), ("app_transaction", contract.OP_APP_TRANSACTION, ""),
-                          ("products", contract.OP_PRODUCTS, "com.kutstudio.app.monthly,com.kutstudio.app.lifetime"),
+                          ("products", contract.OP_PRODUCTS, "studio.monthly,studio.lifetime"),
                           ("start_updates", contract.OP_START_UPDATES, "")):
         t = time.perf_counter()
         status, payload = bridge.call(op, arg, timeout_ms=8000)

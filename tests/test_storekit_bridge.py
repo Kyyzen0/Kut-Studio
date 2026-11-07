@@ -103,7 +103,7 @@ def test_python_constants_match_the_c_header():
     names = dict(re.findall(r"KUTSTORE_([A-Z_]+)\s*=\s*(\d+)", header))
     for name in ("OK", "TIMEOUT", "BAD_ARGUMENT", "STOREKIT_ERROR", "UNVERIFIED", "SHUTDOWN", "INTERNAL", "POLL_TIMEOUT"):
         assert int(names[name]) == getattr(sb, name)
-    for name in ("ENTITLEMENTS", "APP_TRANSACTION", "SYNC", "PRODUCTS", "START_UPDATES"):
+    for name in ("ENTITLEMENTS", "APP_TRANSACTION", "SYNC", "PRODUCTS", "START_UPDATES", "PURCHASE"):
         assert int(names["OP_" + name]) == getattr(sb, "OP_" + name)
 
 
@@ -145,6 +145,11 @@ def test_real_dylib_loads_through_the_production_contract(dylib):
     assert bridge.call(sb.OP_PRODUCTS, "").status == sb.BAD_ARGUMENT                 # refusé côté Swift (opération qui exige un argument)
     assert bridge.call(sb.OP_PRODUCTS, ",".join(f"id{i}" for i in range(40))).status == sb.BAD_ARGUMENT
     assert bridge.poll_update(50).status == sb.POLL_TIMEOUT
+    # Achat (étape 15) : l'ABI reste 1 ; un argument vide ou une liste est refusé côté Swift AVANT tout appel à l'App Store.
+    assert sb.OP_PURCHASE in sb.KNOWN_OPS and sb.ABI_VERSION == 1
+    assert bridge.call(sb.OP_PURCHASE, "").status == sb.BAD_ARGUMENT
+    assert bridge.call(sb.OP_PURCHASE, "studio.monthly,studio.yearly").status == sb.BAD_ARGUMENT
+    assert bridge.call(sb.OP_PURCHASE, "x" * (sb.MAX_ARG_BYTES + 1)).status == sb.BAD_ARGUMENT
 
 
 @darwin_only

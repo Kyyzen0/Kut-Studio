@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 from core.usage_level import UsageLevel, coerce_usage_level
 from core.user_settings import UserSettings, VALID_LANGUAGES, VALID_THEME_MODES
@@ -127,8 +128,17 @@ class PreferencesMixin:
             current_usage_level=self.usage_level.value,
             shortcut_manager=self.shortcuts,
             performance_host=self,
+            license_host=getattr(self, "_store_entitlements", None),     # build Store seulement
             parent=self,
         )
+        screens = getattr(self, "_store_screens", None)
+        if screens is not None:
+            # Les préférences sont modales : on les ferme, puis les offres s'ouvrent au tour suivant (sinon elles ne recevraient aucun clic).
+            def open_offers() -> None:
+                dialog.close()
+                QTimer.singleShot(0, lambda: screens.show_paywall())
+
+            dialog.offers_requested.connect(open_offers)
         dialog.theme_changed.connect(self.on_user_setting_changed)
         dialog.language_changed.connect(self.on_user_setting_changed)
         dialog.performance_changed.connect(self.on_performance_setting_changed)
