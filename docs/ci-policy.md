@@ -16,4 +16,6 @@ runners sont lents (jobs coupés à 60 min) et ralentissaient chaque PR.
 * La couverture de code et le cliquet (mesurés sur Linux) ne tournent donc plus que dans l'exécution hebdomadaire.
 * `release.yml` et `deploy-website.yml` ne changent pas : la publication des releases reste identique.
 * Aucune vérification n'est exigée par ce changement ; la protection de branche reste celle du dépôt.
+* Un nouveau push sur une PR **annule** le run précédent de cette PR (bloc `concurrency` de `multiplatform.yml`). Les pushs
+  sur `main`, l'exécution hebdomadaire et le lancement manuel ne sont jamais annulés (groupe propre à chaque run).
 * Garde : `tests/test_ci_workflow.py` (déclencheurs, jobs non macOS limités à `schedule` / `workflow_dispatch`).

@@ -222,3 +222,15 @@ def test_pull_requests_and_main_run_only_macos_jobs() -> None:
         if name not in {"test-and-build", "linux-ffmpeg7", "macos-libass"}:
             raise AssertionError(f"job inattendu {name} : classe-le dans la politique de docs/ci-policy.md")
         assert "continue-on-error" not in body
+
+
+def test_a_new_push_cancels_the_previous_pull_request_run_but_never_a_main_or_scheduled_run() -> None:
+    """Sans annulation, chaque correctif d'une PR empile une suite macOS de ~55 min derrière les autres."""
+    text = _without_comments(WORKFLOW.read_text(encoding="utf-8"))
+    head = text.split("\njobs:", 1)[0]
+    group = re.search(r"^  group: (.+)$", head, re.M)
+    cancel = re.search(r"^  cancel-in-progress: (.+)$", head, re.M)
+    assert group and cancel, "bloc concurrency absent"
+    assert "github.event.pull_request.number" in group.group(1)       # un groupe par PR
+    assert "github.run_id" in group.group(1)                           # push main / cron / manuel : groupe propre, jamais annulé
+    assert cancel.group(1).strip() == "${{ github.event_name == 'pull_request' }}"
