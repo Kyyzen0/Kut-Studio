@@ -16,7 +16,7 @@ import build
 from tools import check_store_bundle as check
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = Path(os.environ.get("KUT_STUDIO_STORE_APP", check.DEFAULT_APP))
+APP = Path(os.environ.get("KUT_STUDIO_STORE_APP", check.DEFAULT_APP)).resolve()
 BUNDLE = pytest.mark.skipif(
     sys.platform != "darwin" or not check.executable_of(APP).is_file(),
     reason="bundle Store absent : python build.py --flavor store (macOS, KUT_STUDIO_FFMPEG_DIR = FFmpeg LGPL) puis relancer",
@@ -151,3 +151,21 @@ def test_store_bundle_never_calls_a_ffmpeg_found_on_the_path(tmp_path):
     done = check._run([str(check.executable_of(APP)), "--smoke-test"], env=env, cwd=str(tmp_path / "home"), timeout=240)
     assert done.returncode == 0, done.stderr[-800:]
     assert not marker.exists(), "le bundle Store a lancé un FFmpeg du PATH"
+
+
+def test_relative_bundle_path_is_resolved_before_the_cwd_changes(tmp_path, monkeypatch):
+    app = tmp_path / "work" / "Kut-Studio.app"
+    executable = app / "Contents" / "MacOS" / "Kut-Studio"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.chdir(tmp_path / "work")
+    relative = Path("Kut-Studio.app")
+    assert check.executable_of(relative).is_absolute()
+    done = check.run_smoke(relative, tmp_path / "home", tmp_path / "config")      # cwd du sous-processus = HOME temporaire
+    assert done.returncode == 0, done.stderr
+
+
+def test_smoke_launch_failure_is_a_readable_failure_not_a_traceback(tmp_path):
+    done = check.run_smoke(tmp_path / "absent.app", tmp_path / "home", tmp_path / "config")
+    assert done.returncode == 1 and "lancement impossible" in done.stderr

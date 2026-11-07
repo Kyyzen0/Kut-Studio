@@ -47,7 +47,8 @@ def isolated_environment(home: Path, config: Path) -> dict[str, str]:
 
 
 def executable_of(app: Path) -> Path:
-    return app / "Contents" / "MacOS" / EXECUTABLE
+    """Exécutable du bundle, en chemin ABSOLU : les sous-processus changent de dossier courant (HOME temporaire)."""
+    return app.resolve() / "Contents" / "MacOS" / EXECUTABLE
 
 
 def _run(command: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -267,7 +268,10 @@ def run_smoke(app: Path, home: Path, config: Path, timeout: int = 240) -> subpro
     """(a) Lance le bundle avec ``--smoke-test`` (déjà dans ``main.py`` : ferme la fenêtre puis exécute les autocontrôles)."""
     config.mkdir(parents=True, exist_ok=True)
     home.mkdir(parents=True, exist_ok=True)
-    return _run([str(executable_of(app)), "--smoke-test"], env=isolated_environment(home, config), cwd=str(home), timeout=timeout)
+    try:
+        return _run([str(executable_of(app)), "--smoke-test"], env=isolated_environment(home, config), cwd=str(home), timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as error:       # échec de vérification lisible, pas de traceback
+        return subprocess.CompletedProcess([], 1, "", f"lancement impossible : {error}")
 
 
 def check_info_plist(app: Path) -> tuple[list[str], dict[str, object]]:
@@ -282,6 +286,7 @@ def check_info_plist(app: Path) -> tuple[list[str], dict[str, object]]:
 
 def run_all(app: Path, *, smoke: bool = True) -> dict[str, object]:
     """Tous les contrôles ; ``problems`` vide = bundle conforme."""
+    app = app.resolve()          # absolu AVANT tout sous-processus (cwd changé) ; voir executable_of
     problems: list[str] = []
     report: dict[str, object] = {"app": str(app)}
     with tempfile.TemporaryDirectory(prefix="kut-store-check-") as scratch:
@@ -307,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     as_json = "--json" in args
     paths = [a for a in args if not a.startswith("--")]
-    app = Path(paths[0]) if paths else DEFAULT_APP
+    app = (Path(paths[0]) if paths else DEFAULT_APP).resolve()
     if sys.platform != "darwin" or not executable_of(app).is_file():
         print(f"Bundle introuvable ou plateforme non macOS : {app}", file=sys.stderr)
         return 2
