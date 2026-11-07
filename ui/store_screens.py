@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
+import shiboken6
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -96,6 +97,8 @@ class StoreScreens(QObject):
         return True
 
     def _open_if_still_allowed(self, trigger: str) -> None:
+        if not shiboken6.isValid(self._window):
+            return                                                   # la fenêtre a disparu avant le tour de boucle prévu
         if self._dialog is None and may_show_paywall(self._controller.state(), trigger, mid_edit=self.mid_edit()):
             self.show_paywall(trigger)
 
@@ -104,7 +107,7 @@ class StoreScreens(QObject):
         if self._dialog is not None:
             self._dialog.raise_()
             return self._dialog
-        if not may_show_paywall(self._controller.state(), trigger):
+        if not shiboken6.isValid(self._window) or not may_show_paywall(self._controller.state(), trigger):
             return None
         dialog = PaywallDialog(self._controller, self._window)
         self._dialog = dialog

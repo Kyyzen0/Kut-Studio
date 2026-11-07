@@ -443,3 +443,11 @@ def test_the_wall_closes_cleanly_when_the_window_goes_away(qtbot, screens_for):
     assert _wall_open(screens)
     window.close()
     QApplication.processEvents()
+
+
+def test_a_scheduled_wall_does_not_open_on_a_window_that_was_deleted(qtbot, screens_for, monkeypatch):
+    screens, _c, window, _b = screens_for(wait=K.EXPIRED)
+    assert screens.offer(paywall.TRIGGER_EXPORT)                              # programmé pour le tour suivant de la boucle
+    monkeypatch.setattr("ui.store_screens.shiboken6", type("Gone", (), {"isValid": staticmethod(lambda _o: False)}))   # la fenêtre n'existe plus
+    QApplication.processEvents()                                              # ne lève pas
+    assert screens.show_paywall() is None
