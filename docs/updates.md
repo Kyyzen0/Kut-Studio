@@ -406,6 +406,29 @@ Quand `STORE` est vrai :
 
 Tests : `tests/test_build_flavor_store.py` (sous-processus hors écran qui démarre l'application dans chaque saveur).
 
+### Étape 7a : construction locale non signée du bundle Store (ADR-0013)
+
+`python build.py --flavor store` (macOS arm64, `KUT_STUDIO_FFMPEG_DIR` = FFmpeg LGPL de [ffmpeg-lgpl.md](ffmpeg-lgpl.md), `swiftc`
+requis) produit `dist/Kut-Studio.app`, signé **ad hoc** seulement. `python -m tools.check_store_bundle` le vérifie sans rien installer :
+smoke test hors écran (`HOME` vide, configuration isolée), `STORE = True` lu dans l'archive PyInstaller, aucun module de mise à jour /
+`core.cli` / `core.scripting` embarqué, les deux dylibs dans `Contents/Frameworks`, `otool -L` limité au système et à `@rpath`, ffmpeg et
+ffprobe du bundle sans `--enable-gpl` / `--enable-nonfree` (et aucun autre programme FFmpeg), aucun chemin de la machine de
+construction dans les `Info.plist` et les Mach-O, taille et vingt plus gros éléments. `tests/test_store_bundle.py` le lance quand
+`dist/Kut-Studio.app` existe (sinon il saute avec sa raison ; la CI ne construit pas le bundle).
+
+Fichiers de packaging : `packaging/store/entitlements.plist` (`app-sandbox`, `files.user-selected.read-write`,
+`files.bookmarks.app-scope`, `device.audio-input`; **pas** de `network.client`, d'`inherit` ni de `allow-unsigned-executable-memory`,
+identique à la variante retenue du spike) et `packaging/store/Info.plist` (catégorie `public.app-category.video`,
+`LSMinimumSystemVersion` 13.0), fusionné par `build.py` pour la seule saveur Store. Avec `KUT_STUDIO_CODESIGN_IDENTITY`, la saveur Store
+signe avec ces droits (et non ceux de Developer ID).
+
+**Reste pour l'étape 7b** (côté Apple, avec l'utilisateur ; rien n'est créé ici) : identité « 3rd Party Mac Developer Application » (ou
+« Apple Distribution ») et « 3rd Party Mac Developer Installer », profil de provisionnement macOS App Store pour `com.kutstudio.app`
+(embarqué en `Contents/embedded.provisionprofile`), signature binaire par binaire avec ces droits, `productbuild --sign` du `.pkg`,
+téléversement (Transporter / `xcrun altool`), réponse « chiffrement » (`ITSAppUsesNonExemptEncryption`) et `PrivacyInfo.xcprivacy`,
+reconfirmation du lancement par `inherit`/relance sous signature de distribution (TestFlight). La notarisation n'est pas requise pour le
+Store (Apple valide à la soumission).
+
 ### Étape 8 : sans Whisper ni ligne de commande (ADR-0013)
 
 Le bac à sable n'exécute pas de programme installé par l'utilisateur : en construction Store, `core.transcription.transcription_available()` est faux et **toutes** les entrées sont fermées.
