@@ -35,5 +35,6 @@ jobs:
           plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
           plugins: "code-review@claude-plugins-official"
           prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          # 30 tours : une grosse PR (#311) dépassait 15 et faisait échouer le job alors que la relecture était terminée.
           # --allowedTools est requis pour que Claude puisse poster des commentaires en ligne
-          claude_args: '--max-turns 15 --allowedTools "mcp__github_inline_comment__create_inline_comment"'
+          claude_args: '--max-turns 30 --allowedTools "mcp__github_inline_comment__create_inline_comment"'
