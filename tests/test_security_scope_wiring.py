@@ -138,6 +138,30 @@ def test_in_place_write_never_truncates_on_a_non_finite_value(store, monkeypatch
     assert target.read_text(encoding="utf-8") == "intact"
 
 
+def test_in_place_write_restores_the_previous_file_when_the_write_fails(store, monkeypatch):
+    """``open("w")`` tronque avant d'écrire : un disque plein ne doit pas laisser le projet vide."""
+    _manager, _bridge, user = store
+    target = user / "plein.kut"
+    previous = "ancien-contenu-du-projet"
+    target.write_text(previous, encoding="utf-8")
+    monkeypatch.setattr("core.project_io.tempfile.mkstemp", lambda *a, **k: (_ for _ in ()).throw(PermissionError()))
+    real_open = Path.open
+
+    def fail_the_text_write(self, mode="r", *args, **kwargs):
+        handle = real_open(self, mode, *args, **kwargs)
+        if self == target and "w" in mode and "b" not in mode:
+            def boom(_data):
+                raise OSError(28, "No space left on device")
+
+            handle.write = boom
+        return handle
+
+    monkeypatch.setattr(Path, "open", fail_the_text_write)
+    with pytest.raises(OSError, match="No space left"):
+        write_project_payload(project_payload(create_default_project()), str(target))
+    assert target.read_text(encoding="utf-8") == previous
+
+
 POSIX_ONLY = pytest.mark.skipif(sys.platform.startswith("win"), reason="/bin/sh : sous-processus de test POSIX")
 
 # -- sous-processus ----------------------------------------------------------------------------------------------------------
