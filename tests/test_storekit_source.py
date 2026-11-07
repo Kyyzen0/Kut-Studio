@@ -53,7 +53,8 @@ def test_start_reads_storekit_and_publishes_the_trial(make_source):
     assert service.state().kind is K.UNKNOWN                      # avant la première lecture : lecture seule
     source.start()
     assert wait_for(lambda: service.state().kind is K.TRIAL)
-    assert service.state().days_left == 12 and changes
+    assert wait_for(lambda: bool(changes))                        # l'état est publié AVANT la notification : on l'attend
+    assert service.state().days_left == 12
     assert (sb.OP_START_UPDATES, "", 15000) in bridge.calls       # l'écoute des mises à jour est démarrée
 
 
