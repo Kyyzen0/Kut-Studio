@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from core.entitlements import storekit_bridge as sb
 from core.entitlements.storekit_bridge import BridgeResult, StoreBridgeError
 
-PRODUCT_LIFETIME = "com.kutstudio.app.lifetime"
-PRODUCT_MONTHLY = "com.kutstudio.app.monthly"
+PRODUCT_LIFETIME = "studio.lifetime"
+PRODUCT_MONTHLY = "studio.monthly"
+PRODUCT_YEARLY = "studio.yearly"
 
 
 def iso(stamp: float) -> str:
@@ -34,6 +35,19 @@ def app_transaction(started: float, signed: float, environment: str = "Sandbox")
     })
 
 
+def products(prices: dict[str, str]) -> BridgeResult:
+    """Réponse de ``OP_PRODUCTS`` : ``{identifiant: prix localisé}``."""
+    return BridgeResult(sb.OK, {"products": [{"id": pid, "displayPrice": price, "type": "x"} for pid, price in prices.items()]})
+
+
+def purchase(outcome: str, product: str = PRODUCT_MONTHLY, *, verified: bool | None = None) -> BridgeResult:
+    """Réponse de ``OP_PURCHASE`` : un SIGNAL (success / cancelled / pending / unverified), jamais un déblocage."""
+    payload: dict = {"outcome": outcome}
+    if outcome in ("success", "unverified"):
+        payload.update({"verified": outcome == "success" if verified is None else verified, "productID": product})
+    return BridgeResult(sb.OK, payload)
+
+
 def failure(status: int, word: str = "storekit") -> BridgeResult:
     return BridgeResult(status, {"error": word})
 
@@ -45,6 +59,7 @@ class FakeBridge:
         self.results: dict[int, BridgeResult] = {
             sb.OP_ENTITLEMENTS: ent or entitlements(), sb.OP_APP_TRANSACTION: app or failure(sb.STOREKIT_ERROR),
             sb.OP_SYNC: BridgeResult(sb.OK, {"synced": True}), sb.OP_START_UPDATES: BridgeResult(sb.OK, {"listening": True}),
+            sb.OP_PRODUCTS: products({}), sb.OP_PURCHASE: purchase("cancelled"),
         }
         self.calls: list[tuple[int, str, int]] = []
         self.shutdown_count = 0

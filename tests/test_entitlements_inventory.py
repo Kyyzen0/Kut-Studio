@@ -234,14 +234,14 @@ def test_the_storekit_bridge_is_only_driven_by_the_worker_modules():
     """Les appels BLOQUANTS du pont (``call``, ``poll_update``, ``shutdown``) ne sont écrits que dans les deux modules du thread de
     travail ; le chargement (``StoreKitBridge.load``) que par le contrôleur Store. Aucun appel depuis ``ui/`` hors chargement."""
     bridge_modules = {"core/entitlements/storekit_bridge.py", "core/entitlements/storekit_verifier.py",
-                      "core/entitlements/storekit_source.py"}
+                      "core/entitlements/storekit_source.py", "core/entitlements/storekit_actions.py"}
     blocking = {c for c in _callers({"poll_update", "shutdown"}, receiver={"bridge", "_bridge"}, calls_only=True)} | \
         {c for c in _callers({"call"}, receiver={"bridge"}, calls_only=True)}
     assert {c for c in blocking if c[0] not in bridge_modules} == set(), sorted(blocking)
     loaders = {c for c in _callers({"load"}, receiver={"StoreKitBridge"}, calls_only=True) if c[0] != "core/entitlements/storekit_bridge.py"}
     assert loaders == {("ui/store_entitlements.py", "bundled_bridge_loader")}, sorted(loaders)
     for path in ("core/entitlements/storekit_bridge.py", "core/entitlements/storekit_verifier.py",
-                 "core/entitlements/storekit_source.py"):
+                 "core/entitlements/storekit_source.py", "core/entitlements/storekit_actions.py", "core/entitlements/paywall.py"):
         imports = {n.module for n in ast.walk(_parse(path)) if isinstance(n, ast.ImportFrom)} | \
             {a.name for n in ast.walk(_parse(path)) if isinstance(n, ast.Import) for a in n.names}
         assert not any(name and name.startswith(("PySide6", "ui")) for name in imports), (path, imports)        # sans Qt
