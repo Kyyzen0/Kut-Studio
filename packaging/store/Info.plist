@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Entrées d'Info.plist propres à la version Mac App Store, fusionnées par build.py (saveur store) (ADR-0013, étape 7).
+         Version, identifiant, types de documents et NSMicrophoneUsageDescription viennent de build.macos_info_overrides. -->
+    <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
+    <!-- Plancher des bibliothèques Swift (libkutstore, libkutscope : macOS 13+, StoreKit 2). Décision D6 : à confirmer. -->
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+</dict>
+</plist>
