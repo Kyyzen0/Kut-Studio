@@ -26,6 +26,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Fixed
 
 - **Préréglages couleur du build Store : une LUT encore là n'est plus notée manquante.** Au redémarrage, le bac à sable refuse de voir le fichier `.cube` tant que son signet n'est pas ouvert. Ce refus était pris pour une LUT absente, et le prochain enregistrement d'un préréglage (ajouter un favori, en créer un autre) figeait « manquante » dans les préréglages : le look s'appliquait sans sa LUT. Un fichier vraiment absent reste signalé. Hors Store, rien ne change.
+- **Version Mac App Store : l'export de sous-titres n'échoue plus.** Le bac à sable n'autorise pas un fichier temporaire à côté du `.srt` choisi. L'export écrit alors le fichier en place ; si l'écriture échoue (disque plein, volume coupé), le contenu précédent est remis.
 - **Plantage natif intermittent à la fermeture d'une fenêtre ou au vidage d'une liste.** PySide libérait l'objet Python d'un élément de liste (`QListWidgetItem`…) *dans* le destructeur C++ de cet élément, puis relisait la mémoire libérée : segfault sans trace, au hasard du ramasse-miettes (« worker crashed » sur la CI, tous systèmes). Chaque élément créé dans `ui/` est maintenant retenu jusqu'à la destruction de son objet C++ (`ui/qt_item_lifetime.py`) ; garde `tests/test_qt_item_lifetime.py`.
 
 ### Changed
