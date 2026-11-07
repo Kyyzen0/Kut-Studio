@@ -105,9 +105,86 @@ def test_toggle_off_when_manual_without_schedule():
 
 
 def test_changed_settings_reset_the_override():
-    state = NightModeState(auto=True, override=False)
+    state = NightModeState(auto=True)
+    state.toggle(at(22))
+    assert not state.active(at(22))
     state.reset_override(at(22))
     assert state.override is None and state.active(at(22))
+
+
+def on(day: int, hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 11, day, hour, minute)
+
+
+def test_override_expires_at_the_end_of_its_own_interval_even_after_a_sleep_to_the_next_night():
+    """Éteint le 7 à 22:00, le prochain ``sync`` est le 8 à 22:00 (veille) : la plage d'origine est finie, la nuit suivante s'allume."""
+    state = NightModeState(auto=True)
+    state.toggle(on(7, 22))
+    assert state.override_until == on(8, 7)
+    state.sync(on(8, 22))
+    assert state.override is None and state.active(on(8, 22))
+
+
+def test_override_holds_when_the_machine_wakes_inside_the_same_interval():
+    state = NightModeState(auto=True)
+    state.toggle(on(7, 22))
+    state.sync(on(8, 3))                                       # passage de minuit, même plage
+    assert not state.active(on(8, 3)) and state.override is False
+    state.sync(on(8, 6, 59))
+    assert not state.active(on(8, 6, 59))
+
+
+def test_override_is_over_at_the_end_instant_and_after():
+    state = NightModeState(auto=True)
+    state.toggle(on(7, 23, 30))
+    assert not state.active(on(8, 6, 59)) and not state.scheduled(on(8, 7))
+    state.sync(on(8, 7))
+    assert state.override is None
+
+
+def test_override_set_after_midnight_ends_the_same_morning():
+    state = NightModeState(auto=True)
+    state.toggle(on(8, 2))
+    assert state.override_until == on(8, 7)
+
+
+def test_a_window_inside_one_day_expires_at_its_end_and_not_the_next_day():
+    state = NightModeState(auto=True, start="09:00", end="17:00")
+    state.toggle(on(7, 10))
+    assert state.override_until == on(7, 17)
+    state.sync(on(8, 10))
+    assert state.active(on(8, 10))
+
+
+def test_a_clock_that_goes_backwards_never_extends_an_override():
+    state = NightModeState(auto=True)
+    state.toggle(on(7, 22))
+    assert state.active(on(7, 21, 30))                         # avant la pose : l'override ne vaut plus, la plage est « active »
+    state.sync(on(7, 21, 30))
+    assert state.override is None
+
+
+def test_equal_start_and_end_gives_no_override():
+    state = NightModeState(auto=True, start="21:00", end="21:00", enabled=True)
+    assert state.toggle(on(7, 22)) is False
+    assert state.override is None and not state.active(on(7, 22))
+    assert state.toggle(on(7, 22)) is True and state.enabled
+
+
+def test_manual_on_is_a_setting_without_expiry():
+    state = NightModeState(auto=True)
+    assert state.toggle(on(7, 12)) is True and state.override is None
+    state.sync(on(9, 12))
+    assert state.active(on(9, 12))
+
+
+def test_the_expiry_does_not_depend_on_the_last_sampled_schedule(monkeypatch):
+    """Garde de mutation : l'expiration lit l'instant mémorisé, pas la comparaison avec le dernier échantillon."""
+    state = NightModeState(auto=True)
+    state.toggle(on(7, 22))
+    state.sync(on(7, 23))                                      # un échantillon dans la même plage
+    state.sync(on(8, 22))                                      # le suivant, une nuit plus tard (scheduled reste True)
+    assert state.override is None and state.active(on(8, 22))
 
 
 # -- persistance ----------------------------------------------------------------------------------------------------------

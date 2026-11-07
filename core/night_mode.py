@@ -8,14 +8,16 @@ jamais une image du montage : moniteur, rendu d'export, scopes, page Couleur et 
 * ``enabled`` : bascule manuelle ; ``auto`` : actif aussi entre ``start`` et ``end`` (heures locales ``HH:MM``) ;
 * début == fin : la plage est vide (jamais actif par l'horaire) ; début > fin : la plage passe minuit ;
 * l'horloge est **injectée** (``now: datetime`` locale), jamais lue ici (même patron que :mod:`core.entitlements`) ;
-* ``override`` : un « éteindre » manuel pendant la plage horaire dure jusqu'à la prochaine bascule de l'horaire.
+* ``override`` : un « éteindre » manuel pendant la plage horaire dure jusqu'à la **fin de cette plage** (instant mémorisé : une veille
+  d'une nuit à la suivante ne le prolonge pas) ; une horloge qui recule avant sa pose l'annule aussi. Allumer à la main est un
+  réglage (``enabled``), sans expiration.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DEFAULT_INTENSITY: int = 60
 INTENSITY_RANGE: tuple[int, int] = (0, 100)
@@ -80,14 +82,25 @@ class NightModeState:
     start: str = DEFAULT_START
     end: str = DEFAULT_END
     override: bool | None = None
-    _last_scheduled: bool | None = None
+    override_since: datetime | None = None
+    override_until: datetime | None = None
 
     def scheduled(self, now: datetime) -> bool:
         return self.auto and in_window(self.start, self.end, now)
 
-    def active(self, now: datetime) -> bool:
-        if self.override is not None:
+    def _override_value(self, now: datetime) -> bool | None:
+        """L'``override`` s'il vaut encore à ``now`` : posé à ``override_since``, expiré à ``override_until`` ou si l'horloge a reculé."""
+        if self.override is None:
+            return None
+        since, until = self.override_since, self.override_until
+        if since is not None and until is not None and since <= now < until:
             return self.override
+        return None
+
+    def active(self, now: datetime) -> bool:
+        held = self._override_value(now)
+        if held is not None:
+            return held
         return self.enabled or self.scheduled(now)
 
     def level(self, now: datetime) -> int:
@@ -98,21 +111,28 @@ class NightModeState:
         """Bascule à la main ; renvoie le nouvel état. Éteindre pendant la plage horaire dure jusqu'à la fin de la plage."""
         turn_on = not self.active(now)
         self.enabled = turn_on
-        self._last_scheduled = self.scheduled(now)
-        self.override = False if (not turn_on and self._last_scheduled) else None
+        self.clear_override()
+        if not turn_on and self.scheduled(now):
+            self.override, self.override_since, self.override_until = False, now, self._next_end(now)
         return turn_on
 
+    def _next_end(self, now: datetime) -> datetime:
+        """Prochaine fin de plage strictement après ``now`` (``now`` est dans la plage : c'est la fin de cette plage)."""
+        minutes = parse_time(self.end) or 0
+        end = now.replace(hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0)
+        return end if end > now else end + timedelta(days=1)
+
+    def clear_override(self) -> None:
+        self.override = self.override_since = self.override_until = None
+
     def sync(self, now: datetime) -> None:
-        """À appeler à chaque vérification : une bascule de l'horaire annule l'``override`` (l'appelant compare ``level``)."""
-        scheduled = self.scheduled(now)
-        if self._last_scheduled is not None and scheduled != self._last_scheduled:
-            self.override = None
-        self._last_scheduled = scheduled
+        """À appeler à chaque vérification : purge un ``override`` expiré, quels qu'aient été les échantillons précédents."""
+        if self.override is not None and self._override_value(now) is None:
+            self.clear_override()
 
     def reset_override(self, now: datetime) -> None:
         """Un réglage modifié (horaire, option automatique) repart de zéro."""
-        self.override = None
-        self._last_scheduled = self.scheduled(now)
+        self.clear_override()
 
 
 __all__ = [

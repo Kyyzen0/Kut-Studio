@@ -278,3 +278,44 @@ def test_the_export_is_byte_identical_with_and_without_night_mode(window, tmp_pa
     assert window.theme_manager.night_intensity == 60 and COLORS["panel"] != THEMES["dark"].panel
     night = render("night")
     assert night == day
+
+
+# -- indicateurs au démarrage ---------------------------------------------------------------------------------------------
+
+
+def _start(qtbot, monkeypatch, tmp_path, clock, **fields):
+    from dataclasses import replace
+
+    from core.user_settings import UserSettings, save_user_settings
+
+    save_user_settings(replace(UserSettings(), **fields), tmp_path)
+    monkeypatch.setattr("ui.main_window_mixins.night_mode.datetime", type("D", (), {"now": staticmethod(clock)}))
+    return _window(qtbot, monkeypatch, tmp_path)
+
+
+def test_enabled_at_startup_checks_the_menu_action_and_the_preferences(qtbot, monkeypatch, tmp_path):
+    main = _start(qtbot, monkeypatch, tmp_path, _noon, night_mode_enabled=True, night_intensity=70)
+    try:
+        assert main.night_mode_active and main.night_action.isChecked()
+        dialog = PreferencesDialog(night_state=main._night_state, parent=main)
+        qtbot.addWidget(dialog)
+        assert dialog.night_box.enabled_box.isChecked() and dialog.night_box.intensity_slider.value() == 70
+    finally:
+        set_active_palette(THEMES["dark"])
+
+
+def test_starting_inside_the_schedule_checks_the_menu_action(qtbot, monkeypatch, tmp_path):
+    main = _start(qtbot, monkeypatch, tmp_path, lambda: datetime(2026, 11, 7, 23, 0), night_auto=True)
+    try:
+        assert main.night_mode_active and main.night_action.isChecked()
+        assert not main._night_state.enabled
+    finally:
+        set_active_palette(THEMES["dark"])
+
+
+def test_starting_outside_the_schedule_leaves_it_unchecked(qtbot, monkeypatch, tmp_path):
+    main = _start(qtbot, monkeypatch, tmp_path, _noon, night_auto=True)
+    try:
+        assert not main.night_mode_active and not main.night_action.isChecked()
+    finally:
+        set_active_palette(THEMES["dark"])

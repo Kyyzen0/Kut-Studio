@@ -129,6 +129,7 @@ class NightModeMixin:
         pages, ce qui reprendrait la hauteur que les gardes de ``tests/test_ui_legibility.py`` (4 pistes de 60 px…) comptent sur
         l'absence de cette barre. La bascule est dans le menu Fenêtre, la palette de commandes, le raccourci et les Préférences.
         """
+        self._night_refresh_controls()                  # réglages « allumé » ou plage horaire au démarrage : l'indicateur dit déjà vrai
         self._start_night_timer()
 
     def _night_refresh_controls(self) -> None:
