@@ -317,6 +317,45 @@ def test_store_save_keeps_a_lut_when_the_sandbox_refuses_the_stat(store, monkeyp
     assert again.lut is not None and again.lut.missing is False and again.lut.path == str(cube)
 
 
+def _save_as_with_refused_luts(store, monkeypatch, *, same_folder: bool):
+    from core.color_grading import ColorGrade, ColorGradingService, LUTResource
+
+    _manager, _bridge, user = store
+    folder_a = user / "a"
+    cube = folder_a / "luts" / "look.cube"
+    cube.parent.mkdir(parents=True)
+    _cube_file(cube)
+    real_mkdir = Path.mkdir
+
+    def refusing(self, *args, **kwargs):
+        if self.name == "luts" and self.parent.name == "b":
+            raise PermissionError(1, "Operation not permitted")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", refusing)
+    project = create_default_project()
+    lut = LUTResource(path="luts/look.cube", title="Look", sha1="0" * 40, size=10, source_path=str(cube))
+    ColorGradingService().set_grade(project, "intro", ColorGrade(lut=lut))
+    target_dir = folder_a if same_folder else user / "b"
+    target_dir.mkdir(exist_ok=True)
+    target = target_dir / "film.kut"
+    save_project(project, str(target))
+    loaded = ColorGradingService().get_grade(load_project(str(target)), "intro")
+    assert loaded.lut is not None
+    return loaded.lut, cube
+
+
+def test_store_save_as_with_refused_luts_folder_points_to_the_original_lut(store, monkeypatch):
+    """Enregistrer sous ailleurs, ``luts/`` refusé : la LUT relative ne doit pas être résolue contre le nouveau dossier."""
+    lut, cube = _save_as_with_refused_luts(store, monkeypatch, same_folder=False)
+    assert lut.missing is False and Path(lut.path).is_absolute() and Path(lut.path).resolve() == cube.resolve()
+
+
+def test_store_save_in_place_keeps_the_relative_lut_path(store, monkeypatch):
+    lut, _cube = _save_as_with_refused_luts(store, monkeypatch, same_folder=True)
+    assert lut.missing is False and lut.path == "luts/look.cube"
+
+
 def test_store_save_still_marks_a_lut_that_is_really_gone(store):
     from core.color_grading import ColorGrade, ColorGradingService, LUTResource
     from core.project_factory import create_default_project

@@ -467,7 +467,7 @@ def copy_lut_into_project(
                 denied = True
         if source is None:
             if is_store() and denied:
-                return lut
+                return _portable_fallback(lut, root, Path(lut.source_path) if lut.source_path else None)
             return LUTResource(
                 path=lut.path,
                 title=lut.title,
@@ -501,8 +501,30 @@ def copy_lut_into_project(
             # (le fichier choisi reste lisible par son propre signet) au lieu de faire échouer tout l'enregistrement.
             if not is_store():
                 raise
-            return lut
+            return _portable_fallback(lut, root, source)
     return copied
+
+
+def _portable_fallback(lut: LUTResource, root: Path, source: Path | None) -> LUTResource:
+    """Référence à écrire quand la copie dans ``luts/`` est impossible (Store).
+
+    Un chemin relatif qui désigne bien ``root`` (enregistrement au même endroit) reste tel quel. Sinon
+    (« Enregistrer sous » vers un autre dossier), il désignerait l'ancien dossier du projet : on écrit la
+    référence absolue de la source d'origine, que ``_deserialize_color_grade`` ne résoudra pas contre le
+    nouveau dossier. ``missing`` reste celui de la ressource (la source est lisible ou le refus n'est pas une absence).
+    """
+    stored = Path(lut.path)
+    if stored.is_absolute() or source is None:
+        return lut
+    try:
+        if (root / stored).resolve() == source.resolve():
+            return lut
+        absolute = str(source.resolve())
+    except OSError:
+        absolute = os.fspath(source)
+    return LUTResource(
+        path=absolute, title=lut.title, sha1=lut.sha1, size=lut.size, missing=lut.missing, source_path=absolute
+    )
 
 
 # ---------------------------------------------------------------------------
