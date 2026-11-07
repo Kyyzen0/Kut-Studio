@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# Un nouveau push sur une PR annule le run précédent de cette PR (il ne teste plus le code courant) : sans cela, chaque
+# correctif empilait une suite macOS de ~55 min derrière les autres. Les pushs sur main, l'exécution hebdomadaire et le
+# lancement manuel gardent un groupe propre à chaque run : ils ne sont jamais annulés.
+concurrency:
+  group: multiplatform-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test-and-build:
     name: ${{ matrix.os }} / Python 3.11
