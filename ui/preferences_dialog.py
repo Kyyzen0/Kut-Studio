@@ -222,6 +222,7 @@ class PreferencesDialog(QDialog):
     whisper_path_changed = Signal(str)
     whisper_model_changed = Signal(str)
     restore_defaults_requested = Signal()
+    offers_requested = Signal()                      # zone « Licence » (build Store) : l'utilisateur veut voir les offres
     # Groupe « Fichiers de projet » : construit seulement sous Windows et Linux (voir _build_ui).
     files_box: QGroupBox | None = None
     updates_box: QGroupBox | None = None      # reste ``None`` dans la version Store (aucune préférence de mises à jour)
@@ -241,6 +242,7 @@ class PreferencesDialog(QDialog):
         parent=None,
         shortcut_manager: ShortcutManager | None = None,
         performance_host=None,
+        license_host=None,
     ) -> None:
         """Construit le dialogue sur l'état courant de l'application.
 
@@ -253,6 +255,7 @@ class PreferencesDialog(QDialog):
         super().__init__(parent)
         self._shortcut_manager = shortcut_manager
         self._performance_host = performance_host
+        self._license_host = license_host            # contrôleur StoreKit (build Store) ; ``None`` ailleurs : aucune zone « Licence »
         self.performance_tab: PerformanceSettingsTab | None = None
         self.shortcuts_editor: ShortcutsEditor | None = None
         self.tabs: QTabWidget | None = None
@@ -334,6 +337,13 @@ class PreferencesDialog(QDialog):
             self.transcription_box.whisper_path_changed.connect(self.whisper_path_changed)
             self.transcription_box.whisper_model_changed.connect(self.whisper_model_changed)
             layout.addWidget(self.transcription_box)
+        self.license_box = None
+        if self._license_host is not None:      # build Store seulement (ADR-0013, étape 15)
+            from ui.store_license import LicenseGroup
+
+            self.license_box = LicenseGroup(self._license_host)
+            self.license_box.offers_requested.connect(self.offers_requested)
+            layout.addWidget(self.license_box)
         if file_association_supported():
             layout.addWidget(self._build_file_association_group())
 
@@ -515,6 +525,8 @@ class PreferencesDialog(QDialog):
             self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
         if self.transcription_box is not None:
             self.transcription_box.retranslate()
+        if self.license_box is not None:
+            self.license_box.retranslate()
         if self.files_box is not None:
             self.files_box.setTitle(translate("prefs.files.title"))
             self.files_note.setText(translate("prefs.files.note"))

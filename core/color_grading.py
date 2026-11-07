@@ -38,6 +38,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -45,7 +46,9 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from .atomic_io import atomic_write_json
+from .build_flavor import is_store
 from .platform_paths import user_config_dir
+from .security_scope import scoped_access
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1111,14 +1114,40 @@ def _dict_to_grade(raw: object) -> ColorGrade:
     if isinstance(lut_raw, dict):
         try:
             path = str(lut_raw.get("path", ""))
-            exists = bool(path) and Path(path).is_file()
+            stored_missing = bool(lut_raw.get("missing", False))
+            # ``Path.is_file`` avale un ``PermissionError``. Dans le build Store, le bac à sable refuse
+            # ``stat`` tant que le signet n'est pas ouvert : un préréglage utilisateur serait marqué
+            # ``missing``, et le prochain enregistrement (un favori, un autre préréglage) figerait ce
+            # drapeau. Une LUT vraiment absente reste manquante. Hors Store, un refus reste une absence.
+            exists = False
+            denied = False
+            source: str | None = None
+            if path and not stored_missing:
+                with scoped_access(path):
+                    try:
+                        exists = stat.S_ISREG(os.stat(path).st_mode)
+                    except FileNotFoundError:
+                        exists = False
+                    except OSError:
+                        denied = True
+                    if exists:
+                        try:
+                            source = str(Path(path).resolve())
+                        except OSError:
+                            source = path
+            if not path or stored_missing:
+                missing = True
+            elif denied and is_store():
+                missing = False
+            else:
+                missing = not exists
             lut = LUTResource(
                 path=path,
                 title=str(lut_raw.get("title", "") or "LUT"),
                 sha1=str(lut_raw.get("sha1", "")),
                 size=int(lut_raw.get("size", 0)),
-                missing=bool(lut_raw.get("missing", False)) or not exists,
-                source_path=str(Path(path).resolve()) if exists else None,
+                missing=missing,
+                source_path=source,
             )
         except (ColorGradingError, ValueError, TypeError):
             lut = None

@@ -18,8 +18,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from core.entitlements import EntitlementService, EntitlementStore, install_service
+from core.entitlements import EntitlementService, EntitlementState, EntitlementStore, install_service
 from core.entitlements.storekit_bridge import StoreBridgeError, StoreKitBridge, bundled_dylib_path
+from core.entitlements.storekit_actions import ActionKind, ActionResult, ProductInfo
 from core.entitlements.storekit_source import StoreKitEntitlementSource
 from core.entitlements.storekit_verifier import StoreKitVerifier
 from core.platform_paths import user_config_dir
@@ -40,6 +41,8 @@ class StoreEntitlementsController(QObject):
     """Le service de droits du build Store et sa source StoreKit. ``state_changed`` : l'état a changé (thread Qt)."""
 
     state_changed = Signal()
+    action_finished = Signal(object)
+    """Résultat d'un chargement de produits, d'un achat ou d'une restauration (:class:`ActionResult`), côté thread Qt."""
 
     def __init__(
         self,
@@ -51,13 +54,47 @@ class StoreEntitlementsController(QObject):
         **source_options,
     ) -> None:
         super().__init__(parent)
+        self.products: dict[str, ProductInfo] = {}
+        """Prix localisés lus de StoreKit (vide tant que le chargement n'a pas abouti : l'interface dit « prix indisponible »)."""
+        self.products_requested = False
         base = Path(directory) if directory is not None else user_config_dir()
         self.verifier = StoreKitVerifier(base / KEY_FILE, clock)
         self.service = EntitlementService(EntitlementStore(base / STATE_FILE, self.verifier), clock)
         install_service(self.service)
         self.source = StoreKitEntitlementSource(
-            self.service, self.verifier, bridge_loader, on_change=self.state_changed.emit, **source_options,
+            self.service, self.verifier, bridge_loader, on_change=self.state_changed.emit, on_action=self._on_action,
+            **source_options,
         )
+        self.action_finished.connect(self._remember_products)             # relié en premier : les écrans voient les prix déjà à jour
+
+    def state(self) -> EntitlementState:
+        return self.service.state()
+
+    # -- produits, achat, restauration (étape 15) : jamais sur le thread Qt, résultat par ``action_finished`` ------------------
+
+    def _on_action(self, result: ActionResult) -> None:
+        try:
+            self.action_finished.emit(result)                               # appelé depuis un fil Python : liaison en file d'attente
+        except RuntimeError:                                                # contrôleur déjà détruit (sortie de l'application)
+            pass
+
+    def _remember_products(self, result: ActionResult) -> None:
+        if result.kind is ActionKind.PRODUCTS and result.products:
+            self.products = dict(result.products)
+
+    def load_products(self) -> None:
+        """Demande les prix localisés (une fois par session tant que la réponse est vide)."""
+        if self.products:
+            return
+        self.products_requested = True
+        self.source.actions.request_products()
+
+    def buy(self, product_id: str) -> bool:
+        """Demande l'achat d'un produit du catalogue. Ne débloque rien : l'état ne change que par relecture vérifiée."""
+        return self.source.actions.request_purchase(product_id)
+
+    def restore(self) -> bool:
+        return self.source.actions.request_restore()
 
     def start(self) -> None:
         """Démarre la lecture en arrière-plan et prévoit l'arrêt à la sortie de l'application."""

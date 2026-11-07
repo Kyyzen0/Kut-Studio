@@ -6,7 +6,9 @@
   qui lit ou écrit ces chemins : FFmpeg hérite du bac à sable, l'accès doit rester ouvert jusqu'à sa fin). Il ferme TOUJOURS, y compris
   sur exception. Un accès par signet, partagé et compté si plusieurs lecteurs le demandent (:attr:`open_count`).
 * :meth:`ScopeManager.resolve_all` : au lancement, résout chaque signet : périmé et recréable => remplacé en silence ; périmé non
-  recréable ou introuvable => listé dans ``lost`` (l'interface le redemande).
+  recréable ou introuvable => listé dans ``lost`` (l'interface le redemande). Un signet refusé (pas seulement introuvable) est
+  marqué cassé : un choix ultérieur d'un fichier qu'il couvrait enregistre le signet de ce fichier, au lieu de s'en remettre
+  au signet de dossier qui ne s'ouvre plus.
 * Sans pont (bibliothèque absente ou invalide) : AUCUN accès, jamais un contournement. Un chemin sans signet n'échoue pas ici : il est
   rapporté dans :attr:`AccessReport.missing` et l'appelant (ouverture d'un projet) le traite comme « hors ligne ».
 """
@@ -202,21 +204,31 @@ class ScopeManager:
     # -- lancement -------------------------------------------------------------------------------------------------------
 
     def resolve_all(self) -> LaunchReport:
-        """Résout chaque signet rangé (au lancement), le rouvre puis le ferme aussitôt ; remplace les signets périmés recréables."""
+        """Résout chaque signet rangé (au lancement), le rouvre puis le ferme aussitôt ; remplace les signets périmés recréables.
+
+        Un signet qui s'ouvre est retiré de :attr:`_broken`. Un signet refusé (autrement qu'introuvable, lequel est supprimé)
+        y est ajouté : :meth:`remember` ne le traite plus comme un dossier sain qui dispenserait de mémoriser le fichier choisi.
+        """
         if self._bridge is None:
             return LaunchReport()
         resolved = refreshed = 0
         lost: list[str] = []
         stale: list[str] = []
+        broken: list[str] = []
+        cleared: list[str] = []
         for entry in self._store.entries():
             status, opened = self._bridge.open(entry.bookmark)
             if opened is None:
                 lost.append(entry.path)
                 if status == scope_bridge.UNRESOLVABLE:
                     self._store.remove(entry.path)
+                    cleared.append(entry.path)
+                else:
+                    broken.append(entry.path)
                 continue
             try:
                 resolved += 1
+                cleared.append(entry.path)
                 if opened.stale:
                     if opened.refreshed and self._store.put(entry.path, opened.refreshed):
                         refreshed += 1
@@ -226,6 +238,9 @@ class ScopeManager:
                 self._bridge.close(opened.handle)
         with self._lock:
             self._stale = set(stale)
+            for path in cleared:
+                self._broken.discard(path)
+            self._broken.update(broken)
         return LaunchReport(resolved, refreshed, tuple(lost), tuple(stale))
 
 

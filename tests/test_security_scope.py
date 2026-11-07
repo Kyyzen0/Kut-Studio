@@ -56,6 +56,25 @@ def test_remember_fails_without_a_bookmark_and_never_stores_garbage(tmp_path):
     assert store.entries() == []
 
 
+def test_a_folder_refused_at_launch_does_not_swallow_a_later_file_choice(tmp_path, media):
+    """Un signet de dossier refusé au lancement ne doit pas faire croire qu'un fichier rechoisi est déjà couvert.
+
+    Sinon « Relier » ou un import dans ce dossier rend ``True`` sans rien enregistrer : au prochain lancement le média
+    est de nouveau hors ligne, alors que l'utilisateur vient de le choisir.
+    """
+    folder, files = media
+    manager, bridge, store = make_manager(tmp_path)
+    assert manager.remember(str(folder))
+    bridge.denied.add(canonical(str(folder)))
+    report = manager.resolve_all()
+    assert report.lost == (canonical(str(folder)),)
+    assert manager.remember(files[0]) is True
+    assert canonical(files[0]) in [entry.path for entry in store.entries()]
+    with manager.access(files[0]) as opened:
+        assert opened.opened == (canonical(files[0]),) and not opened.lost
+        assert bridge.open_count() == 1
+
+
 def test_a_folder_bookmark_covers_its_children_without_new_entries(tmp_path, media):
     folder, files = media
     manager, bridge, store = make_manager(tmp_path)

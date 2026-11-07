@@ -36,7 +36,7 @@ import os
 import secrets
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -67,10 +67,21 @@ REASON_UNTRUSTED_TRIAL_DATE = "untrusted_trial_date"
 
 @dataclass(frozen=True)
 class ProductIds:
-    """Identifiants des produits. **Provisoires** : ceux du fichier ``.storekit`` du spike, à fixer à l'étape 14 (App Store Connect)."""
+    """Identifiants des produits : **la seule constante** à modifier (ADR-0013, D11). **Proposés** le 2026-10-29, à confirmer à
+    l'étape 14 (App Store Connect) : non modifiables ensuite. Les écrans (étape 15) et le vérificateur lisent cette classe."""
 
-    subscriptions: frozenset[str] = field(default_factory=lambda: frozenset({"com.kutstudio.app.monthly", "com.kutstudio.app.yearly"}))
-    lifetime: str = "com.kutstudio.app.lifetime"
+    monthly: str = "studio.monthly"
+    yearly: str = "studio.yearly"
+    lifetime: str = "studio.lifetime"
+
+    @property
+    def subscriptions(self) -> frozenset[str]:
+        return frozenset({self.monthly, self.yearly})
+
+    @property
+    def ordered(self) -> tuple[str, ...]:
+        """Dans l'ordre d'affichage : mensuel, annuel, achat unique."""
+        return (self.monthly, self.yearly, self.lifetime)
 
 
 DEFAULT_PRODUCTS = ProductIds()

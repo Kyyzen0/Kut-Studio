@@ -1990,6 +1990,7 @@ from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_sandbox import SANDBOX_TRANSLATIONS as _SANDBOX  # noqa: E402
 from ui.i18n_scene3d import SCENE3D_TRANSLATIONS as _SCENE3D  # noqa: E402
 from ui.i18n_social import SOCIAL_TRANSLATIONS as _SOCIAL  # noqa: E402
+from ui.i18n_store_screens import STORE_SCREENS_TRANSLATIONS as _STORE_SCREENS  # noqa: E402
 from ui.i18n_transitions import TRANSITIONS_TRANSLATIONS as _TRANSITIONS  # noqa: E402
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
 from ui.i18n_time import TIME_TRANSLATIONS as _TIME  # noqa: E402
@@ -2006,6 +2007,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_dialogs": _DIALOGS,
     "ui.i18n_entitlements": _ENTITLEMENTS,
     "ui.i18n_sandbox": _SANDBOX,
+    "ui.i18n_store_screens": _STORE_SCREENS,
     "ui.i18n_history": _HISTORY,
     "ui.i18n_multicam": _MULTICAM,
     "ui.i18n_time": _TIME,
