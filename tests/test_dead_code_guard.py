@@ -32,6 +32,14 @@ ENTRY_POINTS = {
 # import arrive ; une fois le consommateur écrit, l'entrée n'a plus lieu d'être et le second test ci-dessous le dit. Un module qui
 # attend sans raison écrite reste du code mort.
 PENDING_CONSUMERS = {
+    # Chargeur ctypes du moteur natif (jalon M4, docs/native-engine.md). Volontairement rien ne l'importe : il prépare le point d'intégration
+    # (``core/gpu_backend.resolve_preview_backend``) et l'application garde son moniteur QRhi. Le consommateur arrive avec l'intégration au
+    # moniteur (réglage + variable d'environnement, désactivé par défaut) ; ces cinq entrées disparaissent alors.
+    "core.native_engine": "chargeur du moteur natif : intégration au moniteur dans une PR suivante",
+    "core.native_engine.abi": "importé par core.native_engine seulement (voir cette entrée)",
+    "core.native_engine.errors": "importé par core.native_engine seulement (voir cette entrée)",
+    "core.native_engine.loader": "importé par core.native_engine seulement (voir cette entrée)",
+    "core.native_engine.engine": "importé par core.native_engine seulement (voir cette entrée)",
 }
 
 
