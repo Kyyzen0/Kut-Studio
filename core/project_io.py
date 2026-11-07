@@ -2347,11 +2347,13 @@ def _deserialize_automation_points(raw: Any) -> list:
 
 
 def _restore_previous_file(target: Path, original: bytes | None) -> None:
-    """Remet ``target`` comme avant une écriture en place interrompue. Ne masque pas l'erreur d'origine."""
+    """Remet ``target`` comme avant une copie ou une écriture en place interrompue. Ne masque pas l'erreur d'origine."""
     try:
         if original is None:
-            if target.is_file():
+            try:
                 target.unlink()
+            except FileNotFoundError:
+                return
             return
         with target.open("wb") as handle:
             handle.write(original)
@@ -2362,6 +2364,14 @@ def _restore_previous_file(target: Path, original: bytes | None) -> None:
             "Enregistrement du projet : le fichier n'a pas pu être remis dans son état précédent",
             exc_info=True,
         )
+
+
+def _existing_bytes(target: Path) -> bytes | None:
+    """Octets actuels de ``target``, ou ``None`` s'il n'existe pas. Une autre erreur de lecture est relancée."""
+    try:
+        return target.read_bytes()
+    except FileNotFoundError:
+        return None
 
 
 def _write_in_place(payload: dict[str, Any], target: Path) -> None:
@@ -2429,17 +2439,20 @@ def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
         try:
             os.replace(tmp_path, target)
         except PermissionError:
-            # Windows interdit de remplacer un fichier qui est encore
-            # ouvert, même avec ``delete=False`` (cas courant d'un fichier
-            # temporaire créé par un appelant). Si le fichier reste
-            # accessible en écriture, on conserve la sauvegarde plutôt que
-            # d'échouer inutilement. Le chemin normal reste atomique ; ce
-            # repli n'est employé que lorsque le renommage Windows est
-            # explicitement refusé.
-            with tmp_path.open("rb") as source, target.open("wb") as destination:
-                shutil.copyfileobj(source, destination)
-                destination.flush()
-                os.fsync(destination.fileno())
+            # Windows interdit de remplacer un fichier encore ouvert (``MoveFileEx``), même quand il reste
+            # accessible en écriture. ``open("wb")`` tronque tout de suite : les octets précédents sont lus
+            # avant, et réécrits si la copie échoue (disque plein : le temporaire occupe déjà la place libre).
+            # Une coupure du processus pendant la copie reste non atomique. Si l'ancien contenu ne peut pas
+            # être lu, on ne tronque pas.
+            original = _existing_bytes(target)
+            try:
+                with tmp_path.open("rb") as source, target.open("wb") as destination:
+                    shutil.copyfileobj(source, destination)
+                    destination.flush()
+                    os.fsync(destination.fileno())
+            except OSError:
+                _restore_previous_file(target, original)
+                raise
             tmp_path.unlink()
     except Exception:
         # Best-effort cleanup : on ne veut pas masquer l'erreur d'origine.

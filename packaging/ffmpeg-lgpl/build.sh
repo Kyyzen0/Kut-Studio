@@ -29,7 +29,9 @@ export PATH="$TOOLS/bin:$TOOLS/venv/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
-export CFLAGS="-O2 -arch arm64 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+# Aucun chemin de la machine de construction dans les binaires livrés (ADR-0013, étape 7a) : les chemins de sources
+# (__FILE__ des assertions) sont réécrits, et FFmpeg se configure avec un préfixe neutre (voir l'étape 3).
+export CFLAGS="-O2 -arch arm64 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET -ffile-prefix-map=$ROOT=/kut-ffmpeg-build"
 export CXXFLAGS="$CFLAGS"
 export LDFLAGS="-arch arm64 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 # Date des sources fixée : constructions reproductibles (pas d'horodatage dans les binaires).
@@ -108,15 +110,25 @@ d="$(fetch LIBASS | tail -1)"
 log "ffmpeg $FFMPEG_VERSION"
 d="$(fetch FFMPEG | tail -1)"
 mkdir -p "$d/_b"
-(cd "$d/_b" && ../configure --prefix="$PREFIX" --arch=arm64 --cc="clang -arch arm64" \
+# Le texte « configuration: » de `ffmpeg -version` recopie les arguments de configure : préfixe neutre, compilateur appelé par un
+# nom court (le script `kut-clang` est dans $TOOLS/bin, hors livraison) et aucun -I / -L (pkg-config les fournit). L'installation
+# se fait dans un dossier de passage (DESTDIR), puis seuls ffmpeg et ffprobe sont copiés dans $PREFIX/bin.
+mkdir -p "$TOOLS/bin"
+printf '#!/bin/sh\nexec clang -arch arm64 -ffile-prefix-map=%s=/kut-ffmpeg-build "$@"\n' "$ROOT" > "$TOOLS/bin/kut-clang"
+chmod +x "$TOOLS/bin/kut-clang"
+STAGE="$ROOT/stage"
+rm -rf "$STAGE"
+(cd "$d/_b" && ../configure --prefix=/usr/local --arch=arm64 --cc=kut-clang \
    --enable-static --disable-shared --disable-autodetect \
    --disable-gpl --disable-nonfree --disable-doc --disable-debug --disable-ffplay \
    --enable-videotoolbox --enable-audiotoolbox --enable-libass --enable-libdav1d \
    --enable-zlib --enable-iconv \
-   --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib" \
    --pkg-config-flags="--static" > "$ROOT/configure.log" 2>&1 \
- && make -j"$JOBS" > "$ROOT/make.log" 2>&1 && make install > "$ROOT/install.log" 2>&1) || {
+ && make -j"$JOBS" > "$ROOT/make.log" 2>&1 && make install DESTDIR="$STAGE" > "$ROOT/install.log" 2>&1) || {
    echo "Échec de FFmpeg : voir $ROOT/configure.log, make.log (et $d/_b/ffbuild/config.log)" >&2; exit 4; }
+
+mkdir -p "$PREFIX/bin"
+cp "$STAGE/usr/local/bin/ffmpeg" "$STAGE/usr/local/bin/ffprobe" "$PREFIX/bin/"
 
 log "Terminé : $PREFIX/bin/ffmpeg"
 "$PREFIX/bin/ffmpeg" -hide_banner -version | head -3

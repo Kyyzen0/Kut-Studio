@@ -576,6 +576,83 @@ def test_atomic_write_falls_back_when_windows_blocks_replace(
     assert list(tmp_path.iterdir()) == [target]
 
 
+def test_windows_replace_fallback_restores_the_file_when_the_copy_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``open("wb")`` tronque avant la copie : un disque plein ne doit pas laisser le .kut vide.
+
+    Le temporaire est déjà écrit, donc il occupe la place libre. La copie vers le fichier tronqué
+    échoue, et l'ancien montage doit revenir (le repli Windows n'est plus une écriture destructrice).
+    """
+    target = tmp_path / "opened.kut"
+    original = "ORIGINAL CONTENT"
+    target.write_text(original, encoding="utf-8")
+
+    def blocked_replace(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("target is open")
+
+    def disk_full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("core.project_io.os.replace", blocked_replace)
+    monkeypatch.setattr("core.project_io.shutil.copyfileobj", disk_full)
+
+    with pytest.raises(OSError, match="No space left"):
+        save_project(_empty_project(), str(target))
+
+    assert target.read_text(encoding="utf-8") == original
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_windows_replace_fallback_does_not_truncate_when_the_previous_bytes_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sans photographie de l'ancien fichier, le repli ne l'ouvre pas en écriture."""
+    target = tmp_path / "opened.kut"
+    original = "ORIGINAL CONTENT"
+    target.write_text(original, encoding="utf-8")
+
+    def blocked_replace(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("target is open")
+
+    real_read = Path.read_bytes
+
+    def fail_snapshot(self: Path, *args: object, **kwargs: object) -> bytes:
+        if self == target:
+            raise PermissionError("snapshot refused")
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr("core.project_io.os.replace", blocked_replace)
+    monkeypatch.setattr(Path, "read_bytes", fail_snapshot)
+
+    with pytest.raises(PermissionError, match="snapshot refused"):
+        save_project(_empty_project(), str(target))
+
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_windows_replace_fallback_removes_a_new_file_when_the_copy_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un .kut qui n'existait pas ne reste pas vide quand la copie échoue."""
+    target = tmp_path / "new.kut"
+
+    def blocked_replace(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("target is open")
+
+    def disk_full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("core.project_io.os.replace", blocked_replace)
+    monkeypatch.setattr("core.project_io.shutil.copyfileobj", disk_full)
+
+    with pytest.raises(OSError, match="No space left"):
+        save_project(_empty_project(), str(target))
+
+    assert not target.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_save_project_creates_missing_parent_directory(tmp_path: Path) -> None:
     """Les dossiers intermédiaires manquants sont créés automatiquement."""
     target = tmp_path / "subdir" / "nested" / "project.kut"

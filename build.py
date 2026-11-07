@@ -60,6 +60,10 @@ SCOPE_SOURCE = ROOT / "packaging" / "store-spike" / "scope"
 """Source Swift des signets à portée de sécurité (``libkutscope.dylib``, ADR-0013, étape 5) et son ``build.sh``."""
 SCOPE_BUILD_DIR = ROOT / "build" / "scope"
 SCOPE_DYLIB_NAME = "libkutscope.dylib"
+STORE_ENTITLEMENTS = ROOT / "packaging" / "store" / "entitlements.plist"
+"""Droits du binaire principal Store (étape 7 ; non utilisés par la signature locale, voir ``docs/updates.md`` §11)."""
+STORE_INFO_PLIST = ROOT / "packaging" / "store" / "Info.plist"
+"""Entrées d'``Info.plist`` propres au Store (catégorie, version minimale), fusionnées après ``macos_info_overrides``."""
 MICROPHONE_USAGE = "Kut-Studio uses the microphone only while you record a voice-over."
 """Exigé par macOS pour l'enregistrement de voix off (et par le runtime renforcé d'une application notarisée)."""
 
@@ -216,7 +220,8 @@ def build_command(
         command.extend(["--osx-bundle-identifier", "com.kutstudio.app"])
         identity = environment.get(CODESIGN_IDENTITY_ENV, "").strip()
         if identity:
-            command.extend(["--codesign-identity", identity, "--osx-entitlements-file", str(ENTITLEMENTS)])
+            entitlements = STORE_ENTITLEMENTS if flavor == FLAVOR_STORE else ENTITLEMENTS
+            command.extend(["--codesign-identity", identity, "--osx-entitlements-file", str(entitlements)])
     for binary in _bundled_binaries(platform_name, environment):
         command.extend(["--add-binary", f"{binary}{separator}bin"])
     command.append(str(ROOT / "main.py"))
@@ -246,6 +251,12 @@ def macos_info_overrides(version: str = APP_VERSION) -> dict[str, object]:
     }
 
 
+def store_info_overrides(path: Path = STORE_INFO_PLIST) -> dict[str, object]:
+    """Entrées d'``Info.plist`` ajoutées seulement au bundle Store (lues dans ``packaging/store/Info.plist``)."""
+    with path.open("rb") as stream:
+        return dict(plistlib.load(stream))
+
+
 def codesign_command(app: Path, identity: str | None, entitlements: Path | None) -> list[str]:
     """Re-signature du bundle (sceau d'``Info.plist`` et des ressources) ; les binaires internes restent signés."""
     if not identity:
@@ -263,12 +274,15 @@ def finalize_macos_bundle(
     identity: str | None = None,
     entitlements: Path | None = None,
     run: Callable[[Sequence[str]], object] = subprocess.check_call,
+    flavor: str = FLAVOR_DEVELOPER_ID,
 ) -> None:
     """Écrit la version dans ``Info.plist``, re-signe le bundle, puis vérifie sa signature (échec = construction ratée)."""
     info_path = app / "Contents" / "Info.plist"
     with info_path.open("rb") as stream:
         info = plistlib.load(stream)
     info.update(macos_info_overrides(version))
+    if flavor == FLAVOR_STORE:
+        info.update(store_info_overrides())
     with info_path.open("wb") as stream:
         plistlib.dump(info, stream)
     run(codesign_command(app, identity, entitlements))
@@ -314,7 +328,8 @@ def _build(flavor: str) -> int:
         finalize_macos_bundle(
             ROOT / "dist" / f"{APP_NAME}.app",
             identity=identity,
-            entitlements=ENTITLEMENTS if identity else None,
+            entitlements=(STORE_ENTITLEMENTS if flavor == FLAVOR_STORE else ENTITLEMENTS) if identity else None,
+            flavor=flavor,
         )
     return 0
 
