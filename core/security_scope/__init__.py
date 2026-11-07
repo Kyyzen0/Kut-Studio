@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import os
+import stat
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
@@ -109,6 +110,20 @@ def command_scope(command: Iterable[Any]) -> AbstractContextManager[AccessReport
     return manager.access(*command_paths(command))
 
 
+def probe_user_file(path: str | os.PathLike[str]) -> str:
+    """``file`` si ``path`` est un fichier, ``absent`` s'il n'existe pas, ``denied`` si le système refuse le ``stat``.
+
+    N'ouvre pas d'accès. ``Path.is_file`` transforme un refus du bac à sable en ``False`` : ce n'est pas une absence.
+    L'appelant Store doit déjà tenir :func:`scoped_access` sur ce chemin, sinon un fichier présent est ``denied``."""
+    try:
+        mode = os.stat(path).st_mode
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "denied"
+    return "file" if stat.S_ISREG(mode) else "absent"
+
+
 def plan_scope(plan: Any, *extra: str | Path | None) -> AbstractContextManager[AccessReport]:
     """Accès aux médias d'un plan de rendu et à ``extra`` (sortie…) pour toute la durée d'un export. Hors Store : bloc vide."""
     manager = current_manager()
@@ -118,7 +133,7 @@ def plan_scope(plan: Any, *extra: str | Path | None) -> AbstractContextManager[A
 
 
 __all__ = [
-    "command_scope", "plan_scope", "scoped_argument",
+    "command_scope", "plan_scope", "probe_user_file", "scoped_argument",
     "EMPTY_REPORT", "AccessReport", "BookmarkStore", "LaunchReport", "ScopeBridge", "ScopeBridgeError", "ScopeManager",
     "bundled_bridge_loader", "current_manager", "install_manager", "remember_user_path", "scoped_access", "start_for_store",
 ]

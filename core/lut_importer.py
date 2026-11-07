@@ -282,6 +282,7 @@ def _parse_int(value: str, raw_line: str) -> int:
         ) from exc
 
 
+@scoped_argument(0)
 def ffmpeg_readable_lut(path: str | Path, cache_dir: str | Path | None = None) -> Path:
     """Chemin d'un ``.cube`` que FFmpeg ``lut3d`` lit tel quel : l'original, ou sa copie normalisée en UTF-8 sans BOM.
 

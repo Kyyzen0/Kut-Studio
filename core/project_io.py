@@ -72,7 +72,7 @@ from typing import TYPE_CHECKING, Any
 
 from .build_flavor import is_store
 from .effects_model import ClipEffect, EffectType
-from .security_scope import scoped_access
+from .security_scope import probe_user_file, scoped_access
 from .animation import Keyframe
 from .audio_automation import TrackAutomation
 from .beat_grid import beat_grid_from_dict, beat_grid_to_dict
@@ -1900,14 +1900,34 @@ def _deserialize_color_grade(
             # d'utilisation sans coupler le module ``project_io`` à
             # ``LUTResource``.
             computed_missing = stored_missing
+            resolved_source: str | None = None
             if path and not stored_missing:
-                from pathlib import Path
-
-                candidate = Path(path)
-                if not candidate.exists():
-                    if project_root is not None:
-                        candidate = project_root / candidate
-                if not candidate.exists():
+                locations = [Path(path)]
+                if project_root is not None and not locations[0].is_absolute():
+                    locations.append(project_root / locations[0])
+                present: Path | None = None
+                denied = False
+                with scoped_access(*(os.fspath(item) for item in locations)):
+                    for item in locations:
+                        kind = probe_user_file(item)
+                        if kind == "file":
+                            present = item
+                            break
+                        if kind == "denied":
+                            denied = True
+                    if present is not None:
+                        try:
+                            resolved_source = str(present.resolve())
+                        except OSError:
+                            resolved_source = os.fspath(present)
+                if present is not None:
+                    computed_missing = False
+                elif is_store() and denied:
+                    # Refus du bac à sable, pas une LUT supprimée : ne pas figer ``missing`` (il ne serait plus revérifié).
+                    computed_missing = False
+                    absolute = next((item for item in locations if item.is_absolute()), None)
+                    resolved_source = os.fspath(absolute) if absolute is not None else None
+                else:
                     computed_missing = True
             lut = LUTResource(
                 path=path,
@@ -1915,10 +1935,7 @@ def _deserialize_color_grade(
                 sha1=str(lut_raw.get("sha1", "")),
                 size=int(lut_raw.get("size", 0)),
                 missing=computed_missing,
-                source_path=(
-                    str(candidate.resolve())
-                    if path and not computed_missing else None
-                ),
+                source_path=resolved_source if path and not computed_missing else None,
             )
         except (ColorGradingError, ValueError, TypeError):
             lut = None

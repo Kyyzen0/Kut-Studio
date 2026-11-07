@@ -38,7 +38,6 @@ import logging
 import os
 import re
 import shutil
-import stat
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -48,7 +47,7 @@ from typing import Iterable, Sequence
 from .atomic_io import atomic_write_json
 from .build_flavor import is_store
 from .platform_paths import user_config_dir
-from .security_scope import scoped_access
+from .security_scope import probe_user_file, scoped_access, scoped_argument
 
 LOGGER = logging.getLogger(__name__)
 
@@ -388,6 +387,7 @@ class LUTResource:
             raise ColorGradingError("La taille du LUT ne peut pas être négative.")
 
     @classmethod
+    @scoped_argument(1)
     def from_path(
         cls, path: str | os.PathLike[str], *, title: str | None = None,
         project_root: str | os.PathLike[str] | None = None,
@@ -435,9 +435,15 @@ def copy_lut_into_project(
     Le nom inclut le début du hash afin d'éviter qu'un autre LUT portant le
     même nom écrase silencieusement le premier. Une référence déjà copiée est
     réutilisée. Si la source est absente, aucune copie factice n'est créée et
-    la ressource retournée est marquée manquante.
+    la ressource retournée est marquée manquante. En Store, un ``stat`` refusé ou un dossier
+    ``luts/`` qu'on ne peut pas créer conservent la référence : ce n'est pas une LUT supprimée.
     """
-    root = Path(project_root).resolve()
+    try:
+        root = Path(project_root).resolve()
+    except OSError:
+        if not is_store():
+            raise
+        root = Path(project_root)
     candidates: list[Path] = []
     if lut.source_path:
         candidates.append(Path(lut.source_path))
@@ -446,35 +452,78 @@ def copy_lut_into_project(
         candidates.append(stored)
     else:
         candidates.append(root / stored)
-    source = next((path for path in candidates if path.is_file()), None)
-    if source is None:
-        return LUTResource(
-            path=lut.path,
-            title=lut.title,
-            sha1=lut.sha1,
-            size=lut.size,
-            missing=True,
-            source_path=lut.source_path,
-        )
+    # Le bac à sable refuse ``stat`` sans accès ouvert. ``Path.is_file`` rend alors False, et le premier
+    # enregistrement écrivait ``missing: true`` : à l'ouverture cette valeur n'est plus revérifiée, la LUT
+    # disparaît du projet alors que le fichier est toujours là.
+    with scoped_access(*(os.fspath(path) for path in candidates)):
+        source: Path | None = None
+        denied = False
+        for path in candidates:
+            kind = probe_user_file(path)
+            if kind == "file":
+                source = path
+                break
+            if kind == "denied":
+                denied = True
+        if source is None:
+            if is_store() and denied:
+                return _portable_fallback(lut, root, Path(lut.source_path) if lut.source_path else None)
+            return LUTResource(
+                path=lut.path,
+                title=lut.title,
+                sha1=lut.sha1,
+                size=lut.size,
+                missing=True,
+                source_path=lut.source_path,
+            )
+        try:
+            if not stored.is_absolute() and (root / stored).resolve() == source.resolve():
+                relative = stored
+            else:
+                suffix = source.suffix.lower() or ".cube"
+                safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-._")
+                safe_stem = safe_stem or "lut"
+                relative = Path("luts") / f"{lut.sha1[:12]}-{safe_stem}{suffix}"
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source.resolve() != destination.resolve():
+                shutil.copy2(source, destination)
+            copied = LUTResource(
+                path=relative.as_posix(),
+                title=lut.title,
+                sha1=lut.sha1,
+                size=destination.stat().st_size,
+                missing=False,
+                source_path=str(destination.resolve()),
+            )
+        except PermissionError:
+            # Le signet du ``.kut`` n'autorise pas à créer ``luts/`` à côté. On garde la référence d'origine
+            # (le fichier choisi reste lisible par son propre signet) au lieu de faire échouer tout l'enregistrement.
+            if not is_store():
+                raise
+            return _portable_fallback(lut, root, source)
+    return copied
 
-    if not stored.is_absolute() and (root / stored).resolve() == source.resolve():
-        relative = stored
-    else:
-        suffix = source.suffix.lower() or ".cube"
-        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-._")
-        safe_stem = safe_stem or "lut"
-        relative = Path("luts") / f"{lut.sha1[:12]}-{safe_stem}{suffix}"
-    destination = root / relative
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if source.resolve() != destination.resolve():
-        shutil.copy2(source, destination)
+
+def _portable_fallback(lut: LUTResource, root: Path, source: Path | None) -> LUTResource:
+    """Référence à écrire quand la copie dans ``luts/`` est impossible (Store).
+
+    Un chemin relatif qui désigne bien ``root`` (enregistrement au même endroit) reste tel quel. Sinon
+    (« Enregistrer sous » vers un autre dossier), il désignerait l'ancien dossier du projet : on écrit la
+    référence absolue de la source d'origine, que ``_deserialize_color_grade`` ne résoudra pas contre le
+    nouveau dossier. ``missing`` reste celui de la ressource (la source est lisible ou le refus n'est pas une absence).
+    """
+    stored = Path(lut.path)
+    if stored.is_absolute() or source is None:
+        return lut
+    try:
+        if (root / stored).resolve() == source.resolve():
+            return lut
+        absolute = str(source.resolve())
+    except OSError:
+        absolute = os.fspath(source)
     return LUTResource(
-        path=relative.as_posix(),
-        title=lut.title,
-        sha1=lut.sha1,
-        size=destination.stat().st_size,
-        missing=False,
-        source_path=str(destination.resolve()),
+        path=absolute, title=lut.title, sha1=lut.sha1, size=lut.size, missing=lut.missing, source_path=absolute
     )
 
 
@@ -1119,28 +1168,22 @@ def _dict_to_grade(raw: object) -> ColorGrade:
             # ``stat`` tant que le signet n'est pas ouvert : un préréglage utilisateur serait marqué
             # ``missing``, et le prochain enregistrement (un favori, un autre préréglage) figerait ce
             # drapeau. Une LUT vraiment absente reste manquante. Hors Store, un refus reste une absence.
-            exists = False
-            denied = False
+            kind = "absent"
             source: str | None = None
             if path and not stored_missing:
                 with scoped_access(path):
-                    try:
-                        exists = stat.S_ISREG(os.stat(path).st_mode)
-                    except FileNotFoundError:
-                        exists = False
-                    except OSError:
-                        denied = True
-                    if exists:
+                    kind = probe_user_file(path)
+                    if kind == "file":
                         try:
                             source = str(Path(path).resolve())
                         except OSError:
                             source = path
             if not path or stored_missing:
                 missing = True
-            elif denied and is_store():
+            elif kind == "denied" and is_store():
                 missing = False
             else:
-                missing = not exists
+                missing = kind != "file"
             lut = LUTResource(
                 path=path,
                 title=str(lut_raw.get("title", "") or "LUT"),
