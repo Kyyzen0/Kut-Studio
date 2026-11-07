@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.entitlements import EntitlementRefused, edit_refusal
 from core.timeline_evaluator import timeline_duration
 from ui import i18n
 
@@ -10,6 +11,8 @@ class HistoryMixin:
     """Mixin de ``MainWindow`` (history)."""
 
     def _mark_dirty(self) -> None:
+        if edit_refusal() is not None:
+            return                      # lecture seule (Store) : l'édition a été refusée et remise en place, le projet n'est pas « modifié »
         self.project_dirty = True
         self._update_top_bar()
         self._schedule_autosave()
@@ -168,7 +171,11 @@ class HistoryMixin:
     def undo_last(self) -> None:
         """Annule la dernière opération enregistrée."""
         self._finalize_pending_edit_sessions()
-        snapshot = self.history.undo()
+        try:
+            snapshot = self.history.undo()
+        except EntitlementRefused as refusal:        # lecture seule (Store) : annuler modifierait le projet
+            self._show_refusal_message(refusal.user_message())
+            return
         if snapshot is None:
             return
         self._apply_history_snapshot(snapshot, self.history.undo_label or "")
@@ -176,7 +183,11 @@ class HistoryMixin:
     def go_to_history_state(self, index: int) -> None:
         """Revient à l'état ``index`` du panneau Historique, en une fois (autant d'Annuler ou de Rétablir)."""
         self._finalize_pending_edit_sessions()
-        snapshot = self.history.go_to(index)
+        try:
+            snapshot = self.history.go_to(index)
+        except EntitlementRefused as refusal:        # lecture seule (Store)
+            self._show_refusal_message(refusal.user_message())
+            return
         if snapshot is None:
             return
         self._apply_history_snapshot(snapshot, self.history.undo_label or "")
@@ -184,7 +195,11 @@ class HistoryMixin:
     def redo_last(self) -> None:
         """Rétablit la dernière opération annulée."""
         self._finalize_pending_edit_sessions()
-        snapshot = self.history.redo()
+        try:
+            snapshot = self.history.redo()
+        except EntitlementRefused as refusal:        # lecture seule (Store)
+            self._show_refusal_message(refusal.user_message())
+            return
         if snapshot is None:
             return
         self._apply_history_snapshot(snapshot, self.history.redo_label or "")

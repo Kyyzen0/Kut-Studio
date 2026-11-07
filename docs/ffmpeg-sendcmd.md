@@ -174,6 +174,31 @@ L'expression en `n` compte à partir de la première image que reçoit **ce** fi
 8. **`sendcmd` devant le filtre** (c'est la seule disposition mesurée) : il envoie la commande en traitant l'image,
    avant de la transmettre au filtre.
 
+9. **La mémoire de `sendcmd` sur FFmpeg 6.1 et 7.1** (trouvé à l'étape 6, complété par le correctif de l'étape 5 ; mesuré sur 6.1.1, 7.1.5 et
+   9.0.2, `docs/adr/0008-*.md`). Deux coûts distincts, qui ne se soignent pas pareil :
+   (a) **Lignes longues (étalonnage animé)** : un fichier est lu avec une mémoire transitoire de l'ordre de **1000 fois sa taille**, croissante
+   plus vite que lui (800 lignes de 4,7 Ko : 4,4 Go sur 7.1.5 avant la première image ; 9.0.2 : 19 Mo). Cette mémoire est **rendue** après la
+   lecture de chaque fichier : couper en fenêtres de 192 Ko (un `sendcmd` par fenêtre, `core/effect_sendcmd.py`, `load_filters`) ramène le pic
+   à 164 Mo. Les fenêtres soignent ce coût-là ; le total de l'étalonnage est borné à 32 Mo.
+   (b) **Nombre de commandes (effets : flou, aberration chromatique, rayon du Bloom)** : chaque commande lue garde **~25 Ko** de mémoire tant que
+   le filtre vit, quelle que soit la taille de la ligne, et **les fenêtres n'y changent rien** (mesuré : le pic est le même, à 2 % près, avec un
+   fichier ou plusieurs ; le même fichier lu par cinq `sendcmd` cumule cinq fois). Le pic est atteint à l'initialisation. Flou en rampe linéaire
+   (une valeur nouvelle à chaque image, deux commandes `sigma` / `sigmaV`), 320x180 à 30 i/s, pic de mémoire résidente (Mo),
+   `tools/measure_sendcmd_memory.py` :
+
+   | Durée (commandes) | 6.1.1 un fichier | 6.1.1 fenêtres | 7.1.5 un fichier | 7.1.5 fenêtres | 9.0.2 un fichier | 9.0.2 fenêtres |
+   |---|---|---|---|---|---|---|
+   | 1 min (3 600) | 146 | 146 | 156 | 156 | 18 | 18 |
+   | 5 min (18 000) | 506 | 496 | 514 | 517 | 28 | 29 |
+   | 10 min (36 000) | 959 | 939 | 971 | 969 | 44 | 43 |
+
+   Référence sans `sendcmd` : 69 Mo. La 9.0.2 n'est pas concernée. **Parade retenue** : un plafond de **40 000 commandes** par effet
+   (`MAX_EFFECT_COMMANDS`, ≈ 1 Go de pic sur 6.1 / 7.1), refusé avec un message clair avant d'écrire un fichier : jamais un rendu faux.
+   **Piste non confirmée** : une partie de ce coût ressemble à de la fragmentation de `malloc` (avec `MALLOC_ARENA_MAX=1`,
+   `MALLOC_MMAP_THRESHOLD_=4096`, `MALLOC_TRIM_THRESHOLD_=0`, 3 000 lignes passent de 220 à 142 Mo sur 7.1.5 ; glibc seulement, non essayé sur 6.1.1,
+   sans équivalent sur Windows ni macOS). **Évolution possible, non faite** : découper le rendu d'un clip en tranches de temps (plusieurs
+   invocations de FFmpeg), seule voie qui borne vraiment la mémoire d'une animation arbitrairement longue.
+
 ## Méthode à utiliser
 
 - Un fichier de commandes par segment rendu, une ligne par image : `<instant> <cible> <option> <valeur>[, <cible>
@@ -199,3 +224,38 @@ L'expression en `n` compte à partir de la première image que reçoit **ce** fi
 - Plusieurs cibles différentes dans une même ligne (le bloom les commande sur deux lignes de cas séparées).
 - Durées de plusieurs minutes : le coût de `lutrgb` est extrapolé de 150 images, pas mesuré sur 1800.
 - La netteté de nœud (`convolution`) : ses coefficients ne sont pas des options commandables.
+
+## Utilisation dans l'application (étape 5)
+
+Flou (`gblur`), aberration chromatique (`rgbashift`) et rayon du Bloom (`gblur`) sont animés par `sendcmd` à l'export et à l'aperçu fidèle : `core/effect_sendcmd.py`. Le coût mesuré avec le vrai graphe (1080p, 150 images) est celui du statique, sur les trois FFmpeg : voir l'ADR-0008, « Résultats de l'étape 5 », et `tools/measure_sendcmd_cost.py`. L'exposition et les roues (`lutrgb`, 0,2 s et 0,07 s par commande) n'y sont pas : l'étape 6 les anime par `curves` (voir ci-dessous).
+
+## Utilisation dans l'application (étape 6) : l'étalonnage
+
+`core/grade_render.py` : ombres et hautes lumières (`colorbalance`), température (`colorchannelmixer`), exposition et roues (`curves`)
+sont commandés par **un seul fichier** pour tout l'étalonnage d'un clip, plusieurs cibles dans la même ligne (`colorbalance@v0cgb rs …,
+colorbalance@v0cgb gs …, colorchannelmixer@v0cgt rr …`) ; le premier `sendcmd` est posé devant le premier filtre qu'il pilote.
+Contraste, saturation et teinte passent par expression (`eq` en `eval=frame`, `hue`).
+
+**`curves` avec 256 points par commande** (validé pour l'étape 6 sur FFmpeg 6.1.1, 7.1.5 et 9.0.2) :
+
+- `master`, `red`, `green` et `blue` se commandent (`curves@nom red '0.000000/0.001961 0.003922/…'`) ; les points peuvent changer de valeur à
+  chaque image (leur nombre reste constant) ; les guillemets simples du fichier protègent les espaces ;
+- `curves` refuse la commande entière si `(int)(x·255)` ne croît pas strictement d'un point au suivant : l'abscisse du niveau `i` est
+  écrite **juste au-dessus** de `i/255` (division entière exacte, jamais arrondie vers le bas) ;
+- la table de sortie est tronquée : l'ordonnée est le centre de la case (`niveau + 0,5`, ramené à 1 pour le blanc). Avec ces deux règles,
+  la sortie de `curves` égale celle du `lutrgb` de l'export fixe, **niveau par niveau** (écart 0 sur 256 niveaux, exposition et roues,
+  `tools/validate_fx_render.py`, cas `tables`) ;
+- coût : une commande `curves` à 256 points coûte le même temps que le filtre fixe, alors qu'une commande `lutrgb` recalcule sa table (voir
+  l'ADR-0008, « Résultats de l'étape 6 », `tools/measure_grade_cost.py`) ;
+- taille : ~4,7 Ko par image et par table (17 octets par point). Les fichiers sont écrits **par fenêtres de 192 Ko** et le total est borné à
+  32 Mo : voir le piège 9 (mémoire de `sendcmd` sur 6.1 / 7.1).
+
+## Addendum (ADR-0013) : `lut` accepte les commandes `y`, `u`, `v`
+
+Mesuré le 2026-10-28 (`tests/test_eq_lut.py`) : `lut` (LGPL) reçoit `y`, `u`, `v` par `sendcmd` (`process_command` de `vf_lut.c` rappelle
+`config_props`, FFmpeg 6.1, 7.1 et 9.0 ; options `RUNTIME_PARAM`) et sort **les mêmes octets** qu'`eq` (GPL) réglé par ses propres
+commandes (écart maximal 0, 900 réglages changeant à chaque image, 9.0.2 et 7.1.5). Pièges : (1) un argument avec des virgules
+(`'clip(floor(val*5324/4096)+12,0,255)'`) se cite entre apostrophes dans le fichier, comme dans le graphe ; (2) `y`, `u`, `v` valent `clipval`
+par défaut, qui écrête à [16, 235] / [16, 240] : un plan à laisser intact reçoit `val` ; (3) chaque commande recalcule 65 536 valeurs par
+composante (~13 ms par image à trois plans), d'où l'envoi des seuls plans qui changent. Utilisé par `core/eq_lut.py` pour la correction
+colorimétrique et le contraste et la saturation de l'étalonnage.

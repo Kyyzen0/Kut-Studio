@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from .render_plan import GraphicLayer
 
 CARD_TEXT = "Scène 3D indisponible"
+PLACEHOLDER_TEXT = "Scène 3D"
+"""Carte du moniteur pendant la lecture, avant que la scène ait été rendue une fois à l'arrêt (aucun rendu 3D en lecture)."""
 _CARD_INK = "#0B1220"
 _CARD_BLUE = "#7FB4FF"
 
@@ -51,4 +53,4 @@ def checked_scene3d_layer(layer: GraphicLayer, clip: Clip) -> tuple[GraphicLayer
     return replace(layer, graphic=scene3d_card(graphic, CARD_TEXT)), (warning, f"scène 3D « {short_name} »")
 
 
-__all__ = ["CARD_TEXT", "checked_scene3d_layer", "scene3d_card"]
+__all__ = ["CARD_TEXT", "PLACEHOLDER_TEXT", "checked_scene3d_layer", "scene3d_card"]

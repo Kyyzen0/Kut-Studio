@@ -28,9 +28,11 @@ from ui.properties_panel_mixins.effect_keyframes import EffectKeyframesMixin
 from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
+from ui.properties_widgets.keyframe_row import field_with_keyframes
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 
 class EffectsMixin(EffectKeyframesMixin):
@@ -57,7 +59,7 @@ class EffectsMixin(EffectKeyframesMixin):
 
         self.effects_hint = QLabel(translate("effects.no_clip"))
         self.effects_hint.setWordWrap(True)
-        self.effects_hint.setStyleSheet(label_style(11, "muted", 500))
+        self.effects_hint.setStyleSheet(label_style(Typography.caption, "muted", 500))
         group_layout.addWidget(self.effects_hint)
 
         self.effect_add_row = QWidget()
@@ -70,7 +72,7 @@ class EffectsMixin(EffectKeyframesMixin):
         self.effect_type_combo.setStyleSheet(
             f"QComboBox#effectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QComboBox#effectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.effect_add_button = self._make_effect_button(
@@ -97,7 +99,7 @@ class EffectsMixin(EffectKeyframesMixin):
         group_layout.addWidget(self.effects_list)
 
         self.effects_empty_label = QLabel(translate("effects.empty"))
-        self.effects_empty_label.setStyleSheet(label_style(11, "muted", 500))
+        self.effects_empty_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         group_layout.addWidget(self.effects_empty_label)
 
         # --- Bandeau d'actions ---------------------------------------
@@ -144,7 +146,7 @@ class EffectsMixin(EffectKeyframesMixin):
         button.setStyleSheet(
             f"QPushButton#effectAction {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QPushButton#effectAction:hover {{ background: {COLORS['surface_hover']}; }}"
             f"QPushButton#effectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#effectAction:disabled {{ color: {COLORS['muted']}; }}"
@@ -218,7 +220,7 @@ class EffectsMixin(EffectKeyframesMixin):
             name = translate(f"effects.name.{effect.type.value}")
             if not effect.enabled:
                 name = f"{name} · {translate('effects.disabled_suffix')}"
-            item = QListWidgetItem(name)
+            item = retain(QListWidgetItem(name))
             item.setData(Qt.UserRole, effect.id)
             self.effects_list.addItem(item)
         self.effects_list.blockSignals(False)
@@ -289,7 +291,7 @@ class EffectsMixin(EffectKeyframesMixin):
         specs = parameter_specs(effect.type)
         if not specs:
             label = QLabel(translate("effects.no_parameters"))
-            label.setStyleSheet(label_style(11, "muted", 500))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 500))
             self.effect_parameters_layout.addWidget(label)
             return
         form = QFormLayout()
@@ -310,10 +312,13 @@ class EffectsMixin(EffectKeyframesMixin):
             )
             self._effect_param_widgets[spec.name] = spin
             label = QLabel(translate(f"effects.param.{spec.name}"))
-            label.setStyleSheet(label_style(11, "muted", 600))
-            form.addRow(label, spin)
+            label.setStyleSheet(label_style(Typography.caption, "muted", 600))
             if self._is_animatable_effect_param(effect, spec.name):     # ADR-0008 : seuls ces paramètres ont des losanges
-                self._add_effect_keyframe_row(form, effect, spec.name, label.text())
+                field, line = field_with_keyframes(spin)
+                form.addRow(label, field)
+                self._add_effect_keyframe_row(line, effect, spec.name, label.text())
+            else:
+                form.addRow(label, spin)
         wrapper = QWidget()
         wrapper.setLayout(form)
         self.effect_parameters_layout.addWidget(wrapper)

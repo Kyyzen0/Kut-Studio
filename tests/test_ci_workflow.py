@@ -55,7 +55,7 @@ def test_the_dedicated_libass_job_is_blocking_bounded_and_independent() -> None:
 def test_the_main_matrix_is_unchanged_and_does_not_require_libass() -> None:
     jobs = _jobs()
     matrix = _without_comments(jobs["test-and-build"])
-    assert "os: [macos-latest, windows-latest, ubuntu-latest]" in matrix
+    assert '["macos-latest","windows-latest","ubuntu-latest"]' in matrix, "la matrice complète reste définie"
     assert "fail-fast: false" in matrix
     assert "KUT_STUDIO_REQUIRE_LIBASS" not in matrix, "la matrice principale saute sans libass (macOS) comme avant"
     assert "|| brew install ffmpeg" in matrix, "la matrice garde l'installation du FFmpeg Homebrew sans libass"
@@ -182,3 +182,43 @@ def test_every_suite_dumps_the_python_stacks_before_its_per_test_timeout() -> No
         dump = re.search(r"-o faulthandler_timeout=(\d+)\b", command)
         assert timeout and dump, command
         assert 0 < int(dump.group(1)) < int(timeout.group(1)), command
+
+
+# ---------------------------------------------------------------------------
+# Politique de CI (docs/ci-policy.md) : macOS seul sur les PR, Windows / Linux en hebdomadaire.
+# ---------------------------------------------------------------------------
+
+
+def test_triggers_keep_pull_request_push_dispatch_and_add_a_weekly_schedule() -> None:
+    text = _without_comments(WORKFLOW.read_text(encoding="utf-8"))
+    head = text.split("\njobs:")[0]
+    assert re.search(r"^  pull_request:", head, re.MULTILINE)
+    assert re.search(r"^  push:\n    branches: \[main\]", head, re.MULTILINE)
+    assert re.search(r"^  workflow_dispatch:", head, re.MULTILINE)
+    assert re.search(r'^  schedule:\n    - cron: "[^"]+ \* \* \d"\s*$', head, re.MULTILINE), "cron hebdomadaire attendu"
+
+
+def test_pull_requests_and_main_run_only_macos_jobs() -> None:
+    """Windows, Ubuntu et Debian restent définis mais ne tournent que sur schedule / workflow_dispatch."""
+    jobs = {name: _without_comments(body) for name, body in _jobs().items()}
+    matrix = jobs["test-and-build"]
+    # Sur pull_request / push, la liste de la matrice se réduit à macOS.
+    assert re.search(
+        r"os: \$\{\{ fromJSON\(\(github\.event_name == 'pull_request' \|\| github\.event_name == 'push'\) "
+        r"&& '\[\"macos-latest\"\]' \|\| ",
+        matrix,
+    ), "la matrice doit se réduire à macOS sur pull_request et push"
+    assert "if:" not in matrix.split("steps:")[0], "pas de condition de job sur la matrice (macOS doit toujours tourner)"
+    # Les jobs non macOS sont limités à schedule / dispatch ; les jobs macOS n'ont aucune condition d'événement.
+    gated = jobs["linux-ffmpeg7"]
+    assert "runs-on: ubuntu-latest" in gated
+    assert re.search(
+        r"^    if: github\.event_name == 'schedule' \|\| github\.event_name == 'workflow_dispatch'\s*$", gated, re.MULTILINE
+    )
+    libass = jobs["macos-libass"]
+    assert "runs-on: macos-latest" in libass
+    assert not re.search(r"^    if:", libass, re.MULTILINE), "le job macOS / libass tourne sur chaque PR"
+    for name, body in jobs.items():
+        if name not in {"test-and-build", "linux-ffmpeg7", "macos-libass"}:
+            raise AssertionError(f"job inattendu {name} : classe-le dans la politique de docs/ci-policy.md")
+        assert "continue-on-error" not in body

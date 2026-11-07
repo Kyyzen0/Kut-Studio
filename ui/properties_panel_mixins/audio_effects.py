@@ -25,8 +25,9 @@ from core.audio_effects_model import (
 from core.usage_level import UsageLevel
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 
 class AudioEffectsMixin:
@@ -57,7 +58,7 @@ class AudioEffectsMixin:
         # Astuce si aucun média sélectionné.
         self.audio_effects_hint = QLabel(_tr("audio_effects.no_clip"))
         self.audio_effects_hint.setWordWrap(True)
-        self.audio_effects_hint.setStyleSheet(label_style(11, "muted", 500))
+        self.audio_effects_hint.setStyleSheet(label_style(Typography.caption, "muted", 500))
         group_layout.addWidget(self.audio_effects_hint)
 
         # Ligne d'ajout : combo + bouton.
@@ -71,7 +72,7 @@ class AudioEffectsMixin:
         self.audio_effect_type_combo.setStyleSheet(
             f"QComboBox#audioEffectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QComboBox#audioEffectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.audio_effect_add_button = self._make_audio_effect_button(
@@ -103,7 +104,7 @@ class AudioEffectsMixin:
         self.audio_effects_empty_label = QLabel(_tr("audio_effects.empty"))
         self.audio_effects_empty_label.setWordWrap(True)  # une phrase : elle ne doit pas fixer la largeur de l'inspecteur
         self.audio_effects_empty_label.setStyleSheet(
-            label_style(11, "muted", 500)
+            label_style(Typography.caption, "muted", 500)
         )
         group_layout.addWidget(self.audio_effects_empty_label)
 
@@ -153,7 +154,7 @@ class AudioEffectsMixin:
         button.setStyleSheet(
             f"QPushButton#audioEffectAction {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f" border-radius: 6px; padding: 4px 6px; font-size: {Typography.micro}px; }}"
             f"QPushButton#audioEffectAction:hover {{ background: {COLORS['surface_hover']}; }}"
             f"QPushButton#audioEffectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#audioEffectAction:disabled {{ color: {COLORS['muted']}; }}"
@@ -230,7 +231,7 @@ class AudioEffectsMixin:
             name = _tr(f"audio_effects.preset.{effect.type.value}.name")
             if not effect.enabled:
                 name = f"{name} · {_tr('effects.disabled_suffix')}"
-            item = QListWidgetItem(name)
+            item = retain(QListWidgetItem(name))
             item.setData(Qt.UserRole, effect.id)
             self.audio_effects_list.addItem(item)
         self.audio_effects_list.blockSignals(False)
@@ -309,7 +310,7 @@ class AudioEffectsMixin:
         specs = audio_parameter_specs(effect.type)
         if not specs:
             label = QLabel(_tr("effects.no_parameters"))
-            label.setStyleSheet(label_style(11, "muted", 500))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 500))
             self.audio_effect_parameters_layout.addWidget(label)
             return
         form = QFormLayout()
@@ -330,7 +331,7 @@ class AudioEffectsMixin:
             )
             self._audio_effect_param_widgets[spec.name] = spin
             label = QLabel(_tr(f"audio_effects.param.{spec.name}"))
-            label.setStyleSheet(label_style(11, "muted", 600))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 600))
             form.addRow(label, spin)
         wrapper = QWidget()
         wrapper.setLayout(form)

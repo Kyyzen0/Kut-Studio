@@ -17,7 +17,9 @@ from PySide6.QtWidgets import QMenu, QMessageBox, QProgressDialog
 from core.auto_captions import add_karaoke_lines, add_subtitle_lines, caption_lines
 from core.beat_detection import plays_at_media_speed
 from core.timeline_operations import find_clip
-from core.transcription import TranscriptionJob, find_whisper, find_whisper_model, model_directory
+from core.transcription import (
+    TranscriptionJob, find_whisper, find_whisper_model, model_directory, transcription_available,
+)
 from ui import i18n
 
 LOGGER = logging.getLogger(__name__)
@@ -65,12 +67,16 @@ class AutoCaptionsMixin:
         }
 
     def _auto_captions_shortcut_handlers(self) -> dict:
+        if not transcription_available():             # version Store : commandes absentes (core.shortcuts), aucune fonction
+            return {}
         return {
             "auto_subtitles": lambda: self.transcribe_voice("subtitles"),
             "auto_karaoke": lambda: self.transcribe_voice("karaoke"),
         }
 
-    def _build_auto_captions_menu(self, parent: QMenu) -> QMenu:
+    def _build_auto_captions_menu(self, parent: QMenu) -> QMenu | None:
+        if not transcription_available():             # version Store : aucun menu (ADR-0013, étape 8)
+            return None
         menu = parent.addMenu(i18n.translate("transcription.menu.title"))
         menu.addAction(self._command_action("auto_subtitles", "transcription.menu.subtitles"))
         menu.addAction(self._command_action("auto_karaoke", "transcription.menu.karaoke"))
@@ -79,10 +85,14 @@ class AutoCaptionsMixin:
     # -- préférences -------------------------------------------------------------------------------------------------
 
     def set_whisper_path(self, path: str) -> None:
+        if not transcription_available():             # un signal peut atteindre le modèle : le réglage enregistré reste intact
+            return
         self._whisper_path = str(path or "").strip()
         self._save_auto_captions_settings()
 
     def set_whisper_model(self, path: str) -> None:
+        if not transcription_available():
+            return
         self._whisper_model = str(path or "").strip()
         self._save_auto_captions_settings()
 
@@ -96,6 +106,9 @@ class AutoCaptionsMixin:
 
     def transcribe_voice(self, mode: str = "subtitles") -> None:
         """Transcrit la voix puis pose ses lignes en sous-titres (``subtitles``) ou en titres karaoké (``karaoke``)."""
+        if not transcription_available():             # version Store : ni détection de programme ni sous-processus
+            self._show_social_status("transcription.message.store_unavailable")
+            return
         if mode not in CAPTION_MODES:
             raise ValueError(f"Mode de sous-titres inconnu : {mode!r}")  # i18n-ignore: erreur de programmation
         if getattr(self, "_transcription", None) is not None:

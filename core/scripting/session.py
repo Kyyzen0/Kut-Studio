@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ..edit_history import ProjectHistory
+from ..entitlements import require_edit
 from ..project_model import Project
 from ..sequences import ClampAdjustment, clamp_nested_clips
 
@@ -127,6 +128,7 @@ class Transaction:
 
     def run(self, operation: Operation, name: str | None = None) -> Any:
         """Applique une opération et rend sa valeur ; une opération refusée lève, la sortie du bloc restaure."""
+        require_edit()                       # lecture seule : un ``Transaction`` construit sans passer par ``__enter__`` n'écrit pas non plus
         value = operation(self._session.project)
         self._results.append(OperationResult(len(self._results), name or _name_of(operation), value))
         return value
@@ -250,7 +252,11 @@ class Session:
 
     def _open_with_snapshot(self) -> Project:
         """Ouvre la transaction et rend l'instantané à restaurer en cas de refus. Si la copie échoue (mémoire, contenu non copiable),
-        la session est refermée avant que l'erreur se propage : elle ne reste pas « occupée » pour toujours."""
+        la session est refermée avant que l'erreur se propage : elle ne reste pas « occupée » pour toujours.
+
+        Lecture seule (Store, ADR-0013 étape 12) : ``ReadOnlyError`` **avant tout effet**, ni snapshot ni transaction ouverte ; ce n'est
+        pas un refus d'opération (``_REFUSALS``) mais un état de l'application, il se propage au lieu d'entrer dans le rapport."""
+        require_edit()
         self._open_transaction()
         try:
             return deepcopy(self._project)

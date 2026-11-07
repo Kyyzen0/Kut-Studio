@@ -14,7 +14,9 @@ Master) ne s'entendaient avant l'export. Le mixeur n'avait pas de vumètre : auc
 - **Page Audio** (quatrième page : Montage, Composition, Couleur, Audio) : le bouton *Audio* au centre de la barre
   supérieure, *Fenêtre › Page Audio*, ou l'entrée *Audio* du rail. Le mixeur et ses vumètres sous un moniteur plus
   petit, avec la timeline ; l'inspecteur sur son onglet Audio, les médias à gauche. La page garde la disposition qu'on
-  lui laisse, comme les autres.
+  lui laisse, comme les autres. Chaque piste y est un **canal de 168 px** (nom, FX, M, S, fader, vumètre, Pan ; armement,
+  remise à zéro et sortie en dessous), le Master un canal à droite ; la timeline montre 3 pistes de 56 px (voir
+  [docs/ui-layout.md](ui-layout.md)).
 - **En lecture, sur toutes les pages**, on entend le mixage de l'export à partir de la tête de lecture : ce que
   l'export produira, à l'échantillon près.
 - **Vumètres** : chaque tranche montre la crête de sa piste (après fader, pan, automation et ducking) ; le Master

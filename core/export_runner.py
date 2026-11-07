@@ -23,6 +23,7 @@ Ce que l'interface n'a pas et qu'un script veut : **le fichier final est atomiqu
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import queue
@@ -31,10 +32,12 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from typing import Any, TypeVar, cast
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
+from .entitlements import require_export
 from .export_engine import (
     _PREPARATION_SHARE,
     ExportRequest,
@@ -54,6 +57,7 @@ from .optical_flow import BackendPreference
 from .process_supervisor import supervised_popen
 from .process_tree import kill_process_tree
 from .retime_prepare import PrepareCancelled, PrepareReport
+from .security_scope import plan_scope
 from .video_encoders import EncoderChoice, EncoderUnavailableError
 
 LOGGER = logging.getLogger("kut_studio.export_runner")
@@ -103,6 +107,21 @@ def partial_output_path(output_path: str) -> str:
     return str(final.with_name(f".{final.stem}.{uuid.uuid4().hex[:8]}.partial{final.suffix}"))
 
 
+_RunExport = TypeVar("_RunExport", bound=Callable[..., Any])
+
+
+def _with_user_files(function: _RunExport) -> _RunExport:
+    """``run_export`` s'exécute avec l'accès aux médias du plan et à la sortie (Store, ADR-0013 étape 5) ; hors Store, bloc vide."""
+
+    @functools.wraps(function)
+    def wrapper(request: ExportRequest, *args: Any, **kwargs: Any) -> ExportResult:
+        with plan_scope(request.render_plan, request.output_path):
+            return function(request, *args, **kwargs)
+
+    return cast(_RunExport, wrapper)
+
+
+@_with_user_files
 def run_export(
     request: ExportRequest,
     *,
@@ -125,7 +144,12 @@ def run_export(
         flow_cache: cache des images intermédiaires ; celui de l'application s'il est absent.
         flow_preference: backend de flux optique demandé.
         atomic: écrire dans un fichier ``.partial`` puis le renommer (par défaut) ; ``False`` écrit directement la sortie.
+
+    Raises:
+        core.entitlements.ExportBlockedError: l'export est refusé par les droits (lecture seule, build Store). Ce n'est pas un
+            échec d'export (ni dans le résultat, ni à réessayer sur CPU) : aucun fichier n'est touché. Hors Store, jamais levée.
     """
+    require_export()
 
     def report(message: str) -> None:
         if status is not None:

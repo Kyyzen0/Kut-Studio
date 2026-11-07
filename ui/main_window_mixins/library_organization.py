@@ -103,9 +103,17 @@ class LibraryOrganizationMixin:
         from core.library_organization import LibraryOrganization
         from ui.library_organization_widgets import TagManagerDialog
 
+        if self._edit_refused_ui():                  # lecture seule (Store) : ce dialogue modifie le projet vivant
+            return
         org = LibraryOrganization(self.project)
         dialog = TagManagerDialog(org, parent=self)
         result = dialog.exec()
+        # Le dialogue modifie le projet en place, Fermer (rejet) comprise : si les droits ont changé pendant qu'il était ouvert,
+        # les changements ne restent pas (défense en profondeur ; hors Store, rien ne change).
+        if self._edit_refused_ui():
+            self.history.discard_uncommitted(self.project)
+            self._refresh_project_library()
+            return
         if result == QDialog.Accepted:
             # Le dialogue n'utilise pas Accept ; tout est appliqué en
             # place. On enregistre l'historique dès qu'il y a au moins
@@ -194,6 +202,9 @@ class LibraryOrganizationMixin:
         from dataclasses import replace
 
         from core.library_organization import LibraryOrganization, relink_differences
+        from core.security_scope import remember_user_path
+
+        remember_user_path(path)                 # Store : « Relier » donne un nouveau signet (ADR-0013 étape 5)
 
         before = replace(asset)
         org = LibraryOrganization(self.project)

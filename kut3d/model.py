@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from kut3d.mathutil import Array, trs_to_matrix
+from kut3d.primitives import PrimitiveSpec
 
 ALPHA_MODES = ("opaque", "mask", "blend")
 CHANNEL_PATHS = ("translation", "rotation", "scale", "weights")
@@ -331,8 +332,13 @@ class Model:
     warnings: tuple[str, ...] = ()
     # Fichiers lus en plus de `source` (MTL, .bin externes, textures en fichier) : chemins absolus résolus.
     dependencies: tuple[Path, ...] = ()
+    # Forme de base paramétrique dont ce modèle est la géométrie générée (voir `kut3d.primitive_model`) : le fichier de
+    # scène écrit alors ses paramètres, pas de fichier de modèle. `source` reste vide.
+    primitive: PrimitiveSpec | None = None
 
     def __post_init__(self) -> None:
+        if self.primitive is not None and not isinstance(self.primitive, PrimitiveSpec):
+            raise ValueError("primitive doit être une forme de kut3d.primitives.")
         for name in (
             "nodes",
             "root_nodes",

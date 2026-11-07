@@ -95,6 +95,11 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
+        "recette_smoke: smoke test du banc de recette (montage de 10 s exporté en CPU, vérifié par ffprobe) ; sauté sans FFmpeg, "
+        "aucun seuil de durée ; sélection : pytest -m recette_smoke (docs/recette/README.md)",
+    )
+    config.addinivalue_line(
+        "markers",
         "real_media_player: laisse le vrai QMediaPlayer ouvrir un fichier inexistant (erreur de lecture) ; "
         "sans cette marque, la garde de tests/media_player_guard.py l'ignore",
     )

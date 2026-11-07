@@ -353,7 +353,7 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   fenêtre prévient sans jamais refuser d'ouvrir. Le verrou est pris **avant** de lire le projet (CLI et fenêtre), la reprise d'un verrou
   périmé est sérialisée par une garde (relecture sous la garde), et l'enregistrement écrit à travers un lien symbolique. Limite
   assumée : consultatif, il ne protège que des programmes de Kut-Studio.
-- **Étape 5 : parties A et B faites**, partie C à faire. `core/scripting/api.py` est la façade publique (`API_VERSION`
+- **Étape 5 : parties A, B et C faites.** `core/scripting/api.py` est la façade publique (`API_VERSION`
   `MAJEUR.MINEUR`, `DESCRIBE_VERSION`, `describe`, `describe_json` ; `Session.describe()`) et `Kut-Studio describe projet.kut [--json]`
   la commande (mêmes conventions que `info`). La partie A décrit la **structure** : projet, médias, séquences, pistes, clips (place,
   source, vitesse, transform, audio de base, calque graphique), transitions, repères ; ce qui n'est pas encore décrit est **nommé**
@@ -369,10 +369,16 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   modèle (les sous-objets aussi : un champ neuf d'un effet, d'un nœud ou d'un masque oblige à une décision) ; une forme répétée (images
   clés, masques, étalonnage) n'est déclarée qu'une fois (`SHAPE_ALIASES`). `DESCRIBE_VERSION` reste `1` : la partie B n'ajoute que des
   clés à une forme encore non publiée. Un test d'aller-retour (`tests/test_describe_roundtrip.py`) reconstruit chaque famille depuis sa
-  seule description avec les verbes existants et rejoue la description sur le projet sans rien changer. **Reste** : (partie C) style des
-  calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale, style de texte, suivi ; et côté verbes (hors description)
-  les images clés d'effet `fx.*`, le mode de fusion, l'incrustation, l'automation de volume, les associations de ducking et la composition.
+  seule description avec les verbes existants et rejoue la description sur le projet sans rien changer. **Partie C (faite)** : bibliothèque
+  (dossiers, étiquettes, rangement), guides, flou de mouvement, grille rythmique, classements, source Multicam (angles, décalage dérivé,
+  politique audio), style des calques graphiques (les 41 champs de style), style de texte et suivi (trackers, réglages, points posés à la
+  main, liaisons, stabilisation) ; `not_described` est vide et la dette de champs est vide (61 classes couvertes). Les échantillons bruts d'un
+  tracker ne sont pas décrits (grille dense : résumée par `counts` et `valid_range`, points manuels bornés à 64 par tracker, avec l'instant
+  `timeline_time` que les verbes attendent) ; `light_time` d'un calque de lumière est exclu (posé par la scène). `DESCRIBE_VERSION` reste `1`
+  (ajouts seuls, forme non publiée). **Reste**, côté verbes (hors description) : les images clés d'effet `fx.*`, le mode de fusion,
+  l'incrustation, la composition, un guide verrouillé, le flou de mouvement de la séquence, le style de texte et le style des calques hors
+  `set_graphic`.
   Documentation : « Lire un projet » dans `docs/scripting.md`. Tests : `tests/test_describe.py`, `test_describe_completeness.py`,
-  `test_describe_sections.py`, `test_describe_roundtrip.py`, `test_script_verb_completeness.py`, `test_scripting_api.py`,
+  `test_describe_sections.py`, `test_describe_roundtrip.py`, `test_describe_structure.py`, `test_describe_roundtrip_c.py`, `test_script_verb_completeness.py`, `test_scripting_api.py`,
   `test_cli_describe.py`.
 - Étapes 6 et 7 : à faire, dans l'ordre.

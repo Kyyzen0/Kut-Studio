@@ -13,7 +13,7 @@ tout se fait dans un dossier temporaire du film, déplacé seulement en cas de s
 
 Les importeurs de ``kut3d`` confinent déjà MTL, ``.bin`` et textures au dossier du modèle (un chemin absolu ou un ``..`` qui en
 sort est ramené au nom du fichier dans ce dossier) : la copie garde donc l'arborescence sous ce dossier. Limite : une géométrie
-construite en code (sans fichier source) est refusée.
+construite en code (sans fichier source) est refusée, SAUF une forme de base (``kut3d.primitive_model``), écrite par ses paramètres.
 """
 
 from __future__ import annotations
@@ -106,6 +106,8 @@ def confined_scene(scene: Any, models_dir: Path) -> Any:
     instances = []
     for instance in scene.instances:
         model = instance.model
+        if id(model) not in by_identity and getattr(model, "primitive", None) is not None:
+            by_identity[id(model)] = model                       # une forme de base n'a aucun fichier à copier : ses paramètres vont dans le .kut3d
         if id(model) not in by_identity:
             if Path(model.source) == Path(""):
                 raise FilmError(

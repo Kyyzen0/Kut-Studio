@@ -48,6 +48,7 @@ from PySide6.QtGui import (
 )
 
 from .blend_modes import BlendMode, coerce_blend_mode, qt_composition_mode
+from .security_scope import scoped_access, scoped_argument
 from .bundled_fonts import register_bundled_fonts
 from .text_runs import WORD, is_plain, reveal_state, split_emoji
 from .compositing import MaskMode, MaskShape
@@ -388,28 +389,30 @@ class _ImageCache:
         self._size = size
 
     def get(self, path: str) -> QImage | None:
-        try:
-            stat = os.stat(path)
-        except OSError:
-            return None
-        key = (path, stat.st_mtime_ns, stat.st_size)
-        image = self._items.get(key)
-        if image is None:
-            image = QImage(path)
-            if image.isNull():
+        with scoped_access(path):                          # Store : accès par signet, stat COMPRIS (le bac à sable refuse stat sans accès)
+            try:
+                stat = os.stat(path)
+            except OSError:
                 return None
-            image = image.convertToFormat(_FORMAT)
-            self._items[key] = image
-            if len(self._items) > self._size:
-                self._items.popitem(last=False)
-        else:
-            self._items.move_to_end(key)
+            key = (path, stat.st_mtime_ns, stat.st_size)
+            image = self._items.get(key)
+            if image is not None:
+                self._items.move_to_end(key)
+                return image
+            loaded = QImage(path)
+        if loaded.isNull():
+            return None
+        image = loaded.convertToFormat(_FORMAT)
+        self._items[key] = image
+        if len(self._items) > self._size:
+            self._items.popitem(last=False)
         return image
 
 
 IMAGES = _ImageCache()
 
 
+@scoped_argument(0)
 def image_signature(path: str) -> str:
     try:
         stat = os.stat(path)
@@ -491,8 +494,15 @@ def _has_shadow(graphic: GraphicOverlay) -> bool:
     )
 
 
-def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, float], *, device_scale: float = 1.0) -> None:
-    """Dessine le contenu du calque en espace calque (transform déjà posée)."""
+def draw_content(
+    painter: QPainter, graphic: GraphicOverlay, box: tuple[float, float], *, device_scale: float = 1.0,
+    scene3d_mode: str = "exact",
+) -> None:
+    """Dessine le contenu du calque en espace calque (transform déjà posée).
+
+    ``scene3d_mode`` : rendu d'un calque scène 3D (``exact`` : export et segments fidèles ; ``interactive`` / ``frozen`` :
+    moniteur, voir :mod:`core.scene3d_interactive`). Sans effet sur les autres types.
+    """
     width, height = box
     painter.setRenderHint(QPainter.Antialiasing, True)
     painter.setRenderHint(QPainter.TextAntialiasing, True)
@@ -509,7 +519,7 @@ def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, f
     elif kind == GraphicType.SCENE3D:
         from .scene3d import draw_scene
 
-        draw_scene(painter, graphic, width, height)
+        draw_scene(painter, graphic, width, height, scene3d_mode)
     elif kind == GraphicType.RECTANGLE:
         # Rectangle historique : contour **intérieur** (comme ``drawbox``).
         painter.fillRect(QRectF(0, 0, width, height), qcolor(graphic.fill_color))
@@ -753,6 +763,8 @@ class MographRenderer:
         fps: cadence (intervalle d'obturation du flou de mouvement).
         quality: ``draft`` / ``standard`` / ``high`` / ``export``.
         motion_blur: réglages de la séquence (``None`` = désactivé).
+        scene3d_mode: rendu des calques scène 3D : ``exact`` (défaut : export, segments d'aperçu fidèle), ``interactive``
+            (moniteur à l'arrêt : image réduite et approximative) ou ``frozen`` (moniteur en lecture : aucun rendu 3D).
     """
 
     def __init__(
@@ -764,8 +776,10 @@ class MographRenderer:
         fps: float = 30.0,
         quality: str = "export",
         motion_blur: MotionBlurSettings | None = None,
+        scene3d_mode: str = "exact",
     ) -> None:
         self.scene = scene
+        self.scene3d_mode = scene3d_mode
         self.width = max(1, int(width))
         self.height = max(1, int(height))
         self.fps = float(fps) if fps else 30.0
@@ -827,12 +841,20 @@ class MographRenderer:
             key.append(self._scene3d_identity(graphic, evaluated.box))
         return tuple(key)
 
-    @staticmethod
-    def _scene3d_identity(graphic: GraphicOverlay, box: tuple[float, float]) -> tuple:
-        """Instant, signature des fichiers, taille, moteur, échantillons et version du rendu d'une scène 3D (:mod:`core.scene3d`)."""
-        from .scene3d import render_identity
+    def _scene3d_identity(self, graphic: GraphicOverlay, box: tuple[float, float]) -> tuple:
+        """Instant, signature des fichiers, taille, moteur, échantillons et version du rendu d'une scène 3D (:mod:`core.scene3d`).
 
-        return render_identity(graphic, box)
+        Aperçu du moniteur : la taille réduite, le moteur choisi et le mode (une image figée ou une carte n'est jamais prise pour
+        l'image exacte) s'ajoutent à la clé.
+        """
+        from .scene3d import MODE_INTERACTIVE, render_identity
+
+        if self.scene3d_mode == "exact":
+            return render_identity(graphic, box)
+        from .scene3d_interactive import preview_backend
+
+        engine, side = preview_backend()
+        return render_identity(graphic, box, MODE_INTERACTIVE, side) + ("preview", self.scene3d_mode, engine)
 
     def content_texture_eligible(self, clip_id: str, t: float) -> bool:
         """``True`` si le calque peut être une texture locale animée par matrice.
@@ -884,7 +906,7 @@ class MographRenderer:
         try:
             painter.setRenderHint(QPainter.Antialiasing, True)
             painter.translate(margin, margin)
-            draw_content(painter, graphic, evaluated.box, device_scale=1.0)
+            draw_content(painter, graphic, evaluated.box, device_scale=1.0, scene3d_mode=self.scene3d_mode)
         finally:
             painter.end()
         return buffer, margin, evaluated
@@ -997,7 +1019,7 @@ class MographRenderer:
             painter.save()
             painter.setTransform(_qtransform(worlds[0]))
             painter.setOpacity(evaluated.opacity)
-            draw_content(painter, graphic, evaluated.box, device_scale=mat_scale_factor(worlds[0]))
+            draw_content(painter, graphic, evaluated.box, device_scale=mat_scale_factor(worlds[0]), scene3d_mode=self.scene3d_mode)
             painter.restore()
             return
         rect = self._device_rect(graphic, evaluated.box, worlds)
@@ -1045,7 +1067,7 @@ class MographRenderer:
         buffer.fill(Qt.transparent)
         painter = QPainter(buffer)
         painter.setTransform(_qtransform(world, rect.x(), rect.y()))
-        draw_content(painter, graphic, evaluated.box, device_scale=mat_scale_factor(world))
+        draw_content(painter, graphic, evaluated.box, device_scale=mat_scale_factor(world), scene3d_mode=self.scene3d_mode)
         painter.end()
         matte = render_matte(evaluated.masks, evaluated.box, world, rect)
         if matte is not None:

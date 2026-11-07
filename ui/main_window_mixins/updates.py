@@ -13,6 +13,9 @@ Câblage seulement : les règles sont dans :mod:`core.updates`, le transport et 
   « Quitter et installer… » demande confirmation, ferme la fenêtre par le chemin normal (projets non enregistrés,
   rendu en cours : la fermeture peut être refusée, et alors rien d'autre ne se passe), puis ouvre le dossier du paquet
   vérifié. Depuis les sources, rien n'est téléchargé : la version disponible est présentée, avec ``git pull``.
+* **Installation automatique (macOS)** : quand la signature du paquet est vérifiée et que l'application est
+  remplaçable, « Installer et redémarrer » prend la place de « Quitter et installer… ». Le parcours est dans
+  :mod:`ui.update_auto_install` ; ce mixin ne fait que déléguer.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from PySide6.QtGui import QDesktopServices
 
 from core.app_version import APP_VERSION, WEBSITE_URL
 from core.release_assets import detect_target
+from core.update_keys import key_ids
 from core.update_service import DownloadResult, HttpClient, UpdateChecker, UpdateDownloader
 from core.updates import (
     CheckMode,
@@ -41,6 +45,7 @@ from core.user_settings import DEFAULT_CHECK_UPDATES, DEFAULT_INCLUDE_PRERELEASE
 from core.versioning import Version
 from ui import i18n
 from ui.render_queue_panel import open_path
+from ui.update_auto_install import STARTUP_DELAY_MS, AutoInstaller
 from ui.update_dialog import UpdateDialog, UpdateDialogState, install_description, platform_label
 
 LOGGER = logging.getLogger(__name__)
@@ -87,6 +92,9 @@ class UpdatesMixin:
         self._update_offer: UpdateOffer | None = None
         self._update_manual_pending = False
         self._updates_closed = False
+        self._auto_installer = AutoInstaller(self)
+        if self._auto_installer.startup_enabled():
+            QTimer.singleShot(STARTUP_DELAY_MS, self._auto_installer.startup)
         self._update_timer = QTimer(self)
         self._update_timer.setSingleShot(True)
         self._update_timer.setInterval(AUTO_CHECK_DELAY_MS)
@@ -207,6 +215,8 @@ class UpdatesMixin:
             dialog.retry_requested.connect(self.check_for_updates)
             dialog.open_folder_requested.connect(self._on_update_open_folder)
             dialog.install_requested.connect(self._on_update_install)
+            dialog.auto_install_requested.connect(self._auto_installer.request_install)
+            dialog.install_cancel_requested.connect(self._auto_installer.cancel)
             self._update_dialog = dialog
         return self._update_dialog
 
@@ -293,6 +303,7 @@ class UpdatesMixin:
         if cancelled and not dialog.isVisible():
             return                                       # fermé pendant le téléchargement : rien à montrer
         dialog.show_download_result(result)
+        self._auto_installer.refresh_dialog()
         self._present_update_dialog()
 
     def _verified_package(self):
@@ -381,7 +392,8 @@ class UpdatesMixin:
         """Texte de la boîte « À propos » : version, installation, système, bibliothèques."""
         target = detect_target()
         system = platform_label(target) if target is not None else f"{platform.system()} {platform.machine()}"
-        return i18n.translate(
+        keys = ", ".join(key_ids()) or i18n.translate("update.about.keys_none")
+        text = i18n.translate(
             "update.about.text",
             version=APP_VERSION,
             install=install_description(self._update_context),
@@ -391,6 +403,7 @@ class UpdatesMixin:
             python=platform.python_version(),
             website=WEBSITE_URL,
         )
+        return text + "\n" + i18n.translate("update.about.keys", keys=keys)
 
     def show_about(self) -> None:
         _main_window().QMessageBox.about(self, i18n.translate("update.about.title"), self.about_text())
@@ -402,6 +415,9 @@ class UpdatesMixin:
     def _shutdown_updates(self) -> None:
         """Aucun transfert ne survit à la fenêtre ; un fichier partiel est supprimé par l'annulation."""
         self._updates_closed = True
+        auto_installer = getattr(self, "_auto_installer", None)
+        if auto_installer is not None:
+            auto_installer.abandon()
         timer = getattr(self, "_update_timer", None)
         if timer is not None:
             timer.stop()

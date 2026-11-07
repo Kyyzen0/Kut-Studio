@@ -139,10 +139,14 @@ def leaderboard_of(project: Project, clip_id: str) -> Leaderboard | None:
 
 def update_leaderboard(project: Project, board: Leaderboard) -> list[Clip]:
     """Remplace les calques d'un classement existant par ceux du nouveau tableau (même identifiant)."""
+    from .tracking_locks import require_release_followers_unlocked
+
+    old = list((project.active_sequence.generated_groups.get(board.id) or {}).get("clips", ()))
+    require_release_followers_unlocked(project, old)             # un suiveur verrouillé refuse AVANT de retirer le groupe ou un calque
     group = project.active_sequence.generated_groups.pop(board.id, None)
     for clip_id in (group or {}).get("clips", ()):
         try:
-            delete_clip(project, clip_id)
+            delete_clip(project, clip_id, also_removed=old)
         except KeyError:                                  # calque déjà supprimé à la main
             continue
     return build_leaderboard(project, board)

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.build_flavor import is_store
 from core.render_job import JobStatus, RenderJob
 from core.render_presets import get_preset
 from core.timecode import format_fps
@@ -36,6 +37,7 @@ from ui.design_system import ButtonVariant, Iconography, Sizes, Spacing, StatusK
 from ui.empty_state import EmptyState
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS, set_role, set_state, set_variant
+from ui.qt_item_lifetime import retain
 
 _JOB_ID_ROLE = Qt.UserRole
 _COLUMNS = ("name", "preset", "status", "progress", "output", "encoder")
@@ -225,7 +227,7 @@ class RenderQueuePanel(QWidget):
     def retranslate(self) -> None:
         self.title_label.setText(i18n.translate("render.title"))
         self.empty_label.set_title_and_text(i18n.translate("render.empty.title"), i18n.translate("render.empty"))
-        self.ffmpeg_banner.setText(i18n.translate("render.ffmpeg_missing"))
+        self.ffmpeg_banner.setText(i18n.translate("render.ffmpeg_missing_store" if is_store() else "render.ffmpeg_missing"))
         self.tree.setHeaderLabels([i18n.translate(f"render.col.{name}") for name in _COLUMNS])
         for button in self.findChildren(QPushButton):
             key = button.property("i18n_key")
@@ -271,7 +273,7 @@ class RenderQueuePanel(QWidget):
         self._items.clear()
         self._bars.clear()
         for job in self._queue.jobs:
-            item = QTreeWidgetItem()
+            item = retain(QTreeWidgetItem())
             item.setData(0, _JOB_ID_ROLE, job.id)
             self.tree.addTopLevelItem(item)
             bar = QProgressBar()
@@ -345,9 +347,10 @@ class RenderQueuePanel(QWidget):
         self.empty_label.setVisible(not jobs)
         self.tree.setVisible(bool(jobs))
         has_waiting = any(j.status is JobStatus.WAITING for j in jobs)
-        self.start_all_button.setEnabled(available and has_waiting and not queue.is_running)
+        allowed = getattr(queue, "export_allowed", True)                    # lecture seule (Store) : les démarrages sont grisés, jamais hors Store
+        self.start_all_button.setEnabled(available and allowed and has_waiting and not queue.is_running)
         self.start_button.setEnabled(
-            available and job is not None and job.status is JobStatus.WAITING
+            available and allowed and job is not None and job.status is JobStatus.WAITING
         )
         self.stop_button.setEnabled(queue.is_running)
         self.up_button.setEnabled(job is not None and job.status is JobStatus.WAITING)

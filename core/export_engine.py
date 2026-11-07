@@ -49,7 +49,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
@@ -59,7 +59,9 @@ from .blend_modes import BlendMode, coerce_blend_mode
 from .chroma_siting import CHROMA_SITING_444, CHROMA_SITING_SCALE, CHROMA_SITING_TO_RGBA, siting_before_rgb
 from .color_matrix import setparams_filter
 from .effects_model import ClipEffect, EffectType
+from .entitlements import export_refusal
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
+from .security_scope import plan_scope
 from .render_plan import (
     AudioLayer,
     GraphicLayer,
@@ -75,7 +77,7 @@ from .retime_graph import RetimeError, audio_stage, video_stage
 from .time_map import time_map_for
 from .timecode import ffmpeg_rate
 from .time_remapping import FreezeFrameMode, TimeInterpolation, get_ffmpeg_freeze_filter
-from .tool_paths import find_media_tool
+from .tool_paths import find_media_tool, missing_tool_message
 from .hardware_encoding import looks_like_encoder_failure, redact_command
 from .optical_flow import BackendPreference
 from .video_encoders import (
@@ -84,6 +86,7 @@ from .video_encoders import (
     HardwareEncoder,
     cpu_choice,
     resolve_video_encoder,
+    software_fallback_possible,
 )
 from .visual_effects import (
     max_transform_value,
@@ -164,9 +167,9 @@ def _ffmpeg_command_prefix() -> list[str]:
     """
     path = _ffmpeg_path or find_media_tool("ffmpeg")
     if path is None:
-        raise ImportError(
-            "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
-        )
+        raise ImportError(missing_tool_message(
+            "ffmpeg", "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
+        ))
     if isinstance(path, (tuple, list)):
         command = [str(item) for item in path if str(item)]
     else:
@@ -264,12 +267,18 @@ def input_arguments(path: str, *, threads: int = 0) -> list[str]:
 
     ``threads`` : fils de décodage d'un média (:func:`decoder_threads`) ; 0 laisse le choix à FFmpeg.
     """
-    path = require_local_ffmpeg_path(path)
+    seek_start = getattr(path, "seek_start", None)             # entrée positionnée (core.export_inputs.SeekedPath)
+    seek_duration = getattr(path, "seek_duration", 0.0)
+    path = require_local_ffmpeg_path(str(path))
     if path.endswith(".ffconcat"):
         return [*_INPUT_PROTOCOL_WHITELIST, "-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
+    window = ["-ss", str(int(seek_start)), "-t", f"{seek_duration:.3f}"] if seek_start is not None else []
+    if seek_start is not None:
+        threads = 1       # un fil par entrée positionnée : chaque fil de décodage garde ses images (140 -> 70 Mo en 1080p, mesuré)
     return [
         *_INPUT_PROTOCOL_WHITELIST,
         *(["-threads", str(threads)] if threads > 0 else []),
+        *window,
         "-i",
         path,
     ]
@@ -282,7 +291,7 @@ def decoder_threads(paths: Sequence[str]) -> int:
     quelques plans à la fois : 19 plans H.264 1080×1920 gardaient ainsi 1,5 Go de plus, sans aucun gain de vitesse
     (mesuré). Plusieurs médias se partagent donc les cœurs, deux fils au moins chacun ; un média seul garde le
     réglage de FFmpeg."""
-    media = [path for path in paths if not path.endswith(".ffconcat")]
+    media = [path for path in paths if not path.endswith(".ffconcat") and getattr(path, "seek_start", None) is None]
     if len(media) <= 1:
         return 0
     return max(2, (os.cpu_count() or 2) // len(media))
@@ -545,7 +554,9 @@ def check_export_request(request: ExportRequest) -> None:
     - le plan ne contient aucun clip visuel (ni calque graphique) ;
     - le plan porte des sous-titres et la build FFmpeg n'a pas le filtre ``subtitles`` (libass) ;
     - une scène 3D du plan ne se rend pas (texture illisible, bornes du moteur : :mod:`core.scene3d_check`). L'écran la laisse
-      vide ; un fichier exporté ne l'omet jamais en silence.
+      vide ; un fichier exporté ne l'omet jamais en silence ;
+    - la file d'images que FFmpeg devrait garder (plusieurs morceaux éloignés d'un même média ou d'un même angle multicam)
+      dépasse la mémoire de la machine (:mod:`core.export_memory`, défaut D-002 de la recette).
     """
     plan = request.render_plan
     if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
@@ -559,6 +570,9 @@ def check_export_request(request: ExportRequest) -> None:
     from .scene3d_check import check_export_scenes
 
     check_export_scenes(plan)
+    from .export_memory import check_export_memory
+
+    check_export_memory(request)
 
 
 def export_needs_preparation(request: ExportRequest, preference: BackendPreference = BackendPreference.AUTO) -> bool:
@@ -638,11 +652,27 @@ def build_export_command(
             f"Le dossier de sortie est introuvable : {output_path.parent}"
         )
 
+    created: list[str] = []                   # fichiers écrits par cette construction (graphe long, commandes ``sendcmd``)
+    try:
+        return _build_export_command(request, plan, width, height, output_path, prepared, subtitle_path, created,
+                                     temporary_files)
+    except BaseException:
+        for path in created:                  # un échec après l'écriture ne laisse aucun temporaire
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        raise
+
+
+def _build_export_command(request, plan, width, height, output_path, prepared, subtitle_path, created, temporary_files):
+    """Corps de :func:`build_export_command` (les fichiers écrits vont dans ``created``)."""
     from .scene3d import strict_rendering
 
     with strict_rendering():                  # un échec de rendu d'une scène 3D fait échouer l'export (l'écran le tolère)
         filter_complex, video_label, audio_label, input_paths = (
-            ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared)
+            ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared,
+                                               temporary_files=created)
         )
 
     command: list[str] = [
@@ -685,7 +715,6 @@ def build_export_command(
     if encoder.video_filter:
         filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
         video_label = "vencoded"
-    created: list[str] = []
     command.extend(filter_graph_arguments(filter_complex, created))
     if temporary_files is not None:
         temporary_files.extend(created)
@@ -732,6 +761,7 @@ def hardware_fallback_applies(choice: EncoderChoice | None, *, progress_seen: bo
         and choice.requested is HardwareEncoder.AUTO
         and not fallback_used
         and not progress_seen
+        and software_fallback_possible(choice.codec)   # construction LGPL : pas de libx264 vers lequel se replier
     )
 
 
@@ -797,6 +827,7 @@ class ExportEngine(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
+        self._scope: Any = None            # accès aux fichiers de l'utilisateur de l'export en cours (Store, ADR-0013 étape 5)
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._read_progress)
@@ -888,11 +919,18 @@ class ExportEngine(QObject):
             self.failed.emit("Un export est déjà en cours.")
             return
 
+        refusal = export_refusal()               # lecture seule (Store, ADR-0013 étape 12) : aucun fichier, aucun processus
+        if refusal is not None:
+            self.last_error_kind = "entitlement"
+            self.failed.emit(refusal.user_message())
+            return
+
         self.last_error_kind = ""                # un échec de préparation ne doit pas hériter de l'« encodeur » du job précédent
         try:
             self._duration_seconds = request.render_plan.duration
             check_export_request(request)
             self._prepare_temporary_files(request.render_plan)
+            self._open_scope(request)         # tout l'export, préparation et FFmpeg compris ; refermé par _cleanup_temporary_files
             self._prepared = {}
             self.last_preparation = None
             self._progress_floor = 0
@@ -1119,7 +1157,8 @@ class ExportEngine(QObject):
         horizon = (math.floor(max(0.0, float(playhead)) * rate + 1e-6) + 2) / rate
         filter_complex, video_label, audio_label, input_paths = (
             self._build_filter_complex(
-                plan, width, height, request.fps, self._current_srt_path, prepared=prepared, horizon=horizon
+                plan, width, height, request.fps, self._current_srt_path, prepared=prepared, horizon=horizon,
+                temporary_files=self._temporary_files,
             )
         )
         # Seule l'image est extraite : l'audio du graphe est consommé par un
@@ -1195,8 +1234,22 @@ class ExportEngine(QObject):
         if path:
             self._temporary_files.append(path)
 
+    def _open_scope(self, request: ExportRequest) -> None:
+        """Version Store : ouvre l'accès aux médias du plan et à la sortie pour toute la durée de l'export (FFmpeg hérite du bac à
+        sable). Hors Store : bloc vide."""
+        self._close_scope()
+        scope = plan_scope(request.render_plan, request.output_path)
+        scope.__enter__()
+        self._scope = scope
+
+    def _close_scope(self) -> None:
+        scope, self._scope = self._scope, None
+        if scope is not None:
+            scope.__exit__(None, None, None)
+
     def _cleanup_temporary_files(self) -> None:
-        """Supprime tous les fichiers temporaires créés pour cet export."""
+        """Supprime tous les fichiers temporaires créés pour cet export (et referme l'accès aux fichiers de l'utilisateur)."""
+        self._close_scope()
         for path in self._temporary_files:
             try:
                 os.remove(path)
@@ -1239,8 +1292,14 @@ class ExportEngine(QObject):
         horizon: float | None = None,
         audio_origin: float = 0.0,
         track_taps: dict[str, str] | None = None,
+        temporary_files: list[str] | None = None,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
+
+        ``temporary_files`` : liste à laquelle ajouter les fichiers que la construction écrit (les fichiers de commandes
+        ``sendcmd`` des effets animés, :mod:`core.effect_sendcmd`) ; l'appelant les supprime avec ses autres temporaires.
+        ``None`` : un fichier par contenu dans un dossier de processus supprimé à la sortie. Sans effet animé par
+        ``sendcmd``, rien n'est écrit et le graphe est celui d'avant.
 
         ``quality`` (``draft`` / ``standard`` / ``high`` / ``export``) ne règle
         que le flou de mouvement des calques motion graphics : un segment
@@ -1283,7 +1342,11 @@ class ExportEngine(QObject):
 
         # Inputs dédupliqués : on assigne un index à chaque chemin unique
         # (séquences imbriquées comprises).
-        input_paths, path_to_index = _build_input_list(plan)
+        from .export_inputs import plan_inputs
+
+        input_paths, path_to_index, seeks = plan_inputs(
+            plan, origin=origin, video=not audio_only, frame=(width, height)
+        )
 
         def add_input(path: str) -> int:
             """Entrée supplémentaire (flux de calques, matte) ; dédupliquée."""
@@ -1297,15 +1360,18 @@ class ExportEngine(QObject):
 
         # Séquences imbriquées : chaque sous-plan est composé une fois, en
         # amont, puis distribué (``split``) à ses instances.
-        sources = _build_nested_sources(
-            parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
-            video=not audio_only,
-        )
-        video_label, audio_label = _compose_plan_graph(
-            parts, plan, width, height, fps, path_to_index, sources,
-            add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
-            horizon=horizon, audio_origin=audio_origin, track_taps=track_taps,
-        )
+        from .effect_sendcmd import command_files
+
+        with command_files(temporary_files):
+            sources = _build_nested_sources(
+                parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
+                video=not audio_only, seeks=seeks,
+            )
+            video_label, audio_label = _compose_plan_graph(
+                parts, plan, width, height, fps, path_to_index, sources,
+                add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
+                horizon=horizon, audio_origin=audio_origin, track_taps=track_taps, seeks=seeks,
+            )
         if audio_only:
             return ";".join(parts), "", audio_label, input_paths
 
@@ -1486,12 +1552,16 @@ class _NestedSources:
     chaque couche consomme l'un des labels.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, readers: Mapping[int, int] | None = None) -> None:
         self.video: dict[str, list[str]] = {}
         self.audio: dict[str, list[str]] = {}
+        # Séquences dont la vidéo est composée par instance (:class:`core.export_inputs.NestedInstance`) : un rendu par fenêtre.
+        self.readers = readers or {}
+        self.slot_video: dict[tuple[str, int], list[str]] = {}
 
-    def take_video(self, key: str) -> str:
-        labels = self.video.get(key)
+    def take_video(self, key: str, layer=None) -> str:
+        slot = self.readers.get(id(layer)) if layer is not None else None
+        labels = self.slot_video.get((key, slot)) if slot is not None else self.video.get(key)
         if not labels:
             raise ValueError(f"Rendu de séquence imbriquée introuvable : {key}.")
         return labels.pop(0)
@@ -1561,6 +1631,7 @@ def _build_nested_sources(
     quality: str = "export",
     prepared: Mapping[str, PreparedStream] | None = None,
     video: bool = True,
+    seeks=None,
 ) -> _NestedSources:
     """Compose chaque séquence imbriquée et prépare ses labels de sortie.
 
@@ -1572,7 +1643,7 @@ def _build_nested_sources(
     (cadrage, transform, effets, opacité, fusion du clip imbriqué) :
     rendu interne → composite → effets du clip → timeline parente.
     """
-    sources = _NestedSources()
+    sources = _NestedSources(seeks.readers if seeks else None)
     entries = tuple(getattr(plan, "nested_sequences", ()) or ())
     if not entries:
         return sources
@@ -1585,6 +1656,14 @@ def _build_nested_sources(
         inner = entry.plan
         prefix = f"n{index}_"
         width, height, fps = nested_geometry(inner, output_width, output_height, plan)
+        instances = seeks.splits.get(entry.key) if seeks else None
+        if instances and want_video:
+            # La vidéo est composée par instance ; le son garde son rendu partagé (voir :mod:`core.export_inputs`).
+            _compose_instances(parts, plan, entry, instances, index, sources, path_to_index, width, height, fps,
+                               add_input=add_input, quality=quality, prepared=prepared, seeks=seeks)
+            want_video = 0
+            if not want_audio:
+                continue
         if getattr(entry, "composition", None) is not None:
             # Composition nodale : son graphe compilé lit le rendu de ses sources (entrées placées avant elle).
             from .composition_render import compile_composition
@@ -1600,13 +1679,40 @@ def _build_nested_sources(
             parts, inner, width, height, fps, path_to_index, sources,
             prefix=prefix, nested=True,
             want_video=bool(want_video), want_audio=bool(want_audio),
-            add_input=add_input, quality=quality, prepared=prepared,
+            add_input=add_input, quality=quality, prepared=prepared, seeks=seeks,
         )
         if want_video:
             sources.video[entry.key] = _fan_out(parts, video_label, want_video, "split")
         if want_audio:
             sources.audio[entry.key] = _fan_out(parts, audio_label, want_audio, "asplit")
     return sources
+
+
+def _compose_instances(parts, plan, entry, instances, index, sources, path_to_index, width, height, fps, *,
+                       add_input, quality, prepared, seeks) -> None:
+    """Compose la vidéo d'une séquence imbriquée **une fois par fenêtre de lecture** (:class:`core.export_inputs.NestedInstance`).
+
+    Chaque rendu ne commence qu'à son début (``origin``) et finit avec sa fenêtre : la mémoire de FFmpeg ne dépend plus de
+    ce qui sépare deux fenêtres. Les images gardent leurs horodatages (le lecteur coupe la même plage qu'avant)."""
+    from .export_inputs import INSTANCE_LEAD, INSTANCE_TAIL
+
+    key = entry.key
+    readers: dict[int, int] = {}
+    for layer in plan.video_layers:
+        if layer.nested_key == key:
+            slot = seeks.readers[id(layer)]
+            readers[slot] = readers.get(slot, 0) + 1
+    for slot, instance in enumerate(instances):
+        count = readers.get(slot, 0)
+        if not count:
+            continue
+        video_label, _audio = _compose_plan_graph(
+            parts, entry.plan, width, height, fps, path_to_index, sources,
+            prefix=f"n{index}w{slot}_", nested=True, want_video=True, want_audio=False,
+            add_input=add_input, quality=quality, prepared=prepared, seeks=seeks, tag=instance.tag,
+            origin=instance.start, window=(instance.start, instance.end + INSTANCE_TAIL), lead=INSTANCE_LEAD,
+        )
+        sources.slot_video[(key, slot)] = _fan_out(parts, video_label, count, "split")
 
 
 def _fan_out(parts: list[str], label: str, count: int, filter_name: str) -> list[str]:
@@ -1640,6 +1746,10 @@ def _compose_plan_graph(
     horizon: float | None = None,
     audio_origin: float = 0.0,
     track_taps: dict[str, str] | None = None,
+    seeks=None,
+    tag: str = "",
+    window: tuple[float, float] | None = None,
+    lead: float | None = None,
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1663,17 +1773,24 @@ def _compose_plan_graph(
     ``track_taps`` (racine seulement) : rempli de ``{piste: label}``, le sous-mixage de chaque piste qui a des couches,
     pris juste avant le mixage final (gain, pan, automation et ducking compris : ce qu'on entend de la piste).
 
+    ``window`` (vidéo d'une séquence imbriquée composée par instance, :class:`core.export_inputs.NestedInstance`) :
+    ``(début, fin)`` de la plage lue ; ``origin`` vaut alors le début, comme pour un segment d'aperçu de la racine, et le plan
+    s'arrête à la fin. ``lead`` : secondes gardées avant le début (temps absolu des clips). ``tag`` : la composition, pour
+    retrouver les entrées positionnées de ses clips.
+
     Returns:
         ``(label vidéo, label audio)`` finaux du plan (chaîne vide pour un
         flux non demandé).
     """
     duration = plan.duration
-    origin = float(origin) if not nested and origin and origin > 0 else 0.0
+    origin = float(origin) if (not nested or window is not None) and origin and origin > 0 else 0.0
     # Coupe du fond : rien ne se compose avant ``origin``. Absente pour l'export (graphe inchangé).
     head_trim = f",trim=start={_format_seconds(origin)}" if origin > 0 else ""
     if nested:
         # Au moins une image : une séquence vide reste un flux fini.
         duration = max(duration, 1.0 / float(fps or 30.0))
+        if window is not None:
+            duration = max(min(duration, float(window[1])), origin + 1.0 / float(fps or 30.0))
     p = prefix
     video_label = ""
     audio_label = ""
@@ -1689,7 +1806,7 @@ def _compose_plan_graph(
         bg_duration = f":d={_format_seconds(duration)}" if duration > 0 else ""
         if nested:
             parts.append(
-                f"color=c=black@0:s={width}x{height}:r={fps_text}{bg_duration},"
+                f"color=c=black@0:s={width}x{height}:r={fps_text}{bg_duration}{head_trim},"
                 f"format=rgba[{p}bg]"
             )
         else:
@@ -1702,7 +1819,7 @@ def _compose_plan_graph(
                 parts.append(
                     _build_layer_filter(
                         layer_index, layer, None, width, height, fps,
-                        source=sources.take_video(layer.nested_key),
+                        source=sources.take_video(layer.nested_key, layer),
                         label=f"{p}v{layer_index}",
                         pad_color="black@0",
                         add_input=add_input, pixel_scale=pixel_scale,
@@ -1710,13 +1827,15 @@ def _compose_plan_graph(
                     )
                 )
             else:
-                input_index = path_to_index[layer.source_path]
+                seek_index, input_shift = seeks.video(layer, tag) if seeks else (None, 0.0)
+                input_index = path_to_index[layer.source_path] if seek_index is None else seek_index
                 parts.append(
                     _build_layer_filter(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
                         add_input=add_input, prepared=prepared, pixel_scale=pixel_scale,
-                        origin=origin,
+                        origin=origin, input_shift=input_shift, lead=lead,
+                        first_frame=seeks.bases.get(id(layer)) if seeks and lead is not None else None,
                     )
                 )
 
@@ -2058,6 +2177,11 @@ def _last_line(text: str) -> str:
     return lines[-1][:160] if lines else ""
 
 
+def _round6(value: float) -> float:
+    """``value`` telle que FFmpeg la lisait dans la chaîne (six décimales, :func:`_format_seconds`)."""
+    return float(_format_seconds(float(value)))
+
+
 def _format_seconds(value: float) -> str:
     """Formate une durée en secondes pour un argument FFmpeg.
 
@@ -2070,6 +2194,13 @@ def _format_seconds(value: float) -> str:
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return f"{float(text):.1f}" if "." not in text else text
+
+
+def _format_signed(value: float) -> str:
+    """``-x`` (``x`` à neuf décimales : une base de temps fine, 1/90000, ne perd pas un tick à la troncature de ``setpts``) ou
+    ``+x`` pour un décalage négatif : l'expression ne contient jamais ``--``."""
+    text = f"{abs(value):.9f}".rstrip("0").rstrip(".") or "0"
+    return f"+{text}" if value < 0 else f"-{text}"
 
 
 OFFSET_GUARD_TICKS = 1e-3
@@ -2399,6 +2530,9 @@ def _build_layer_filter(
     prepared: Mapping[str, PreparedStream] | None = None,
     pixel_scale: float = 1.0,
     origin: float = 0.0,
+    input_shift: float = 0.0,
+    lead: float | None = None,
+    first_frame: float | None = None,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -2446,7 +2580,14 @@ def _build_layer_filter(
         if origin > 0.0 and time_map is None and layer.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
         else 0.0
     )
-    source_in = _format_seconds(layer.source_in + skip)
+    # ``lead`` (instance d'une séquence imbriquée, :mod:`core.export_inputs`) : le rendu ne part pas du début du clip, mais le
+    # temps du clip reste celui du graphe historique (0 sur sa première image) ; on garde ``lead`` secondes avant l'image voulue.
+    instance = lead is not None
+    source_in = _format_seconds(
+        layer.source_in + skip - (min(float(lead or 0.0), skip) if skip > 0.0 else 0.0) - input_shift
+    )
+    # Entrée positionnée (:mod:`core.export_inputs`) : son temps part de ``input_shift`` secondes (entières) de la source.
+    trim_out = _format_seconds(layer.source_out - input_shift)
 
     # ``scale`` et ``rotate`` attendent la variable temporelle
     # minuscule ``t``. ``T`` n'est définie que par certains filtres,
@@ -2459,12 +2600,28 @@ def _build_layer_filter(
         transform, kfs, canvas=_animated_layer_canvas(transform, kfs, width, height, layer.timeline_end - layer.timeline_start),
     )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
+    # Flux qui entre dans les effets : ``PTS`` est le temps local du clip (voir ci-dessous), sa première image est celle de
+    # ``origin`` pour un segment d'aperçu, ramenée à la grille des ticks (``segment_start``) (hors arrêt sur image, qui repart de 0). Les paramètres animés par ``sendcmd``.
+    from .effect_sendcmd import context_for, segment_start
+
+    local_start = segment_start(
+        max(0.0, origin - layer.timeline_start)
+        if origin > 0.0 and layer.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
+        else 0.0,
+        fps,
+    )
+    sendcmd_context = (
+        context_for(fps, local_start, layer.timeline_end - layer.timeline_start)
+        if any(kf.property_name.startswith(("fx.", "color.")) for kf in layer.animation or ())
+        else None
+    )
     effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale, label=f"{output_label}fx",
-                                                include_layer_space=False, animation=layer.animation)
+                                                include_layer_space=False, animation=layer.animation,
+                                                sendcmd=sendcmd_context)
     layer_space_filters = _layer_space_filters(layer.effects, pixel_scale, layer.animation)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
-    # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
+    # filtres ``lut`` (contraste/saturation), ``colorbalance``
     # (température/teinte), ``curves`` (R/V/B) et ``lut3d`` (LUT
     # optionnel). Les filtres s'appliquent *après* les effets visuels
     # (ordre déterministe : effets créatifs d'abord, étalonnage ensuite)
@@ -2487,7 +2644,8 @@ def _build_layer_filter(
                 f"{output_label}_w{node_id}", geometry,
             )
     color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg",
-                                                     windows=window_labels, pixel_scale=pixel_scale)
+                                                     windows=window_labels, pixel_scale=pixel_scale,
+                                                     animation=layer.animation, sendcmd=sendcmd_context)
     matte_label = None
     compositing = layer.compositing
     if compositing is not None and compositing.masks and add_input is not None:
@@ -2582,15 +2740,28 @@ def _build_layer_filter(
         # image : ``loop`` la répète, horodatée, pour que ``trim`` puis ``fps`` en tirent toute la durée du clip.
         # Avec ``origin``, ``trim`` commence à ``source_in + skip`` : effets et conformation ne traitent plus
         # ce qui précède le segment (le décodage source peut encore remonter à une image clé antérieure).
-        parts = [
-            f"[{source_label}]",
-            *(["loop=loop=-1:size=1:start=0,"] if getattr(layer, "still", False) else []),
-            f"trim=start={source_in}:end={source_out},",
-            f"{local_pts},",
-            f"{frame_fit},",
-            f"fps={ffmpeg_rate(fps)},",
-            f"{local_pts},",
-        ]
+        if instance:
+            # Temps absolu : ``PTS`` moins l'horodatage de la première image du clip (``first_frame``, sondé : le graphe
+            # historique remet le temps à 0 sur cette image), avec la garde d'un millième de tick de ``_format_offset`` contre
+            # la troncature de ``setpts``.
+            parts = [
+                f"[{source_label}]",
+                f"trim=start={source_in}:end={trim_out},",
+                f"setpts=PTS{_format_signed((first_frame if first_frame is not None else layer.source_in) - input_shift)}"
+                f"/TB+{OFFSET_GUARD_TICKS:g},",
+                f"{frame_fit},",
+                f"fps={ffmpeg_rate(fps)},",
+            ]
+        else:
+            parts = [
+                f"[{source_label}]",
+                *(["loop=loop=-1:size=1:start=0,"] if getattr(layer, "still", False) else []),
+                f"trim=start={source_in}:end={trim_out},",
+                f"{local_pts},",
+                f"{frame_fit},",
+                f"fps={ffmpeg_rate(fps)},",
+                f"{local_pts},",
+            ]
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
     # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).
@@ -2622,13 +2793,14 @@ def _build_layer_filter(
     return ";".join([*matte_parts, *retime_chains, "".join(parts)])
 
 
-def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_scale: float = 1.0) -> str:
+def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_scale: float = 1.0,
+                               animation=None, sendcmd=None) -> str:
     """Construit la chaîne de filtres FFmpeg pour un :class:`ColorGrade`.
 
     L'ordre est déterministe et identique pour tous les clips ; chaque
     filtre n'est émis que s'il change quelque chose :
 
-    1. ``eq`` — exposition (gamma ``2^EV``), contraste, saturation ; plus
+    1. ``lut`` (:mod:`core.eq_lut`, ex-``eq``) — exposition (table ``lutrgb``), contraste, saturation ; plus
        émis au neutre (jusqu'au 2026-10-10 il l'était toujours) : son
        aller-retour YUV coûtait un arrondi à chaque nœud. Mesuré sur cinq
        nœuds de roues : 0,50 niveau d'écart moyen à la formule (2 au plus,
@@ -2661,6 +2833,13 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
             aligné sur l'image étalonnée, ou couverture constante.
         pixel_scale: pixels de sortie par pixel de la séquence (σ du flou
             d'un nœud, réglé à la taille de la séquence).
+        animation: images clés génériques du clip (``Clip.animation``). Celles d'une propriété d'étalonnage
+            (``color.<champ>``, :mod:`core.grade_targets`) animent le ``ColorGrade`` **simple** du clip (:mod:`core.grade_render`) ;
+            ``None`` (valeur par défaut : moniteur, empreintes de cache, nœuds) ou sans image clé, la chaîne est celle
+            d'avant, caractère pour caractère.
+        sendcmd: :class:`core.effect_sendcmd.SendcmdContext` (cadence, origine et durée du flux) pour les réglages rendus par un
+            fichier de commandes ; ``None`` : ils restent à leur valeur de base (seuls contraste, saturation et teinte
+            suivent leur courbe, par expression).
 
     Returns:
         Chaîne prête à être concaténée dans un pipeline, ou
@@ -2677,33 +2856,49 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
 
     if isinstance(grade, Compare):
         # Avant / après de l'aperçu fidèle : l'étalonnage montré, l'image d'origine à gauche du partage.
+        # Les images clés ``color.*`` du clip suivent l'étalonnage montré à droite : le segment couvre un intervalle, il ne se
+        # fige pas sur le réglage de base (ADR-0008, étape 7).
         return compare_filters(_build_color_grade_filters(grade.value, tag=f"{tag}k", windows=windows,
-                                                          pixel_scale=pixel_scale), grade.split, tag)
+                                                          pixel_scale=pixel_scale, animation=animation,
+                                                          sendcmd=sendcmd), grade.split, tag)
     if isinstance(grade, (ColorNodeGraph, Highlight)):
         # Nœuds : en série, la chaîne de chaque nœud actif (un graphe d'un
         # seul nœud rend les pixels de son ColorGrade) ; mélangeurs et
         # qualifieurs : un sous-graphe, insérable lui aussi dans une chaîne,
         # aux labels préfixés par ``tag`` (unique dans le graphe de l'appelant).
         return render_filters(grade, tag, _build_color_grade_filters, windows=windows, pixel_scale=pixel_scale)
+    if grade is None and animation:
+        from .grade_targets import has_grade_animation
+
+        if has_grade_animation(animation):
+            grade = ColorGrade()          # jamais étalonné, mais animé : les images clés partent du réglage neutre (comme l'inspecteur)
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:
         return ""
     filters: list[str] = []
+    animated = None
+    if animation:
+        from .grade_render import animated_grade
+
+        animated = animated_grade(grade, animation, sendcmd, tag, _format_seconds)
     # 0. exposition en stops (EV) : la lumière est multipliée par 2^EV, puis ré-encodée (table ``lutrgb`` exacte), avant
     # le contraste. Avant, ``eq=gamma=2**EV`` : un gamma n'est pas une exposition (gris moyen à −2 EV : 0 au lieu de 66).
-    exposure = exposure_filter(grade.exposure)
+    exposure = (animated.exposure() if animated is not None else None) or exposure_filter(grade.exposure)
     if exposure:
         filters.append(exposure)
-    # 1. eq : contraste et saturation sont des multiplicateurs centrés sur 1.
-    if grade.contrast or grade.saturation != 1.0:
-        eq_contrast = _format_seconds(1.0 + float(grade.contrast))
-        eq_saturation = _format_seconds(float(grade.saturation))
-        filters.append(
-            f"eq=contrast={eq_contrast}:saturation={eq_saturation}"
-        )
+    # 1. contraste et saturation : des multiplicateurs centrés sur 1, par une table ``lut`` par plan (``eq`` est GPL : ADR-0013,
+    # :mod:`core.eq_lut`, mêmes octets que ``eq``).
+    if (animated_eq := animated.eq() if animated is not None else None):
+        filters.append(animated_eq)
+    elif grade.contrast or grade.saturation != 1.0:
+        from .eq_lut import static_filters
+
+        filters.append(static_filters(0.0, _round6(1.0 + float(grade.contrast)), _round6(float(grade.saturation))))
     # 1 bis. teinte : rotation de la chroma (degrés).
-    if abs(float(grade.hue)) > 1e-3:
+    if (animated_hue := animated.hue() if animated is not None else None):
+        filters.append(animated_hue)
+    elif abs(float(grade.hue)) > 1e-3:
         filters.append(f"hue=h={_format_seconds(float(grade.hue))}")
     # 2. colorbalance : ombres et hautes lumières. Sans ``pl=1`` (« conserver
     # la luminosité ») : FFmpeg y met la saturation à zéro dès qu'un canal vaut
@@ -2711,7 +2906,9 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     # ombres et hautes lumières, qui décalent les trois canaux d'autant.
     shadow = max(-1.0, min(1.0, float(grade.shadows)))
     highlight = max(-1.0, min(1.0, float(grade.highlights)))
-    if abs(shadow) > 1e-3 or abs(highlight) > 1e-3:
+    if (animated_balance := animated.balance() if animated is not None else None):
+        filters.append(animated_balance)
+    elif abs(shadow) > 1e-3 or abs(highlight) > 1e-3:
         filters.append(
             "colorbalance="
             f"rs={_format_seconds(shadow)}:gs={_format_seconds(shadow)}:"
@@ -2720,7 +2917,9 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
             f"bh={_format_seconds(highlight)}"
         )
     # 2 bis. température : balance des blancs sur toute l'image.
-    if abs(float(grade.temperature)) > 1e-3:
+    if (animated_temperature := animated.temperature() if animated is not None else None):
+        filters.append(animated_temperature)
+    elif abs(float(grade.temperature)) > 1e-3:
         red, green, blue = temperature_gains(float(grade.temperature))
         filters.append(
             f"colorchannelmixer=rr={_format_seconds(red)}:"
@@ -2728,7 +2927,7 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
         )
     # 2 ter. roues lift / gamma / gain / offset : une table exacte par canal
     # (``lutrgb``), émise seulement si une roue a bougé.
-    wheels = wheels_filter(grade)
+    wheels = (animated.wheels() if animated is not None else None) or wheels_filter(grade)
     if wheels:
         filters.append(wheels)
     # 3. courbes par canal : on émet un filtre ``curves`` par canal
@@ -2842,7 +3041,8 @@ def _build_lut3d_filter(lut) -> str | None:
     return f"lut3d=file='{safe}'"
 
 
-def _glow_filter(params, pixel_scale: float, label: str) -> str:
+def _glow_filter(params, pixel_scale: float, label: str, *, blur_name: str | None = None,
+                 blur_sigma: float | None = None) -> str:
     """Bloom : copie des zones plus claires que le seuil (RVB), floutée, **ajoutée** à l'image (alpha inchangé).
 
     Un sous-graphe au milieu de la chaîne (``split`` puis ``blend``) : la syntaxe des graphes FFmpeg permet de
@@ -2852,16 +3052,20 @@ def _glow_filter(params, pixel_scale: float, label: str) -> str:
     la chaîne (:mod:`core.chroma_siting`, posée devant ce ``format=rgba`` par l'appelant) ; vers ``gbrap`` il
     l'interpole autrement (sur une mire aux couleurs franches, 18 niveaux d'écart en moyenne). De ``rgba`` à ``gbrap``
     (pour ``gblur``), rien ne change.
-    L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``eq``…) travaillent en YUV,
+
+    ``blur_name`` / ``blur_sigma`` : le rayon est animé par ``sendcmd`` (:mod:`core.effect_sendcmd`) ; le ``gblur`` porte ce nom
+    d'instance et démarre à ``blur_sigma`` (valeur de la première image, déjà en pixels de rendu et plancher appliqué).
+    L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``lut``…) travaillent en YUV,
     comme à l'accoutumée (en RVB, la vignette rapprochait chaque canal de 128 et éclaircissait l'image)."""
     threshold = float(params["threshold"])
     gain = float(params["intensity"]) / max(0.05, 1.0 - threshold)
     level = _format_seconds(threshold * 255.0)
     curve = f"'clip((val-{level})*{_format_seconds(gain)},0,255)'"
-    sigma = _format_seconds(max(0.01, float(params["radius"]) * pixel_scale))
+    sigma = _format_seconds(max(0.01, float(params["radius"]) * pixel_scale) if blur_sigma is None else blur_sigma)
+    blur = "gblur" if blur_name is None else blur_name
     return (
         f"format=rgba,split[{label}a][{label}b];"
-        f"[{label}b]lutrgb=r={curve}:g={curve}:b={curve},gblur=sigma={sigma}[{label}g];"
+        f"[{label}b]lutrgb=r={curve}:g={curve}:b={curve},{blur}=sigma={sigma}[{label}g];"
         f"[{label}a][{label}g]blend=all_mode=addition:c3_mode=normal:c3_opacity=0,format=rgba,format=yuva444p"
     )
 
@@ -2894,7 +3098,7 @@ def _heat_haze_filter(params, pixel_scale: float, expressions=None) -> str:
 
 def _build_clip_effect_filters(
     effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0, label: str = "fx", *, include_layer_space: bool = True,
-    animation=None,
+    animation=None, sendcmd=None,
 ) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
@@ -2908,37 +3112,41 @@ def _build_clip_effect_filters(
     ``animation`` : images clés génériques du clip (``Clip.animation``). Celles d'un paramètre d'effet rendu
     (``fx.<effet>.<paramètre>``, :mod:`core.effect_expressions`) deviennent une expression du temps local du clip ; sans
     elles, ``None`` ou non, la chaîne est celle d'avant, caractère pour caractère.
+
+    ``sendcmd`` (:class:`core.effect_sendcmd.SendcmdContext`) : cadence, origine et durée du flux, pour les paramètres rendus
+    par un fichier de commandes (flou, aberration chromatique, rayon de la lueur). ``None`` (empreintes de cache, calques
+    graphiques) : ces paramètres restent à leur valeur de base, comme avant l'étape 5. Le fichier est écrit à la
+    construction (:func:`core.effect_sendcmd.load_filters`, une fenêtre par fichier).
     """
     from .effect_expressions import (
         EQ_TIME,
         GEQ_TIME,
         animated_effect_expressions,
-        eq_filter,
         vignette_filter,
     )
+    from .eq_lut import effect_stage, static_filters
 
     filters: list[str] = []
     for index, effect in enumerate(effects):
         if not effect.enabled:
             continue
         params = effect.params
-        if effect.type is EffectType.COLOR_CORRECTION and (
-                expressions := animated_effect_expressions(effect, animation, EQ_TIME)):
-            filters.append(eq_filter(params, expressions, _format_seconds))
+        if effect.type is EffectType.COLOR_CORRECTION:
+            # ``eq`` est GPL (ADR-0013) : une table ``lut`` par plan, exacte (:mod:`core.eq_lut`). Animée : ``sendcmd`` (comme le flou).
+            filters.append(
+                effect_stage(effect, animation, sendcmd, f"{label}{index}")
+                or static_filters(*(_round6(params[name]) for name in ("brightness", "contrast", "saturation")))
+            )
         elif effect.type is EffectType.VIGNETTE and (
                 expressions := animated_effect_expressions(effect, animation, EQ_TIME)):
             filters.append(vignette_filter(params, expressions))
-        elif effect.type is EffectType.COLOR_CORRECTION:
-            filters.append(
-                "eq="
-                f"brightness={_format_seconds(params['brightness'])}:"
-                f"contrast={_format_seconds(params['contrast'])}:"
-                f"saturation={_format_seconds(params['saturation'])}"
-            )
         elif effect.type is EffectType.BLUR:
-            filters.append(
-                f"gblur=sigma={_format_seconds(float(params['intensity']) * pixel_scale)}"
-            )
+            if stage := _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}"):
+                filters.extend([stage.load, f"{stage.name}=sigma={_format_seconds(stage.plan.initial)}"])
+            else:
+                filters.append(
+                    f"gblur=sigma={_format_seconds(float(params['intensity']) * pixel_scale)}"
+                )
         elif effect.type is EffectType.SHARPEN:
             filters.append(
                 "unsharp=luma_msize_x=5:luma_msize_y=5:"
@@ -2955,14 +3163,52 @@ def _build_clip_effect_filters(
                 ".393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
             )
         elif effect.type is EffectType.GLOW:
-            filters.append(_glow_filter(params, pixel_scale, f"{label}{index}"))
+            if stage := _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}"):
+                filters.extend([stage.load, _glow_filter(params, pixel_scale, f"{label}{index}", blur_name=stage.name,
+                                                         blur_sigma=stage.plan.initial)])
+            else:
+                filters.append(_glow_filter(params, pixel_scale, f"{label}{index}"))
         elif effect.type is EffectType.CHROMATIC_ABERRATION:
-            shift = int(round(float(params["intensity"]) * pixel_scale))
-            if shift:
-                filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
+            stage = _sendcmd_stage(effect, animation, sendcmd, pixel_scale, f"{label}{index}")
+            if stage is not None and not stage.load:
+                continue
+            if stage is not None:
+                # Toujours présent quand la courbe est animée (sauf si elle reste à 0 partout) : le décalage change d'une image
+                # à l'autre, y compris vers 0 (``rh=0`` : identité aux arrondis de la conversion RVB près).
+                shift = int(stage.plan.initial)
+                filters.extend([stage.load, f"format=rgba,{stage.name}=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p"])
+            else:
+                shift = int(round(float(params["intensity"]) * pixel_scale))
+                if shift:
+                    filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
         elif effect.type is EffectType.HEAT_HAZE and include_layer_space:
             filters.append(_heat_haze_filter(params, pixel_scale, animated_effect_expressions(effect, animation, GEQ_TIME)))
     return ",".join(filters)
+
+
+@dataclass(frozen=True)
+class _SendcmdStage:
+    """Un effet animé par ``sendcmd`` : le filtre qui charge le fichier, le nom d'instance du filtre visé et le plan."""
+
+    load: str
+    name: str
+    plan: Any
+
+
+def _sendcmd_stage(effect: ClipEffect, animation, context, pixel_scale: float, label: str) -> _SendcmdStage | None:
+    """Écrit le fichier de commandes de ``effect`` et rend l'étage (``None`` : rien n'est animé, ou pas de contexte de flux : la
+    chaîne statique est alors celle d'avant ; ``load`` vide : la courbe d'une aberration chromatique reste à 0, rien à ajouter)."""
+    if context is None or not animation:
+        return None
+    from .effect_sendcmd import command_plan, filter_name, load_filters
+
+    name = filter_name(effect.type, label)
+    plan = command_plan(effect, animation, context, name, pixel_scale)
+    if plan is None:
+        return None
+    if effect.type is EffectType.CHROMATIC_ABERRATION and plan.peak == 0.0:
+        return _SendcmdStage("", name, plan)           # la courbe reste à 0 : aucun décalage, aucun fichier, aucun filtre
+    return _SendcmdStage(load_filters(plan.rows), name, plan)
 
 
 def _layer_space_filters(effects, pixel_scale: float, animation=None) -> str:

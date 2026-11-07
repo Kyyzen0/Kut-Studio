@@ -13,7 +13,7 @@ import os
 
 
 def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export", prepared=None,
-                         origin=0.0):
+                         origin=0.0, temporary_files=None):
     """Construit le -filter_complex via le moteur d'export (parite).
 
     ``quality`` ne regle que le flou de mouvement des calques motion
@@ -22,11 +22,14 @@ def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, 
     ``core.retime_layers``), par identifiant de clip.
     ``origin`` : premier instant utile (debut d'un segment) ; voir
     ``ExportEngine._build_filter_complex``.
+    ``temporary_files`` : liste qui recoit les fichiers ecrits par la construction (commandes ``sendcmd`` des effets
+    animes) ; l'appelant les supprime apres le rendu. ``None`` : comportement d'avant (voir ``_build_filter_complex``).
     """
     from .export_engine import ExportEngine
 
     return ExportEngine._build_filter_complex(
-        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared, origin=origin
+        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared, origin=origin,
+        temporary_files=temporary_files,
     )
 
 
@@ -107,6 +110,7 @@ def build_preview_command(plan, **kwargs):
         with_output_color_stage,
     )
     from .preview_render import preview_crf, preview_preset
+    from .video_encoders import auxiliary_h264_args
 
     width = int(kwargs.get("width", 1920))
     height = int(kwargs.get("height", 1080))
@@ -118,8 +122,9 @@ def build_preview_command(plan, **kwargs):
     srt_path = kwargs.get("srt_path", None)
     out_w, out_h = preview_output_size(width, height, quality)
     # Le segment ne compose qu'à partir de son début : son coût ne dépend plus de sa position sur la timeline.
+    temporary_files = kwargs.get("temporary_files")
     result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality, prepared=kwargs.get("prepared"),
-                                  origin=max(0.0, start))
+                                  origin=max(0.0, start), temporary_files=temporary_files)
     filter_complex, video_label, audio_label, input_paths = result
     # Même conversion et mêmes balises que l'export (BT.709) : l'aperçu montre les couleurs de l'export.
     filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
@@ -130,21 +135,18 @@ def build_preview_command(plan, **kwargs):
         if callable(input_args):
             command.extend(input_args(path))
         command.extend(input_arguments(path, threads=threads))
-    temporary_files = kwargs.get("temporary_files")
     command.extend(filter_graph_arguments(filter_complex, temporary_files if temporary_files is not None else []))
     command.extend(["-map", "[" + video_label + "]"])
     command.extend(["-map", "[" + audio_label + "]"])
     # Reglages x264 propres a la qualite d'apercu (brouillon rapide,
     # haute fidelite plus lente). Le graphe de filtres, lui, reste
     # exactement celui de l'export.
+    # Sans libx264 (construction LGPL du Mac App Store) : VideoToolbox, au débit tiré du même CRF.
     command.extend(
         [
-            "-c:v",
-            "libx264",
-            "-preset",
-            preview_preset(quality),
-            "-crf",
-            str(preview_crf(quality)),
+            *auxiliary_h264_args(
+                speed_preset=preview_preset(quality), crf=preview_crf(quality), width=out_w, height=out_h, fps=fps
+            ),
             *OUTPUT_COLOR_TAGS,
         ]
     )
@@ -248,7 +250,11 @@ d'être recopiée sur son bloc 2×2, et les bandes de mise au cadre sont paires 
 chroma ou l'ancien placement sont ignorés.
 13 : un paramètre d'effet animé (``fx.<effet>.<paramètre>``, ADR-0008) se rend par une expression du temps local du clip
 (``eq`` et ``vignette`` en ``eval=frame``, ``geq`` de la brume de chaleur) ; un segment mis en cache avec le paramètre
-figé à sa valeur de base est ignoré."""
+figé à sa valeur de base est ignoré.
+
+ADR-0013 : ``eq`` (GPL) est remplacé par ``lut`` (:mod:`core.eq_lut`), **pour les mêmes octets** (mesuré image par image, statique et animé, sur
+FFmpeg 9.0.2 et 7.1.5) : pas de nouvelle version. Le texte de la chaîne change, donc l'empreinte d'un clip à correction colorimétrique : ses segments
+mis en cache avant sont simplement refaits."""
 
 
 def fingerprint_plan(plan, **kwargs):

@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from core.animation import Keyframe
-from core.effect_targets import ANIMATABLE_EFFECT_PARAMS, effective_effect_parameters
+from core.effect_targets import effective_effect_parameters
 from core.effects_library import EffectCategory, apply_preset_to_clip, make_preset
 from core.effects_model import (
     EffectType,
@@ -23,13 +23,6 @@ from core.project_model import Clip, MediaAsset, Project, Track
 from core.scripting.session import Session
 from core.timeline_operations import cut_clip, duplicate_clip
 from tests.test_multicam_core import _with_segment
-
-
-@pytest.fixture(autouse=True)
-def _blur_is_a_registered_vehicle(monkeypatch):
-    """Ces tests portent sur le cycle de vie des courbes (modèle), pas sur le rendu : le flou, empilable et de bornes 0 à 50,
-    leur sert de véhicule. Il n'est pas dans la liste enregistrée (étape 5 de l'ADR) : on l'y met le temps du test."""
-    monkeypatch.setitem(ANIMATABLE_EFFECT_PARAMS, EffectType.BLUR, ("intensity",))
 
 
 def names(clip: Clip) -> list[str]:

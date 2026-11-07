@@ -73,12 +73,12 @@ class ToolbarMixin:
         # Rangée combinée : timecode + durée totale séparées par un slash.
         self.timecode_label = QLabel("00:00:00")
         self.timecode_label.setStyleSheet(
-            f"color: {palette.muted}; font-size: 11px;"
+            f"color: {palette.muted}; font-size: {Typography.micro}px;"
             f" {monospace_font_family()}"
         )
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet(
-            f"color: {palette.muted}; font-size: 11px;"
+            f"color: {palette.muted}; font-size: {Typography.micro}px;"
             f" {monospace_font_family()}"
         )
         time_row = QWidget()
@@ -221,7 +221,7 @@ class ToolbarMixin:
         status_layout.setSpacing(0)
         status_layout.setAlignment(Qt.AlignRight)
         self.clip_count_label = QLabel()
-        self.clip_count_label.setStyleSheet(label_style(11, "muted", 500))
+        self.clip_count_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         self.clip_count_label.setAlignment(Qt.AlignRight)
         status_layout.addWidget(self.clip_count_label)
         self.version_label = QLabel("KUT-STUDIO")
@@ -239,24 +239,24 @@ class ToolbarMixin:
         self.zoom_out_btn = IconButton(
             icon=IconName.PLUS,
             tooltip=translate("tooltip.zoom_out"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         self.zoom_out_btn.setIcon(_minus_icon())
         self.zoom_label = QLabel("100%")
         self.zoom_label.setStyleSheet(
             f"color: {palette.text}; font-weight: 700; min-width: 48px; "
-            f"font-size: 11px;"
+            f"font-size: {Typography.micro}px;"
         )
         self.zoom_label.setAlignment(Qt.AlignCenter)
         self.zoom_in_btn = IconButton(
             icon=IconName.PLUS,
             tooltip=translate("tooltip.zoom_in"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         self.zoom_fit_btn = IconButton(
             icon=IconName.PANEL_RESTORE,
             tooltip=translate("timeline.tip.fit"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         self.zoom_fit_btn.clicked.connect(self.fit_timeline)
         zoom_layout.addWidget(self.zoom_out_btn)

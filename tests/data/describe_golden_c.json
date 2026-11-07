@@ -1,0 +1,453 @@
+{
+  "library": {
+    "folders": [
+      {
+        "id": "fld1",
+        "name": "Rushes",
+        "parent_id": null,
+        "color": "#AA3300"
+      },
+      {
+        "id": "fld2",
+        "name": "Jour 1",
+        "parent_id": "fld1",
+        "color": ""
+      }
+    ],
+    "tags": [
+      {
+        "id": "tag1",
+        "name": "Favori",
+        "color": "#FFCC00"
+      },
+      {
+        "id": "tag2",
+        "name": "Musique",
+        "color": "#3498db"
+      }
+    ],
+    "assignments": [
+      {
+        "asset_id": "m1",
+        "folder_id": "fld2",
+        "tag_ids": [
+          "tag1"
+        ]
+      },
+      {
+        "asset_id": "m2",
+        "folder_id": null,
+        "tag_ids": [
+          "tag1",
+          "tag2"
+        ]
+      }
+    ]
+  },
+  "sequence": {
+    "guides": [
+      {
+        "id": "gd1",
+        "orientation": "vertical",
+        "position": 0.5,
+        "locked": false
+      },
+      {
+        "id": "gd2",
+        "orientation": "horizontal",
+        "position": 0.333333,
+        "locked": false
+      },
+      {
+        "id": "gd3",
+        "orientation": "vertical",
+        "position": 0.75,
+        "locked": true
+      }
+    ],
+    "motion_blur": {
+      "enabled": true,
+      "shutter_angle": 90.0,
+      "samples": 6
+    },
+    "multicam": null,
+    "beat_grid": {
+      "bpm": 120.0,
+      "offset": 0.25,
+      "beats_per_bar": 3
+    },
+    "generated_groups": [
+      {
+        "id": "lb1",
+        "kind": "leaderboard",
+        "data": {
+          "rows": [
+            {
+              "rank": "1",
+              "name": "Alice",
+              "value": "9 800",
+              "color": "#FFD84D"
+            },
+            {
+              "rank": "2",
+              "name": "Bruno",
+              "value": "9 100",
+              "color": "#22B8FF"
+            }
+          ],
+          "start": 1.0,
+          "duration": 5.0,
+          "top": -0.2,
+          "delay": 0.4
+        },
+        "clips": [
+          "g1",
+          "g2"
+        ]
+      },
+      {
+        "id": "autre",
+        "kind": "inconnu",
+        "data": null,
+        "clips": []
+      }
+    ]
+  },
+  "multicam_source": {
+    "angles": [
+      {
+        "id": "angle-1",
+        "name": "Caméra A",
+        "track_id": "MC0",
+        "color_index": 0,
+        "sync_method": "manual",
+        "sync_status": "none",
+        "sync_confidence": null,
+        "offset": 0.0
+      },
+      {
+        "id": "angle-2",
+        "name": "Son",
+        "track_id": "MC1",
+        "color_index": 1,
+        "sync_method": "manual",
+        "sync_status": "none",
+        "sync_confidence": null,
+        "offset": 0.5
+      }
+    ],
+    "audio": {
+      "mode": "fixed",
+      "angle_ids": [
+        "angle-2"
+      ]
+    },
+    "sync_method": "manual"
+  },
+  "c5.tracking": {
+    "trackers": [
+      {
+        "id": "tr1",
+        "name": "Œil",
+        "color": "#36E6C3",
+        "visible": true,
+        "show_path": true,
+        "kind": "point",
+        "settings": {
+          "pattern_width": 48.0,
+          "pattern_height": 48.0,
+          "search_width": 144.0,
+          "search_height": 144.0,
+          "min_confidence": 0.55,
+          "good_confidence": 0.8,
+          "adapt": "adaptive",
+          "precision": "auto",
+          "stop_on_loss": true
+        },
+        "data": {
+          "rate": 30.0,
+          "first": 0,
+          "count": 61,
+          "source_width": 1920,
+          "source_height": 1080,
+          "points_width": 1920,
+          "points_height": 1080,
+          "valid_range": [
+            0,
+            60
+          ],
+          "counts": {
+            "empty": 58,
+            "tracked": 0,
+            "uncertain": 0,
+            "lost": 0,
+            "manual": 3
+          },
+          "manual_points": [
+            {
+              "index": 0,
+              "timeline_time": 50.016667,
+              "x": 960.0,
+              "y": 540.0
+            },
+            {
+              "index": 30,
+              "timeline_time": 51.016667,
+              "x": 1000.0,
+              "y": 540.0
+            },
+            {
+              "index": 60,
+              "timeline_time": 52.016667,
+              "x": 1040.0,
+              "y": 560.0
+            }
+          ],
+          "manual_points_truncated": false
+        }
+      },
+      {
+        "id": "tr2",
+        "name": "Nez",
+        "color": "#FF00AA",
+        "visible": true,
+        "show_path": false,
+        "kind": "point",
+        "settings": {
+          "pattern_width": 64.0,
+          "pattern_height": 48.0,
+          "search_width": 200.0,
+          "search_height": 144.0,
+          "min_confidence": 0.5,
+          "good_confidence": 0.8,
+          "adapt": "fixed",
+          "precision": "fast",
+          "stop_on_loss": true
+        },
+        "data": {
+          "rate": 30.0,
+          "first": 0,
+          "count": 61,
+          "source_width": 1920,
+          "source_height": 1080,
+          "points_width": 1920,
+          "points_height": 1080,
+          "valid_range": [
+            0,
+            60
+          ],
+          "counts": {
+            "empty": 59,
+            "tracked": 0,
+            "uncertain": 0,
+            "lost": 0,
+            "manual": 2
+          },
+          "manual_points": [
+            {
+              "index": 0,
+              "timeline_time": 50.016667,
+              "x": 400.0,
+              "y": 300.0
+            },
+            {
+              "index": 60,
+              "timeline_time": 52.016667,
+              "x": 440.0,
+              "y": 310.0
+            }
+          ],
+          "manual_points_truncated": false
+        }
+      }
+    ],
+    "links": [
+      {
+        "id": "lk3",
+        "source_clip_id": null,
+        "tracker_ids": [
+          "tr2"
+        ],
+        "target": "anchor",
+        "mask_id": null,
+        "position": true,
+        "rotation": false,
+        "scale": false,
+        "reference_index": 0,
+        "enabled": true,
+        "continuation_ids": [],
+        "reference_clip_id": "c5",
+        "reference_time": 50.016667
+      }
+    ],
+    "stabilization": {
+      "enabled": true,
+      "tracker_ids": [
+        "tr1"
+      ],
+      "mode": "position",
+      "smoothing": "custom",
+      "smoothing_frames": 8.0,
+      "borders": "crop",
+      "reference_index": 30,
+      "shared_range": null,
+      "reference_time": 51.016667
+    }
+  },
+  "c1.tracking": {
+    "trackers": [],
+    "links": [
+      {
+        "id": "lk2",
+        "source_clip_id": "c5",
+        "tracker_ids": [
+          "tr1"
+        ],
+        "target": "mask",
+        "mask_id": "mk1",
+        "position": true,
+        "rotation": false,
+        "scale": false,
+        "reference_index": 30,
+        "enabled": false,
+        "continuation_ids": [],
+        "reference_clip_id": "c5",
+        "reference_time": 51.016667
+      }
+    ],
+    "stabilization": null
+  },
+  "g1.graphic": {
+    "type": "text",
+    "text": "Titre",
+    "source_path": null,
+    "width": 900,
+    "height": 180,
+    "visible": true,
+    "locked": false,
+    "parent_id": null,
+    "group_id": null,
+    "z_order": 0,
+    "fill_color": "#FFAA00",
+    "stroke_color": "#112233",
+    "stroke_width": 3,
+    "shadow_color": "#00000080",
+    "shadow_offset_x": 6,
+    "shadow_offset_y": -2,
+    "font_family": "Anton",
+    "font_size": 72,
+    "motion_blur": true,
+    "layout": "anchor",
+    "shape": "rectangle",
+    "corner_radius": 0.0,
+    "polygon_sides": 6,
+    "fill_enabled": true,
+    "align_h": "left",
+    "align_v": "top",
+    "tracking": 4.5,
+    "line_spacing": 1.25,
+    "bold": true,
+    "italic": true,
+    "box_text": false,
+    "autosize": true,
+    "shadow_blur": 12.5,
+    "background_enabled": true,
+    "background_color": "#00112299",
+    "background_padding": 24,
+    "background_radius": 8.0,
+    "stroke_position": "outside",
+    "word_reveal": "karaoke",
+    "reveal": 0.5,
+    "highlight_color": "#FF00FF",
+    "highlight_words": [
+      0,
+      2
+    ],
+    "word_times": [
+      0.0,
+      0.5,
+      1.25
+    ],
+    "glow_color": "#00FFAA",
+    "glow_radius": 9.0,
+    "glow_strength": 1.5,
+    "light_kind": "sparks",
+    "light_seed": 7,
+    "light_speed": 2.0,
+    "light_angle": 45.0,
+    "light_density": 0.5
+  },
+  "g2.graphic": {
+    "type": "shape",
+    "text": "Titre",
+    "source_path": null,
+    "width": 300,
+    "height": 300,
+    "visible": true,
+    "locked": false,
+    "parent_id": null,
+    "group_id": null,
+    "z_order": 1,
+    "fill_color": "#33CC99",
+    "stroke_color": "#000000",
+    "stroke_width": 0,
+    "shadow_color": "#000000AA",
+    "shadow_offset_x": 4,
+    "shadow_offset_y": 4,
+    "font_family": "Sans Serif",
+    "font_size": 64,
+    "motion_blur": false,
+    "layout": "legacy",
+    "shape": "polygon",
+    "corner_radius": 12.0,
+    "polygon_sides": 5,
+    "fill_enabled": false,
+    "align_h": "center",
+    "align_v": "center",
+    "tracking": 0.0,
+    "line_spacing": 1.0,
+    "bold": false,
+    "italic": false,
+    "box_text": true,
+    "autosize": false,
+    "shadow_blur": 0.0,
+    "background_enabled": false,
+    "background_color": "#000000AA",
+    "background_padding": 16,
+    "background_radius": 0.0,
+    "stroke_position": "center",
+    "word_reveal": "none",
+    "reveal": 1.0,
+    "highlight_color": "#FFD84D",
+    "highlight_words": [],
+    "word_times": [],
+    "glow_color": "#22B8FF",
+    "glow_radius": 0.0,
+    "glow_strength": 1.0,
+    "light_kind": "leak",
+    "light_seed": 1,
+    "light_speed": 1.0,
+    "light_angle": 0.0,
+    "light_density": 1.0
+  },
+  "s1.text_style": {
+    "font_family": "Inter",
+    "font_size": 40.0,
+    "color": "#ffee00",
+    "opacity": 0.9,
+    "outline_color": "#101010",
+    "outline_width": 3.0,
+    "shadow_color": "#202020",
+    "shadow_offset": 2.0,
+    "background_color": "#112233",
+    "background_opacity": 0.6,
+    "padding_x": 10.0,
+    "padding_y": 4.0,
+    "alignment": "top_left",
+    "position_x": 5.0,
+    "position_y": -5.0,
+    "margin_x": 20.0,
+    "margin_y": 30.0
+  },
+  "not_described": []
+}

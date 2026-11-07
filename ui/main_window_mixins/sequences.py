@@ -365,6 +365,8 @@ class SequencesMixin:
         return clip
 
     def on_sequence_dropped(self, sequence_id: str, track_id: str, timeline_start: float) -> None:
+        if self._edit_refused_ui():                  # lecture seule (Store)
+            return
         self.insert_sequence_into_active(sequence_id, track_id, timeline_start)
 
     def _default_nest_track_id(self) -> str | None:

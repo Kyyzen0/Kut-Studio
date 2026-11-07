@@ -196,6 +196,34 @@ renvoyée à la recréation.
   couches. Le limiteur évite l'écrêtage mais pas la surprise : il faut redescendre ce gain pour retrouver le niveau voulu.
   Les autres projets sortent enfin au niveau de leur source.
 
+## Entrées du graphe d'export (D-002)
+
+`overlay` n'émet rien avant la première image de **chaque** étage de sa chaîne : un média lu par plusieurs clips sur une seule
+entrée FFmpeg était donc décodé jusqu'au clip qui commence le plus tard dans la source, et tout ce que les autres clips lisent
+avant attendait en RGBA pleine trame (130 s coupées à 12 s : 3,3 Go ; 20 min de multicam : plus de 200 Go). Le graphe suit
+maintenant `core/export_inputs.py` ([performance.md](performance.md), section 11) :
+
+* **Un clip vidéo simple d'un média *chaud* a sa propre entrée**, positionnée (`-ss` entier, une seconde avant le clip, et `-t`)
+  avec un seul fil de décodage ; sa chaîne de filtres est celle d'avant, `trim` décalé de la position de l'entrée. Un média *froid*
+  (un clip, ou des morceaux qui ne se lisent pas loin les uns des autres) garde l'entrée partagée : son graphe est celui d'avant,
+  au caractère près.
+* **Chaque instance d'une séquence imbriquée *chaude* (les segments d'un multicam) est composée pour sa fenêtre seule**, comme un
+  segment d'aperçu de la racine (`origin`, fond arrêté avec la fenêtre) ; son clip garde son **temps absolu** (horodatage de sa
+  première image, sondé par `ffprobe` : FFmpeg 6.1 et 7.1 décalent de +21 ms les images d'un conteneur dont l'audio commence
+  avant la vidéo).
+* **Le son n'est jamais positionné** : le bruit de substitution (PNS) du décodeur AAC dépend de tous les paquets déjà décodés ;
+  un décodage qui part du milieu d'un fichier diffère de quelques échantillons du décodage continu. Il n'en a pas besoin : `amix`
+  lit au fil de l'eau, la mémoire du son ne suit pas la coupe (mesuré sur 20 min).
+* **Restent partagés** : images fixes, clips remappés ou figés, listes `.ffconcat`, séquences imbriquées qui contiennent autre
+  chose que des clips simples (calques, transitions, masques, paramètres animés par `sendcmd`, autre séquence), les conteneurs
+  dont l'index des images clés n'est pas fiable (tout sauf MP4 / MOV / Matroska / WebM : MPEG-TS décode d'abord des images
+  corrompues sur FFmpeg 6.1 et 7.1), et ce qui dépasse le plafond d'entrées (`max_pipelines`, fonction de la taille du cadre : une entrée ouverte garde de 70 à 140 Mo en 1080p).
+* `core/export_memory.py` estime ce qui reste coûteux **sur les mêmes décisions** (`decide_inputs`) et refuse avant FFmpeg ce qui
+  ne tiendrait pas.
+
+Le rendu ne change pas d'un pixel ni d'un échantillon (`tests/test_export_inputs_real.py` compare, avant tout encodeur, le graphe
+d'avant et le nouveau ; `RENDER_ENGINE_VERSION` reste à 13).
+
 ## Vidéo sociale
 
 Formats verticaux, grille rythmique, texte TikTok, lumière, templates, SFX, loudness et livrables d'export :
@@ -220,10 +248,13 @@ empreinte → `.ffconcat` → FFmpeg) ; seule l'encre change :
    scène **fixe** passe par la texture par contenu (une encre, posée par matrice).
 5. `fingerprint_plan` : signature profonde du `.kut3d` + `source_in` + `SCENE3D_RASTER_VERSION` **pour ces calques seulement**
    (`RENDER_ENGINE_VERSION` inchangé : un plan sans 3D garde son empreinte, `tests/test_scene3d_render.py`).
+6. Moniteur (lot B3) : `MographRenderer(scene3d_mode="interactive" | "frozen")` → `draw_scene(mode)` → `core/scene3d_interactive.py` (image
+   figée réduite, aucun rendu 3D en lecture, carte en cas d'échec) ; l'export et les segments fidèles gardent `exact`. Voir
+   [kut3d-scene.md](kut3d-scene.md#dans-linterface-lot-b3).
 
 ## Format `.kut`
 
-* Version courante : `CURRENT_VERSION` (`core/project_io.py`) ; `SUPPORTED_VERSIONS` liste les versions lisibles. Version écrite : la minimale nécessaire (17 ; `PATH_MASK_VERSION` = 18 si le projet contient un masque courbe ; `COLOR_MATRIX_VERSION` = 19 si un média a un espace colorimétrique forcé ; `EFFECT_ANIMATION_VERSION` = 20 si un clip porte une image clé `fx.*` ou `color.*` ; `TRANSITION_CATALOG_VERSION` = 21 si une transition utilise l'un des 25 types du catalogue élargi, `core/transition_catalog.py` ; `SCENE3D_VERSION` = 22 si un calque graphique est une scène 3D, `GraphicType.SCENE3D`, `core/scene3d.py`).
+* Version courante : `CURRENT_VERSION` (`core/project_io.py`) ; `SUPPORTED_VERSIONS` liste les versions lisibles. Version écrite : la minimale nécessaire (17 ; `PATH_MASK_VERSION` = 18 si le projet contient un masque courbe ; `COLOR_MATRIX_VERSION` = 19 si un média a un espace colorimétrique forcé ; `EFFECT_ANIMATION_VERSION` = 20 si un clip porte une image clé `fx.*` ou `color.*` ; `TRANSITION_CATALOG_VERSION` = 21 si une transition utilise l'un des 25 types du catalogue élargi, `core/transition_catalog.py` ; `SCENE3D_VERSION` = 22 si un calque graphique est une scène 3D, `GraphicType.SCENE3D`, `core/scene3d.py` ; `SENDCMD_ANIMATION_VERSION` = 23 si un clip porte une image clé sur un paramètre de `SENDCMD_EFFECT_PARAMS` (flou, rayon du Bloom, aberration chromatique : `core/effect_targets.py`) dont l'effet existe ; une courbe de vignette ou de correction de couleur reste en 20) ; `GRADE_ANIMATION_VERSION` = 24 si un clip porte une image clé d'étalonnage rendue (`color.<champ>` ou `color.<roue>.<canal>`, `core/grade_targets.py`) ; la 24 l'emporte sur toutes les autres conditions, la 23 sur les précédentes.
   Les anciens fichiers se chargent toujours (migration à la lecture, jamais à l'insu de l'utilisateur).
 * Ne contient **que** des données du montage : jamais un chemin de cache, un résultat d'analyse recalculable
   ni une préférence de l'interface.

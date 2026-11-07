@@ -243,6 +243,13 @@ long tournait (`KUT_STUDIO_FFMPEG` pointant vers un script qui dort) ; le gardie
 son petit-enfant par le groupe, et a supprimé le registre. Puis `kill -9` de l'application **et** du gardien :
 l'enfant survit, et le démarrage suivant le balaie (« balayage au démarrage — 1 enfant(s) orphelin(s) arrêté(s) »).
 
+## Exception voulue : l'assistant d'installation (macOS)
+
+`core/update_helper.py` lance l'assistant de mise à jour (`/bin/sh`) avec `subprocess.Popen` **hors supervision**, parce qu'il doit **survivre** à l'application (il attend qu'elle se ferme, remplace `Kut-Studio.app`, la relance). Il
+tourne dans sa propre session (`start_new_session`), n'est enregistré nulle part (ni le gardien ni le balayage au démarrage
+ne le touchent) et ne lance que `mv`, `rm`, `ps`, `kill` et `open`. Les outils de validation (`ditto`, `codesign`, `lipo`,
+`spctl`, `xattr`) passent, eux, par `supervised_run`. Voir [updates.md](updates.md), section 3 bis.
+
 ## Tester à la main
 
 macOS / Linux, dans un terminal :

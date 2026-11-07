@@ -33,6 +33,7 @@ from typing import TextIO
 
 from .atomic_io import atomic_open
 from .platform_paths import user_cache_dir
+from .security_scope import scoped_argument
 from .text_decoding import decode_text_bytes
 
 
@@ -152,6 +153,7 @@ def _split_floats(line: str) -> list[float]:
 # ---------------------------------------------------------------------------
 
 
+@scoped_argument(0)
 def parse_cube_lut(path: str | Path) -> CubeLUT:
     """Lit et valide un fichier ``.cube`` 3D.
 

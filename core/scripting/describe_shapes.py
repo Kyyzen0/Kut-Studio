@@ -25,6 +25,9 @@ def transform(item: Any) -> dict[str, Any]:
 
 
 def graphic(item: Any) -> dict[str, Any] | None:
+    """Un calque graphique : contenu, place dans la pile (partie A), puis tout le style (partie C), dans l'ordre du modèle.
+
+    ``light_time`` n'est pas décrit : c'est le temps local de l'image posé par la scène à chaque rendu, jamais saisi."""
     if item is None:
         return None
     return {
@@ -32,6 +35,36 @@ def graphic(item: Any) -> dict[str, Any] | None:
         "width": number(item.width), "height": number(item.height), "visible": bool(item.visible),
         "locked": bool(item.locked), "parent_id": optional_text(item.parent_id),
         "group_id": optional_text(item.group_id), "z_order": number(item.z_order),
+        "fill_color": text(item.fill_color), "stroke_color": text(item.stroke_color), "stroke_width": number(item.stroke_width),
+        "shadow_color": text(item.shadow_color), "shadow_offset_x": number(item.shadow_offset_x),
+        "shadow_offset_y": number(item.shadow_offset_y), "font_family": text(item.font_family), "font_size": number(item.font_size),
+        "motion_blur": bool(item.motion_blur), "layout": enum(item.layout),
+        "shape": enum(item.shape), "corner_radius": number(item.corner_radius), "polygon_sides": number(item.polygon_sides),
+        "fill_enabled": bool(item.fill_enabled),
+        "align_h": text(item.align_h), "align_v": text(item.align_v), "tracking": number(item.tracking),
+        "line_spacing": number(item.line_spacing), "bold": bool(item.bold), "italic": bool(item.italic),
+        "box_text": bool(item.box_text), "autosize": bool(item.autosize), "shadow_blur": number(item.shadow_blur),
+        "background_enabled": bool(item.background_enabled), "background_color": text(item.background_color),
+        "background_padding": number(item.background_padding), "background_radius": number(item.background_radius),
+        "stroke_position": text(item.stroke_position), "word_reveal": text(item.word_reveal), "reveal": number(item.reveal),
+        "highlight_color": text(item.highlight_color), "highlight_words": [number(word) for word in item.highlight_words],
+        "word_times": [number(moment) for moment in item.word_times],
+        "glow_color": text(item.glow_color), "glow_radius": number(item.glow_radius), "glow_strength": number(item.glow_strength),
+        "light_kind": text(item.light_kind), "light_seed": number(item.light_seed), "light_speed": number(item.light_speed),
+        "light_angle": number(item.light_angle), "light_density": number(item.light_density),
+    }
+
+
+def text_style(item: Any) -> dict[str, Any]:
+    """Le style typographique non destructif d'un clip (``Clip.text_style``) : celui des sous-titres ; présent sur tout clip."""
+    return {
+        "font_family": text(item.font_family), "font_size": number(item.font_size), "color": text(item.color),
+        "opacity": number(item.opacity), "outline_color": text(item.outline_color), "outline_width": number(item.outline_width),
+        "shadow_color": text(item.shadow_color), "shadow_offset": number(item.shadow_offset),
+        "background_color": None if item.background_color is None else text(item.background_color),
+        "background_opacity": number(item.background_opacity), "padding_x": number(item.padding_x),
+        "padding_y": number(item.padding_y), "alignment": enum(item.alignment), "position_x": number(item.position_x),
+        "position_y": number(item.position_y), "margin_x": number(item.margin_x), "margin_y": number(item.margin_y),
     }
 
 
@@ -96,4 +129,6 @@ def compositing(item: Any) -> dict[str, Any]:
     return {"masks": masks(item.masks), "chroma_key": chroma_key(item.chroma_key), "blend_mode": enum(item.blend_mode)}
 
 
-__all__ = ["chroma_key", "compositing", "effect", "effects", "graphic", "keyframe", "keyframes", "mask", "masks", "transform"]
+__all__ = [
+    "chroma_key", "compositing", "effect", "effects", "graphic", "keyframe", "keyframes", "mask", "masks", "text_style", "transform",
+]

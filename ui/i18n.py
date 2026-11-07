@@ -122,6 +122,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.empty": {"fr": "Choisissez un preset puis « Ajouter à la file ».", "en": "Pick a preset, then “Add to queue”.", "es": "Elija un preset y pulse «Añadir a la cola»."},
     "render.empty.title": {"fr": "Aucun export", "en": "No exports", "es": "Sin exportaciones"},
     "render.ffmpeg_missing": {"fr": "FFmpeg est introuvable : les exports sont impossibles. Installez FFmpeg, puis relancez les jobs en échec.", "en": "FFmpeg was not found: exports are unavailable. Install FFmpeg, then retry failed jobs.", "es": "No se encontró FFmpeg: las exportaciones no están disponibles. Instale FFmpeg y reintente los trabajos fallidos."},
+    "render.ffmpeg_missing_store": {"fr": "FFmpeg est introuvable dans l'application : les exports sont impossibles. Réinstallez Kut-Studio depuis le Mac App Store.", "en": "FFmpeg was not found inside the application: exports are unavailable. Reinstall Kut-Studio from the Mac App Store.", "es": "No se encontró FFmpeg dentro de la aplicación: las exportaciones no están disponibles. Reinstale Kut-Studio desde la Mac App Store."},
     "render.detail.none": {"fr": "Sélectionnez un export pour voir ses détails.", "en": "Select an export to see its details.", "es": "Seleccione una exportación para ver sus detalles."},
     "render.detail.output": {"fr": "Fichier : {path}", "en": "File: {path}", "es": "Archivo: {path}"},
     "render.detail.render_time": {"fr": "Durée du rendu : {time}", "en": "Render time: {time}", "es": "Duración del render: {time}"},
@@ -138,6 +139,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.btn.retry_cpu": {"fr": "Relancer en CPU", "en": "Retry on CPU", "es": "Reintentar con CPU"},
     "render.export.encoder": {"fr": "Encodeur", "en": "Encoder", "es": "Codificador"},
     "render.encoder.auto": {"fr": "Automatique", "en": "Automatic", "es": "Automático"},
+    "render.encoder.none": {
+        "fr": "Aucun encodeur disponible pour ce format",
+        "en": "No encoder available for this format",
+        "es": "Ningún codificador disponible para este formato",
+    },
     "encoding.detecting": {"fr": "Détection des capacités matérielles en cours…", "en": "Detecting hardware capabilities…", "es": "Detectando capacidades de hardware…"},
     "encoding.fallback_notice": {"fr": "Encodage matériel indisponible, bascule sur le CPU. {reason}", "en": "Hardware encoding unavailable, switching to CPU. {reason}", "es": "Codificación por hardware no disponible, cambiando a CPU. {reason}"},
     "perf.encoding.title": {"fr": "Encodage matériel (export)", "en": "Hardware encoding (export)", "es": "Codificación por hardware (exportación)"},
@@ -618,6 +624,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "mixer.output": {"fr": "Sortie", "en": "Output", "es": "Salida"},
     "mixer.volume": {"fr": "Volume", "en": "Volume", "es": "Volumen"},
     "mixer.pan": {"fr": "Panoramique", "en": "Pan", "es": "Pan"},
+    "mixer.pan.short": {"fr": "Pan", "en": "Pan", "es": "Pan"},
     "mixer.pan_center": {"fr": "Centré", "en": "Center", "es": "Centrado"},
     "mixer.pan_left": {"fr": "Gauche", "en": "Left", "es": "Izquierda"},
     "mixer.pan_right": {"fr": "Droite", "en": "Right", "es": "Derecha"},
@@ -1972,12 +1979,16 @@ from ui.i18n_cli import CLI_TRANSLATIONS as _CLI  # noqa: E402
 from ui.i18n_color import COLOR_TRANSLATIONS as _COLOR  # noqa: E402
 from ui.i18n_composition import COMPOSITION_TRANSLATIONS as _COMPOSITION  # noqa: E402
 from ui.i18n_dialogs import DIALOGS_TRANSLATIONS as _DIALOGS  # noqa: E402
+from ui.i18n_entitlements import ENTITLEMENTS_TRANSLATIONS as _ENTITLEMENTS  # noqa: E402
 from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 from ui.i18n_history import HISTORY_TRANSLATIONS as _HISTORY  # noqa: E402
 from ui.i18n_mask_edit import MASK_EDIT_TRANSLATIONS as _MASK_EDIT  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_multicam import MULTICAM_TRANSLATIONS as _MULTICAM  # noqa: E402
+from ui.i18n_palette import PALETTE_TRANSLATIONS as _PALETTE  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
+from ui.i18n_sandbox import SANDBOX_TRANSLATIONS as _SANDBOX  # noqa: E402
+from ui.i18n_scene3d import SCENE3D_TRANSLATIONS as _SCENE3D  # noqa: E402
 from ui.i18n_social import SOCIAL_TRANSLATIONS as _SOCIAL  # noqa: E402
 from ui.i18n_transitions import TRANSITIONS_TRANSLATIONS as _TRANSITIONS  # noqa: E402
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
@@ -1991,7 +2002,10 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_tracking": _TRACKING,
     "ui.i18n_hardware": _HARDWARE,
     "ui.i18n_panels": _PANELS,
+    "ui.i18n_palette": _PALETTE,
     "ui.i18n_dialogs": _DIALOGS,
+    "ui.i18n_entitlements": _ENTITLEMENTS,
+    "ui.i18n_sandbox": _SANDBOX,
     "ui.i18n_history": _HISTORY,
     "ui.i18n_multicam": _MULTICAM,
     "ui.i18n_time": _TIME,
@@ -2002,6 +2016,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_audio": _AUDIO,
     "ui.i18n_cli": _CLI,
     "ui.i18n_usage": _USAGE,
+    "ui.i18n_scene3d": _SCENE3D,
     "ui.i18n_transitions": _TRANSITIONS,
 }
 

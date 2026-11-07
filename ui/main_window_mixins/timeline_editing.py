@@ -400,7 +400,7 @@ class TimelineEditingMixin:
         followers = self._tracking_followers_of([clip_id])
         try:
             delete_clip(self.project, clip_id)
-        except KeyError as exc:
+        except (KeyError, ValueError) as exc:             # piste verrouillée, ou suiveur de suivi verrouillé : refus avant toute écriture
             self._report_edit_refused(exc)
             return
         self._record_history(translate("menu.item.delete_clip"))

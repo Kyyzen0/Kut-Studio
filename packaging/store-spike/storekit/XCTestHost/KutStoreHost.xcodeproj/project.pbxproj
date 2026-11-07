@@ -1,0 +1,35 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		A0000001 = {isa = PBXBuildFile; fileRef = A0000011; };
+		A0000002 = {isa = PBXBuildFile; fileRef = A0000012; };
+		A0000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Host/main.swift; sourceTree = "<group>"; };
+		A0000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BridgeTests.swift; sourceTree = "<group>"; };
+		A0000013 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KutStoreHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A0000014 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KutStoreBridgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A0000020 = {isa = PBXGroup; children = (A0000011, A0000012, A0000021); sourceTree = "<group>"; };
+		A0000021 = {isa = PBXGroup; children = (A0000013, A0000014); name = Products; sourceTree = "<group>"; };
+		A0000030 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0000001); runOnlyForDeploymentPostprocessing = 0; };
+		A0000031 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0000002); runOnlyForDeploymentPostprocessing = 0; };
+		A0000040 = {isa = PBXNativeTarget; buildConfigurationList = A0000060; buildPhases = (A0000030); buildRules = (); dependencies = (); name = KutStoreHost; productName = KutStoreHost; productReference = A0000013; productType = "com.apple.product-type.application"; };
+		A0000041 = {isa = PBXNativeTarget; buildConfigurationList = A0000061; buildPhases = (A0000031); buildRules = (); dependencies = (A0000050); name = KutStoreBridgeTests; productName = KutStoreBridgeTests; productReference = A0000014; productType = "com.apple.product-type.bundle.unit-test"; };
+		A0000050 = {isa = PBXTargetDependency; target = A0000040; targetProxy = A0000051; };
+		A0000051 = {isa = PBXContainerItemProxy; containerPortal = A0000070; proxyType = 1; remoteGlobalIDString = A0000040; remoteInfo = KutStoreHost; };
+		A0000060 = {isa = XCConfigurationList; buildConfigurations = (A0000062); defaultConfigurationName = Debug; };
+		A0000061 = {isa = XCConfigurationList; buildConfigurations = (A0000063); defaultConfigurationName = Debug; };
+		A0000064 = {isa = XCConfigurationList; buildConfigurations = (A0000065); defaultConfigurationName = Debug; };
+		A0000062 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+			PRODUCT_BUNDLE_IDENTIFIER = com.kutstudio.storekitspike; PRODUCT_NAME = KutStoreHost; GENERATE_INFOPLIST_FILE = YES;
+			SWIFT_VERSION = 5.0; MACOSX_DEPLOYMENT_TARGET = 15.2; SDKROOT = macosx; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; }; };
+		A0000063 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+			PRODUCT_BUNDLE_IDENTIFIER = com.kutstudio.storekitspike.tests; PRODUCT_NAME = KutStoreBridgeTests; GENERATE_INFOPLIST_FILE = YES;
+			SWIFT_VERSION = 5.0; MACOSX_DEPLOYMENT_TARGET = 15.2; SDKROOT = macosx; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual;
+			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KutStoreHost.app/Contents/MacOS/KutStoreHost"; BUNDLE_LOADER = "$(TEST_HOST)"; }; };
+		A0000065 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {}; };
+		A0000070 = {isa = PBXProject; attributes = {LastUpgradeCheck = 2700; }; buildConfigurationList = A0000064; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en); mainGroup = A0000020; productRefGroup = A0000021; projectDirPath = ""; projectRoot = ""; targets = (A0000040, A0000041); };
+	};
+	rootObject = A0000070;
+}

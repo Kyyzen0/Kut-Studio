@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QGraphicsObject
 
 from core.mograph_scene import IDENTITY, Matrix, mat_apply, mat_invert
 from core.tracking_model import SampleStatus
+from ui.design_system import Typography
 from ui.hit_shape import add_polygon, new_hit_path
 from ui.overlay_paint import halo_stroke
 from ui.theme import OVERLAY, overlay_qcolor
@@ -230,7 +231,7 @@ class TrackingOverlay(QGraphicsObject):
                 for corner in polygon:
                     painter.drawRect(QRectF(corner.x() - HANDLE / 2, corner.y() - HANDLE / 2, HANDLE, HANDLE))
         font = QFont(painter.font())
-        font.setPointSizeF(8.0)
+        font.setPixelSize(Typography.caption)
         painter.setFont(font)
         painter.setPen(QPen(color))
         label_anchor = self._zone(tracker, tracker.pattern)[0]

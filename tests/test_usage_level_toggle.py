@@ -36,7 +36,7 @@ def _checked(window) -> list[str]:
 def _assert_all_show(window, level: str, dialog=None) -> None:
     assert window.usage_level.value == level
     assert _checked(window) == [level]
-    assert window.usage_level_chip.text() == i18n.translate(f"prefs.usage.{level}")
+    assert window.usage_level_chip.text().endswith(i18n.translate(f"prefs.usage.{level}"))
     if dialog is not None:
         assert dialog.current_usage_level == level
         assert [c for c, r in dialog._usage_radios.items() if r.isChecked()] == [level]
@@ -299,7 +299,8 @@ assert bar.isVisible() and bar.width() <= 1180
 # La puce a trois formes (complète, abrégée, absente) selon la place : jamais au détriment des boutons voisins.
 assert chip.form() in ("full", "compact", "hidden") and chip.isVisible() == (chip.form() != "hidden")
 if SCALE <= 1.0:
-    assert chip.form() == "full" and chip.text() == chip.full_text()
+    # Jamais masquée à 1,0, jamais coupée : « Niveau : Avancé » si la place le permet, sinon le nom du niveau seul (police de repli large).
+    assert chip.form() in ("full", "compact") and chip.text() in (chip.full_text(), chip.compact_text())
 if chip.isVisible():
     assert chip.geometry().right() < window.settings_button.geometry().left() + 1
     for button in (window.settings_button, window.export_button):

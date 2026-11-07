@@ -15,6 +15,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox
 from core.frame_alignment import FrameEdge
 from ui.i18n import translate
+from ui.scene3d_actions import add_scene3d_from_dialog, reload_scene_files
+from ui.scene3d_preview import monitor_scene3d
 
 
 LOGGER = logging.getLogger(__name__)
@@ -67,6 +69,7 @@ class MotionGraphicsMixin:
         properties.advanced_keyframe_toggled.connect(self._on_advanced_keyframe_toggled)
         properties.graphic_parent_changed.connect(self._on_layer_parent)
         properties.compositing_changed.connect(self._on_compositing_changed)
+        properties.graphics_group.scene3d_reload_requested.connect(lambda path: reload_scene_files(self, path))
         self._reload_presets()
         self._refresh_layers_panel()
 
@@ -103,6 +106,9 @@ class MotionGraphicsMixin:
         add_menu.addAction(self._command_action("layer_add_shape", "menu.item.add_shape_layer"))
         add_menu.addAction(self._command_action("layer_add_null", "menu.item.add_null_layer"))
         add_menu.addAction(self._command_action("layer_add_adjustment", "menu.item.add_adjustment_layer"))
+        add_scene3d = self._labelled_action("menu.item.add_scene3d")
+        add_scene3d.triggered.connect(lambda: add_scene3d_from_dialog(self))
+        add_menu.addAction(add_scene3d)
         menu.addSeparator()
         menu.addAction(self._command_action("layer_group", "menu.item.group_layers"))
         menu.addAction(self._command_action("layer_ungroup", "menu.item.ungroup_layers"))
@@ -272,6 +278,7 @@ class MotionGraphicsMixin:
             scale = 0.5 if playing else 1.0
             width = max(2, int(rect.width() * scale))
             height = max(2, int(rect.height() * scale))
+            scene3d_mode = monitor_scene3d(self, plan, playing)   # clips 3D : image figée, jamais de rendu 3D en lecture
             try:
                 scene = scene_for_plan(plan)
                 renderer = MographRenderer(
@@ -279,11 +286,12 @@ class MotionGraphicsMixin:
                     # Flou de mouvement adapté au niveau d'aperçu (jamais en lecture).
                     quality=preview_quality(self.runtime.preview_divisor(), playing=playing),
                     motion_blur=getattr(plan, "motion_blur", None),
+                    scene3d_mode=scene3d_mode,
                 )
                 if panel.gpu_active:
                     # Moniteur GPU : les calques à mode de fusion (lumière en Addition…) sont composés par le
                     # shader, sur la vidéo ; Qt ne dessine par-dessus que les autres.
-                    blended = self._sync_gpu_blend_layers(scene, t)
+                    blended = self._sync_gpu_blend_layers(scene, t, scene3d_mode)
                     panel.set_mograph_image(renderer.render(
                         [clip_id for clip_id in scene.top_level() if clip_id not in blended], t))
                     self._sync_gpu_adjustments(plan, scene, t)
@@ -294,11 +302,12 @@ class MotionGraphicsMixin:
                 panel.set_mograph_image(None)
             panel.set_mograph_visible(True)
         else:
+            monitor_scene3d(self, None, False)               # badge « approximatif » masqué
             panel.set_mograph_image(None)
             panel.set_mograph_visible(False)
         self._refresh_viewer_overlay(t)
 
-    def _sync_gpu_blend_layers(self, scene, t: float) -> set[str]:
+    def _sync_gpu_blend_layers(self, scene, t: float, scene3d_mode: str | None = None) -> set[str]:
         """Calques graphiques → moniteur GPU ; retourne leurs identifiants.
 
         Priorité ADR-0001 : texture à taille réelle animée par matrice quand le calque
@@ -316,8 +325,9 @@ class MotionGraphicsMixin:
         width, height = panel.gpu_render_size()
         fps = float(self.project.fps)
         # Textures par contenu : espace séquence (la résolution de rendu est celle du cadre GPU).
-        content = MographRenderer(scene, scene.width, scene.height, fps=fps, quality="draft")
-        fallback = MographRenderer(scene, width, height, fps=fps, quality="draft")
+        mode = scene3d_mode or "exact"
+        content = MographRenderer(scene, scene.width, scene.height, fps=fps, quality="draft", scene3d_mode=mode)
+        fallback = MographRenderer(scene, width, height, fps=fps, quality="draft", scene3d_mode=mode)
         layers, ids = [], set()
         for element in graphics_program(scene):
             if element.kind == "adjustment" or element.effects or element.color_grade:

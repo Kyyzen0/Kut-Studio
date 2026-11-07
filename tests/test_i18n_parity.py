@@ -144,6 +144,8 @@ _LOANWORDS = {
     "{label} · transform",
     # Roues d'étalonnage : les logiciels d'étalonnage gardent ces noms anglais en français et en espagnol.
     "Lift", "Gamma", "Gain", "Offset",
+    # Mixeur : « Pan » (panoramique), l'abréviation que portent tous les mélangeurs, en français comme en espagnol.
+    "Pan",
 }
 # Cognats : le mot s'écrit pareil en français et en anglais.
 _COGNATES_EN = {
@@ -156,6 +158,7 @@ _COGNATES_EN = {
     *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
     "Vertical", "Portrait", "Impact", "Amplitude", "Pages", "Luminance", "Composition",
     "Simple", "&Simple",    # niveau d'usage « Simple »
+    "Page",                 # palette de commandes : « Page » (type de destination)
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante", "Simple", "&Simple"}

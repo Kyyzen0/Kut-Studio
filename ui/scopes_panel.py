@@ -50,7 +50,7 @@ from core.scopes import (
     VideoLevels,
     levels_bounds,
 )
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
 
@@ -155,7 +155,7 @@ class _ScopeCanvas(QWidget):
     def _paint_placeholder(self, painter: QPainter, rect) -> None:
         painter.setPen(QPen(QColor(COLORS["muted"])))
         font = QFont()
-        font.setPointSize(9)
+        font.setPixelSize(Typography.small)
         painter.setFont(font)
         painter.drawText(
             rect, Qt.AlignCenter,
@@ -426,6 +426,7 @@ class ScopesPanel(QWidget):
 
         title = QLabel(translate("scopes.title"))
         title.setStyleSheet(label_style(10, "muted", 800))
+        title.setMinimumWidth(0)                           # la légende cède la première quand la colonne est à son minimum
         toolbar.addWidget(title)
         toolbar.addStretch(1)
 
@@ -468,6 +469,11 @@ class ScopesPanel(QWidget):
         self.levels_combo.currentIndexChanged.connect(self._on_levels_changed)
         toolbar.addWidget(self.levels_combo)
 
+        for combo in (self.layout_combo, self.view_combo, self.levels_combo):
+            # Les listes cèdent avant le bouton « Analyser » quand la colonne est étroite (page Couleur : moniteur à son minimum).
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(5)
+            combo.setMinimumWidth(56)                      # le style réclame ~112 px : trois listes et « Analyser » ne tiennent pas dans 320 px
         self.refresh_button = QPushButton(translate("scopes.refresh"))
         self.refresh_button.setObjectName("scopesRefresh")
         self.refresh_button.setCursor(Qt.PointingHandCursor)

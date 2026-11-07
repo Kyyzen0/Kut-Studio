@@ -12,8 +12,10 @@ reste un geste de l'interface. Un script fournit en revanche ses points **explic
 
 Règles communes (celles des autres verbes) :
 
-- **verrous** : le clip modifié (piste et calque) est vérifié ; les clips qui **suivent** un tracker dont les données (ou la
-  stabilisation de la source) changent le sont aussi, et ``remove_tracker`` vérifie ceux dont il réécrit la liaison, AVANT d'écrire ;
+- **verrous** : le clip modifié (piste et calque) est vérifié. Un clip qui **suit** un tracker dont les données (ou la stabilisation de
+  sa source) changent n'est PAS refusé, verrouillé ou non : sa liaison n'est pas réécrite (elle est en temps source), seul son rendu suit
+  (le propos du verrou est de ne pas réécrire, pas de ne pas redessiner ; c'est la règle de l'interface). ``remove_tracker`` réécrit
+  en revanche leurs liaisons : il refuse, AVANT d'écrire, si l'un des clips dont il le fait est verrouillé (règle du modèle, ``core.tracking_locks``) ;
 - **rien n'est ramené en silence** : instant hors du clip, point hors de l'image, réglage que le modèle écrêterait, remplacement d'une
   liaison existante, réglage ignoré (``smoothing_frames`` hors du lissage « custom ») sont refusés ;
 - **identifiants créés** : ``add_tracker`` et ``add_link`` acceptent ``id`` / ``as`` (uniques dans tout le projet).
@@ -38,10 +40,11 @@ from ..tracking_ops import (
     source_index_at, stabilization_reference, trackable_clip, tracking_of, update_tracker,
 )
 from .tracking_rules import (
-    MAX_TRACKERS_PER_CLIP, known_link_ids, known_tracker_ids, require_derived_size, require_followers_editable,
-    require_link_owners_editable, require_span, require_tracker_room, require_within,
+    MAX_TRACKERS_PER_CLIP, known_link_ids, known_tracker_ids, require_derived_size, require_span,
+    require_tracker_room, require_within,
 )
-from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip, _pick
+from .resource_limits import require_keyframes_after
+from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip, _owner_track, _pick
 
 _VIDEO = ("video",)
 _VISUAL = ("video", "graphics")
@@ -62,9 +65,19 @@ _SETTING_FIELDS = {item.name for item in dataclass_fields(TrackerSettings)}
 # --- Aides ---------------------------------------------------------------------------------------------------------------------
 
 
+def _clip_on(project: Project, selector: str, track_types: tuple[str, ...]) -> str:
+    """L'identifiant du clip désigné, sur une piste d'un des genres permis. Le VERROU n'est pas vérifié ici : c'est le modèle qui le refuse,
+    avant d'écrire (``core.tracking_locks.require_clip_editable``, appelé par ``core.tracking_ops``), comme pour l'interface."""
+    clip_id = _clip_id(project, selector)
+    owner = _owner_track(project, clip_id)
+    if owner.type not in track_types:
+        raise ValueError(f"Le clip '{clip_id}' est sur une piste '{owner.type}' : cette opération vise {' ou '.join(track_types)}.")
+    return clip_id
+
+
 def _video_clip(project: Project, selector: str) -> tuple[str, Clip]:
-    """Le clip vidéo éditable (piste et calque déverrouillés) qui peut porter des trackers."""
-    clip_id = _editable_clip(project, selector, track_types=_VIDEO)
+    """Le clip vidéo qui peut porter des trackers (verrou : voir :func:`_clip_on`)."""
+    clip_id = _clip_on(project, selector, _VIDEO)
     return clip_id, find_clip(project, clip_id)
 
 
@@ -165,7 +178,6 @@ def _set_tracker_position(a: Mapping[str, Any]) -> Operation:
         y = _in_image("y", float(a["y"]), float(asset.height), -1.0, 2.0)
         index = source_index_at(clip, tracker.data.rate or media_rate(asset), float(a["at"]))
         require_span(project, tracker.data, index)
-        require_followers_editable(project, clip_id, tracker.id)
         return set_tracker_position(project, clip_id, tracker.id, float(a["at"]), x, y)
 
     return operation
@@ -176,7 +188,6 @@ def _remove_correction(a: Mapping[str, Any]) -> Operation:
         clip_id, clip = _video_clip(project, a["clip"])
         tracker = _tracker_of(clip, a["tracker"])
         require_within(clip, float(a["at"]))
-        require_followers_editable(project, clip_id, tracker.id)
         if not remove_correction(project, clip_id, tracker.id, float(a["at"])):
             raise ValueError(f"Il n'y a pas de point posé à la main sur le tracker '{tracker.id}' à cet instant.")
         return None
@@ -195,7 +206,6 @@ def _reset_tracker(a: Mapping[str, Any]) -> Operation:
             if "at" not in a:
                 raise ValueError("direction « after » ou « before » demande « at » (l'image à partir de laquelle effacer).")
             require_within(clip, float(a["at"]))
-        require_followers_editable(project, clip_id, tracker.id)
         return reset_tracker(
             project, clip_id, tracker.id, timeline_time=None if "at" not in a else float(a["at"]), direction=direction,
         )
@@ -207,7 +217,6 @@ def _remove_tracker(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id, clip = _video_clip(project, a["clip"])
         tracker = _tracker_of(clip, a["tracker"])
-        require_link_owners_editable(project, clip_id, tracker.id)
         return remove_tracker(project, clip_id, tracker.id)
 
     return operation
@@ -218,7 +227,7 @@ def _remove_tracker(a: Mapping[str, Any]) -> Operation:
 
 def _add_link(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        target_id = _editable_clip(project, a["clip"], track_types=_VISUAL)
+        target_id = _clip_on(project, a["clip"], _VISUAL)
         source_id = _clip_id(project, a["source"])
         source, _asset = trackable_clip(project, source_id)
         trackers = _trackers_of(source, list(a["trackers"]))
@@ -253,7 +262,7 @@ def _add_link(a: Mapping[str, Any]) -> Operation:
 
 
 def _link_of(project: Project, a: Mapping[str, Any]) -> tuple[str, str]:
-    clip_id = _editable_clip(project, a["clip"], track_types=_VISUAL)
+    clip_id = _clip_on(project, a["clip"], _VISUAL)
     link = _pick(tracking_of(find_clip(project, clip_id)).links, str(a["link"]), "Liaison", names=False)
     return clip_id, str(link.id)
 
@@ -316,7 +325,6 @@ def _set_stabilization(a: Mapping[str, Any]) -> Operation:
         if changes.get("enabled", True if current is None else current.enabled):
             for tracker_id in ids:
                 _require_analysed(_tracker_of(clip, tracker_id))
-        require_followers_editable(project, clip_id)
         return set_stabilization(project, clip_id, **changes)
 
     return operation
@@ -327,7 +335,6 @@ def _remove_stabilization(a: Mapping[str, Any]) -> Operation:
         clip_id, clip = _video_clip(project, a["clip"])
         if tracking_of(clip).stabilization is None:
             raise ValueError(f"Le clip '{clip_id}' n'est pas stabilisé.")
-        require_followers_editable(project, clip_id)
         return remove_stabilization(project, clip_id)
 
     return operation
@@ -335,7 +342,9 @@ def _remove_stabilization(a: Mapping[str, Any]) -> Operation:
 
 def _follow_reframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        clip_id, clip = _video_clip(project, a["clip"])
+        # ``apply_follow_reframe`` ne reçoit qu'un clip : le verrou est celui de l'interface (``social.py`` : ``_social_clips_refused``).
+        clip_id = _editable_clip(project, a["clip"], track_types=_VIDEO)
+        clip = find_clip(project, clip_id)
         if clip.sequence_id or clip.composition is not None:                 # la règle de la sélection de l'interface (social.py)
             raise ValueError(f"Le clip '{clip_id}' est une séquence imbriquée ou une composition : il n'a pas de média à recadrer.")
         asset = media_of(project, clip)
@@ -347,9 +356,14 @@ def _follow_reframe(a: Mapping[str, Any]) -> Operation:
                 raise ValueError(f"Le tracker '{tracker.id}' n'a aucune position.")
         require_derived_size(project, clip, "follow_reframe")
         sequence = project.active_sequence
-        apply_follow_reframe(
-            clip, trackers, media_size=(asset.width, asset.height), canvas_size=(sequence.width, sequence.height), fps=sequence.fps,
-        )
+
+        def reframe(target: Clip) -> Any:
+            return apply_follow_reframe(
+                target, trackers, media_size=(asset.width, asset.height), canvas_size=(sequence.width, sequence.height), fps=sequence.fps,
+            )
+
+        require_keyframes_after(clip, reframe, "follow_reframe")          # le nombre exact que le modèle écrira, sur une copie du clip
+        reframe(clip)
         return None
 
     return operation
@@ -393,7 +407,7 @@ TRACKING_VERBS: tuple[Verb, ...] = (
           Param("stop_on_loss", Kind.BOOLEAN, "S'arrêter quand le suivi est perdu.", required=False)),
          _set_tracker_settings, group="tracking"),
     Verb("set_tracker_position", "Pose un point d'un tracker à l'image montrée à « at » (état « manuel », jamais écrasé par une analyse) ; "
-                                 "au moins deux images sont nécessaires pour le lier ou stabiliser. Refusé si un clip qui suit ce tracker est verrouillé.",
+                                 "au moins deux images sont nécessaires pour le lier ou stabiliser. Un clip verrouillé qui suit ce tracker n'est pas réécrit : seul son rendu suit.",
          (_CLIP, _TRACKER, _AT,
           Param("x", Kind.NUMBER, "Position X, en pixels du média (de −1 à 2 fois la largeur).", minimum=-2 * _MAX_PIXELS, maximum=2 * _MAX_PIXELS),
           Param("y", Kind.NUMBER, "Position Y, en pixels du média (de −1 à 2 fois la hauteur).", minimum=-2 * _MAX_PIXELS, maximum=2 * _MAX_PIXELS)),

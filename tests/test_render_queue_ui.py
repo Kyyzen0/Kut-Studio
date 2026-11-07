@@ -564,9 +564,19 @@ def test_closing_during_a_render_confirmed_stops_ffmpeg_cleanly(qtbot, fake_ffmp
 
 
 def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, monkeypatch, tmp_path):
-    monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "2.0")
+    # Rendu de 4 s : la propriété est « le clic rend la main bien avant la fin du rendu », mesurée contre la durée réelle
+    # du rendu et non contre un budget absolu (un clic de 1,66 s a été observé sur un runner Windows lent, pour 2 ms en
+    # local : un budget fixe de 1,5 s échouait alors que le clic ne bloquait pas).
+    monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "4.0")
     window = _window(qtbot, monkeypatch, tmp_path)
     window.show()
+    # Échauffement et référence de lenteur du runner : le même travail (instantané du projet, file, écriture du
+    # disque) sans lancer de rendu. Il paie aussi les coûts de première fois, qui ne sont pas ceux du clic.
+    _choose_file(monkeypatch, tmp_path / "warmup.mp4")
+    warm_started = time.perf_counter()
+    window.enqueue_export()
+    reference = time.perf_counter() - warm_started
+    assert window.render_queue.remove(window.render_queue.jobs[0].id)
     _choose_file(monkeypatch, tmp_path / "smooth.mp4")
     stamps: list[float] = []
     ticker = QTimer()
@@ -588,12 +598,14 @@ def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, mon
     assert queue.jobs[0].status in (JobStatus.WAITING, JobStatus.RENDERING)
     qtbot.waitUntil(lambda: not queue.is_running, timeout=TIMEOUT)
     ticker.stop()
-    # Ceinture et bretelles, en temps mural : 0,010 s mesuré en local (0,017 s sous couverture), 0,93 s observé sur
-    # un runner Windows chargé. Budget 0,5 s, 1,5 s en CI.
-    limit = budget(0.5, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0)
-    assert launch_call < limit, f"le clic a tenu la main {launch_call:.3f}s (budget {limit:.2f}s)"
+    render_total = time.perf_counter() - started
+    # Le clic ne bloque pas jusqu'à la fin du rendu : au plus la moitié de sa durée réelle (un clic synchrone dure
+    # ~render_total). Sous cette borne, le budget nominal (0,5 s, 1,5 s en CI) est relevé jusqu'à 3 × la durée du
+    # même travail sans rendu mesurée plus haut : un runner lent ne fait pas échouer le test, un blocage oui.
+    limit = min(0.5 * render_total, max(budget(0.5, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0), 3 * reference))
+    assert launch_call < limit, f"le clic a tenu la main {launch_call:.3f}s (budget {limit:.2f}s, rendu {render_total:.2f}s)"
     gaps = [b - a for a, b in zip(stamps, stamps[1:])]
-    assert len(stamps) > 30  # ~2 s de rendu à 20 ms de période
+    assert len(stamps) > 30  # ~4 s de rendu à 20 ms de période
     # Jamais de gel perceptible de la boucle Qt. Écart maximal observé : ~0,03 s en local, 0,44 s puis 0,453 s sur macOS
     # en CI chargée (deux échecs avec l'ancien seuil absolu de 0,35 s, sur des PR qui ne touchaient pas au rendu).
     # Seuil : 0,35 s en local, 0,70 s en CI (×2), relevé si la boucle à vide était déjà lente (4 × l'écart à vide),

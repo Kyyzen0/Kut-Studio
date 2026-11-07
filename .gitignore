@@ -32,6 +32,7 @@ release-notes.md
 # Secrets de signature : ne JAMAIS les commiter (ils vont dans les secrets GitHub Actions, voir docs/updates.md).
 *.p12
 *.p8
+*.update-key
 *.pfx
 *.cer
 *.mobileprovision
@@ -41,3 +42,13 @@ junit-*.xml
 
 # Spike Kut-3D : images et shaders générés.
 experiments/kut3d-spike/out/
+
+# Spike bac à sable / Store : jamais de certificat ni de profil dans le dépôt.
+*.p12
+*.mobileprovision
+*.provisionprofile
+packaging/store-spike/**/build/
+
+# FFmpeg LGPL (ADR-0013) : sources, outils et artefacts de construction, jamais commités.
+packaging/ffmpeg-lgpl/_build/
+core/_build_flavor_generated.py

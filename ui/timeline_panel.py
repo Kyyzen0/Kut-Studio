@@ -167,6 +167,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         self.ruler_height = Sizes.timeline_ruler_height
         self.track_height = Sizes.timeline_track_height
         self.track_gap = 0
+        self.row_height_override: int | None = None       # hauteur des pistes « normales » d'une page (Audio : 56 px)
         self.left_margin = Sizes.timeline_left_margin
         self.zoom = 1.0
         self.duration_seconds = 30.0
@@ -303,6 +304,11 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
 
 
     def eventFilter(self, watched, event) -> bool:
+        if watched is getattr(self.scroll, "viewport", lambda: None)() and event.type() == QEvent.Resize:
+            # Le viewport change de taille sans que le panneau change (barre de défilement qui apparaît, en-têtes ou règle
+            # qui changent de hauteur avec la police) : la fenêtre à monter change aussi.
+            if self._sync_mounted_clips():
+                self._layout_children()
         if watched is getattr(self.scroll, "viewport", lambda: None)() and event.type() == QEvent.Wheel:
             modifiers = event.modifiers()
             if modifiers & (Qt.ControlModifier | Qt.MetaModifier):

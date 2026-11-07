@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -24,8 +23,9 @@ from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
 from ui.properties_widgets.section_box import SectionBox
+from ui.properties_widgets.tab_row import InspectorTabRow, tab_stylesheet
 from ui.adaptive_layout import allow_shrinking
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.text_style_editor import TextStyleEditor
@@ -40,7 +40,7 @@ from core.usage_level import UsageLevel
 from ui.properties_widgets.tolerant_spin_box import TolerantDoubleSpinBox
 
 TRACKING_TAB = 6
-"""Onglet « Suivi » (menu « ••• »)."""
+"""Onglet « Suivi »."""
 
 
 class ConstructionMixin:
@@ -84,17 +84,11 @@ class ConstructionMixin:
         return label
 
     def retranslate(self) -> None:
-        """Onglets, menu « ••• », titres de groupes et libellés de formulaire dans la langue courante."""
+        """Onglets, titres de groupes et libellés de formulaire dans la langue courante."""
         for button, key in zip(self.inspector_tab_buttons, self._TAB_KEYS):
             button.setText(translate(key))
-        more = translate("inspector.more_tooltip")
-        self.inspector_more_button.setToolTip(more)
-        self.inspector_more_button.setAccessibleName(more)
-        for action, key in self._more_menu_actions:
-            action.setText(translate(key))
-        active = next((i for i, button in enumerate(self.inspector_tab_buttons) if button.isChecked()), 0)
-        if active in {4, 5, 6}:
-            self.inspector_more_button.setText(translate(self._TAB_KEYS[active]))
+            button.setAccessibleName(translate(key))
+        self.inspector_tabs_row.retranslate()
         for group, key in self._group_titles:
             group.setTitle(translate(key))
         self.time_section.retranslate()
@@ -107,6 +101,7 @@ class ConstructionMixin:
             label.setText(translate(key))
         for widget in self._monitor_volume_tooltip_targets:
             widget.setToolTip(translate("tooltip.monitor_volume"))
+        self._retranslate_color_keyframes()
 
     def _build_header(self, outer_layout):
         """En-tête : titre et barre d'onglets de l'inspecteur."""
@@ -122,85 +117,27 @@ class ConstructionMixin:
         title.setStyleSheet(label_style(10, "muted", 800))
         title.hide()
 
-        # Onglets principaux : Clip / Couleur / Audio / Effets. Les outils
-        # spécialisés restent disponibles dans un menu compact afin que
-        # l'inspecteur conserve une vraie largeur de travail.
-        # Utilisation de QPushButton ``checkable`` plutôt que
-        # ``QListWidget`` pour garantir un affichage horizontal compact.
-        self.inspector_tabs_row = QWidget()
-        self.inspector_tabs_layout = QHBoxLayout(self.inspector_tabs_row)
-        self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
-        self.inspector_tabs_layout.setSpacing(Spacing.xs)
+        # Sept onglets dans une seule rangée (``InspectorTabRow``) : Clip, Couleur, Audio et Effets en boutons, Graphiques, Compositing
+        # et Suivi sous « Plus » (un onglet de plus y passe quand la colonne est étroite). Les sept boutons existent toujours.
         self.inspector_tab_buttons: list[QPushButton] = []
         for index, key in enumerate(self._TAB_KEYS):
             button = QPushButton(translate(key))
             button.setObjectName("inspectorTab")
+            button.setAccessibleName(translate(key))
             button.setCheckable(True)
             button.setChecked(index == 0)
             button.setCursor(Qt.PointingHandCursor)
             button.setFocusPolicy(Qt.NoFocus)
-            button.setStyleSheet(
-                f"QPushButton#inspectorTab {{ background: transparent;"
-                f" color: {COLORS['muted']}; border: 1px solid transparent;"
-                f" border-radius: 0; padding: 7px 7px;"
-                f" font-weight: 600; font-size: 11px; }}"
-                f"QPushButton#inspectorTab:hover {{ color: {COLORS['text']};"
-                f" background: transparent; }}"
-                f"QPushButton#inspectorTab:checked {{ color: {COLORS['accent']};"
-                f" background: transparent; border: none;"
-                f" border-bottom: 2px solid {COLORS['accent']}; }}"
-                f"QPushButton#inspectorTab:focus {{ border: 1px solid {COLORS['accent']}; }}"
-            )
+            button.setStyleSheet(tab_stylesheet("inspectorTab"))
             button.clicked.connect(
                 lambda _checked=False, idx=index: self._select_inspector_tab(idx)
             )
             self.inspector_tab_buttons.append(button)
 
-        # L'ordre visuel suit le geste attendu dans la maquette tout en
-        # conservant les indices historiques utilisés par le contrôleur.
-        for index in (0, 1, 3, 2):
-            self.inspector_tabs_layout.addWidget(self.inspector_tab_buttons[index])
-        # Graphiques et Compositing passent par le menu « ••• » : leurs
-        # boutons gardent l'état coché mais restent rattachés au panneau
-        # pour ne pas devenir des fenêtres orphelines.
-        for index in (4, 5, 6):
-            self.inspector_tab_buttons[index].setParent(self.inspector_tabs_row)
-            self.inspector_tab_buttons[index].hide()
-
-        self.inspector_more_button = QToolButton()
-        self.inspector_more_button.setObjectName("inspectorMore")
-        self.inspector_more_button.setText("•••")
-        self.inspector_more_button.setToolTip(translate("inspector.more_tooltip"))
-        self.inspector_more_button.setAccessibleName(translate("inspector.more_tooltip"))
-        self.inspector_more_button.setStyleSheet(
-            f"QToolButton {{ color: {COLORS['muted']}; background: transparent;"
-            f" border: none; border-radius: 4px; padding: 5px 6px; }}"
-            f"QToolButton:hover {{ color: {COLORS['text']};"
-            f" background: {COLORS['surface_hover']}; }}"
-            f"QToolButton[active='true'] {{ color: {COLORS['accent']}; }}"
-        )
-        self.inspector_more_button.setPopupMode(QToolButton.InstantPopup)
-        more_menu = QMenu(self.inspector_more_button)
-        graphics_action = more_menu.addAction(translate("rail.graphics"))
-        graphics_action.triggered.connect(
-            lambda _checked=False: self._select_inspector_tab(4)
-        )
-        compositing_action = more_menu.addAction(translate("inspector.tab.compositing"))
-        compositing_action.triggered.connect(
-            lambda _checked=False: self._select_inspector_tab(5)
-        )
-        tracking_action = more_menu.addAction(translate("tracking.title"))
-        tracking_action.triggered.connect(
-            lambda _checked=False: self._select_inspector_tab(TRACKING_TAB)
-        )
-        self._more_menu_actions = [
-            (graphics_action, "rail.graphics"),
-            (compositing_action, "inspector.tab.compositing"),
-            (tracking_action, "tracking.title"),
-        ]
-        self.inspector_more_button.setMenu(more_menu)
-        self.inspector_tabs_layout.addWidget(self.inspector_more_button)
-        self.inspector_tabs_layout.addStretch(1)
+        # L'ordre visuel suit le geste attendu dans la maquette tout en conservant les indices historiques utilisés par le
+        # contrôleur : Clip, Couleur, Audio, Effets, puis Graphiques, Compositing, Suivi.
+        self.inspector_tabs_row = InspectorTabRow(self.inspector_tab_buttons, (0, 1, 3, 2, 4, 5, 6))
+        self.inspector_tabs_row.tab_chosen.connect(self._select_inspector_tab)
         header_layout.addWidget(self.inspector_tabs_row)
         outer_layout.addWidget(header)
 
@@ -250,7 +187,7 @@ class ConstructionMixin:
         self._project_info_labels: dict[str, QLabel] = {}
         for name in ("state", "resolution", "format", "fps", "background"):
             lbl = QLabel()
-            lbl.setMinimumHeight(20)
+            lbl.setMinimumHeight(Sizes.icon_button_sm)
             lbl.setWordWrap(True)  # « État : Aucun clip sélectionné » fixait la largeur minimale de tout l'inspecteur
             lbl.setStyleSheet(label_style(12, "text", 500))
             project_layout.addWidget(lbl)
@@ -325,7 +262,7 @@ class ConstructionMixin:
             self.transition_to_label,
             self.transition_track_label,
         ):
-            label.setStyleSheet(label_style(11, "muted", 500))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         self.remove_transition_button = self._make_action_button(
             IconName.REMOVE, translate("inspector.transition.remove"), translate("inspector.transition.remove_tip")
         )
@@ -391,7 +328,7 @@ class ConstructionMixin:
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(Spacing.xs)
             label = QLabel(self._human_label(property_name))
-            label.setStyleSheet(label_style(11, "muted", 600))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 600))
             label.setFixedWidth(76)
             row_layout.addWidget(label)
 
@@ -428,7 +365,7 @@ class ConstructionMixin:
             previous_button = QToolButton()
             previous_button.setObjectName("iconOnly")  # padding nul : sinon le thème rogne la flèche
             previous_button.setText("‹")
-            previous_button.setFixedSize(18, 22)
+            previous_button.setFixedSize(18, Sizes.icon_button_sm)
             previous_button.setEnabled(False)
             previous_button.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, -1)
@@ -445,7 +382,7 @@ class ConstructionMixin:
             next_button = QToolButton()
             next_button.setObjectName("iconOnly")
             next_button.setText("›")
-            next_button.setFixedSize(18, 22)
+            next_button.setFixedSize(18, Sizes.icon_button_sm)
             next_button.setEnabled(False)
             next_button.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, 1)

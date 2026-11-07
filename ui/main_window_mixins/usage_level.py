@@ -13,11 +13,12 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QToolButton
 
 from core.usage_level import UsageLevel
+from ui.design_system import Sizes
 from ui import i18n
 
 
 class _LevelChip(QToolButton):
-    """Puce du niveau, à trois formes selon la place de la barre du haut : complète, abrégée (deux lettres), absente.
+    """Puce du niveau, à trois formes selon la place de la barre du haut : complète (« Niveau : Avancé »), abrégée (le seul nom du niveau), absente.
 
     La barre du haut est pleine à 1180 px avec des polices plus larges (Linux) : la puce ne doit jamais comprimer
     « Réglages » ni « Exporter ». ``text()`` renvoie le texte affiché, ``full_text()`` le libellé complet.
@@ -28,16 +29,23 @@ class _LevelChip(QToolButton):
     def __init__(self) -> None:
         super().__init__()
         self._full = ""
+        self._compact = ""
         self._form = self.FULL
+        self._chrome = 0     # marge propre de la puce (padding, flèche) : ne varie jamais d'une forme à l'autre, voir ``width_for``
 
     def full_text(self) -> str:
         return self._full
 
+    def compact_text(self) -> str:
+        return self._compact
+
     def form(self) -> str:
         return self._form
 
-    def setText(self, text: str) -> None:  # noqa: N802 - Qt
+    def setText(self, text: str, compact: str | None = None) -> None:  # noqa: N802 - Qt
+        """``text`` : libellé complet ; ``compact`` : libellé de la forme abrégée (défaut : les deux premières lettres)."""
         self._full = text
+        self._compact = compact if compact is not None else text[:2]
         self._show_form()
 
     def set_form(self, form: str) -> None:
@@ -46,14 +54,21 @@ class _LevelChip(QToolButton):
             self._show_form()
 
     def _show_form(self) -> None:
-        super().setText(self._full[:2] if self._form == self.COMPACT else self._full)
+        super().setText(self._compact if self._form == self.COMPACT else self._full)
         self.setVisible(self._form != self.HIDDEN)
 
     def width_for(self, form: str) -> int:
-        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante)."""
-        chrome = max(0, super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text()))
-        text = self._full[:2] if form == self.COMPACT else self._full
-        return chrome + self.fontMetrics().horizontalAdvance(text)
+        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante).
+
+        La marge (``sizeHint`` moins le texte affiché) varie de 1 px selon le texte courant (19 px « abrégée », 20 px « complète »
+        avec la police DejaVu de Linux) : mesurée à chaque appel, elle faisait que « complète » tenait quand la puce était abrégée
+        et ne tenait plus quand elle était complète, et la puce oscillait à chaque ajustement (``Niveau : Avancé`` écrasée à 70 px).
+        On garde donc la plus grande marge vue : le choix de la forme ne dépend plus de la forme courante.
+        """
+        measured = super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text())
+        self._chrome = max(self._chrome, measured)
+        text = self._compact if form == self.COMPACT else self._full
+        return self._chrome + self.fontMetrics().horizontalAdvance(text)
 
 
 class _FitLevelChip(QObject):
@@ -76,7 +91,8 @@ class _FitLevelChip(QObject):
             others = [layout.itemAt(i).widget() for i in range(layout.count())]
             widgets = [w for w in others if w is not None and w is not self._chip and not w.isHidden()]
             used = sum(w.sizeHint().width() for w in widgets) + margins.left() + margins.right()
-            gaps = layout.spacing() * (len(widgets) + 1)           # y compris l'espace propre à la puce
+            spacers = sum(1 for i in range(layout.count()) if layout.itemAt(i).widget() is None)   # les ressorts ont aussi leurs espaces
+            gaps = layout.spacing() * (len(widgets) + spacers + 1)  # y compris l'espace propre à la puce
             room = self._bar.width() - used - gaps
             if self._chip.width_for(_LevelChip.FULL) <= room:
                 form = _LevelChip.FULL
@@ -131,6 +147,7 @@ class UsageLevelMixin:
         chip.setCursor(Qt.PointingHandCursor)
         chip.setFocusPolicy(Qt.NoFocus)
         chip.setObjectName("usageLevelChip")
+        chip.setMinimumHeight(Sizes.control_min)          # jamais sous 30 px (barème « Air d'abord »)
         chip.setPopupMode(QToolButton.InstantPopup)
         # Puce étroite : la barre du haut est pleine à 1180 px, +20 % de police (l'export ne doit pas être tronqué).
         chip.setStyleSheet(
@@ -158,7 +175,7 @@ class UsageLevelMixin:
         chip = self.usage_level_chip
         if chip is not None:
             label = i18n.translate(f"prefs.usage.{current.value}")
-            chip.setText(label)
+            chip.setText(i18n.translate("usage.chip.label", level=label), compact=label)
             if self._usage_level_fit is not None:
                 self._usage_level_fit.fit()
             chip.setToolTip(i18n.translate("usage.chip.tooltip"))

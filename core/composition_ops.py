@@ -79,6 +79,7 @@ def _transform_part(transform: ClipTransform) -> ClipTransform:
 def _refusal(clip: Clip, track: Track, project: Project, selected: set[str]) -> str | None:
     """Pourquoi ``clip`` ne peut pas devenir des nœuds (``None`` : il le peut)."""
     from .effects_model import has_live_effect_animation
+    from .grade_targets import has_live_grade_animation
     from .graphics import CONTAINER_TYPES
 
     name = clip.label or clip.id
@@ -103,6 +104,9 @@ def _refusal(clip: Clip, track: Track, project: Project, selected: set[str]) -> 
     if has_live_effect_animation(clip):
         return (f"« {name} » a des effets animés que la composition ne sait pas encore rendre : retirez l'animation "
                 "des effets (clic droit sur le losange d'un réglage, « Supprimer l'animation de l'effet ») avant de convertir.")
+    if has_live_grade_animation(clip):
+        return (f"« {name} » a un étalonnage animé que la composition ne sait pas encore rendre : supprimez les images clés "
+                "de couleur avant de convertir.")
     if track.type == "graphics":
         graphic = clip.graphic
         if graphic is None or graphic.type in CONTAINER_TYPES or graphic.parent_id or graphic.group_id:

@@ -489,7 +489,7 @@ def test_relink_media_relinks_a_real_image_and_keeps_images_and_videos_apart(tmp
 def _at_cap(project: Project, monkeypatch) -> None:
     from core.scripting.auto_rules import total_clips
 
-    monkeypatch.setattr("core.scripting.auto_rules.MAX_CLIPS_IN_PROJECT", total_clips(project))
+    monkeypatch.setattr("core.scripting.resource_limits.MAX_CLIPS_IN_PROJECT", total_clips(project))
 
 
 def test_every_sequence_creating_verb_counts_the_clips_it_adds_in_a_project_at_the_clip_cap(monkeypatch):
@@ -510,4 +510,9 @@ def test_every_sequence_creating_verb_counts_the_clips_it_adds_in_a_project_at_t
         assert not report.ok and message in report.error, (op, report.error)
         assert session.project.sequences == before.sequences, op
     _ok(project, {"op": "create_sequence", "name": "Vide"})                          # une séquence vide n'ajoute aucun clip
-    _ok(project, {"op": "nest_clips", "clips": ["c1"], "name": "Un"})               # net : le clip imbriqué remplace le clip déplacé
+    # Les clips déplacés restent dans le projet (dans la nouvelle séquence) : le clip imbriqué en ajoute un, donc le projet au plafond le refuse.
+    before = deepcopy(project)
+    session, report = _apply(project, {"op": "nest_clips", "clips": ["c1"], "name": "Un"})
+    assert not report.ok and "dépasseraient" in report.error and session.project.sequences == before.sequences
+    monkeypatch.setattr("core.scripting.resource_limits.MAX_CLIPS_IN_PROJECT", 4)       # une place de plus : le clip imbriqué y tient
+    _ok(project, {"op": "nest_clips", "clips": ["c1"], "name": "Un"})

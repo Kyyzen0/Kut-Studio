@@ -211,7 +211,7 @@ def _left(directory):
 
 def test_a_verified_download_is_renamed_marked_and_reported(qtbot, server, client, tmp_path):
     _serve_package(server, chunks=8)
-    downloader = UpdateDownloader(client, directory=tmp_path / "updates")
+    downloader = UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path / "updates")
     progress: list[tuple[int, int]] = []
     downloader.progress.connect(lambda received, total: progress.append((received, total)))
     result = _download(qtbot, downloader, _offer(server))
@@ -238,7 +238,7 @@ def test_a_package_the_system_refuses_to_mark_is_refused(qtbot, server, client, 
     monkeypatch.setattr(update_service, "mark_as_downloaded", refuse)
     monkeypatch.setattr(update_service, "download_mark_expected", lambda: True)
     _serve_package(server)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server))
     assert result.error.kind is UpdateErrorKind.MARK_FAILED and result.path is None
     assert marked == [f"{PACKAGE}.part"], "la marque est posée avant le renommage, sur le fichier partiel"
     assert _left(tmp_path) == [], "ni paquet ni fichier partiel"
@@ -249,56 +249,56 @@ def test_where_the_system_has_no_mark_a_verified_package_is_offered(qtbot, serve
     monkeypatch.setattr(update_service, "mark_as_downloaded", lambda path, *, url: False)
     monkeypatch.setattr(update_service, "download_mark_expected", lambda: False)
     _serve_package(server)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server))
     assert result.error is None and not result.marked
     assert _left(tmp_path) == [PACKAGE]
 
 
 def test_a_wrong_checksum_deletes_the_file_and_never_offers_it(qtbot, server, client, tmp_path):
     _serve_package(server, sums=format_checksums({PACKAGE: "0" * 64}))
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server))
     assert result.error.kind is UpdateErrorKind.CHECKSUM_MISMATCH and result.path is None
     assert _left(tmp_path) == []
 
 
 def test_a_short_file_fails_on_size(qtbot, server, client, tmp_path):
     _serve_package(server)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server, size=len(PAYLOAD) + 10))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server, size=len(PAYLOAD) + 10))
     assert result.error.kind is UpdateErrorKind.SIZE_MISMATCH
     assert _left(tmp_path) == []
 
 
 def test_a_file_larger_than_announced_is_cut_and_deleted(qtbot, server, client, tmp_path):
     _serve_package(server, chunks=10, pause=0.02)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server, size=1000))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server, size=1000))
     assert result.error.kind is UpdateErrorKind.TOO_LARGE
     assert _left(tmp_path) == []
 
 
 def test_a_package_missing_from_sha256sums_is_not_even_downloaded(qtbot, server, client, tmp_path):
     _serve_package(server, sums=format_checksums({"autre.zip": PAYLOAD_SHA}))
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server))
     assert result.error.kind is UpdateErrorKind.CHECKSUM_MISSING
     assert not server.requested(f"/download/v0.2.0/{PACKAGE}")
 
 
 def test_github_digest_contradicting_sha256sums_stops_before_the_package(qtbot, server, client, tmp_path):
     _serve_package(server)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server, digest="f" * 64))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server, digest="f" * 64))
     assert result.error.kind is UpdateErrorKind.CHECKSUM_MISMATCH
     assert not server.requested(f"/download/v0.2.0/{PACKAGE}")
 
 
 def test_without_published_checksums_nothing_is_requested(qtbot, server, client, tmp_path):
     _serve_package(server)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server, checksums=False))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server, checksums=False))
     assert result.error.kind is UpdateErrorKind.CHECKSUM_MISSING
     assert server.requests == []
 
 
 def test_cancelling_mid_download_removes_the_partial_file(qtbot, server, client, tmp_path):
     _serve_package(server, chunks=50, pause=0.05)
-    downloader = UpdateDownloader(client, directory=tmp_path)
+    downloader = UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path)
     seen: list[int] = []
 
     def on_progress(received, _total):
@@ -318,7 +318,7 @@ def test_cancelling_mid_download_removes_the_partial_file(qtbot, server, client,
 def test_a_stalled_download_times_out(qtbot, server, client, tmp_path, monkeypatch):
     monkeypatch.setattr(update_service, "IDLE_TIMEOUT_MS", 300)
     _serve_package(server, chunks=2, pause=3.0)
-    downloader = UpdateDownloader(client, directory=tmp_path)
+    downloader = UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path)
     started = time.monotonic()
     result = _download(qtbot, downloader, _offer(server))
     assert time.monotonic() - started < 2.5
@@ -348,14 +348,14 @@ def test_previous_downloads_are_cleaned_but_foreign_files_are_kept(qtbot, server
     (tmp_path / "Kut-Studio-0.2.0-macos-arm64.zip.part").write_bytes(b"partiel")
     (tmp_path / "notes.txt").write_text("à garder", encoding="utf-8")
     _serve_package(server)
-    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    result = _download(qtbot, UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path), _offer(server))
     assert result.error is None
     assert _left(tmp_path) == [PACKAGE, "notes.txt"]
 
 
 def test_an_offer_without_package_fails_asynchronously(qtbot, client, tmp_path):
     release = parse_releases([{"tag_name": "v0.2.0", "draft": False, "prerelease": False, "assets": []}])[0]
-    downloader = UpdateDownloader(client, directory=tmp_path)
+    downloader = UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path)
     finished: list = []
     downloader.finished.connect(finished.append)
     assert downloader.start(UpdateOffer(release, None, None, None))
@@ -368,7 +368,7 @@ def test_an_offer_with_a_foreign_package_name_is_refused(qtbot, client, tmp_path
     release = parse_releases([{"tag_name": "v0.2.0", "draft": False, "prerelease": False, "assets": []}])[0]
     package = ReleaseAsset("installeur.exe", "https://github.com/x/releases/download/v0.2.0/installeur.exe", 10)
     sums = ReleaseAsset(CHECKSUMS_FILE, "https://github.com/x/releases/download/v0.2.0/SHA256SUMS.txt", 10)
-    downloader = UpdateDownloader(client, directory=tmp_path)
+    downloader = UpdateDownloader(client, current=Version.parse("0.1.0"), directory=tmp_path)
     result = _download(qtbot, downloader, UpdateOffer(release, MAC_ARM, package, sums))
     assert result.error.kind is UpdateErrorKind.INVALID_RESPONSE
 

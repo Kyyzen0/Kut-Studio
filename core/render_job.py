@@ -315,11 +315,14 @@ class RenderJob:
 
     @property
     def can_retry_on_cpu(self) -> bool:
-        """Échec d'un encodeur explicite : relancer en CPU est proposé."""
+        """Échec d'un encodeur explicite : relancer en CPU est proposé (sauf si ce FFmpeg n'a pas d'encodeur logiciel)."""
+        from .video_encoders import software_fallback_possible
+
         return (
             self.status is JobStatus.FAILED
             and self.error_kind == ErrorKind.ENCODER
             and coerce_hardware(self.hardware) is not HardwareEncoder.CPU
+            and software_fallback_possible(_codec_family(self.video_codec))
         )
 
     @property

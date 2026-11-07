@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -32,9 +31,10 @@ from core.library_organization import (
 from core.media_color_ops import media_color_refusal
 from core.usage_level import UsageLevel, coerce_usage_level
 from core.project_model import MediaAsset
-from ui.adaptive_layout import ShrinkableScrollArea
+from ui.adaptive_layout import FlowLayout, ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
-from ui.design_system import Sizes, Spacing
+from ui.scroll_guard import GuardedStack, ScrollGuard
+from ui.design_system import Sizes, Spacing, Typography
 from ui.icons import IconButton, IconName
 from ui.audio_effects_library import AudioEffectsLibraryView
 from ui.graphics_library import GraphicsLibraryView
@@ -58,6 +58,7 @@ from ui.project_panel_widgets.asset_bin import (
     AssetBin,
 )  # noqa: F401
 from ui.project_panel_widgets.subtitle_library import SubtitleLibraryView  # noqa: F401
+from ui.project_panel_widgets.browse_fold import BrowseFold
 from ui.project_panel_widgets.wide_button import make_wide_button
 from ui.project_panel_widgets.sequence_library import SequenceLibraryView
 from ui.project_panel_widgets.transition_library import (
@@ -71,7 +72,7 @@ from ui.project_panel_widgets.effects_library_view import (
 from ui.i18n import translate
 
 
-BROWSE_MIN_HEIGHT = 84
+BROWSE_MIN_HEIGHT = 64
 """Hauteur plancher (px) du bloc dossiers / filtres / tags : en dessous il défile (voir ``ShrinkableScrollArea``)."""
 
 
@@ -185,9 +186,18 @@ class ProjectPanel(QWidget):
         # Compteurs par dossier pour l'arborescence.
         self._folder_counts: dict[str, int] = {}
 
-        layout = QVBoxLayout(self)
+        # Tout le panneau vit dans un corps enveloppé d'une zone défilante (construit ici, une fois) : colonne plus basse
+        # que son contenu (portable), le panneau défile au lieu d'imposer sa hauteur à toute la fenêtre.
+        body = QWidget()
+        body.setObjectName("projectPanelBody")
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        body_guard = ScrollGuard(body)
+        outer.addWidget(body_guard)
 
         # ----- En-tête compact : onglets Projet / Favoris --------------
         header = QWidget()
@@ -197,6 +207,7 @@ class ProjectPanel(QWidget):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.xs)
         header_layout.setSpacing(Spacing.xs)
+        self._header_layout = header_layout
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -209,7 +220,7 @@ class ProjectPanel(QWidget):
         title_row.addStretch(1)
         # Compteur global (mis à jour à chaque mutation).
         self.media_count = QLabel(f"0 {translate('library.word.media')}")
-        self.media_count.setStyleSheet(label_style(10, "muted", 500))
+        self.media_count.setStyleSheet(label_style(Typography.caption, "muted", 500))
         title_row.addWidget(self.media_count)
         quick_import = IconButton(
             icon=IconName.PLUS,
@@ -240,7 +251,7 @@ class ProjectPanel(QWidget):
                 f"QPushButton#scopeTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
                 f" border-radius: 6px; padding: 4px 12px;"
-                f" font-weight: 600; font-size: 11px; }}"
+                f" font-weight: 600; font-size: {Typography.caption}px; }}"
                 f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
                 f" background: {COLORS['surface_hover']}; }}"
                 f"QPushButton#scopeTab:checked {{ color: {COLORS['accent']};"
@@ -263,9 +274,16 @@ class ProjectPanel(QWidget):
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
         search_layout.setSpacing(Spacing.sm)
+        self._search_layout = search_layout
         self.search_field = SearchField(translate("library.search_placeholder"), object_name="librarySearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_field)
+        # Replie / déplie le bloc des dossiers et filtres (se replie de lui-même quand la colonne est basse).
+        self.browse_toggle = IconButton(
+            icon=IconName.LIBRARY, tooltip=translate("library.browse.toggle"), size=Sizes.icon_button_sm, checkable=True
+        )
+        self.browse_toggle.setAccessibleName(translate("library.browse.toggle"))
+        search_layout.addWidget(self.browse_toggle)
         layout.addWidget(search_row)
 
         # ----- Arborescence de la bibliothèque -------------------------
@@ -334,7 +352,7 @@ class ProjectPanel(QWidget):
             f"QPushButton#manageTagsButton {{ background: transparent;"
             f" color: {COLORS['accent']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 10px;"
-            f" font-size: 11px; font-weight: 600; }}"
+            f" font-size: {Typography.caption}px; font-weight: 600; }}"
             f"QPushButton#manageTagsButton:hover {{"
             f" background: {COLORS['accent_dark']};"
             f" border: 1px solid {COLORS['accent']}; }}"
@@ -351,6 +369,7 @@ class ProjectPanel(QWidget):
         browse_scroll.setObjectName("libraryBrowseScroll")
         self.library_browse_content = browse_scroll
         layout.addWidget(browse_scroll, 0)
+        self.browse_fold = BrowseFold(self.browse_toggle, browse_scroll, body_guard.viewport())
 
         # ----- Contenu empilé (grilles + placeholders) ----------------
         # Seule zone élastique du panneau : elle absorbe toute la
@@ -358,9 +377,13 @@ class ProjectPanel(QWidget):
         # Bascule Fichiers / Effets, visible uniquement dans la section Audio.
         self.audio_mode_row = QWidget()
         audio_mode_layout = QHBoxLayout(self.audio_mode_row)
-        audio_mode_layout.setContentsMargins(Spacing.sm, Spacing.xs, Spacing.sm, 0)
+        audio_mode_layout.setContentsMargins(Spacing.xs, Spacing.xs, Spacing.xs, 0)
         audio_mode_layout.setSpacing(Spacing.xs)
+        self._audio_mode_layout = audio_mode_layout
         self.audio_mode_buttons: dict[str, QPushButton] = {}
+        # Trois onglets : marge intérieure de 6 px (pas 12) et bords de 4 px pour que la rangée tienne (~205 px) dans la colonne de
+        # l'Air en 1280x690 (~213 px utiles) avec la police de repli de Linux (DejaVu Sans, plus large que celle de macOS) ;
+        # sinon la zone défilante ajoute une barre horizontale qui retire ~8 px à la liste.
         for mode, label in _audio_modes():
             button = QPushButton(label)
             button.setObjectName("scopeTab")
@@ -371,8 +394,8 @@ class ProjectPanel(QWidget):
             button.setStyleSheet(
                 f"QPushButton#scopeTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
-                f" border-radius: 6px; padding: 4px 12px;"
-                f" font-weight: 600; font-size: 11px; }}"
+                f" border-radius: 6px; padding: 4px 6px;"
+                f" font-weight: 600; font-size: {Typography.caption}px; }}"
                 f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
                 f" background: {COLORS['surface_hover']}; }}"
                 f"QPushButton#scopeTab:checked {{ color: {COLORS['accent']};"
@@ -388,8 +411,8 @@ class ProjectPanel(QWidget):
         self.audio_mode_row.setVisible(False)
         layout.addWidget(self.audio_mode_row)
 
-        self.content_stack = QStackedWidget()
-        self.content_stack.setMinimumHeight(120)
+        self.content_stack = GuardedStack()
+        self.content_stack.setMinimumHeight(112)      # ~2 lignes de médias ; sous ce total le corps du panneau défile
         self.content_stack.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
@@ -424,11 +447,9 @@ class ProjectPanel(QWidget):
         self.content_stack.addWidget(self.sfx_view)
         self.sfx_view.add_requested.connect(self.sfx_add_requested)
         self.sfx_view.on_cuts_requested.connect(self.sfx_on_cuts_requested)
-        # Chaque page est faite pour défiler : on neutralise leur
-        # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
-        # sinon la pile réserve cette hauteur et la grille de vignettes
-        # disparaît. On ne fige pas la hauteur : le layout accorde le
-        # surplus quand la colonne est haute.
+        # Chaque page est enveloppée à l'ajout dans une zone défilante (``GuardedStack``) : son minimum est honnête
+        # (l'éditeur de sous-titres réclame 360 px) mais la pile ne le réserve pas ; quand la colonne est plus basse
+        # la page défile au lieu de se chevaucher. Le surplus va à la page quand la colonne est haute.
         for page in (
             self.bin_videos, self.bin_audios, self.subtitle_view,
             self.effects_view, self.transition_view,
@@ -436,7 +457,6 @@ class ProjectPanel(QWidget):
             self.sfx_view,
         ):
             page.setMinimumHeight(0)
-            page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         layout.addWidget(self.content_stack, 1)
         self.audio_effects_view.apply_requested.connect(
             self.audio_effect_apply_requested
@@ -460,18 +480,17 @@ class ProjectPanel(QWidget):
         actions.setStyleSheet(
             f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
         )
-        actions_layout = QHBoxLayout(actions)
+        actions_layout = FlowLayout(actions, spacing=Spacing.xs)      # retour à la ligne plutôt que « Im…rter » dans 230 px
         # Marges latérales réduites : à 1180 px de fenêtre la colonne ne fait que ~230 px, et les libellés
         # « Importer » / « Timeline » étaient tronqués (« Im…rter »).
         actions_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.md)
-        actions_layout.setSpacing(Spacing.xs)
         self.import_button = self._make_wide_button(
             IconName.IMPORT, translate("library.import"),
             accent=False,
             tooltip=translate("library.import_tip"),
         )
         self.import_button.clicked.connect(self.import_requested)
-        actions_layout.addWidget(self.import_button, 1)
+        actions_layout.addWidget(self.import_button)
 
         self.add_to_timeline_button = self._make_wide_button(
             IconName.PLUS, translate("panel.timeline"),
@@ -480,7 +499,7 @@ class ProjectPanel(QWidget):
         )
         self.add_to_timeline_button.setEnabled(False)
         self.add_to_timeline_button.clicked.connect(self._on_add_to_timeline_clicked)
-        actions_layout.addWidget(self.add_to_timeline_button, 1)
+        actions_layout.addWidget(self.add_to_timeline_button)
         layout.addWidget(actions)
 
         # Câblage des signaux du composant Sous-titres.
@@ -744,6 +763,25 @@ class ProjectPanel(QWidget):
             create_multicam.triggered.connect(lambda: self.multicam_create_requested.emit(list(selected)))
         menu.exec(global_pos)
 
+    #: Colonne plus basse que cette hauteur (portable : ~200 px en 1280x690) : les marges verticales de l'en-tête, de la recherche
+    #: et des onglets Audio se resserrent, ce qui rend ~20 px à la liste quelle que soit la police. Ne dépend que de la taille du
+    #: panneau (pas de son contenu) : aucune oscillation possible.
+    COMPACT_HEIGHT = 340
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt
+        super().resizeEvent(event)
+        self._apply_vertical_density(self.height() < self.COMPACT_HEIGHT)
+
+    def _apply_vertical_density(self, compact: bool) -> None:
+        if getattr(self, "_compact_density", None) == compact:
+            return
+        self._compact_density = compact
+        md, sm, xs = Spacing.md, Spacing.sm, Spacing.xs
+        self._header_layout.setContentsMargins(md, xs if compact else sm, md, 2 if compact else xs)
+        self._header_layout.setSpacing(2 if compact else xs)
+        self._search_layout.setContentsMargins(md, xs - 1 if compact else sm, md, xs - 1 if compact else sm)
+        self._audio_mode_layout.setContentsMargins(xs, 2 if compact else xs, xs, 0)
+
     def set_audio_mode(self, mode: str) -> None:
         """Bascule la section Audio entre fichiers et préréglages d'effets."""
         if mode not in self.audio_mode_buttons:
@@ -783,6 +821,18 @@ class ProjectPanel(QWidget):
             self.usage_level = new
             self.graphics_view.layers_panel.set_usage_level(new)    # menus du panneau Calques et boutons Studio de sa barre
 
+    def set_montage_density(self, montage: bool) -> None:
+        """Page Montage « Air d'abord » : vignettes de 72 px (40 px ailleurs) et commandes de l'en-tête de 30 px (28 et 25 ailleurs).
+
+        La liste de la page Audio, plus basse, garde ses lignes (voir #279) : ses commandes gardent donc leur taille d'avant."""
+        for bin_widget in (self.bin_videos, self.bin_audios):
+            bin_widget.set_poster_size(Sizes.library_poster if montage else Sizes.library_poster_compact)
+        side = Sizes.control_min if montage else Sizes.icon_button_sm
+        for button in (self._quick_import, self.browse_toggle):
+            button.setFixedSize(side, side)
+        for button in self.scope_tab_buttons:
+            button.setMinimumHeight(Sizes.control_min if montage else 0)
+
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
         page_index = {
@@ -805,7 +855,7 @@ class ProjectPanel(QWidget):
         self.audio_mode_row.setVisible(page_index in {1, 6, 8})
         show_asset_chrome = page_index in {0, 1}
         self.library_search_row.setVisible(show_asset_chrome)
-        self.library_browse_content.setVisible(show_asset_chrome)
+        self.browse_fold.set_available(show_asset_chrome)
         self.library_actions.setVisible(show_asset_chrome)
         self._refresh_count()
         self._sync_add_button_for_active_tab()

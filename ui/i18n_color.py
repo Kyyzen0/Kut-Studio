@@ -22,7 +22,32 @@ def _wheel_tip(fr: str, en: str, es: str) -> dict[str, str]:
     return {language: f"{text} {_WHEEL_GESTURES[language]}" for language, text in (("fr", fr), ("en", en), ("es", es))}
 
 
+# --- Propriétés animables de l'étalonnage (``color.<champ>``, ``color.<roue>.<canal>``, ADR-0008) ------------------------
+# Libellés du Graph Editor et des menus d'images clés (étapes 7 à 9). Le nom de la roue reste en anglais (comme ``color.wheel.lift``),
+# le canal se dit dans la langue : « Lift rouge », « Lift red », « Lift rojo » ; ``y`` est la molette (le maître).
+_SCALAR_PROPERTIES = {
+    "exposure": _t("Exposition", "Exposure", "Exposición"),
+    "contrast": _t("Contraste", "Contrast", "Contraste"),
+    "saturation": _t("Saturation", "Saturation", "Saturación"),
+    "temperature": _t("Température", "Temperature", "Temperatura"),
+    "hue": _t("Teinte", "Hue", "Tono"),
+    "shadows": _t("Ombres", "Shadows", "Sombras"),
+    "highlights": _t("Hautes lumières", "Highlights", "Altas luces"),
+}
+_CHANNEL_NAMES = {
+    "r": ("rouge", "red", "rojo"), "g": ("vert", "green", "verde"), "b": ("bleu", "blue", "azul"),
+    "y": ("maître", "master", "maestro"),
+}
+_WHEEL_PROPERTIES = {
+    f"{wheel}.{channel}": _t(*(f"{wheel.capitalize()} {names[index]}" for index in range(3)))
+    for wheel in ("lift", "gamma", "gain", "offset") for channel, names in _CHANNEL_NAMES.items()
+}
+GRADE_PROPERTY_TRANSLATIONS: dict[str, dict[str, str]] = {
+    f"color.property.{name}": texts for name, texts in {**_SCALAR_PROPERTIES, **_WHEEL_PROPERTIES}.items()
+}
+
 COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
+    **GRADE_PROPERTY_TRANSLATIONS,
     # --- Pages ---------------------------------------------------------------------------------------------------
     "page.edit": _t("Montage", "Edit", "Edición"),
     "page.color": _t("Couleur", "Color", "Color"),
@@ -222,10 +247,71 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
                                     "Cuentagotas: el clic está fuera de la imagen del clip."),
     "status.color.pick_failed": _t("Pipette : couleur illisible ({error}).", "Eyedropper: color unreadable ({error}).",
                                    "Cuentagotas: color ilegible ({error})."),
+    # --- Images clés de l'étalonnage (ADR-0008, étape 8) ---------------------------------------------------------------
+    "color.animation.nodes": _t(
+        "Étalonnage découpé en nœuds : les images-clés d'étalonnage ne s'y appliquent pas. Revenez à un seul nœud, sans nom, "
+        "qualifieur, fenêtre, flou ni netteté, pour animer.",
+        "Grade split into nodes: color keyframes do not apply to it. Go back to a single node, without a name, qualifier, "
+        "window, blur or sharpen, to animate.",
+        "Corrección dividida en nodos: los fotogramas clave de color no se aplican. Vuelva a un solo nodo, sin nombre, "
+        "calificador, ventana, desenfoque ni nitidez, para animar.",
+    ),
+    "color.animation.ignored": _t(
+        "Ce clip garde {count} images-clés d'étalonnage, ignorées au rendu (export et aperçu) tant que l'étalonnage est "
+        "découpé en nœuds.",
+        "This clip keeps {count} color keyframes, ignored when rendering (export and preview) while the grade is split "
+        "into nodes.",
+        "Este clip conserva {count} fotogramas clave de color, ignorados al renderizar (exportación y vista previa) mientras "
+        "la corrección esté dividida en nodos.",
+    ),
+    "color.animation.clear": _t("Supprimer les images-clés", "Remove the keyframes", "Quitar los fotogramas clave"),
+    "color.animation.clear.tip": _t(
+        "Retire toutes les images-clés d'étalonnage du clip (Annuler les rétablit).",
+        "Removes every color keyframe from the clip (Undo restores them).",
+        "Quita todos los fotogramas clave de color del clip (Deshacer los restaura).",
+    ),
+    "color.animation.wheel_tip": _t(
+        "Image-clé de la roue {wheel} (palet et molette) à la tête de lecture : clic pour l'ajouter ou la retirer.",
+        "Keyframe for the {wheel} wheel (puck and dial) at the playhead: click to add or remove it.",
+        "Fotograma clave de la rueda {wheel} (disco y rueda) en el cabezal: clic para añadirlo o quitarlo.",
+    ),
+    "color.animation.disabled_tip": _t(
+        "Animation impossible : l'étalonnage de ce clip est découpé en nœuds.",
+        "Cannot animate: this clip's grade is split into nodes.",
+        "No se puede animar: la corrección de este clip está dividida en nodos.",
+    ),
+    "animation.menu.clear_grade": _t(
+        "Supprimer l'animation de l'étalonnage", "Remove the color grading animation",
+        "Quitar la animación de la corrección de color",
+    ),
+    "history.color.keyframe": _t("Image-clé d'étalonnage", "Color keyframe", "Fotograma clave de color"),
+    "history.color.clear_animation": _t(
+        "Supprimer l'animation de l'étalonnage", "Remove the color grading animation",
+        "Quitar la animación de la corrección de color",
+    ),
+    "status.color.reset_keys": _t(
+        "Étalonnage réinitialisé : {count} réglage(s) animé(s) retiré(s) (Annuler les rétablit).",
+        "Color grading reset: {count} animated setting(s) removed (Undo restores them).",
+        "Corrección restablecida: {count} ajuste(s) animado(s) quitado(s) (Deshacer los restaura).",
+    ),
+    "status.color.preset_keeps_keys": _t(
+        "Les réglages animés gardent leurs images-clés : le preset s'applique aux autres.",
+        "Animated settings keep their keyframes: the preset applies to the others.",
+        "Los ajustes animados conservan sus fotogramas clave: el preset se aplica a los demás.",
+    ),
     # --- Raccourcis et panneau -------------------------------------------------------------------------------------
     "shortcuts.command.page_edit": _t("Page Montage", "Edit page", "Página Edición"),
     "shortcuts.command.page_color": _t("Page Couleur", "Color page", "Página Color"),
     "workspace.panel.color": _t("Couleur", "Color", "Color"),
     "workspace.panel.clips": _t("Plans", "Clips", "Planos"),
     "color.strip.nodes": _t("{count} nœuds", "{count} nodes", "{count} nodos"),
+    "color.strip.title": _t("Plans de la séquence", "Sequence shots", "Planos de la secuencia"),
+    "color.strip.hint": _t("Choisissez le plan à étalonner", "Choose the shot to grade", "Elija el plano que quiere etalonar"),
+    "color.strip.timeline": _t("Afficher la timeline", "Show the timeline", "Mostrar la línea de tiempo"),
+    "color.strip.timeline_hide": _t("Masquer la timeline", "Hide the timeline", "Ocultar la línea de tiempo"),
+    "color.strip.timeline.tip": _t(
+        "Rouvre la timeline sous la page Couleur (jusqu'à la fermeture de l'application) ; recliquer la replie.",
+        "Reopens the timeline under the Color page (until the application is closed); click again to fold it.",
+        "Reabre la línea de tiempo bajo la página Color (hasta cerrar la aplicación); otro clic la pliega.",
+    ),
 }

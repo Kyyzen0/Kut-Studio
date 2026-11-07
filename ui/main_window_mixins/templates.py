@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QDialog
 
 from core.leaderboard import Leaderboard, LeaderboardError, LeaderboardRow, leaderboard_of, update_leaderboard
 from core.project_templates import NIGHT_PALETTE
+from core.security_scope import remember_user_path
 from core.template_slots import (
     SlotError,
     add_photo_slideshow,
@@ -92,6 +93,10 @@ class TemplatesMixin:
 
     def fill_slots_from_photo_drop(self, paths: list, track_id: str, seconds: float) -> None:
         """Photos glissées sur un emplacement : lui, puis les emplacements vides qui le suivent (une photo chacun)."""
+        if self._edit_refused_ui():                  # lecture seule (Store)
+            return
+        for path in paths:
+            remember_user_path(path)
         slot = slot_at(self.project, track_id, float(seconds))
         if slot is None:
             return
@@ -145,6 +150,8 @@ class TemplatesMixin:
         paths, _ = _main_window().QFileDialog.getOpenFileNames(
             self, i18n.translate("template.photos.choose"), "", i18n.translate("dialog.filter.images"),
         )
+        for path in paths:
+            remember_user_path(path)
         return list(paths)
 
     def _after_slot_edit(self, clip_id: str) -> None:
@@ -178,7 +185,11 @@ class TemplatesMixin:
         except LeaderboardError as error:
             self._report_edit_refused(error)
             return
-        clips = update_leaderboard(self.project, edited)
+        try:
+            clips = update_leaderboard(self.project, edited)
+        except ValueError as error:                       # un clip verrouillé suit un calque du classement : rien n'a changé
+            self._report_edit_refused(error)
+            return
         self._record_history(i18n.translate("history.template.leaderboard"))
         self._refresh_project_library()
         self._reload_timeline_preserving_selection(clips[0].id)

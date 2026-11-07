@@ -21,16 +21,19 @@ from core.color_grading import (
     ColorPresetStore,
 )
 from core.color_nodes import as_graph
+from core.security_scope import remember_user_path
 from core.usage_level import UsageLevel
 from ui.adaptive_layout import FlowLayout, make_shrinkable
-from ui.design_system import Spacing
+from ui.design_system import Spacing, Typography
 from ui.icons import IconName
 from ui.theme import label_style
+from ui.properties_panel_mixins.color_keyframes import ColorKeyframesMixin
 from ui.properties_widgets.color_curve_editor import ColorCurveEditor
 from ui.properties_widgets.level_gate import LevelGate
+from ui.properties_widgets.keyframe_row import field_with_keyframes
 from ui.i18n import translate
 
-class ColorMixin:
+class ColorMixin(ColorKeyframesMixin):
     """Mixin de ``PropertiesPanel`` : groupe Couleur : étalonnage, courbes, presets et LUT."""
 
     def _build_color_group(self) -> QGroupBox:
@@ -43,9 +46,10 @@ class ColorMixin:
         # Clip étalonné par nœuds : ces réglages sont ceux du nœud courant (page Couleur), on le dit.
         self.color_node_label = QLabel()
         self.color_node_label.setWordWrap(True)
-        self.color_node_label.setStyleSheet(label_style(11, "accent", 600))
+        self.color_node_label.setStyleSheet(label_style(Typography.caption, "accent", 600))
         self.color_node_label.hide()
         root.addWidget(self.color_node_label)
+        self._build_color_animation_notice(root)       # avis « étalonnage découpé en nœuds » (ADR-0008, étape 8)
 
         self.color_enabled_check = QCheckBox(translate("history.color.enable"))
         self.color_enabled_check.setChecked(True)
@@ -57,16 +61,19 @@ class ColorMixin:
         form.setSpacing(Spacing.xs)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         specs = (
-            ("exposure", translate("inspector.color.exposure"), -2.0, 2.0, 0.05, " EV"),
-            ("contrast", translate("field.contrast"), -1.0, 1.0, 0.05, ""),
-            ("saturation", translate("inspector.color.saturation"), 0.0, 2.0, 0.05, "×"),
-            ("temperature", translate("inspector.color.temperature"), -100.0, 100.0, 1.0, ""),
-            ("hue", translate("inspector.color.hue"), -180.0, 180.0, 1.0, "°"),
-            ("shadows", translate("inspector.color.shadows"), -1.0, 1.0, 0.05, ""),
-            ("highlights", translate("inspector.color.highlights"), -1.0, 1.0, 0.05, ""),
+            ("exposure", "inspector.color.exposure", -2.0, 2.0, 0.05, " EV"),
+            ("contrast", "field.contrast", -1.0, 1.0, 0.05, ""),
+            ("saturation", "inspector.color.saturation", 0.0, 2.0, 0.05, "×"),
+            ("temperature", "inspector.color.temperature", -100.0, 100.0, 1.0, ""),
+            ("hue", "inspector.color.hue", -180.0, 180.0, 1.0, "°"),
+            ("shadows", "inspector.color.shadows", -1.0, 1.0, 0.05, ""),
+            ("highlights", "inspector.color.highlights", -1.0, 1.0, 0.05, ""),
         )
         self.color_field_spins: dict[str, QDoubleSpinBox] = {}
-        for name, label, minimum, maximum, step, suffix in specs:
+        self._color_captions: dict[str, QLabel] = {}       # champ -> libellé de sa ligne (même largeur pour tous : ils passent à la ligne ensemble)
+        self._color_field_keys: dict[str, str] = {}        # champ -> clé i18n du libellé (relu à chaque langue)
+        for name, label_key, minimum, maximum, step, suffix in specs:
+            label = translate(label_key)
             spin = QDoubleSpinBox()
             spin.setRange(minimum, maximum)
             spin.setDecimals(2)
@@ -76,7 +83,14 @@ class ColorMixin:
                 lambda value, field=name: self._on_color_field_changed(field, value)
             )
             self.color_field_spins[name] = spin
-            form.addRow(label, spin)
+            self._color_field_keys[name] = label_key
+            field, line = field_with_keyframes(spin)
+            caption = QLabel(label)
+            self._color_captions[name] = caption
+            form.addRow(caption, field)
+            self._add_color_keyframe_row(line, name, label)        # ‹ ◆ › à droite de chaque réglage animable (ADR-0008, étape 8)
+        self._color_form = form
+        self._equalize_color_captions()
         root.addLayout(form)
 
         # Courbes, préréglages et LUT 3D : réglages avancés (niveau d'usage), réunis dans un conteneur créé ici.
@@ -85,7 +99,7 @@ class ColorMixin:
         advanced = self.color_advanced_gate.layout()
         advanced.setSpacing(Spacing.sm)
         curves_title = QLabel(translate("inspector.color.curves"))
-        curves_title.setStyleSheet(label_style(11, "muted", 700))
+        curves_title.setStyleSheet(label_style(Typography.caption, "muted", 700))
         advanced.addWidget(curves_title)
         self.color_curve_channel = make_shrinkable(QComboBox())
         self.color_curve_channel.addItem(translate("inspector.color.channel_master"), "master")
@@ -106,13 +120,14 @@ class ColorMixin:
         advanced.addWidget(self.color_curve_reset_button)
 
         preset_title = QLabel(translate("inspector.color.presets"))
-        preset_title.setStyleSheet(label_style(11, "muted", 700))
+        preset_title.setStyleSheet(label_style(Typography.caption, "muted", 700))
         advanced.addWidget(preset_title)
         preset_row = QWidget()
         preset_layout = QHBoxLayout(preset_row)
         preset_layout.setContentsMargins(0, 0, 0, 0)
         preset_layout.setSpacing(Spacing.xs)
         self.color_preset_combo = make_shrinkable(QComboBox())
+        self.color_preset_combo.setMinimumWidth(72)      # le bouton « Appliquer » garde son libellé entier : la liste cède la place
         self._refresh_color_presets()
         self.color_preset_apply_button = self._make_action_button(
             None, translate("tracking.apply"), translate("inspector.color.apply_tip")
@@ -128,11 +143,11 @@ class ColorMixin:
         advanced.addWidget(self.color_preset_save_button)
 
         lut_title = QLabel("LUT 3D (.cube)")
-        lut_title.setStyleSheet(label_style(11, "muted", 700))
+        lut_title.setStyleSheet(label_style(Typography.caption, "muted", 700))
         advanced.addWidget(lut_title)
         self.color_lut_label = QLabel(translate("inspector.color.no_lut"))
         self.color_lut_label.setWordWrap(True)
-        self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
+        self.color_lut_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         advanced.addWidget(self.color_lut_label)
         lut_row = QWidget()
         lut_layout = FlowLayout(lut_row, spacing=Spacing.xs)
@@ -183,9 +198,13 @@ class ColorMixin:
         self._color_node_id = node_id
         self.update_color_grade_from_clip(self._color_value)
 
-    def update_color_grade_from_clip(self, grade: object) -> None:
-        """Affiche l'étalonnage d'un clip : son ``ColorGrade``, ou le nœud courant de son graphe de nœuds."""
+    def update_color_grade_from_clip(self, grade: object, keyframes: list | None = None) -> None:
+        """Affiche l'étalonnage d'un clip : son ``ColorGrade``, ou le nœud courant de son graphe de nœuds.
+
+        ``keyframes`` : images clés ``color.*`` du clip (ADR-0008, étape 8) ; ``None`` garde celles déjà connues."""
         self._color_value = grade
+        if keyframes is not None:
+            self._current_grade_keyframes = list(keyframes)
         graph = as_graph(grade)
         node = graph.node_or_first(self._color_node_id)
         self._current_color_grade = node.grade
@@ -207,18 +226,19 @@ class ColorMixin:
             lut = self._current_color_grade.lut
             if lut is None:
                 self.color_lut_label.setText(translate("inspector.color.no_lut"))
-                self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
+                self.color_lut_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
                 self.color_lut_remove_button.setEnabled(False)
             elif lut.missing:
                 self.color_lut_label.setText(translate("inspector.color.lut_missing", title=lut.title, path=lut.path))
-                self.color_lut_label.setStyleSheet(label_style(11, "danger", 600))
+                self.color_lut_label.setStyleSheet(label_style(Typography.caption, "danger", 600))
                 self.color_lut_remove_button.setEnabled(True)
             else:
                 self.color_lut_label.setText(f"{lut.title}\n{lut.path}")
-                self.color_lut_label.setStyleSheet(label_style(11, "text", 500))
+                self.color_lut_label.setStyleSheet(label_style(Typography.caption, "text", 500))
                 self.color_lut_remove_button.setEnabled(True)
         finally:
             self._allow_color_signals = True
+        self._sync_color_keyframes()          # curseurs animés, losanges et avis de nœuds
 
     def _sync_color_curve_editor(self) -> None:
         channel = str(self.color_curve_channel.currentData() or "master")
@@ -267,6 +287,7 @@ class ColorMixin:
             self, translate("dialog.lut.import_title"), "", "LUT 3D (*.cube)"
         )
         if path:
+            remember_user_path(path)
             self.color_lut_import_requested.emit(self.selected_clip.id, path)
 
     def _request_color_lut_remove(self) -> None:

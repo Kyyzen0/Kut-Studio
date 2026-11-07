@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.autosave import AutosaveCoordinator
+from core.build_flavor import is_store
+from core.security_scope import remember_user_path
 from core.audio_effects_library import AudioEffectPresetStore
 from core.effect_targets import evaluated_effects
 from core.effects_library import UserPresetStore
@@ -56,8 +58,10 @@ from ui.design_system import Radius, Typography, Weights
 from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
 from ui.preview_panel import PreviewPanel
+from ui.screen_fit import apply_fitted_geometry, cursor_anchor
 from ui.project_panel import ProjectPanel
 from ui.shortcut_manager import ShortcutManager
+from ui.scene3d_actions import handle_scene3d_drop
 from ui.scopes_panel import ScopesPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
@@ -65,9 +69,12 @@ from ui.viewer_host import ViewerHostSplitter
 from ui.export_panel import ExportPanel
 from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
+from ui.main_window_mixins.entitlements import EntitlementsMixin
 from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
 from ui.main_window_mixins.menu_levels import MenuLevelsMixin
+from ui.main_window_mixins.command_palette import CommandPaletteMixin
+from ui.top_bar_fit import FitSettingsButton
 from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
@@ -88,6 +95,7 @@ from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
+from ui.main_window_mixins.color_animation import ColorAnimationMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.color_page import ColorPageMixin
 from ui.main_window_mixins.composition_cache import CompositionCacheMixin
@@ -104,7 +112,7 @@ from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
-from ui.main_window_mixins.updates import UpdatesMixin
+from ui.main_window_mixins.update_flavor import UpdatesMixin
 from ui.main_window_mixins.social import SocialMixin
 from ui.main_window_mixins.social_audio import SocialAudioMixin
 from ui.main_window_mixins.templates import TemplatesMixin
@@ -164,6 +172,7 @@ class MainWindow(
     ColorPageMixin,
     CompositionPageMixin,
     CompositionCacheMixin,
+    ColorAnimationMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -186,7 +195,9 @@ class MainWindow(
     PreferencesMixin,
     UsageLevelMixin,
     MenuLevelsMixin,
+    CommandPaletteMixin,
     HistoryMixin,
+    EntitlementsMixin,
     QMainWindow,
 ):
     # Niveau d'usage changé (ADR-0006 étape 4) : valeur de chaîne du niveau. Suivi par la bascule (Préférences, menu Fenêtre, barre du haut).
@@ -195,8 +206,11 @@ class MainWindow(
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kut-Studio")
-        self.setMinimumSize(1180, 720)
-        self.resize(1480, 920)
+        # Minimum de base : la hauteur réelle est relevée par le gestionnaire de panneaux selon la page (voir
+        # ``WorkspaceManager._sync_window_minimum_height``). Taille d'origine bornée à la zone utilisable de l'écran :
+        # 1480 x 920 dépassait un MacBook Air 13" (le Dock passait par-dessus la timeline).
+        self.setMinimumSize(1100, 560)
+        apply_fitted_geometry(self, (0, 0, 1480, 920), center=True, anchor=cursor_anchor())   # écran du curseur, sinon principal
         self.subtitle_file: str | None = None
         self.active_subtitle_clip = None
         # ``Project`` est désormais l'unique source de vérité de la timeline.
@@ -491,6 +505,8 @@ class MainWindow(
         self.properties_panel.effect_keyframe_set.connect(self.on_effect_keyframe_set)        # paramètres d'effets animables (ADR-0008)
         self.properties_panel.effect_keyframe_removed.connect(self.on_effect_keyframe_removed)
         self.properties_panel.effect_animation_cleared.connect(self.on_effect_animation_cleared)
+        self.properties_panel.color_keys_toggled.connect(self.on_color_keys_toggled)            # étalonnage animable (ADR-0008, étape 8)
+        self.properties_panel.color_animation_cleared.connect(self.on_color_animation_cleared)
         self.timeline_panel.keyframes_selected.connect(self.on_timeline_keyframes_selected)
         self.timeline_panel.keyframes_move_requested.connect(self.on_keyframes_move_requested)
         # Tâche 18 : time remapping
@@ -688,6 +704,8 @@ class MainWindow(
         # Page Composition : nœuds du clip de composition choisi.
         self._init_composition_page()
         self.workspace = WorkspaceManager(self)
+        # Un niveau d'usage montre ou cache des boutons du rail : son minimum change, celui de la fenêtre le suit.
+        self.usage_level_changed.connect(lambda _level: QTimer.singleShot(0, self.workspace, self.workspace._sync_window_minimum_height))
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         # Le dock « viewer » contient le viewer **et** le panneau de
         # scopes dans un splitter vertical (tâche 31) : c'est ce
@@ -700,12 +718,16 @@ class MainWindow(
         self.workspace.register(PanelId.COLOR, self.color_panel)
         self.workspace.register(PanelId.CLIPS, self.clip_strip)
         self.workspace.register(PanelId.COMPOSITION, self.composition_panel)
+        self._montage_mixer_open = False             # Montage : le mixeur démarre replié en barre de 40 px (choix de session)
+        self.mixer_panel.collapse_toggled.connect(self._on_mixer_fold_toggled)
         self._connect_audio_controls()
         self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
         # Le menu « Fenêtre » ne peut être rempli qu'une fois le
         # gestionnaire d'espace de travail construit.
         self._build_workspace_menu(self.window_menu)
+        self._apply_page_density(self.workspace.page)        # la page de départ (Montage) a sa hauteur de piste dès l'ouverture
+        self._apply_mixer_fold()
 
         self.editor_page = QWidget()
         # Le rail vertical est global et reste visible même si tous les
@@ -764,6 +786,8 @@ class MainWindow(
         self.shortcuts.changed.connect(self._refresh_shortcut_tooltips)
         self._refresh_shortcut_tooltips()
         self._install_menu_levels()         # niveau d'usage : entrées des menus, rail, barre et menus contextuels
+        self._install_command_palette()     # « Rechercher une fonction » : lit les menus à l'ouverture
+        self._init_entitlements()           # droits d'usage (Store) : lecture seule, export bloqué ; sans effet hors Store
         if os.environ.get("KUT_STUDIO_DEBUG") == "1":
             self.diagnostics_action.setChecked(True)
 
@@ -777,6 +801,7 @@ class MainWindow(
         """
         self._sync_playhead_labels()
         self._sync_workspace_menu()
+        self._sync_strip_timeline_button()
 
     # ------------------------------------------------------------------
     # Rail latéral : navigation principale par section
@@ -843,7 +868,7 @@ class MainWindow(
         super().showEvent(event)
         workspace = getattr(self, "workspace", None)
         if workspace is not None:
-            QTimer.singleShot(0, workspace.balance_vertical_split)
+            QTimer.singleShot(0, workspace, workspace.balance_vertical_split)
 
     # -- Mixeur : pistes ------------------------------------------------
 
@@ -1063,7 +1088,9 @@ class MainWindow(
         )
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(Spacing.md, 0, Spacing.md, 0)
-        layout.setSpacing(Spacing.sm)
+        # 6 px (et non 8) entre les éléments : avec les boutons de 28 à 34 px et le texte de 14 px, la barre est pleine à 1180 px sous
+        # les polices de repli de Linux (DejaVu Sans, plus large) ; ces ~24 px gardent la puce du niveau visible sans réduire le texte.
+        layout.setSpacing(6)
 
         # --- Identité ---------------------------------------------------
         logo_box = QWidget()
@@ -1132,6 +1159,7 @@ class MainWindow(
         saved_layout.addWidget(self.saved_indicator)
         layout.addWidget(sequence_box)
         layout.addWidget(saved_box)
+        layout.addWidget(self._build_palette_button())      # « Rechercher… » (palette de commandes)
         layout.addStretch(1)
         # --- Pages (Montage | Couleur), au centre ---------------------
         layout.addWidget(self._build_page_switcher())
@@ -1141,16 +1169,16 @@ class MainWindow(
         self.undo_button = IconButton(
             icon=IconName.RESET,
             tooltip=i18n.translate("action.undo"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         self.redo_button = IconButton(
             icon=IconName.RESET,
             tooltip=i18n.translate("action.redo"),
-            size=Sizes.icon_button_sm,
+            size=Sizes.control_min,
         )
         from PySide6.QtGui import QTransform, QIcon
         from PySide6.QtCore import Qt as QtCore
-        base_pixmap = make_icon(IconName.RESET, size=Sizes.icon_button_sm - 4).pixmap(64, 64)
+        base_pixmap = make_icon(IconName.RESET, size=Sizes.control_min - 4).pixmap(64, 64)
         self.redo_button.setIcon(
             QIcon(base_pixmap.transformed(
                 # Miroir horizontal : une rotation de 180° garderait le
@@ -1173,7 +1201,9 @@ class MainWindow(
         layout_btn.clicked.connect(self.workspace.reset_layout)
         layout.addWidget(layout_btn)
 
-        layout.addWidget(self._build_update_notice())
+        update_notice = self._build_update_notice()
+        if update_notice is not None:               # absent de la version Store (aucune recherche de mises à jour)
+            layout.addWidget(update_notice)
 
         layout.addWidget(self._build_usage_level_chip())
 
@@ -1204,6 +1234,8 @@ class MainWindow(
         self.export_button.clicked.connect(self.show_export)
         layout.addWidget(self.export_button)
         self._usage_level_fit = _FitLevelChip(bar, self.usage_level_chip)
+        self._fit_palette_button(bar)
+        self._settings_fit = FitSettingsButton(bar, settings_btn, [self.usage_level_chip, self.palette_button])
 
         self._update_top_bar()
         return bar
@@ -1634,6 +1666,8 @@ class MainWindow(
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
         preferences_action = self._command_action("preferences", "action.preferences")
+        # Palette de commandes : une action de fenêtre sans entrée de menu (le bouton de la barre du haut l'ouvre aussi).
+        self.addAction(self._command_action("command_palette", "shortcuts.command.command_palette"))
         # On insère l'entrée dans la barre ``Fenêtre`` pour rester
         # accessible sans modifier l'ordre établi.
         self._build_usage_level_menu(window_menu)
@@ -1646,10 +1680,11 @@ class MainWindow(
         # Aide : mises à jour et version installée.
         help_menu = QMenu(i18n.translate("menu.help"), self)
         help_menu.setObjectName("help_menu")
-        self.check_updates_action = self._labelled_action("update.menu.check")
-        self.check_updates_action.triggered.connect(lambda _checked=False: self.check_for_updates())
-        help_menu.addAction(self.check_updates_action)
-        help_menu.addSeparator()
+        if not is_store():                              # version Store : le Store est le seul canal de mise à jour
+            self.check_updates_action = self._labelled_action("update.menu.check")
+            self.check_updates_action.triggered.connect(lambda _checked=False: self.check_for_updates())
+            help_menu.addAction(self.check_updates_action)
+            help_menu.addSeparator()
         self.about_action = self._labelled_action("update.menu.about")
         self.about_action.triggered.connect(lambda _checked=False: self.show_about())
         help_menu.addAction(self.about_action)
@@ -1900,7 +1935,9 @@ class MainWindow(
             # Effets animés (ADR-0008) : paramètres évalués à l'instant local ; sans image clé, les effets du clip tels quels.
             self.preview_panel.set_effects(evaluated_effects(
                 clip_obj.effects, clip_obj.animation, float(self.playhead_seconds) - float(clip_obj.timeline_start)))
-            self.preview_panel.set_color_grade(self._monitor_color_grade(clip_obj))
+            # Étalonnage animé (ADR-0008, étape 7) : celui de l'export à cet instant ; sans image clé, la valeur de base.
+            self.preview_panel.set_color_grade(self._monitor_color_grade(
+                clip_obj, float(self.playhead_seconds) - float(clip_obj.timeline_start)))
             self.preview_panel.set_source_color(*self._monitor_color_matrix(top_clip, clip_obj))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
@@ -2026,6 +2063,7 @@ class MainWindow(
         if self.timeline_timer.isActive():
             self.timeline_timer.stop()
         self.preview_panel.player.pause()
+        self._settle_animated_grade()                       # l'étalonnage animé du moniteur se pose sur l'instant d'arrêt
         self._sync_live_mix()                               # la pause ne resynchronise pas le moniteur : le son s'arrête ici
         self.timeline_panel.setPlayState(False)
         self._set_preview_play_icon(False)
@@ -2232,6 +2270,7 @@ class MainWindow(
             "zoom_fit": lambda: timeline().fit_timeline(),
             "toggle_scopes": self.toggle_scopes_visible,
             "preferences": self.show_preferences,
+            "command_palette": self.toggle_command_palette,
             **self._page_shortcut_handlers(),
             **self._composition_shortcut_handlers(),
             # Audio
@@ -2308,9 +2347,12 @@ class MainWindow(
             event.accept()
 
     def dropEvent(self, event):
+        if self._edit_refused_ui():                  # lecture seule (Store) : le dépôt importerait un média
+            return
         for url in event.mimeData().urls():
             local_path = url.toLocalFile()
-            if local_path:
+            remember_user_path(local_path)           # Store : le dépôt donne un accès, le signet le garde (ADR-0013 étape 5)
+            if local_path and not handle_scene3d_drop(self, local_path, event.position().toPoint()):   # .kut3d : clip 3D
                 self.import_video_to_project(local_path)
 
     # ------------------------------------------------------------------
@@ -2373,6 +2415,7 @@ class MainWindow(
         self._retranslate_update_notice()
         self._retranslate_page_switcher()
         self._retranslate_usage_level()
+        self._retranslate_command_palette()
 
     @staticmethod
     def _translate_menu_title(object_name: str | None) -> str:

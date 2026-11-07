@@ -148,13 +148,14 @@ def test_a_corrupt_tracking_cache_entry_is_logged_and_ignored(journal, tmp_path,
 
 def test_an_unreadable_hardware_cache_is_logged_but_a_missing_one_is_not(journal, tmp_path):
     from core.hardware_cache import CapabilityService
+    from core.hardware_encoding import SCHEMA_VERSION
 
     absent = CapabilityService(cache_path=tmp_path / "absent.json", validate=False)
     assert absent._read_disk() is None
     assert "Cache des capacités" not in journal()                              # premier démarrage : rien d'anormal
 
     broken = tmp_path / "broken.json"
-    broken.write_text('{"schema": 2, "encoders": 5}', encoding="utf-8")
+    broken.write_text('{"schema": %d, "encoders": 5}' % SCHEMA_VERSION, encoding="utf-8")
     assert CapabilityService(cache_path=broken, validate=False)._read_disk() is None
     assert "Cache des capacités mal formé" in journal()
 

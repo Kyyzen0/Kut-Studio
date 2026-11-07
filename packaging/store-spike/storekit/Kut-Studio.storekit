@@ -1,0 +1,58 @@
+{
+  "identifier" : "A1B2C3D4",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "6700000001",
+      "localizations" : [ { "description" : "Kut-Studio, licence a vie", "displayName" : "Kut-Studio a vie", "locale" : "fr" } ],
+      "productID" : "com.kutstudio.app.lifetime",
+      "referenceName" : "Achat unique",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : { "_failTransactionsEnabled" : false, "_storeKitErrors" : [] },
+  "subscriptionGroups" : [
+    {
+      "id" : "21000001",
+      "localizations" : [],
+      "name" : "Kut-Studio Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6700000002",
+          "introductoryOffer" : null,
+          "localizations" : [ { "description" : "Abonnement mensuel", "displayName" : "Mensuel", "locale" : "fr" } ],
+          "productID" : "com.kutstudio.app.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Mensuel",
+          "subscriptionGroupID" : "21000001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "39.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6700000003",
+          "introductoryOffer" : null,
+          "localizations" : [ { "description" : "Abonnement annuel", "displayName" : "Annuel", "locale" : "fr" } ],
+          "productID" : "com.kutstudio.app.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Annuel",
+          "subscriptionGroupID" : "21000001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 4, "minor" : 0 }
+}

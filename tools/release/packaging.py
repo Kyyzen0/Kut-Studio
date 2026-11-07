@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tarfile
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from core.app_version import APP_NAME, APP_VERSION, GITHUB_REPOSITORY
 from core.release_assets import (
     CHECKSUMS_FILE,
     RELEASE_TARGETS,
+    SIGNATURE_FILE,
     OperatingSystem,
     Target,
     asset_name,
@@ -29,6 +31,8 @@ from core.release_assets import (
     parse_checksums,
     sha256_file,
 )
+from core.update_keys import UPDATE_PUBLIC_KEYS, PublicKey
+from core.update_signature import SignatureStatus, verify_release_signature
 from core.versioning import Version
 
 SIGNING_STATUSES = ("notarized", "signed", "adhoc")
@@ -121,18 +125,21 @@ def verify_release_directory(
     directory: Path,
     version: str,
     targets: tuple[Target, ...] = RELEASE_TARGETS,
+    keys: Sequence[PublicKey] | None = None,
 ) -> list[str]:
     """Problèmes qui interdisent de publier (liste vide : conforme).
 
     Exactement un paquet par cible, à la bonne version ; ``SHA256SUMS.txt`` présent, lisible, complet et exact ;
-    aucun fichier étranger (il serait publié sans empreinte).
+    aucun fichier étranger (il serait publié sans empreinte). ``SHA256SUMS.txt.sig``, s'il existe, doit être une
+    signature valide de ``SHA256SUMS.txt`` pour les clés de ``core/update_keys.py`` (une signature fausse ou périmée
+    est un défaut de release : l'application la refuserait).
     """
     problems: list[str] = []
     expected_version = Version.parse(version)
     files = {path.name: path for path in directory.iterdir() if path.is_file()}
     found: dict[Target, str] = {}
     for name in sorted(files):
-        if name == CHECKSUMS_FILE:
+        if name in (CHECKSUMS_FILE, SIGNATURE_FILE):
             continue
         parsed = parse_asset_name(name)
         if parsed is None:
@@ -166,6 +173,12 @@ def verify_release_directory(
     for name in entries:
         if name not in found.values():
             problems.append(f"{CHECKSUMS_FILE} cite un fichier absent : {name}")
+    signature = files.get(SIGNATURE_FILE)
+    if signature is not None:
+        result = verify_release_signature(checksums.read_bytes(), signature.read_bytes(),
+                                          UPDATE_PUBLIC_KEYS if keys is None else keys)
+        if result.status is not SignatureStatus.VERIFIED:
+            problems.append(f"{SIGNATURE_FILE} invalide : {result.detail}")
     return problems
 
 
@@ -187,11 +200,33 @@ _MACOS_STATUS = {
 }
 
 
+_UPDATE_SIGNATURE_STATUS = {
+    "signed": (
+        "**Mises à jour automatiques** : cette version est signée (Ed25519, clé {key}) ; l'application en vérifie la "
+        "signature avant toute installation.",
+        "Automatic updates: this version is signed (Ed25519, key {key}); the app verifies the signature before any "
+        "installation.",
+    ),
+    "unsigned": (
+        "**Mises à jour automatiques indisponibles pour cette version** : elle n'est pas signée. L'installation reste "
+        "assistée (vous remplacez l'application vous-même).",
+        "Automatic updates unavailable for this version: it is not signed. Installation stays assisted (you replace "
+        "the app yourself).",
+    ),
+}
+
+
 def release_notes(version: str, macos_signing: str, generated: str = "",
-                  repository: str = GITHUB_REPOSITORY) -> str:
-    """Notes de release : paquets, état de signature (bilingue), vérification, puis les notes générées par GitHub."""
+                  repository: str = GITHUB_REPOSITORY, update_signature: str | None = None,
+                  update_key_id: str = "") -> str:
+    """Notes de release : paquets, état de signature (bilingue), vérification, puis les notes générées par GitHub.
+
+    ``update_signature`` (``signed`` / ``unsigned``) ajoute l'état de la signature des mises à jour ; ``None`` l'omet.
+    """
     if macos_signing not in _MACOS_STATUS:
         raise ReleaseError(f"état de signature inconnu : {macos_signing!r} (attendu : {', '.join(SIGNING_STATUSES)})")
+    if update_signature is not None and update_signature not in _UPDATE_SIGNATURE_STATUS:
+        raise ReleaseError(f"état de signature des mises à jour inconnu : {update_signature!r}")
     rows = {
         "macos-arm64": "macOS · Apple Silicon (arm64)",
         "windows-x64": "Windows · x64",
@@ -214,6 +249,7 @@ def release_notes(version: str, macos_signing: str, generated: str = "",
         "**Windows** : non signé (Authenticode), SmartScreen peut afficher « Éditeur inconnu ».  ",
         "_Not signed (Authenticode); SmartScreen may show “Unknown publisher”._",
         "",
+        *_update_signature_lines(update_signature, update_key_id),
         f"**Vérifier / Verify** : `shasum -a 256 -c {CHECKSUMS_FILE} --ignore-missing` (macOS, Linux) · "
         "`Get-FileHash <fichier> -Algorithm SHA256` (Windows). L'empreinte prouve que le fichier est intact, pas "
         "qui l'a publié. _The checksum proves the file is intact, not who published it._",
@@ -227,6 +263,13 @@ def release_notes(version: str, macos_signing: str, generated: str = "",
     if generated.strip():
         text += "\n" + generated.strip() + "\n"
     return text
+
+
+def _update_signature_lines(status: str | None, key_id: str) -> list[str]:
+    if status is None:
+        return []
+    fr, en = _UPDATE_SIGNATURE_STATUS[status]
+    return [fr.format(key=key_id or "?") + "  ", f"_{en.format(key=key_id or '?')}_", ""]
 
 
 def write_github_output(path: str | os.PathLike[str] | None, values: dict[str, str]) -> None:

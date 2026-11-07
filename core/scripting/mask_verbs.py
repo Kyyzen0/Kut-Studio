@@ -37,6 +37,7 @@ from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import Project
 from ..timeline_operations import find_clip
 from .path_nodes import nodes_to_arrays
+from .resource_limits import require_mask_room
 from .verbs import MAX_TEXT, Kind, Operation, Param, Verb, _CLIP, _editable_clip, _nodes_param, _pick
 
 TRACKING_CROP_ID = "trackcrop"
@@ -184,6 +185,7 @@ def _add_mask(a: Mapping[str, Any]) -> Operation:
         for key in ("points", "handles"):                         # le modèle ne doit rien avoir ramené en silence
             if key in values and getattr(mask, key) != values[key]:
                 raise ValueError("Masque refusé : le modèle aurait modifié les sommets ou les nœuds.")
+        require_mask_room(clip)
         _write(clip, keep_crop_last((*_stack(clip).masks, mask)))
         return mask
 

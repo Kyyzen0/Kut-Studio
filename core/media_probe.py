@@ -43,6 +43,7 @@ from typing import Any
 from .color_matrix import label_from_ffprobe
 from .process_supervisor import supervised_run
 from .project_model import MediaAsset
+from .security_scope import scoped_argument
 from .timecode import SECONDS_PER_DAY, FrameRate, normalize_timecode_text
 from .tool_paths import find_media_tool
 
@@ -58,6 +59,7 @@ class MediaProbeError(Exception):
 # ---------------------------------------------------------------------------
 
 
+@scoped_argument(0)
 def probe_media(path: str) -> MediaAsset:
     """Analyse ``path`` via ``ffprobe`` et retourne un :class:`MediaAsset`.
 
@@ -154,6 +156,7 @@ _COLOR_FAILURES_MAX = 512
 _clock = time.monotonic
 
 
+@scoped_argument(0)
 def probe_color_label(path: str) -> str:
     """Étiquette de matrice du premier flux vidéo de ``path`` (voir :func:`core.color_matrix.label_from_ffprobe`), ``""`` si
     elle ne peut pas être lue (fichier absent, ``ffprobe`` absent ou trop lent, sortie vide ou illisible).
@@ -210,6 +213,7 @@ def probe_color_label(path: str) -> str:
     return failed()
 
 
+@scoped_argument(0)
 def _color_key(path: str) -> tuple[str, int, int] | None:
     if not path or not os.path.isfile(path):
         return None

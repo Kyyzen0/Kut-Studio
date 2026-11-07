@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from core.time_remapping import FlowQuality, FreezeFrameMode, TimeInterpolation
 from ui.adaptive_layout import FlowLayout, allow_shrinking
-from ui.design_system import Spacing
+from ui.design_system import Spacing, Typography
 from ui.i18n import translate
 from ui.theme import label_style
 
@@ -39,7 +39,9 @@ class TimeSection(QWidget):
         self._form.setContentsMargins(0, Spacing.xs, 0, 0)
         self._form.setSpacing(Spacing.xs)
         self._form.setLabelAlignment(Qt.AlignLeft)
-        self._form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        # Étiquette au-dessus de chaque champ : à côté, les boutons « Point de vitesse » / « Supprimer la courbe » n'avaient que ~117 px
+        # et leur texte était tronqué dans une colonne étroite.
+        self._form.setRowWrapPolicy(QFormLayout.WrapAllRows)
 
         self.interpolation_combo = QComboBox()
         for mode in TimeInterpolation:
@@ -63,7 +65,7 @@ class TimeSection(QWidget):
         audio_layout.addWidget(self.audio_check)
 
         self.curve_label = QLabel()
-        self.curve_label.setStyleSheet(label_style(11, "muted", 500))
+        self.curve_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         self.curve_label.setWordWrap(True)
         self.add_point_button = QPushButton()
         self.add_point_button.clicked.connect(lambda: self._emit("add_point", None))

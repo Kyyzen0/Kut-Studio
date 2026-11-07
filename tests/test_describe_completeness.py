@@ -118,8 +118,8 @@ def test_a_new_model_field_is_refused_until_decided(monkeypatch):
     comparison = debt_tool.compare_fields(_debt())
     assert any("colour" in problem for problem in comparison.bad_tables)          # décrit mais inexistant dans le modèle
     monkeypatch.undo()
-    trimmed = {name: section for name, section in _debt().items() if name != "Clip.text_style"}
-    assert debt_tool.compare_fields(trimmed).undecided == ["Clip.text_style"]
+    monkeypatch.delitem(DESCRIBED["Marker"], "name")                                  # un champ que plus personne ne décide
+    assert debt_tool.compare_fields(_debt()).undecided == ["Marker.name"]
 
 
 def test_a_described_field_must_leave_the_debt():
@@ -131,10 +131,14 @@ def test_a_described_field_must_leave_the_debt():
 
 def test_a_stale_entry_and_a_bad_section_are_refused():
     assert debt_tool.compare_fields(_debt() | {"Clip.renamed_away": "text_style"}).vanished == ["Clip.renamed_away"]
-    assert debt_tool.compare_fields(_debt() | {"Clip.text_style": "n_importe_quoi"}).bad_section == ["Clip.text_style"]
+    assert debt_tool.compare_fields(_debt() | {"Clip.label": "n_importe_quoi"}).bad_section == ["Clip.label"]    # plus aucune section permise
+
+
+def test_the_debt_is_empty_after_part_c():
+    """La partie C a décrit (ou exclu, raison écrite) les 52 derniers champs : plus aucune section n'est « non décrite »."""
+    assert _debt() == {} and NOT_DESCRIBED_SECTIONS == ()
 
 
 def test_a_field_cannot_be_both_described_and_excluded(monkeypatch):
     monkeypatch.setitem(EXCLUDED["Clip"], "label", "raison écrite assez longue pour passer")
     assert any("à la fois décrit et exclu" in problem for problem in debt_tool.compare_fields(_debt()).bad_tables)
-

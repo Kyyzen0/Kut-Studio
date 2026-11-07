@@ -44,7 +44,9 @@ from .film_render import (
     shot_frame_count,
     short,
 )
+from .entitlements import require_edit, require_export
 from .film_scene import ScenePlacement, write_scene
+from .video_encoders import prime_capabilities
 
 if TYPE_CHECKING:
     from .project_model import MediaAsset, Project
@@ -158,6 +160,7 @@ class Film:
         supprimées après l'encodage (sauf ``keep_frames``). Un nom déjà pris (dans ce film ou sur le disque) est refusé sans
         ``overwrite=True``. En cas d'erreur ou d'interruption, aucun fichier partiel ne reste.
         """
+        require_edit()                                          # lecture seule (Store) : un plan rendu est un média écrit dans le projet
         label = check_name(name)
         count = shot_frame_count(duration, self.fps)
         samples = check_samples(samples)
@@ -259,6 +262,50 @@ class Film:
         path = write_scene(scene, self.assets_dir, label, overwrite=overwrite)
         self._scenes.append(ScenePlacement(label, path, at, length, number))
         return _scene_clip_id(label, len(self._scenes))
+
+    # --- formes de base --------------------------------------------------------------------------------------------------
+
+    def primitive(
+        self, kind: Any, *, material: Any = None, position: Any = (0.0, 0.0, 0.0), rotation_deg: Any = (0.0, 0.0, 0.0),
+        scale: Any = 1.0, name: str = "", **params: Any,
+    ) -> Any:
+        """Une forme de base posée, à mettre dans les ``instances`` d'une ``kut3d.Scene`` : ``film.primitive("sphere", radius=1.0, position=(0, 1, 0))``.
+
+        ``kind`` : ``cube``, ``sphere``, ``plane``, ``cylinder``, ``cone`` ou ``torus`` (ou une description ``kut3d.Sphere(...)``) ; les dimensions
+        et la tessellation sont des paramètres nommés (bornes : ``docs/kut3d-scene.md``). Une scène qui ne contient que des formes se pose avec
+        :meth:`place_scene` sans aucun fichier de modèle. Ne dépend pas du film (aucun état) : c'est le raccourci de ``kut3d.primitive_instance``.
+        """
+        import kut3d
+
+        try:
+            return kut3d.primitive_instance(
+                kind, material=material, position=position, rotation_deg=rotation_deg, scale=scale, name=name, **params,
+            )
+        except ValueError as error:
+            raise FilmError(f"Forme de base refusée : {short(str(error), 300)}") from error
+
+    def text3d(
+        self, text: Any, *, font: Any = "Anton", size: Any = 1.0, depth: Any = 0.2, bevel: Any = 0.0, align: Any = "center",
+        material: Any = None, position: Any = (0.0, 0.0, 0.0), rotation_deg: Any = (0.0, 0.0, 0.0), scale: Any = 1.0, name: str = "",
+    ) -> Any:
+        """Un texte extrudé en 3D, posé : ``film.text3d("Kut", size=1.5, depth=0.3, material=or)``, à mettre dans les ``instances`` d'une ``kut3d.Scene``.
+
+        Décrit par ses paramètres (aucun fichier de modèle) ; ``place_scene`` l'écrit dans un ``.kut3d`` de version 3. ``font`` : ``Anton`` (défaut) ou
+        ``Saira ExtraCondensed`` (livrées, même résultat sur toutes les machines) ou une famille installée (résultat propre à la machine, refusée si
+        absente). ``size`` = hauteur de l'em, ``depth`` = épaisseur centrée sur z = 0, ``bevel`` = chanfrein (0 = aucun ; au plus 1 % de la taille et la
+        moitié de la profondeur), ``align`` = ``left`` / ``center`` / ``right`` par rapport à x = 0. Latin, grec et cyrillique, 40 caractères au plus,
+        ``\\n`` pour changer de ligne ; emoji, idéogrammes et écritures à mise en forme complexe sont refusés. Bornes : ``docs/kut3d-scene.md``.
+        Le maillage est généré tout de suite (une police s'ouvre : l'application Qt doit exister ou pouvoir être créée dans le fil principal).
+        """
+        import kut3d
+
+        try:
+            return kut3d.primitive_instance(
+                "text", material=material, position=position, rotation_deg=rotation_deg, scale=scale, name=name,
+                text=text, font=font, size=size, depth=depth, bevel=bevel, align=align,
+            )
+        except ValueError as error:
+            raise FilmError(f"Texte 3D refusé : {short(str(error), 300)}") from error
 
     # --- audio -----------------------------------------------------------------------------------------------------------
 
@@ -393,6 +440,7 @@ class Film:
             return output
         try:
             self.assets_dir.mkdir(parents=True, exist_ok=True)
+            prime_capabilities()
             make_background_video(spec, self.size, self.fps, count, output)
         except OSError as error:
             raise FilmError(f"Écriture impossible : {short(str(error), 200)}") from error
@@ -403,6 +451,7 @@ class Film:
         """Écrit le ``.kut`` (le format ordinaire du moment) et retourne son chemin."""
         from .project_io import save_project
 
+        require_edit()                                          # lecture seule (Store, ADR-0013 étape 12)
         project = self.project()
         try:
             save_project(project, str(self.path))
@@ -420,6 +469,7 @@ class Film:
         from .export_runner import ExportStatus, run_export
         from .render_plan import build_render_plan
 
+        require_export()                                        # avant tout travail ; ``run_export`` garde aussi, en dernier recours
         text = check_path_text(output, "output")
         target = Path(text).expanduser()
         if preset is None:
@@ -453,6 +503,7 @@ class Film:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as error:
             raise FilmError(f"Impossible de créer le dossier de sortie : {short(str(error), 200)}") from error
+        prime_capabilities()           # hors interface : libx264 absent (construction LGPL) doit être connu avant de choisir l'encodeur
         request = ExportRequest(render_plan=plan, output_path=str(target), format=export_format, preset=export_preset, fps=fps)
         result = run_export(request)
         if result.status is not ExportStatus.OK:

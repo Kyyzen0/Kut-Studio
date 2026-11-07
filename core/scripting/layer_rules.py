@@ -23,6 +23,8 @@ from ..graphics import GraphicOverlay, GraphicType
 from ..mograph_layers import layer_clips
 from ..mograph_scene import box_corners
 from ..project_model import Clip, Project
+from . import resource_limits
+from .resource_limits import require_media_room, require_room_in, total_clips
 
 MAX_LAYERS_PER_OPERATION = 200
 """Calques cités par une seule opération (groupe, suppression, duplication)."""
@@ -53,11 +55,24 @@ def total_layers(project: Project) -> int:
     )
 
 
+def layers_in(sequence: Any) -> int:
+    """Les calques graphiques d'UNE séquence (comme :func:`total_layers`, sur une seule)."""
+    return sum(1 for track in sequence.tracks if track.type == "graphics" for clip in track.clips if isinstance(clip.graphic, GraphicOverlay))
+
+
 def require_room(project: Project, adding: int) -> None:
     """Refuse, AVANT toute création, ``adding`` calques de plus si le projet (toutes séquences) dépasserait :data:`MAX_LAYERS_IN_PROJECT`."""
     count = total_layers(project)
     if count + adding > MAX_LAYERS_IN_PROJECT:
         raise ValueError(f"Le projet compte déjà {count} calques : {adding} de plus dépasseraient la limite de {MAX_LAYERS_IN_PROJECT}.")
+
+
+def require_layers_room(project: Project, layers: int, *, media: int | None = None) -> None:
+    """Refuse, AVANT toute création, ``layers`` calques de plus : ils comptent aussi comme clips (le plafond de clips peut être atteint avec peu de
+    calques) et chacun crée un média interne (``media`` : le nombre exact de médias que l'opération ajoute, ``layers`` par défaut)."""
+    require_room(project, layers)
+    require_room_in(total_clips(project), layers, resource_limits.MAX_CLIPS_IN_PROJECT, "clips", "Le projet")
+    require_media_room(project, layers if media is None else media)
 
 
 # --- Verrous ----------------------------------------------------------------------------------------------------------

@@ -16,7 +16,7 @@ from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB
 from core.usage_level import UsageLevel
 from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.icons import IconButton, IconName
 from ui.theme import label_style
 
@@ -69,7 +69,7 @@ class AudioMixin:
                 if which == "in"
                 else translate("audio.fade_out")
             )
-            label.setStyleSheet(label_style(11, "muted", 600))
+            label.setStyleSheet(label_style(Typography.caption, "muted", 600))
             label.setMinimumWidth(84)
             row_layout.addWidget(label)
             spin = QDoubleSpinBox()

@@ -61,11 +61,12 @@ from core.library_organization import (
 )
 from core.usage_level import UsageLevel
 from core.workspace_state import MIN_SIZE, PanelId
-from ui.design_system import DIALOG_MARGINS, Radius, Spacing
+from ui.design_system import DIALOG_MARGINS, Radius, Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.icons import IconName, make_icon
 from ui.keyboard_navigation import set_single_default
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 
 # Identifiants Qt ``UserRole`` utilisés pour mapper les entrées
@@ -205,7 +206,7 @@ class FolderTreeWidget(QWidget):
         self.add_button.setToolTip(translate("dialog.folder.new_title"))
         self.add_button.setCursor(Qt.PointingHandCursor)
         self.add_button.setFocusPolicy(Qt.NoFocus)
-        self.add_button.setFixedSize(20, 20)
+        self.add_button.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         self.add_button.setStyleSheet(
             f"QToolButton#folderAddButton {{ background: transparent;"
             f" border: 1px solid {COLORS['border']};"
@@ -231,7 +232,7 @@ class FolderTreeWidget(QWidget):
             f" outline: 0; }}"
             f"QTreeWidget::item {{ color: {COLORS['muted']};"
             f" padding: 2px 4px; border-radius: 4px;"
-            f" font-size: 11px; }}"
+            f" font-size: {Typography.micro}px; }}"
             f"QTreeWidget::item:hover {{ color: {COLORS['text']};"
             f" background: {COLORS['surface_hover']}; }}"
             f"QTreeWidget::item:selected {{ color: {COLORS['accent']};"
@@ -270,13 +271,13 @@ class FolderTreeWidget(QWidget):
             return
 
         # Entrée « Tous » — affiche l'intégralité des médias.
-        all_item = QTreeWidgetItem([_label_with_count(translate("library.filter.all"), 0)])
+        all_item = retain(QTreeWidgetItem([_label_with_count(translate("library.filter.all"), 0)]))
         all_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_ALL)
         all_item.setData(0, _FOLDER_NAME_ROLE, translate("library.filter.all"))
         self.tree.addTopLevelItem(all_item)
 
         # Entrée « Racine » — médias sans dossier.
-        root_item = QTreeWidgetItem([_label_with_count(translate("library.folder.root"), 0)])
+        root_item = retain(QTreeWidgetItem([_label_with_count(translate("library.folder.root"), 0)]))
         root_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_ROOT)
         root_item.setData(0, _FOLDER_NAME_ROLE, translate("library.folder.root"))
         self.tree.addTopLevelItem(root_item)
@@ -284,9 +285,9 @@ class FolderTreeWidget(QWidget):
         # Entrée « Manquants » — apparaît seulement si le projet a au
         # moins un média sans fichier source.
         if has_missing:
-            missing_item = QTreeWidgetItem(
+            missing_item = retain(QTreeWidgetItem(
                 [_label_with_count(translate("library.filter.missing"), 0)]
-            )
+            ))
             missing_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_MISSING)
             missing_item.setData(0, _FOLDER_NAME_ROLE, translate("library.filter.missing"))
             self.tree.addTopLevelItem(missing_item)
@@ -396,7 +397,7 @@ class FolderTreeWidget(QWidget):
         *,
         count: int,
     ) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([_label_with_count(folder.name, count)])
+        item = retain(QTreeWidgetItem([_label_with_count(folder.name, count)]))
         item.setData(0, _FOLDER_ID_ROLE, folder.id)
         item.setData(0, _FOLDER_KIND_ROLE, self._KIND_FOLDER)
         item.setData(0, _FOLDER_NAME_ROLE, folder.name)
@@ -698,14 +699,14 @@ class FilterChipBar(QWidget):
                 f" color: {COLORS['accent']};"
                 f" border: 1px solid {COLORS['accent']};"
                 f" border-radius: {Radius.pill}px; padding: 2px 10px;"
-                f" font-size: 11px; font-weight: 600; }}"
+                f" font-size: {Typography.micro}px; font-weight: 600; }}"
             )
         return (
             f"QToolButton {{ background: transparent;"
             f" color: {COLORS['muted']};"
             f" border: 1px solid {COLORS['border']};"
             f" border-radius: {Radius.pill}px; padding: 2px 10px;"
-            f" font-size: 11px; font-weight: 600; }}"
+            f" font-size: {Typography.micro}px; font-weight: 600; }}"
             f"QToolButton:hover {{ color: {COLORS['text']};"
             f" background: {COLORS['surface_hover']}; }}"
         )

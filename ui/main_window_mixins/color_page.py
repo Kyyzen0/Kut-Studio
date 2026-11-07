@@ -17,7 +17,8 @@ from core.color_grading import ColorGradingError, ColorGradingService
 from core.color_nodes import MixerKind, as_graph
 from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
-from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES
+from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES, PanelId
+from ui.design_system import Sizes
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
@@ -78,6 +79,13 @@ class ColorPageMixin:
         editor.move_requested.connect(self.on_color_node_move)
         editor.reset_requested.connect(self.on_color_node_reset)
         self.color_panel.wheel_changed.connect(self.on_color_wheel_changed)
+        self.color_panel.wheel_keys_toggled.connect(self.on_color_wheel_keys_toggled)       # losanges des roues (ADR-0008, étape 8)
+        self.color_panel.wheel_keys_navigated.connect(self.on_color_wheel_keys_navigated)
+        self.color_panel.wheel_graph_requested.connect(self.on_color_wheel_graph_requested)
+        self.color_panel.grade_animation_cleared.connect(lambda: self.on_color_animation_cleared(None))
+        self.color_panel.field_changed.connect(self.on_color_quick_field_changed)         # réglages rapides sous les roues
+        self.color_panel.field_keys_toggled.connect(self.on_color_quick_keys_toggled)
+        self.color_panel.field_graph_requested.connect(self.on_color_quick_graph_requested)
         self.color_panel.qualifier_changed.connect(self.on_color_qualifier_changed)
         self.color_panel.highlight_toggled.connect(self.on_color_highlight_toggled)
         self.color_panel.pick_toggled.connect(self.preview_panel.set_pick_mode)
@@ -97,6 +105,8 @@ class ColorPageMixin:
         self.clip_strip.thumbnail_provider = self.timeline_panel.clip_thumbnail
         self.clip_strip.clip_requested.connect(self.timeline_panel.select_clip)
         self.clip_strip.shown.connect(self._refresh_clip_strip)
+        self.clip_strip.shown.connect(self._sync_strip_timeline_button)
+        self.clip_strip.timeline_toggled.connect(self._on_strip_timeline_toggled)
         self.timeline_panel.previews_arrived.connect(self.clip_strip.refresh_thumbnails)
         self.properties_panel.clip_shown.connect(self._refresh_clip_strip)
 
@@ -142,8 +152,14 @@ class ColorPageMixin:
     def switch_page(self, page: str) -> None:
         """Passe à la page ``page`` : sa disposition, l'onglet Couleur et les scopes sur la page Couleur."""
         self._finalize_color_history()
+        # Pistes « normales » de 56 px sur la page Audio (3 visibles) et Composition (2 visibles) et de 60 px sur le Montage (4 visibles),
+        # 48 px ailleurs : la hauteur est celle de la page, le modèle des pistes ne change pas.
+        self._apply_page_density(page)
+        self._viewer_host.set_compact(page == PAGE_AUDIO)
+        self.preview_panel.set_adaptive_transport(page == PAGE_COMPOSITION)       # colonne des nœuds large : la barre de transport s'allège
         if self.workspace.switch_page(page):
             self._sync_workspace_menu()
+        self._apply_mixer_fold()
         for name, button in self.page_buttons.items():
             button.setChecked(name == self.workspace.page)
         rail = self.side_rail
@@ -166,6 +182,28 @@ class ColorPageMixin:
             if self.workspace.page == PAGE_COMPOSITION:
                 self._refresh_composition_panel()
         self._refresh_window_editing()
+
+    def _apply_page_density(self, page: str) -> None:
+        """Hauteur des pistes « normales » (Montage 60 px, Audio et Composition 56 px, ailleurs celle du modèle) et vignettes de la bibliothèque (72 px sur le Montage)."""
+        height = {PAGE_EDIT: Sizes.montage_track_height, PAGE_AUDIO: Sizes.timeline_track_min_height,
+                  PAGE_COMPOSITION: Sizes.timeline_track_min_height}.get(page)
+        self.timeline_panel.set_row_height_override(height)
+        self.project_panel.set_montage_density(page == PAGE_EDIT)
+
+    def _apply_mixer_fold(self) -> None:
+        """Mixeur replié en barre de 40 px sur le Montage (choix de session), déplié et sans bouton de repli ailleurs."""
+        montage = self.workspace.page == PAGE_EDIT
+        mixer = self.mixer_panel
+        before = (mixer.collapsed, mixer.height_cap())
+        mixer.set_collapsible(montage)
+        mixer.set_collapsed(montage and not self._montage_mixer_open)
+        if (mixer.collapsed, mixer.height_cap()) != before:
+            self.workspace.refresh_height_caps(rebalance=False)       # le changement de page rééquilibre déjà
+
+    def _on_mixer_fold_toggled(self, collapsed: bool) -> None:
+        """Clic sur la barre ou le bouton du mixeur : on retient le choix pour la session (jamais dans ``workspace.json``)."""
+        self._montage_mixer_open = not collapsed
+        self.workspace.refresh_height_caps()
 
     def _show_page_scopes(self, color_page: bool) -> None:
         """Scopes affichés sur la page Couleur ; en revenant au Montage, l'état qu'on y avait laissé."""
@@ -213,6 +251,9 @@ class ColorPageMixin:
             return
         locked = bool(getattr(self.properties_panel.selected_clip, "locked", False))
         panel.set_target(graph, graph.node_or_first(self._color_node_id).id, editable=not locked)
+        clip = self._grade_clip(clip_id)
+        if clip is not None:
+            self._refresh_color_animation(clip)                  # losanges et roues évaluées à la tête de lecture (ADR-0008, étape 8)
         panel.set_highlight(self._color_highlight)
         panel.set_compare(self._color_compare is not None)
 
@@ -256,10 +297,18 @@ class ColorPageMixin:
             shown = Compare(shown, self.preview_panel.compare_split_in_layer(self._color_compare))
         return None if shown is getattr(clip, "color_grade", None) else {clip_id: shown}
 
-    def _monitor_color_grade(self, clip):
+    def _monitor_color_grade(self, clip, local_time: float | None = None):
         """Ce que le moniteur montre pour ``clip`` : son étalonnage, ou la sélection du nœud courant quand *Afficher
-        la sélection* est coché pour le clip de la page Couleur (jamais à l'export)."""
+        la sélection* est coché pour le clip de la page Couleur (jamais à l'export).
+
+        ``local_time`` (temps local du clip, secondes) : l'étalonnage est celui que **l'export** applique à cet instant
+        (:func:`core.grade_targets.effective_grade`, images clés ``color.*``, ADR-0008 étape 7). ``None`` (défaut) : le réglage de base,
+        comme avant ; sans image clé, la valeur rendue est **le même objet** que ``clip.color_grade`` dans les deux cas."""
         value = getattr(clip, "color_grade", None)
+        if local_time is not None:
+            from core.grade_targets import effective_grade
+
+            value = effective_grade(clip, local_time)
         panel = getattr(self, "color_panel", None)
         if not self._color_highlight or panel is None or not panel.isVisible():
             return value
@@ -269,6 +318,34 @@ class ColorPageMixin:
         node = graph.node_or_first(self._color_node_id)
         selects = (node.qualifier is not None and node.qualifier.enabled) or bool(node.windows)
         return Highlight(graph, node.id) if selects else value
+
+    def _settle_animated_grade(self) -> None:
+        """À la pause : si un clip visible a un étalonnage animé, le moniteur est resynchronisé **une fois** sur l'instant d'arrêt
+        (la LUT du dernier tic de lecture date d'une image au plus ; à l'arrêt elle est cuite exactement à l'instant courant,
+        ADR-0008 étape 7). Sans étalonnage animé : rien, le chemin est celui d'avant."""
+        from core.grade_targets import has_live_grade_animation
+
+        index = self._ensure_timeline_index()
+        try:
+            active = index.active_at(self.project, float(self.playhead_seconds))
+        except ValueError:
+            return
+        animated = any(
+            has_live_grade_animation(index.clip(item.owner_clip_id)) for item in active if item.track_type == "video"
+        )
+        if animated:
+            self._sync_preview_to_timeline()
+
+    def _on_strip_timeline_toggled(self, shown: bool) -> None:
+        """« Afficher la timeline » de la bande des plans : rouvre ou replie la timeline de la page Couleur (choix de session)."""
+        if self.workspace.is_visible(PanelId.TIMELINE) != shown:
+            self.workspace.set_panel_visible(PanelId.TIMELINE, shown)
+
+    def _sync_strip_timeline_button(self, *_args) -> None:
+        """Le bouton suit l'état réel de la timeline (menu Fenêtre, changement de page) sans rien émettre."""
+        strip = getattr(self, "clip_strip", None)
+        if strip is not None:
+            strip.set_timeline_shown(self.workspace.is_visible(PanelId.TIMELINE))
 
     def _refresh_clip_strip(self, *_args) -> None:
         """Les plans vidéo de la séquence affichée, dans l'ordre du montage, et le plan de l'inspecteur."""
@@ -299,7 +376,7 @@ class ColorPageMixin:
         if self._color_highlight and clip_id is not None:
             self._refresh_color_monitor(clip_id)            # la sélection montrée est celle du nouveau nœud
 
-    def _edit_color_nodes(self, change, label_key: str) -> bool:
+    def _edit_color_nodes(self, change, label_key: str, *, resets_keys: bool = False) -> bool:
         """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour.
         Une fenêtre qui disparaît (elle, ou son nœud) emporte ses images-clés et ses liaisons de tracking, dans la
         même étape (avant qu'elle soit enregistrée)."""
@@ -320,11 +397,13 @@ class ColorPageMixin:
             self._report_edit_refused(exc)
             return False
         forget_windows(clip, before - window_ids(clip.color_grade))
+        removed = self._reset_grade_keys(clip_id) if resets_keys else 0      # même étape d'historique que la remise à zéro
         self.properties_panel.set_color_node(self._color_node_id)
         self._record_history(translate(label_key))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
         self._refresh_color_panel()
+        self._announce_reset_keys(removed)
         return True
 
     def on_color_node_add(self, after_id: str) -> None:
@@ -376,7 +455,7 @@ class ColorPageMixin:
         # Un nœud réinitialisé ne change plus l'image : réglage neutre, ni flou ni netteté (sa sélection, qualifieur et
         # fenêtres, reste en place).
         self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade())
-                               .with_detail(node_id, blur=0.0, sharpen=0.0), "history.color.node_reset")
+                               .with_detail(node_id, blur=0.0, sharpen=0.0), "history.color.node_reset", resets_keys=True)
 
     def on_color_qualifier_changed(self, qualifier) -> None:
         """Le qualifieur du nœud courant change : rafale regroupée en une étape, moniteur à jour."""
@@ -581,7 +660,11 @@ class ColorPageMixin:
         if clip_id is None:
             return
         try:
-            updated = self._color_grade_of(clip_id).with_wheel(name, wheel)
+            current = self._color_grade_of(clip_id)
+            wheel = self._route_grade_wheel(clip_id, name, wheel, getattr(current, name))     # canaux animés : images clés
+            if wheel is None:
+                return
+            updated = current.with_wheel(name, wheel)
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return

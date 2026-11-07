@@ -1,7 +1,7 @@
 """Étape 4 de l'ADR-0008 : losanges d'images clés, menu et éditeur de courbes pour les paramètres d'effets animables (hors écran).
 
 Les paramètres animables sont ``ANIMATABLE_EFFECT_PARAMS`` (correction de couleur : luminosité, contraste, saturation ;
-vignette : intensité) ; flou, netteté, lueur, aberration chromatique et brume de chaleur n'ont aucun losange.
+vignette, flou, aberration chromatique : intensité ; lueur : rayon) ; netteté et brume de chaleur n'ont aucun losange.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _spin(win, name):
 def test_only_the_animatable_parameters_have_diamonds(window):
     _prepared(window)
     expected = {"cc1": {"brightness", "contrast", "saturation"}, "cc2": {"brightness", "contrast", "saturation"},
-                "vg": {"intensity"}, "sh": set(), "bl": set(), "gl": set(), "ca": set(), "hh": set()}
+                "vg": {"intensity"}, "sh": set(), "bl": {"intensity"}, "gl": {"radius"}, "ca": {"intensity"}, "hh": set()}
     from ui.properties_widgets.diamond_button import KeyframeDiamondButton
 
     for effect_id, names in expected.items():
@@ -312,8 +312,13 @@ def test_the_graph_editor_lists_the_animatable_parameters_with_readable_labels(w
     assert labels["fx.cc1.brightness"] == "Correction couleur — Luminosité"
     assert labels["fx.cc2.brightness"] == "Correction couleur n° 2 — Luminosité"
     assert labels["fx.vg.intensity"].endswith("Intensité") and "Vignette" in labels["fx.vg.intensity"]
-    assert not [pid for pid in labels if pid.startswith("fx.") and pid.split(".")[1] in {"sh", "bl", "gl", "ca", "hh"}]
-    assert len([pid for pid in labels if pid.startswith("fx.")]) == 7
+    # Étape 5 : flou, rayon de la lueur et aberration chromatique (``sendcmd``) ; ni la netteté ni la brume.
+    assert labels["fx.bl.intensity"].endswith("Intensité") and "Flou" in labels["fx.bl.intensity"]
+    assert labels["fx.gl.radius"].endswith("Rayon") and "Bloom" in labels["fx.gl.radius"]
+    assert "Aberration" in labels["fx.ca.intensity"]
+    assert not [pid for pid in labels if pid.startswith("fx.") and pid.split(".")[1] in {"sh", "hh"}]
+    assert not [pid for pid in labels if pid in {"fx.gl.threshold", "fx.gl.intensity"}]
+    assert len([pid for pid in labels if pid.startswith("fx.")]) == 10
 
 
 def test_a_curve_drawn_from_the_diamond_menu_opens_in_the_graph_editor(window):

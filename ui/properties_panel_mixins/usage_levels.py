@@ -157,6 +157,7 @@ class UsageLevelsMixin:
         self._more_groups_shown = bool(shown)
         self._apply_group_visibility()
         self._apply_effect_keyframe_levels()
+        self._apply_color_keyframe_levels()
         self._retranslate_usage_levels()
 
     def _level_allows_group(self, group: QWidget) -> bool:
@@ -176,7 +177,13 @@ class UsageLevelsMixin:
 
     def _advanced_animation_menu_shown(self, property_name: str = "") -> bool:
         """Interpolation, copier / coller et courbes du menu des losanges (avancés) ; le groupe est celui du paramètre."""
-        return self._level_allows(ADVANCED, self.effects_group if property_name.startswith("fx.") else self.movement_group)
+        if property_name.startswith("fx."):
+            group = self.effects_group
+        elif property_name.startswith("color."):
+            group = self.color_group
+        else:
+            group = self.movement_group
+        return self._level_allows(ADVANCED, group)
 
     # ------------------------------------------------------------------
     # Rafraîchissement (sans recréer de widget)
@@ -194,6 +201,7 @@ class UsageLevelsMixin:
         for fold in self._all_folds():
             fold.setVisible(not self._usage_level.at_least(fold.boundary))
         self._apply_effect_keyframe_levels()       # rangées ‹ ◆ › du réglage d'effet affiché (créées après coup, avec leur conteneur)
+        self._apply_color_keyframe_levels()        # rangées ‹ ◆ › des réglages de couleur (créées avec leur conteneur)
         self._apply_group_visibility()
         self.more_options_button.setVisible(self._usage_level is not ADVANCED)
 

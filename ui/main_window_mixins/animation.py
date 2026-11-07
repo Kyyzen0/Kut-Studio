@@ -79,9 +79,10 @@ class AnimationMixin:
         return [target.id for target in targets_for_clip(clip, self._track_type_of(clip))]
 
     def _graph_properties(self, clip) -> list[str]:
-        """Propriétés listées par l'éditeur de courbes : celles de ``_animation_properties`` et les paramètres d'effets animables
-        (``fx.*``, ADR-0008). Les commandes sans propriété active (raccourcis) ne lisent que ``_animation_properties``."""
-        return [target.id for target in targets_for_clip(clip, self._track_type_of(clip), include_effects=True)]
+        """Propriétés listées par l'éditeur de courbes : celles de ``_animation_properties``, les paramètres d'effets animables
+        (``fx.*``) et les réglages d'étalonnage (``color.*``, réglage simple seulement), ADR-0008. Les commandes sans propriété
+        active (raccourcis) ne lisent que ``_animation_properties``."""
+        return [target.id for target in targets_for_clip(clip, self._track_type_of(clip), include_effects=True, include_grade=True)]
 
     def _local_playhead(self, clip) -> float:
         local = float(self.playhead_seconds) - float(clip.timeline_start)

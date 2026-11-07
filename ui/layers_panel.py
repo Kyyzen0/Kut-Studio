@@ -36,6 +36,7 @@ from ui.icons import IconName, make_icon
 from ui.theme import COLORS, label_style
 from ui import i18n
 from ui.i18n import translate
+from ui.qt_item_lifetime import retain
 
 ID_ROLE = Qt.UserRole + 1
 SPAN_ROLE = Qt.UserRole + 2
@@ -474,7 +475,7 @@ class LayersPanel(QWidget):
                 if node.clip_id not in visible_ids:
                     continue
                 parent_item = items.get(node.group_id) if node.group_id in visible_ids else None
-                item = QTreeWidgetItem(parent_item) if parent_item is not None else QTreeWidgetItem(self.tree)
+                item = retain(QTreeWidgetItem(parent_item)) if parent_item is not None else retain(QTreeWidgetItem(self.tree))
                 item.setFlags(
                     Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable | Qt.ItemIsDragEnabled
                     | (Qt.ItemIsDropEnabled if node.is_group else Qt.NoItemFlags)

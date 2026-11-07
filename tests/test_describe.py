@@ -55,7 +55,7 @@ def test_golden_output_of_a_small_fixed_project():
 
 def test_top_level_shape_and_versions():
     data = describe(small_project())
-    assert list(data) == ["describe_version", "project", "media", "color_presets", "sequences", "not_described"]
+    assert list(data) == ["describe_version", "project", "media", "library", "color_presets", "sequences", "not_described"]
     assert data["describe_version"] == DESCRIBE_VERSION == api.DESCRIBE_VERSION and isinstance(DESCRIBE_VERSION, int)
     assert data["not_described"] == list(NOT_DESCRIBED_SECTIONS) and data["not_described"] == sorted(data["not_described"])
     assert data["project"] == {"name": "Démo", "width": 1280, "height": 720, "fps": 25.0, "duration": 30.0,
@@ -74,13 +74,15 @@ def _all_keys(node, found: set[str] | None = None) -> set[str]:
     return found
 
 
-def test_nothing_is_said_about_what_is_not_described():
-    """Pas de clé vide à la place d'une donnée non lue : ``effects``, ``color_grade``… ne sont pas des clés de la sortie (seule la
-    liste ``not_described`` les nomme). Les sections décrites par la partie B (effets, couleur, composition, images clés, bus…) n'y sont plus."""
-    keys = _all_keys(describe(rich_project()))
-    for forbidden in ("tracking", "text_style", "fill_color", "font_size", "stroke_width", "beat_grid", "guides", "multicam",
-                      "motion_blur", "generated_groups", "library_folders", "library_tags", "library_assignments"):
-        assert forbidden not in keys, forbidden
+def test_nothing_is_left_undescribed_and_the_list_says_so():
+    """Après la partie C, toutes les sections sont décrites : ``not_described`` est vide (la clé reste, pour un champ futur sans décision),
+    et les clés des anciennes sections (suivi, style, multicam, bibliothèque…) existent avec leurs données."""
+    data = describe(rich_project())
+    assert data["not_described"] == []
+    keys = _all_keys(data)
+    for required in ("tracking", "text_style", "fill_color", "font_size", "stroke_width", "beat_grid", "guides", "multicam",
+                     "motion_blur", "generated_groups", "library", "folders", "tags", "assignments"):
+        assert required in keys, required
 
 
 def test_the_clip_carries_its_place_source_speed_and_content():
@@ -109,7 +111,8 @@ def test_tracks_sequences_media_transitions_and_markers():
     assert (tracks["V1"]["solo"], tracks["V2"]["locked"], tracks["V2"]["visible"]) == (True, True, False)
     assert tracks["A1"]["muted"] is True and tracks["A1"]["volume_db"] == -3.5 and tracks["A1"]["pan"] == 0.25
     assert tracks["A1"]["audio_role"] == "music" and tracks["S1"]["type"] == "subtitle"
-    assert [(s["id"], s["active"], s["format_source"]) for s in data["sequences"]] == [("seq-main", True, None), ("seq-b", False, "seq-main")]
+    assert [(s["id"], s["active"], s["format_source"]) for s in data["sequences"]] == [
+        ("seq-main", True, None), ("seq-b", False, "seq-main"), ("seq_mc", False, None)]
     assert data["sequences"][1]["width"] == 1080 and data["sequences"][1]["height"] == 1920
     assert data["sequences"][0]["transitions"] == [
         {"id": "t1", "from_clip_id": "c1", "to_clip_id": "c2", "type": "dissolve", "duration": 0.5}]

@@ -22,6 +22,7 @@ from ui.i18n import translate
 from ui.icons import IconName
 from ui.panel_header import PanelHeader
 from ui.theme import COLORS, set_role
+from ui.qt_item_lifetime import retain
 
 _INDEX_ROLE = Qt.UserRole + 1
 
@@ -73,7 +74,7 @@ class HistoryPanel(QWidget):
         current_item = None
         for entry in self._entries:
             label = entry.label or translate("history.panel.initial")
-            item = QListWidgetItem(f"● {label}" if entry.saved else label)
+            item = retain(QListWidgetItem(f"● {label}" if entry.saved else label))
             item.setData(_INDEX_ROLE, entry.index)
             tooltip = [label]
             if entry.saved:

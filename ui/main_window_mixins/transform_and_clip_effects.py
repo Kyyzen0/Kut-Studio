@@ -298,6 +298,7 @@ class TransformEffectsMixin:
             self.playhead_seconds,
             transform=clip.transform,
         )
+        self._refresh_grade_widgets(clip)       # étalonnage animé : curseurs, losanges et roues suivent la tête (ADR-0008, étape 8)
         editor = getattr(self, "graph_editor", None)
         if editor is not None and editor.isVisible():
             if editor.clip_id != clip.id:

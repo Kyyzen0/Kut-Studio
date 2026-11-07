@@ -25,13 +25,17 @@ from ..audio_buses import (
 )
 from ..animation import InterpolationType, ValueKind
 from ..animation_targets import all_targets, get_target
+from ..grade_keyframing import clear_grade_animation, live_grade_ids
+from ..grade_targets import (
+    ANIMATABLE_GRADE_PARAMS, is_animatable_grade, is_grade_property, scalar_property_id, wheel_property_id,
+)
 from ..audio_effects_model import (
     AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
 )
 from ..color_grading import (
     CHANNELS, CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN,
     MAX_CURVE_POINTS, MAX_CURVE_VALUE, MIN_CURVE_VALUE, SATURATION_MAX, SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN,
-    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingError, ColorGradingService,
+    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGrade, ColorGradingError, ColorGradingService,
     LUTResource, Wheel,
 )
 from ..color_matrix import MATRIX_CHOICES
@@ -48,9 +52,13 @@ from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..mograph_targets import graphic_property_id
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..mograph_layers import add_layer, find_layer
-from .layer_rules import graphic_of, require_room, require_shallow
+from .layer_rules import graphic_of, layers_in, require_layers_room, require_shallow
+from .resource_limits import (
+    multicam_switch_adds, require_clip_room, require_color_node_room, require_color_window_room, require_insert_room,
+    require_keyframe_slot, require_marker_room, require_media_room, require_track_room,
+)
 from .image_layer import fitted_size, read_image_size
-from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
+from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at, remove_orphan_keyframe_at
 from ..media_color_ops import set_media_color_matrix
 from ..media_probe import MediaProbeError, probe_media
 from ..multicam import is_multicam_clip
@@ -60,12 +68,14 @@ from ..multicam_ops import (
     replace_angle, set_angle_offset, set_audio_policy, switch_angle,
 )
 from ..object_ids import InvalidObjectId, resolve_object_id
-from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Sequence
+from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Clip, Project, Sequence
 from ..sequences import (
     MAX_SEQUENCE_SIDE, check_sequence_format, create_sequence, delete_sequence, duplicate_sequence, find_sequence,
     insert_sequence_clip, rename_sequence, set_sequence_format,
 )
 from ..timeline_editing import add_marker
+from ..tracking_locks import is_locked
+from .selection_rules import require_dependants_editable
 from .sequence_rules import clips_in, require_sequence_room
 from .path_nodes import ANCHOR_FIELDS, NODE_FIELDS, nodes_to_arrays
 from ..timeline_operations import (
@@ -264,9 +274,14 @@ def _route_track(a: Mapping[str, Any]) -> Operation:
 
 
 def _add_bus_insert(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_bus_insert(
-        p, _bus_id(p, a["bus"]), a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
-    )
+    def operation(project: Project) -> Any:
+        bus_id = _bus_id(project, a["bus"])
+        require_insert_room(next(bus for bus in project.buses if bus.id == bus_id))
+        return add_bus_insert(
+            project, bus_id, a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
+        )
+
+    return operation
 
 
 def _remove_bus_insert(a: Mapping[str, Any]) -> Operation:
@@ -282,21 +297,33 @@ def _update_bus_insert(a: Mapping[str, Any]) -> Operation:
 
 
 def _add_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_clip_to_track(
-        p, _asset_id(p, a["asset"]), _track_id(p, a["track"]), float(a["at"]), clip_id=a.get("id"),
-    )
+    def operation(project: Project) -> Any:
+        asset_id, track_id = _asset_id(project, a["asset"]), _track_id(project, a["track"])
+        require_clip_room(project, 1)
+        return add_clip_to_track(project, asset_id, track_id, float(a["at"]), clip_id=a.get("id"))
+
+    return operation
 
 
 def _delete_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: delete_clip(p, _clip_id(p, a["clip"]))
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])                 # piste ET calque (le modèle ne regarde que la piste)
+        require_dependants_editable(project, [clip_id])              # parent / groupe / source de suivi verrouillés : réécrits par la suppression
+        return delete_clip(project, clip_id)
+
+    return operation
 
 
 def _move_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: move_clip(p, _clip_id(p, a["clip"]), float(a["at"]))
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])
+        return move_clip(project, clip_id, float(a["at"]))
+
+    return operation
 
 
 def _set_clip_enabled(a: Mapping[str, Any]) -> Operation:
-    return lambda p: set_clip_enabled(p, _clip_id(p, a["clip"]), bool(a["enabled"]))
+    return lambda p: set_clip_enabled(p, _editable_clip(p, a["clip"]), bool(a["enabled"]))
 
 
 def _set_media_color_matrix(a: Mapping[str, Any]) -> Operation:
@@ -316,6 +343,7 @@ def _import_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operat
     def operation(project: Project) -> Any:
         if context is None:
             raise ValueError("import_media lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        require_media_room(project)
         path = context.resolve_media(a["path"])
         normalized = os.path.normpath(os.path.abspath(path))
         for existing in project.media_assets:
@@ -339,6 +367,7 @@ def _add_track_insert(a: Mapping[str, Any]) -> Operation:
         kind = next(item.type for item in project.tracks if item.id == track_id)
         if kind not in ("audio", "video"):             # le rendu traite une piste de graphiques avant tout traitement audio : l'insert ne jouerait jamais
             raise ValueError(f"La piste '{track_id}' est une piste '{kind}' : seules les pistes audio et vidéo portent des inserts.")
+        require_insert_room(next(item for item in project.tracks if item.id == track_id))
         return add_track_insert(
             project, track_id, a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
         )
@@ -400,7 +429,7 @@ def _graphic_group(project: Project, selector: str) -> str:
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         track = _graphics_track(project, a.get("track"))
-        require_room(project, 1)
+        require_layers_room(project, 1)
         group_id = ""
         if a.get("group") is not None:
             if a["graphic"] == GraphicType.ADJUSTMENT.value:
@@ -426,7 +455,7 @@ def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Ope
         track = _graphics_track(project, a.get("track"))
         path = context.resolve_media(a["path"])
         width, height = read_image_size(path)                  # tout est vérifié avant la moindre écriture
-        require_room(project, 1)
+        require_layers_room(project, 1)
         clip = add_graphic_clip(
             project, "image", timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -459,7 +488,7 @@ def _add_scene3d_clip(a: Mapping[str, Any], context: ScriptContext | None) -> Op
         except Scene3DError as error:
             text = str(error)
             raise ValueError(f"Scène 3D refusée : {text if len(text) <= 300 else text[:299] + '…'}") from error
-        require_room(project, 1)
+        require_layers_room(project, 1)
         return add_graphic_clip(
             project, GraphicType.SCENE3D, timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -493,6 +522,7 @@ def _add_track(a: Mapping[str, Any]) -> Operation:
         name = a.get("name")
         if name is not None and any(track.name == name for track in project.tracks):
             raise ValueError(f"Une piste s'appelle déjà {name!r} : le modèle la renommerait, un script ne le permet pas en silence.")
+        require_track_room(project)
         return add_track(project, a["type"], name, track_id=a.get("id"))
 
     return operation
@@ -507,6 +537,8 @@ def _add_subtitle(a: Mapping[str, Any]) -> Operation:
             if not track_id:
                 raise ValueError("Le projet n'a pas de piste de sous-titres : ajoutez-en une avec add_track (type « subtitle »).")
         _require_unlocked(next(track for track in project.tracks if track.id == track_id))
+        require_clip_room(project, 1)
+        require_media_room(project)                                   # un média interne par sous-titre
         return add_subtitle_clip(project, a["text"], float(a["at"]), float(a["duration"]), track_id, clip_id=a.get("id"))
 
     return operation
@@ -537,21 +569,44 @@ def _remove_transition(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
-# Les propriétés que ``add_keyframe`` accepte : celles du registre d'animation (transform, ``graphic.*``), jamais recopiées ici. Exclues :
-# les booléens (``flip_h`` / ``flip_v`` : le verbe pose un nombre), la vitesse (``time.speed`` : la durée du clip en dépend, donc le
-# sens de « relatif au clip »), et les familles par masque (``mask.<id>.*`` : verbes ``add_mask_keyframe`` / ``remove_mask_keyframe``).
-_ANIMATABLE = tuple(
-    target.id for target in all_targets() if target.spec.kind is not ValueKind.BOOL and not target.id.startswith("time.")
+# Les propriétés que ``add_keyframe`` accepte : celles du registre d'animation (transform, ``graphic.*``) et l'étalonnage du clip
+# (``color.*``, ADR-0008 étape 9 : ``ANIMATABLE_GRADE_PARAMS``, la liste du registre de l'étalonnage, jamais recopiée), pas les paramètres d'effet
+# (``add_effect_keyframe``). Exclues : les booléens (``flip_h`` / ``flip_v`` : le verbe pose un nombre), la vitesse (``time.speed`` : la durée du
+# clip en dépend, donc le sens de « relatif au clip »), et les familles par masque (``mask.<id>.*`` : verbes ``add_mask_keyframe`` /
+# ``remove_mask_keyframe``).
+_ANIMATABLE = (
+    *(target.id for target in all_targets() if target.spec.kind is not ValueKind.BOOL and not target.id.startswith("time.")),
+    *ANIMATABLE_GRADE_PARAMS,
 )
+
+
+def require_animatable_grade(clip: Clip, property_name: object, verb: str) -> None:
+    """Refuse une propriété ``color.*`` sur un clip étalonné par un **graphe de nœuds**, **avant** toute écriture (ADR-0008, étape 9).
+
+    Seul le réglage simple du clip s'anime (:func:`core.grade_targets.is_animatable_grade`) : le rendu ignore les images clés ``color.*`` d'un
+    graphe, un script ne les crée donc pas (un faux succès), comme l'interface ne propose pas d'animer. Les autres propriétés ne sont pas
+    concernées ; un nom ``color.*`` que le registre ne connaît pas est refusé plus loin (propriété inconnue)."""
+    if (
+        isinstance(property_name, str) and is_grade_property(property_name)
+        and not is_animatable_grade(getattr(clip, "color_grade", None))
+    ):
+        raise ValueError(
+            f"{verb} : le clip '{clip.id}' est étalonné par un graphe de nœuds ; seul le réglage simple s'anime "
+            f"({property_name} ne serait pas rendu). Simplifiez l'étalonnage du clip en un seul nœud, sans nom, qualificateur ni fenêtre."
+        )
 
 
 def _add_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
-        target = get_target(a["property"])
+        require_animatable_grade(find_clip(project, clip_id), a["property"], "add_keyframe")
+        try:
+            target = get_target(a["property"], find_clip(project, clip_id))
+        except KeyError:
+            raise ValueError(f"add_keyframe : le clip '{clip_id}' n'a pas de propriété animable {a['property']!r}.") from None
         owner = _owner_track(project, clip_id)
         # Une propriété n'existe que pour certains genres de piste (``skew`` : graphiques seulement ; les transformations : vidéo et
-        # graphiques) : une image clé posée ailleurs serait enregistrée mais ignorée au rendu, un faux succès.
+        # graphiques ; ``color.*`` : vidéo) : une image clé posée ailleurs serait enregistrée mais ignorée au rendu, un faux succès.
         if not target.applies_to(owner.type) or (
             target.applies_to_clip is not None and not target.applies_to_clip(find_clip(project, clip_id))
         ):
@@ -565,6 +620,7 @@ def _add_keyframe(a: Mapping[str, Any]) -> Operation:
         at = float(a["at"])
         if at > clip_duration(find_clip(project, clip_id)) + 1e-9:
             raise ValueError(f"L'instant {at} s dépasse la durée du clip : les images clés sont relatives au clip.")
+        require_keyframe_slot(find_clip(project, clip_id), target, at, "add_keyframe")
         return add_keyframe(project, clip_id, a["property"], at, value, interpolation=a.get("interpolation"))
 
     return operation
@@ -573,6 +629,14 @@ def _add_keyframe(a: Mapping[str, Any]) -> Operation:
 def _remove_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
+        name = str(a["property"])
+        clip = find_clip(project, clip_id)
+        if is_grade_property(name) and not is_animatable_grade(getattr(clip, "color_grade", None)):
+            # Clip devenu graphe : l'image clé ``color.*`` restée est ignorée au rendu et plus aucune cible ne la résout ; elle reste
+            # pourtant retirable (sinon rien ne permettrait de la voir disparaître). Aucune valeur statique n'est écrite.
+            if not remove_orphan_keyframe_at(project, clip_id, name, float(a["at"])):
+                raise KeyError(f"Aucune image clé de {a['property']!r} à {a['at']} s sur ce clip.")
+            return None
         if not remove_keyframe_at(project, clip_id, a["property"], float(a["at"])):
             raise KeyError(f"Aucune image clé de {a['property']!r} à {a['at']} s sur ce clip.")
         return None
@@ -597,12 +661,27 @@ def _grade_clip(project: Project, a: Mapping[str, Any]) -> tuple[str, str | None
     return clip_id, node
 
 
+def _refuse_animated_base(project: Project, clip_id: str, property_ids: list[str], verb: str) -> None:
+    """Refuse d'écrire la valeur de **base** d'un réglage que des images clés animent (avant toute écriture).
+
+    L'interface envoie alors la valeur dans l'image clé de la tête de lecture (``_route_grade_field``) ; un script n'a pas de tête de lecture, et
+    écrire la base serait un faux succès (la courbe l'emporte au rendu). Il faut dire quelle image clé : ``set_keyframe_value`` / ``add_keyframe``.
+    Seul le réglage simple s'anime : un graphe de nœuds n'est pas concerné."""
+    animated = live_grade_ids(find_clip(project, clip_id), property_ids)
+    if animated:
+        raise ValueError(
+            f"{verb} : {', '.join(animated)} est animé par des images clés (la valeur de base serait ignorée au rendu) ; "
+            "utilisez add_keyframe ou set_keyframe_value, ou retirez l'animation (set_animation_enabled)."
+        )
+
+
 def _set_color_grade(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         given = [name for name in _GRADE_FIELDS if name in a]
         if not given and "enabled" not in a:
             raise ValueError("set_color_grade : donnez au moins un champ à modifier.")
         clip_id, node = _grade_clip(project, a)
+        _refuse_animated_base(project, clip_id, [scalar_property_id(name) for name in given], "set_color_grade")
         service = ColorGradingService()
         grade = service.get_grade(project, clip_id, node)
         for name in given:
@@ -617,7 +696,20 @@ def _set_color_grade(a: Mapping[str, Any]) -> Operation:
 def _reset_color_grade(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id, node = _grade_clip(project, a)
-        return ColorGradingService().reset_grade(project, clip_id, node)
+        service = ColorGradingService()
+        if a.get("detail"):
+            # « Tout réinitialiser » de la page Couleur (`on_color_node_reset`) : réglage neutre ET ni flou ni netteté, en un seul changement du graphe.
+            target = service.get_graph(project, clip_id).node_or_first(node).id
+            service.edit_nodes(project, clip_id, lambda graph: graph.with_grade(target, ColorGrade()).with_detail(target, blur=0.0, sharpen=0.0))
+            grade = ColorGrade()
+        else:
+            grade = service.reset_grade(project, clip_id, node)          # le bouton de l'inspecteur : le réglage du nœud seul
+        # Comme « Tout réinitialiser » de l'inspecteur et la remise à zéro du nœud de la page Couleur (ADR-0008, étape 8) : les images clés
+        # `color.*` partent avec le réglage, dans la même étape (une seule opération du script). Un clip qui reste un graphe de nœuds ne
+        # perd rien (ses clés sont ignorées au rendu) ; un graphe que la remise à zéro simplifie en réglage simple les perd. Même code que l'interface.
+        if is_animatable_grade(getattr(find_clip(project, clip_id), "color_grade", None)):
+            clear_grade_animation(project, clip_id)
+        return grade
 
     return operation
 
@@ -650,6 +742,7 @@ def _set_color_wheel(a: Mapping[str, Any]) -> Operation:
         if not given:
             raise ValueError("set_color_wheel : donnez au moins une composante (r, g, b ou y).")
         clip_id, node = _grade_clip(project, a)
+        _refuse_animated_base(project, clip_id, [wheel_property_id(a["wheel"], name) for name in given], "set_color_wheel")
         service = ColorGradingService()
         grade = service.get_grade(project, clip_id, node)
         current = getattr(grade, a["wheel"])
@@ -699,6 +792,7 @@ def _add_color_node(a: Mapping[str, Any]) -> Operation:
         after = a.get("after")
         if after is not None:
             service.get_graph(project, clip_id).corrector(after)          # KeyError / NodeGraphError → refus clair
+        require_color_node_room(find_clip(project, clip_id))
         created: dict[str, str] = {}
 
         def change(graph):
@@ -727,6 +821,9 @@ def _branch_color_node(a: Mapping[str, Any]) -> Operation:
         service = ColorGradingService()
         beside = a["node"]
         service.get_graph(project, clip_id).corrector(beside)
+        # Le nombre exact de nœuds ajoutés : ``with_branch`` réutilise le mélangeur d'une branche existante (1 correcteur), sinon en crée un (2).
+        graph = service.get_graph(project, clip_id)
+        require_color_node_room(find_clip(project, clip_id), len(graph.with_branch(beside, MixerKind(a["kind"]))[0].nodes) - len(graph.nodes))
         created: dict[str, str] = {}
 
         def change(graph):
@@ -847,6 +944,7 @@ def _add_color_window(a: Mapping[str, Any]) -> Operation:
             mask.id for mask in (getattr(compositing, "masks", ()) or ())
         }
         window_id = resolve_object_id(a.get("id"), prefix="w", kind="fenêtre", taken=taken, length=8)
+        require_color_window_room(clip)
         position_x = _require_mask_number("position_x", float(a.get("position_x", 0.5)))
         position_y = _require_mask_number("position_y", float(a.get("position_y", 0.5)))
         width = _require_mask_number("width", float(a.get("width", 0.4)))
@@ -1032,7 +1130,11 @@ def _clear_crop(a: Mapping[str, Any]) -> Operation:
 
 
 def _add_marker(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
+    def operation(project: Project) -> Any:
+        require_marker_room(project)
+        return add_marker(project, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
+
+    return operation
 
 
 def _require_free_sequence_name(project: Project, name: str, *, besides: str = "") -> None:
@@ -1079,7 +1181,7 @@ def _set_sequence_format(a: Mapping[str, Any]) -> Operation:
 def _duplicate_sequence(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         sequence_id = _sequence_id(project, a["sequence"])
-        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)))
+        require_sequence_room(project, clips=clips_in(find_sequence(project, sequence_id)), layers=layers_in(find_sequence(project, sequence_id)))
         if a.get("name") is not None:
             _require_free_sequence_name(project, a["name"])
         return duplicate_sequence(project, sequence_id, a.get("name"), clone_id=a.get("id"))
@@ -1091,6 +1193,7 @@ def _insert_sequence_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         # La piste est celle de la séquence ACTIVE (comme pour ``add_clip``) ; ``insert_sequence_clip`` vérifie cycle, profondeur,
         # genre et verrou de piste, bornes de la source.
+        require_clip_room(project, 1)
         return insert_sequence_clip(
             project, _sequence_id(project, a["sequence"]), _track_id(project, a["track"]), float(a["at"]),
             source_in=float(a.get("source_in", 0.0)),
@@ -1214,6 +1317,7 @@ def _insert_multicam_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         source = _multicam_source(project, a["sequence"])
         angle = _angle_id(source, a["angle"]) if "angle" in a else ""
+        require_clip_room(project, 1)
         # Piste de la séquence ACTIVE ; cycle, profondeur, « pas de Multicam dans un Multicam », genre et verrou de piste, bornes de la source :
         # ``insert_multicam_clip`` -> ``insert_sequence_clip`` les vérifient (erreurs ``SequenceError`` rendues en ``MulticamError``).
         return insert_multicam_clip(
@@ -1234,8 +1338,9 @@ def _switch_multicam_angle(a: Mapping[str, Any]) -> Operation:
         if segment is None:
             raise MulticamError("Aucun segment Multicam sous cet instant (piste vidéo de la séquence active).")
         # ``switch_angle`` ne vérifie le verrou que par ``cut_clip`` : au début d'un segment il change l'angle sans coupe, donc sans contrôle.
-        _require_unlocked(_owner_track(project, segment.id))
+        _editable_clip(project, segment.id)                               # piste ET calque verrouillés
         source = find_sequence(project, segment.sequence_id)
+        require_clip_room(project, multicam_switch_adds(project, at, _angle_id(source, a["angle"]), segment))     # la coupe crée un clip
         result = switch_angle(project, at, _angle_id(source, a["angle"]), clip_id=segment.id, segment_id=a.get("id"))
         return result.clip if result is not None else segment             # déjà cet angle : aucune coupe, on rend le segment tel quel
 
@@ -1285,6 +1390,7 @@ def _add_multicam_angle(a: Mapping[str, Any]) -> Operation:
             raise ValueError(f"Une source Multicam compte {MAX_ANGLES} angles au plus (un fichier qui en déclare davantage est refusé).")
         asset = _angle_asset(project, a["asset"])
         _require_angle_name(_effective_angle_name(a.get("name"), asset), [angle.name for angle in existing])
+        require_clip_room(project, 1)                                 # le clip de l'angle, dans la source
         angle = add_angle(project, source.id, AngleSpec(
             asset_id=asset.id, offset=float(a.get("offset", 0.0)), name=a.get("name", ""), sync_method=SyncMethod.MANUAL,
         ))
@@ -1303,6 +1409,9 @@ def _set_multicam_angle_offset(a: Mapping[str, Any]) -> Operation:
         track = next((item for item in source.tracks if item.id == angle.track_id), None)
         if track is not None:
             _require_unlocked(track)                                      # ``set_angle_offset`` déplace les clips sans regarder le verrou
+            for clip in track.clips:
+                if is_locked(track, clip):                                # ... ni celui du calque de chacun d'eux
+                    raise ValueError(f"Le calque '{clip.id}' de l'angle est verrouillé : le décalage le déplacerait.")
         return set_angle_offset(project, source.id, angle_id, float(a["offset"]))
 
     return operation
@@ -1453,7 +1562,8 @@ VERBS: dict[str, Verb] = {
               Param("highlights", Kind.NUMBER, "Hautes lumières.", required=False, minimum=HIGHLIGHTS_MIN, maximum=HIGHLIGHTS_MAX),
               Param("enabled", Kind.BOOLEAN, "Étalonnage actif ou neutralisé.", required=False)),
              _set_color_grade, group="color"),
-        Verb("reset_color_grade", "Remet l'étalonnage d'un nœud du clip à neutre.", (_CLIP, _NODE), _reset_color_grade, group="color"),
+        Verb("reset_color_grade", "Remet l'étalonnage d'un nœud du clip à neutre ; retire aussi les images clés `color.*` du clip (comme l'interface), sauf si le clip reste étalonné par un graphe de nœuds. Par défaut, comme le bouton de l'inspecteur : le réglage du nœud seul ; `detail: true` remet aussi son flou et sa netteté à 0, comme « Tout réinitialiser » de la page Couleur.",
+             (_CLIP, _NODE, Param("detail", Kind.BOOLEAN, "Remet aussi le flou et la netteté du nœud à 0 (défaut : non).", required=False)), _reset_color_grade, group="color"),
         Verb("set_color_curve", "Règle la sortie d'un point d'une courbe (index 0…15 sur la courbe à 16 points).",
              (_CLIP, _NODE, _CHANNEL,
               Param("index", Kind.INTEGER, "Index du point (0 = début).", minimum=0, maximum=MAX_CURVE_POINTS - 1),

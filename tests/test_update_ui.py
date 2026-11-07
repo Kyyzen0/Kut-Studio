@@ -60,13 +60,18 @@ def opened(monkeypatch):
     return calls
 
 
+INSTALLED = "0.9.0"
+"""Version installée simulée : une stable, pour que « une préversion n'est pas proposée » ne dépende pas de ``APP_VERSION``
+(pendant une bêta, l'application installée reçoit toujours la préversion suivante : c'est voulu)."""
+
+
 def _wire(monkeypatch, server, directory, target=MAC_ARM):
     """Les services de la fenêtre parlent au faux GitHub et téléchargent dans ``directory``."""
     def create(owner):
         from core.update_service import HttpClient
 
         client = HttpClient(owner)
-        checker = UpdateChecker(client, current=Version.parse(APP_VERSION), repository=REPOSITORY,
+        checker = UpdateChecker(client, current=Version.parse(INSTALLED), repository=REPOSITORY,
                                 api_base=server.base, asset_prefix=server.url("/download/"),
                                 target_detector=lambda: target, parent=owner)
         return checker, UpdateDownloader(client, directory=directory, parent=owner)
@@ -115,6 +120,7 @@ def _visible_buttons(dialog: UpdateDialog) -> set[str]:
 
 
 def test_the_help_menu_offers_the_check_and_the_version(qtbot, monkeypatch, server, tmp_path):
+    monkeypatch.setattr("ui.main_window_mixins.updates.key_ids", lambda: [])      # indépendant des clés livrées
     window = _window_for(qtbot, monkeypatch, server, tmp_path)
     (help_menu,) = [a.menu() for a in window.menuBar().actions() if a.menu() and a.menu().objectName() == "help_menu"]
     texts = [action.text() for action in help_menu.actions() if action.text()]
@@ -123,6 +129,35 @@ def test_the_help_menu_offers_the_check_and_the_version(qtbot, monkeypatch, serv
     monkeypatch.setattr("ui.main_window.QMessageBox.about", lambda _parent, title, text: shown.append(text))
     window.about_action.trigger()
     assert shown and f"Kut-Studio {APP_VERSION}" in shown[0] and "/Applications/Kut-Studio.app" in shown[0]
+    assert i18n.translate("update.about.keys", keys=i18n.translate("update.about.keys_none")) in shown[0], (
+        "sans clé configurée, « À propos » le dit"
+    )
+
+
+def test_about_shows_the_identifier_of_each_update_signing_key(qtbot, monkeypatch, server, tmp_path):
+    """Un utilisateur averti compare cet identifiant à celui annoncé par le mainteneur (ADR-0012)."""
+    from fake_update_keys import FAKE_KEY, OTHER_KEY
+
+    monkeypatch.setattr("ui.main_window_mixins.updates.key_ids", lambda: [FAKE_KEY.key_id, OTHER_KEY.key_id])
+    window = _window_for(qtbot, monkeypatch, server, tmp_path)
+    text = window.about_text()
+    assert FAKE_KEY.key_id in text and OTHER_KEY.key_id in text
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_the_ready_dialog_says_whether_the_signature_was_verified(qtbot, tmp_path, verified):
+    from core.update_signature import SignatureResult, SignatureStatus
+
+    dialog = UpdateDialog(FROZEN_MAC)
+    qtbot.addWidget(dialog)
+    status = SignatureResult(SignatureStatus.VERIFIED, key_id="0123456789abcdef") if verified else None
+    dialog.show_download_result(DownloadResult(_offer(), path=tmp_path / "Kut-Studio.zip", sha256="0" * 64,
+                                               signature=status))
+    details = dialog.details.text()
+    if verified:
+        assert "0123456789abcdef" in details
+    else:
+        assert i18n.translate("update.ready.signature_absent") in details
 
 
 def test_no_window_of_the_test_suite_schedules_an_automatic_check(qtbot, monkeypatch, server, tmp_path):
@@ -254,7 +289,7 @@ def test_a_manual_check_says_clearly_that_kut_studio_is_up_to_date(qtbot, monkey
     dialog = window._update_dialog
     assert dialog.isVisible() and dialog.state is UpdateDialogState.UP_TO_DATE
     assert dialog.headline.text() == i18n.translate("update.up_to_date.title")
-    assert APP_VERSION in dialog.message.text()
+    assert INSTALLED in dialog.message.text()
     assert "99.0.0-beta.1" in dialog.message.text(), "la préversion non proposée est signalée"
     assert _visible_buttons(dialog) == {"close"}
 

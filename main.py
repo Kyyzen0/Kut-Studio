@@ -6,6 +6,18 @@ from core.process_supervisor import helper_mode_exit_code
 from core.tool_paths import extend_search_path, log_tool_search
 
 
+def cli_requested(argv):
+    """``True`` si ``argv`` demande la ligne de commande. Jamais dans la version Mac App Store (ADR-0013, étape 8) : le
+    module ``core.cli`` n'y est pas livré (ni le mode script), donc il n'est même pas importé."""
+    from core.build_flavor import is_store
+
+    if is_store():
+        return False
+    from core.cli import is_cli_invocation
+
+    return is_cli_invocation(argv)
+
+
 def main():
     # Processus auxiliaire de la supervision des enfants (gardien, enfant d'auto-contrôle) : l'application se
     # relance elle-même avec un argument dédié, en source comme gelée. Traité avant le journal et avant Qt.
@@ -14,9 +26,7 @@ def main():
         return helper
     # Ligne de commande (« Kut-Studio info | validate | presets | export ») : le même binaire, sans fenêtre, traitée avant Qt et
     # avant la fenêtre. FFmpeg (Homebrew…) se cherche avec le PATH complet, comme pour l'interface.
-    from core.cli import is_cli_invocation
-
-    if is_cli_invocation(sys.argv):
+    if cli_requested(sys.argv):
         extend_search_path()
         from core.cli import main as cli_main
 
@@ -45,8 +55,16 @@ def main():
     from core.bundled_fonts import register_bundled_fonts
 
     register_bundled_fonts()
+    # Version Store : les signets rangés dans le conteneur sont résolus AVANT toute lecture de fichier de l'utilisateur (ADR-0013,
+    # étape 5). Ailleurs, sans effet.
+    from core.security_scope import start_for_store
+
+    scope_report = start_for_store()
     window = MainWindow()
     window.show()
+    from ui.sandbox_access import announce_launch_report
+
+    announce_launch_report(window, scope_report)
     # Projet confié par le système : Finder (macOS), double-clic ou « Ouvrir avec » (Windows, Linux).
     from ui.external_open import install_external_open, project_path_from_arguments
 
@@ -93,13 +111,23 @@ def main():
         if problem:
             print(f"Smoke test : Kut-3D indisponible — {problem}", file=sys.stderr)
             return 1
-        # Mises à jour : l'application construite doit pouvoir parler HTTPS (moteur TLS de Qt embarqué).
-        from core.update_service import tls_self_check
+        # Mises à jour (absentes de la version Store, ADR-0013) : l'application construite doit pouvoir parler HTTPS
+        # (moteur TLS de Qt embarqué) et vérifier les signatures (Ed25519 en Python pur, ADR-0012).
+        from core.build_flavor import is_store
 
-        problem = tls_self_check()
-        if problem:
-            print(f"Smoke test : HTTPS indisponible — {problem}", file=sys.stderr)
-            return 1
+        if not is_store():
+            from core.update_service import tls_self_check
+
+            problem = tls_self_check()
+            if problem:
+                print(f"Smoke test : HTTPS indisponible — {problem}", file=sys.stderr)
+                return 1
+            from core.update_signature import self_check as update_signature_check
+
+            problem = update_signature_check()
+            if problem:
+                print(f"Smoke test : vérification des signatures de mise à jour indisponible — {problem}", file=sys.stderr)
+                return 1
         # Supervision des FFmpeg : gardien (macOS, Linux) ou objet Job (Windows) réellement déclenché.
         from core.process_supervisor import supervision_self_check
 

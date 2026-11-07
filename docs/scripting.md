@@ -43,6 +43,14 @@ Kut-Studio describe projet.kut --json                    # lire la structure d'u
   exposition −2 à 2…) : au-delà, le script est refusé, il ne « réussit » pas en écrivant une autre valeur. Même règle pour le nom
   d'une piste déjà pris et pour un instant d'image clé hors du clip.
 - **Le verrou d'une piste vaut pour un script**, comme pour l'interface : un verbe qui modifie un clip refuse une piste verrouillée **et un calque graphique verrouillé** (`graphic.locked`).
+  Le refus vaut aussi pour les **tiers** qu'une opération réécrirait, et passe avant toute modification : `delete_clip`, `move_clip` et `set_clip_enabled`
+  refusent un calque verrouillé sur une piste libre ; `cut_clip`, `cut_clips_on_beats`, `cut_clip_at_scenes` et `switch_multicam_angle` refusent de couper la
+  source d'un suivi dont un clip suiveur est verrouillé (calque, piste, ou piste d'une autre séquence, liaison active ou non), car la coupe réécrit sa liaison
+  (ce refus est celui du **modèle** : l'interface le partage, voir `docs/tracking.md`) ;
+  `delete_clip`, `ripple_delete_clip` et `update_leaderboard` refusent de supprimer un clip dont un calque verrouillé est l'enfant, le groupe ou un suiveur
+  prolongé ; déplacer la source d'un suivi (`move_clip`, `move_clip_to_track`, `move_clips`) n'est **pas** refusé quand un clip verrouillé la suit : seul le rendu
+  du suiveur change (images clés dérivées), sa liaison n'est pas réécrite, comme dans l'interface ;
+  `switch_multicam_angle` et `set_multicam_angle_offset` refusent un segment ou un clip d'angle dont le calque est verrouillé.
 - **Pas d'écriture par défaut.** `apply` écrit dans un autre fichier (`-o`). Écrire dans le projet lui-même demande `--in-place`, et
   un `-o` qui désigne le projet (lien symbolique compris) est refusé. `--dry-run` travaille sur une copie.
 - **Pas de verbe `export`** : exporter est une décision de l'appelant (`Kut-Studio export`).
@@ -50,8 +58,7 @@ Kut-Studio describe projet.kut --json                    # lire la structure d'u
 
 ## Images clés : propriétés et unités
 
-`add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform et `graphic.*`.
-Sont exclus : `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
+`add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform, `graphic.*` et l'étalonnage du clip `color.*` (ADR-0008, étape 9 : 23 propriétés, `color.exposure`, `color.contrast`, `color.saturation`, `color.temperature`, `color.hue`, `color.shadows`, `color.highlights` et les quatre roues canal par canal, `color.lift.r` … `color.offset.y` ; la liste est celle de `core/grade_targets.py`, relue par le schéma). Les verbes d'édition d'une image clé (`set_keyframe_value`, `set_keyframe_time`, `move_keyframes`, `set_keyframe_interpolation`, `set_keyframe_tangents`, `set_animation_enabled`) acceptent les mêmes noms, avec **exactement les mêmes refus que pour un paramètre d'effet** : piste ou calque verrouillé, clip d'une piste qui n'est pas vidéo, valeur hors bornes du réglage (jamais écrêtée), valeur ou instant non fini, instant hors du clip, déplacement qui arriverait sur une autre image clé, plafond d'images clés par clip. **Un clip étalonné par un graphe de nœuds** (plusieurs nœuds, ou un nœud nommé, qualifié, fenêtré, flou ou net) **refuse** ces propriétés (« le clip est étalonné par un graphe de nœuds ») : le rendu n'applique que les images clés du réglage simple, un script ne crée donc pas d'image clé qui serait ignorée (`describe` : `color_grade_simple`). Une image clé `color.*` restée dans un clip devenu graphe (`color_animation_live` : `false`) se retire avec `remove_keyframe` (aucune valeur n'est écrite) mais ne se modifie pas. Retirer la dernière image clé d'une propriété, ou `set_animation_enabled` avec `enabled: false`, laisse la valeur qu'elle montrait, comme dans l'interface. Les paramètres d'effet s'animent avec `add_effect_keyframe` / `remove_effect_keyframe`. Sont exclus : `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
 `remove_mask_keyframe`). Les valeurs sont dans **l'unité du modèle**, pas celle que l'inspecteur affiche ; elles doivent rester dans les bornes
 (sinon refus, jamais d'écrêtage). Un test (`tests/test_script_verbs_animation_masks.py`) relit ce tableau et le compare au registre.
 
@@ -86,6 +93,29 @@ Sont exclus : `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec 
 | `graphic.light_density` | facteur | 1 | 0.1 | 4 |
 | `graphic.glow_radius` | pixels | 0 | 0 | 400 |
 | `graphic.glow_strength` | facteur | 1 | 0 | 4 |
+| `color.contrast` | réglage du contraste (0 = neutre) | 0 | -1 | 1 |
+| `color.saturation` | facteur (1 = neutre) | 1 | 0 | 2 |
+| `color.hue` | degrés | 0 | -180 | 180 |
+| `color.exposure` | diaphragmes | 0 | -2 | 2 |
+| `color.temperature` | unité du modèle (0 = neutre) | 0 | -100 | 100 |
+| `color.shadows` | réglage (0 = neutre) | 0 | -1 | 1 |
+| `color.highlights` | réglage (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.r` | roue lift, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.g` | roue lift, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.b` | roue lift, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.lift.y` | roue lift, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.r` | roue gamma, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.g` | roue gamma, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.b` | roue gamma, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.gamma.y` | roue gamma, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.r` | roue gain, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.g` | roue gain, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.b` | roue gain, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.gain.y` | roue gain, canal y (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.r` | roue offset, canal r (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.g` | roue offset, canal g (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.b` | roue offset, canal b (0 = neutre) | 0 | -1 | 1 |
+| `color.offset.y` | roue offset, canal y (0 = neutre) | 0 | -1 | 1 |
 <!-- /units -->
 
 Un masque (`add_mask_keyframe`) :
@@ -250,7 +280,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `reset_transform` | Remet le transform à l'identité et retire toutes ses images clés (`clip`) |
 | `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value` obligatoire, `interpolation`) : `at` est **relatif au clip**. `property` : une propriété du transform (dont `pan_x`, `pan_y`) ou `graphic.*`, voir « Images clés : propriétés et unités » |
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
-| `add_effect_keyframe` | Pose ou remplace une image clé d'un paramètre animable d'un effet vidéo (`clip`, `effect`, `parameter` = `brightness`, `contrast`, `saturation` ou `intensity` selon l'effet, `at`, `value`, `interpolation`) |
+| `add_effect_keyframe` | Pose ou remplace une image clé d'un paramètre animable d'un effet vidéo (`clip`, `effect`, `parameter` = `brightness`, `contrast`, `saturation`, `intensity` ou `radius` (rayon du Bloom) selon l'effet, `at`, `value`, `interpolation`) |
 | `remove_effect_keyframe` | Retire l'image clé d'un paramètre d'effet à un instant (`clip`, `effect`, `parameter`, `at`) |
 | `clear_effect_animation` | Retire toute l'animation d'un effet ; chaque paramètre garde la valeur qu'il montrait à `at` (`clip`, `effect`, `at`) |
 | `set_keyframe_value` | Change la valeur d'une image clé existante (`clip`, `property`, `at`, `value`) |
@@ -262,7 +292,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_mask_keyframe` | Pose ou remplace une image clé d'une propriété d'un masque de compositing (`clip`, `mask`, `property` = `position_x`…`opacity`, `at` relatif au clip, `value`, `interpolation`) ; refusé pour le recadrage, une fenêtre d'étalonnage, et la position d'un masque suivi |
 | `remove_mask_keyframe` | Retire l'image clé d'une propriété d'un masque à un instant (`clip`, `mask`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
-| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) |
+| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`, `detail` optionnel : `true` remet aussi son flou et sa netteté à 0, comme « Tout réinitialiser » de la page Couleur ; défaut `false`, comme le bouton de l'inspecteur) ; retire aussi les images clés `color.*` du clip (comme l'interface), sauf s'il reste étalonné par un graphe de nœuds |
 | `apply_effect_preset` | Applique un preset d'effets **intégré** à un clip vidéo (`clip`, `preset`) |
 | `apply_color_preset` | Applique un preset d'étalonnage **intégré** à un clip (`clip`, `preset`, `node` optionnel) |
 | `set_color_curve` | Règle la sortie d'un point de courbe (`channel`, `index`, `output`) |
@@ -476,9 +506,13 @@ stabilisation ne stockent aucune image clé : elles sont dérivées dans le plan
 - **Refusé plutôt que ramené.** Instant hors du clip, point hors de l'image (de −1 à 2 fois la taille pour `set_tracker_position`), réglage que le modèle
   écrêterait ou qui en changerait un autre, stabilisation sans `trackers` à la création, `smoothing_frames` hors du lissage `custom`, liaison qui
   remplacerait une liaison existante (`remove_link` d'abord).
-- **Verrous.** Le clip modifié (piste et calque) est vérifié. Les clips qui **suivent** un tracker dont les données changent (ou la stabilisation de la source)
-  le sont aussi, et `remove_tracker` vérifie ceux dont il réécrit la liaison : un seul clip verrouillé fait refuser le verbe, sans rien écrire. C'est
-  plus strict que l'interface. La source d'une liaison n'est que lue : elle peut être verrouillée.
+- **Verrous.** Le clip modifié (piste et calque) est vérifié **par le modèle** (`core.tracking_locks.require_clip_editable`, appelée par `core/tracking_ops.py`
+  avant la première écriture : le propriétaire des trackers, ou la cible d'une liaison ; la même règle que l'interface, les verbes n'en ont pas de copie ; `follow_reframe`
+  garde celle de `social.py`). Un clip qui **suit** un tracker dont les données changent (`set_tracker_position`,
+  `remove_correction`, `reset_tracker`, `set_stabilization`, `remove_stabilization`) n'est **pas** refusé, verrouillé (calque, piste, piste d'une autre
+  séquence) ou non : ces verbes n'écrivent que le suivi du clip visé, la liaison du suiveur (en temps source) n'est pas réécrite, seul son rendu suit,
+  comme dans l'interface. Seul `remove_tracker` réécrit des liaisons : il refuse, sans rien écrire, si l'un des clips dont il réécrirait la liaison est
+  verrouillé (règle du modèle, `core/tracking_locks.py`, la même que dans l'interface). La source d'une liaison n'est que lue : elle peut être verrouillée.
 - Valeurs par défaut de `set_stabilization` à la création : mode `position`, lissage `medium`, bords `zoom`, image de référence au début du clip.
 - `describe` ne lit pas encore le suivi (« Pas encore là ») : un script cite les trackers et les liaisons qu'il a créés (`id` / `as`).
 
@@ -699,11 +733,12 @@ Ces verbes appellent les fonctions que l'inspecteur, la timeline, le Graph Edito
 leurs contrôles communs sont dans `keyframe_rules.py`.
 
 - **Une image clé se désigne par `property` + `at`** (le `property_name` et le `time_seconds` de `describe`), jamais par son identifiant, que le modèle tire au
-  hasard. `property` est le nom du registre d'animation tel que la description le donne : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`.
+  hasard. `property` est le nom du registre d'animation tel que la description le donne : transform, `graphic.*`, `mask.<id>.<nom>`, `fx.<effet>.<paramètre>`, `color.*`.
   L'instant est comparé à la microseconde. La vitesse a ses propres verbes (ci-dessous) : `time.speed` est refusé ici.
 - **Images clés d'effet** : `add_effect_keyframe` / `remove_effect_keyframe` nomment l'effet et son paramètre séparément (comme `add_mask_keyframe` pour un
   masque). Seuls les paramètres que le modèle rend animables sont acceptés (luminosité, contraste et saturation de la correction de couleur, intensité de la
-  vignette) ; les bornes sont celles du type de l'effet. `add_keyframe` n'accepte toujours pas `fx.*`.
+  vignette, du flou et de l'aberration chromatique, rayon du Bloom — `parameter` : `radius`) ; la netteté et le seuil ou l'intensité du Bloom restent
+  statiques et sont refusés (« pas animable ») ; les bornes sont celles du type de l'effet, et le plafond d'images clés par clip s'applique. `add_keyframe` n'accepte pas `fx.*` (ses 23 propriétés `color.*` n'ont pas de sélecteur : elles ne dépendent que du clip).
 - **Sans aimantation** : l'interface aligne un déplacement sur une image de la timeline ; un script donne l'instant exact.
 - **Rien n'est ramené ni remplacé en silence** : valeur hors bornes, instant hors du clip, déplacement qui sortirait du clip (le modèle réduirait le décalage)
   ou arriverait sur une autre image clé (le modèle la remplacerait), image clé citée deux fois, décalage nul : refusés. Les propriétés qui ne sont pas des
@@ -797,6 +832,7 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   "project": {"name": "Démo", "width": 1280, "height": 720, "fps": 25.0, "duration": 4.0, "active_sequence": "seq-main"},
   "media": [{"id": "m1", "name": "a", "path": "/media/a.mp4", "media_type": "video", "duration": 4.0, "width": 1280,
              "height": 720, "fps": 25.0, "has_audio": true, "color_matrix": "auto", "present": null}],
+  "library": {"folders": [], "tags": [], "assignments": []},
   "sequences": [{
     "id": "seq-main", "name": "Séquence principale", "active": true, "width": 1280, "height": 720, "fps": 25.0, "duration": 4.0,
     "format_source": null,
@@ -809,10 +845,13 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
                            "transform": {"position_x": 0.0, "...": "..."}, "gain_db": 0.0, "pan": 0.0, "fade_in": 0.0,
                            "fade_out": 0.0, "graphic": null, "has_keyframes": false, "transform_keyframes": [], "effects": [],
                            "audio_effects": [], "color_grade": null, "compositing": {"masks": [], "chroma_key": {"...": "..."},
-                           "blend_mode": "normal"}, "animation": [], "composition": null}]}],
-    "transitions": [], "markers": [], "buses": [], "ducking_sidechains": []}],
+                           "blend_mode": "normal"}, "animation": [], "composition": null,
+                           "text_style": {"font_family": "Arial", "...": "..."}, "tracking": null}]}],
+    "transitions": [], "markers": [], "buses": [], "ducking_sidechains": [], "guides": [],
+    "motion_blur": {"enabled": true, "shutter_angle": 180.0, "samples": 8}, "multicam": null, "beat_grid": null,
+    "generated_groups": []}],
   "color_presets": [],
-  "not_described": ["graphic_style", "library", "mograph", "multicam", "social", "text_style", "tracking"]
+  "not_described": []
 }
 ```
 
@@ -820,13 +859,15 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   la sonde, `present`), les séquences (format, `format_source`, bus, associations de ducking), les pistes (verrou, visibilité, muet, solo,
   fader, panoramique, rôle, bus, inserts, automation de volume, ducking), les clips (identifiants du média, de la séquence imbriquée, de
   l'angle ; place, durée, plage source ; vitesse et remappage ; transform ; audio de base ; calque graphique ; sous-titre ; **effets
-  visuels et audio, étalonnage, compositing, composition, images clés**), les transitions, les repères et les préréglages d'étalonnage
-  du projet. Le détail des sections de la partie B est dans « Effets, couleur, composition, images clés et bus » ci-dessous.
-- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` (style des calques graphiques, bibliothèque, motion graphics —
-  guides et flou de mouvement —, multicam, vidéo sociale, style de texte, suivi) : la sortie ne met jamais une clé vide à la place d'une
-  donnée qu'elle ne lit pas.
+  visuels et audio, étalonnage, compositing, composition, images clés**, puis **style des calques graphiques, style de texte, suivi**), les
+  transitions, les repères, les préréglages d'étalonnage et, au niveau du projet, la **bibliothèque** ; au niveau de la séquence, les
+  **guides, le flou de mouvement, la grille rythmique, les classements et la source Multicam**. Le détail des parties B et C est dans les
+  deux sections qui suivent.
+- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` : la liste est **vide** depuis la partie C (tous les champs du modèle sont
+  décrits, ou exclus avec une raison écrite : échantillons bruts du suivi, temps de scène d'un calque de lumière). La clé reste, pour qu'un
+  champ futur sans décision puisse y être nommé ; la sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
 - **Les noms de clés sont ceux des champs du modèle** (`timeline_start`, `asset_id`…), en anglais ; les durées sont en **secondes**. Les
-  clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `active`, la taille du projet) sont les seules
+  clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `color_grade_simple`, `color_animation_live`, `active`, la taille du projet) sont les seules
   qui n'existent pas dans le modèle. `kind` vaut `media`, `sequence` (clip imbriqué), `composition` ou `graphic`.
 - **Valeurs** : JSON strict (une valeur non finie est `null`), nombres arrondis à 6 décimales, ordre des clés et des listes fixe (celui du
   modèle). Une chaîne vide qui veut dire « aucun » (`asset_id`, `sequence_id`, `angle_id`…) est `null`.
@@ -834,11 +875,11 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   demande. Les médias techniques (sous-titres, calques) n'ont pas de fichier : `null` aussi.
 - **Une séquence imbriquée est citée** (`sequence_id`), jamais développée : sa description est dans `sequences`.
 - **Distinct du fichier `.kut`** : `describe_version` (entier) change quand une clé disparaît ou change de sens ; ajouter des clés (les
-  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture. La partie B n'a fait qu'**ajouter** des clés à la
-  forme de la partie A (qui n'était pas encore publiée) : la version reste `1`.
+  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture. Les parties B et C n'ont fait qu'**ajouter** des clés
+  à la forme de la partie A (qui n'était pas encore publiée) : la version reste `1`.
 - **Valeurs saisies, pas évaluées.** Une valeur décrite est celle du modèle (`effects[].params`, `transform`, `color_grade`…), pas celle que
-  la scène calcule à un instant : si le clip porte des images clés, la valeur rendue vient de la courbe, et un suivi (`tracking`, non
-  décrit) peut encore la remplacer au rendu.
+  la scène calcule à un instant : si le clip porte des images clés, la valeur rendue vient de la courbe, et un suivi (`tracking`) peut
+  encore la remplacer au rendu.
 - **Avec `schema` et `apply`** : `schema` dit ce qu'un script peut écrire, `apply` l'écrit, `describe` relit le résultat (les identifiants
   d'un script, `id` ou `as`, se retrouvent tels quels dans la description).
 
@@ -854,7 +895,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 | `clips[].audio_effects[]`, `tracks[].inserts[]`, `buses[].inserts[]` | même forme | `add_clip_audio_effect`, `add_track_insert`, `add_bus_insert` ; `update_*`, `set_*_enabled`, `remove_*` (`effect` / `insert` = `id`) |
 | `sequences[].buses[]`, `tracks[].bus_id` | `id`, `name`, `volume_db`, `muted`, `inserts` ; `bus_id` vaut `null` pour le Master | `add_bus`, `rename_bus`, `set_bus_volume`, `set_bus_muted`, `route_track` (`bus` = `id`) |
 | `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `set_track_role` (`audio_role`), `add_automation_point` / `update_automation_point` / `move_automation_point` / `remove_automation_point` (`at` = `time_seconds`), `set_automation_curve`, `add_ducking_sidechain` (`id`), `update_ducking_config`, `set_ducking_enabled`, `remove_ducking_sidechain` (`ducking` = `id`), `duck_music_under_voice` ; `move_track_insert` / `move_bus_insert` pour l'ordre des inserts |
-| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>`, `add_effect_keyframe` pour `fx.<effet>.<paramètre>` (`effect`, `parameter`) ; `set_keyframe_tangents` pour les pentes |
+| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>`, `add_effect_keyframe` pour `fx.<effet>.<paramètre>` (`effect`, `parameter`) ; `add_keyframe` accepte aussi `color.*` ; `set_keyframe_tangents` pour les pentes |
 | `clips[].color_grade` | `null` (jamais étalonné) ou `{nodes, links}` : un réglage seul est le nœud `n1` ; un nœud est `corrector` (`grade`, `label`, `qualifier`, `windows`, `blur`, `sharpen`) ou `mixer` (`kind`) | `set_color_grade`, `set_color_curve`, `set_color_wheel`, `set_color_qualifier`, `set_color_detail`, `rename_color_node` (`node` = `id`, absent : le premier), `add_color_window` / `set_color_window` (`window` = `id`) |
 | `clips[].compositing` | `masks[]` (forme, position, taille, `mode`, `points` / `handles`, `nodes` pour une courbe), `chroma_key`, `blend_mode` | `add_mask`, `set_mask`, `set_mask_points` (`mask` = `id`), `set_crop` |
 | `clips[].composition` | `graph.nodes[]` (`type` : `media`, `graphic`, `solid`, `transform`, `merge`, `mask`, `key`, `effects`, `grade`, `output`), `graph.links[]`, `duration`, `animation[]` | aucun (lecture seule) |
@@ -893,6 +934,58 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 `script_verb_debt.json` (chaque fonction publique d'édition a un verbe, ou une raison écrite de ne pas en avoir). Un champ ou une fonction
 neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting_debt fields|verbs --list` montre la dette.
 
+### Bibliothèque, guides, Multicam, suivi et style (partie C)
+
+| Clé | Contenu | Verbes qui visent ces objets |
+| --- | --- | --- |
+| `library.folders[]`, `tags[]`, `assignments[]` | dossiers (`id`, `name`, `parent_id`, `color`), étiquettes (`id`, `name`, `color`), rangement des médias (`asset_id`, `folder_id`, `tag_ids`) ; un média absent des `assignments` est à la racine, sans étiquette | `create_library_folder` / `create_library_tag` (`id`), `rename_*`, `recolor_*`, `move_library_folder`, `delete_*` (`folder` / `tag` = `id`), `move_media_to_folder`, `tag_media`, `untag_media` (`asset` = `media[].id`) |
+| `sequences[].guides[]` | `id`, `orientation`, `position`, `locked` | `add_guide` (`id`), `move_guide`, `remove_guide` (`guide` = `id`) |
+| `sequences[].motion_blur`, `beat_grid`, `generated_groups[]` | flou de mouvement de la séquence ; grille rythmique (`null` : aucune) ; classements (`id`, `kind`, `data` = `rows` + `start`, `duration`, `top`, `delay`, `clips`) | `set_beat_grid` / `remove_beat_grid` ; `add_leaderboard` (`id`), `update_leaderboard` (`leaderboard` = `id`) |
+| `sequences[].multicam` | `null` (séquence ordinaire) ou `angles[]` (`id` `angle-N`, `name`, `track_id`, `color_index`, `sync_*`, `offset` dérivé), `audio` (`mode`, `angle_ids`), `sync_method` ; les segments sont les clips `kind: "sequence"` dont `angle_id` est non nul | `create_multicam_source` (`id`), `add_multicam_angle`, `rename_multicam_angle`, `set_multicam_angle_offset` / `_color`, `set_multicam_audio`, `insert_multicam_clip`, `switch_multicam_angle`, `replace_multicam_angle` (`angle` = `id` ou nom) |
+| `clips[].tracking` | `null` (aucun suivi) ou `trackers[]`, `links[]`, `stabilization` | voir ci-dessous |
+| `clips[].graphic` | en plus de la partie A : tout le style (couleurs, contour, ombre, police, forme, alignement, fond, texte animé, néon, lumière) | `set_graphic` (sept champs : voir les manques), `add_graphic` (`shape`) |
+| `clips[].text_style` | le style des sous-titres (police, couleurs, contour, ombre, fond, alignement, marges), présent sur tout clip | aucun |
+
+**Le suivi.** Les échantillons d'un tracker (une position par image source) sont une grille dense : la description ne les écrit **pas**
+(`counts` donne leur nombre par état, `valid_range` la plage utilisée, `count` la taille de la grille). Elle donne `manual_points`, les
+points posés à la main (`set_tracker_position` en pose un par appel), **64 au plus** par tracker (`manual_points_truncated` le dit ;
+`counts.manual` donne le total). Chaque point porte `timeline_time`, le `at` que les verbes attendent (l'instant du **milieu** de l'image
+source montrée par le clip, robuste à l'arrondi à 6 décimales de la sortie) ; `links[].reference_time` et `stabilization.reference_time`
+sont de même le `at` de `add_link` et de `set_stabilization`. Une liaison à source `null` est portée par son propre clip. Après une coupe de la
+source, `links[].reference_clip_id` dit quelle moitié montre l'image de référence (celle que choisit le rendu) : c'est le `source` à donner à
+`add_link` avec `reference_time`. Les sources d'une liaison sont cherchées dans la séquence du clip lié, comme le fait le rendu.
+Les `x` / `y` des points manuels sont en pixels du média **courant** (`points_width` x `points_height`) : après `relink_media` vers une autre
+résolution, les données gardent leur taille d'origine (`source_width` x `source_height`) et la description remet à l'échelle, comme
+`set_tracker_position` en sens inverse ; rejouer les points décrits ne les déplace donc pas.
+
+```json
+"tracking": {"trackers": [{"id": "tr1", "name": "Œil", "color": "#36E6C3", "visible": true, "show_path": true, "kind": "point",
+                           "settings": {"pattern_width": 48.0, "search_width": 144.0, "adapt": "adaptive", "...": "..."},
+                           "data": {"rate": 30.0, "first": 0, "count": 61, "source_width": 1920, "source_height": 1080,
+                                    "points_width": 1920, "points_height": 1080, "valid_range": [0, 60], "counts": {"empty": 58, "tracked": 0, "uncertain": 0, "lost": 0, "manual": 3},
+                                    "manual_points": [{"index": 0, "timeline_time": 50.016667, "x": 960.0, "y": 540.0}, "..."],
+                                    "manual_points_truncated": false}}],
+             "links": [{"id": "lk3", "source_clip_id": null, "tracker_ids": ["tr2"], "target": "anchor", "mask_id": null,
+                        "position": true, "rotation": false, "scale": false, "reference_index": 0, "enabled": true,
+                        "continuation_ids": [], "reference_clip_id": "c5", "reference_time": 50.016667}],
+             "stabilization": {"enabled": true, "tracker_ids": ["tr1"], "mode": "position", "smoothing": "custom",
+                               "smoothing_frames": 8.0, "borders": "crop", "reference_index": 30, "shared_range": null,
+                               "reference_time": 51.016667}}
+```
+
+Verbes : `add_tracker` (`id`, premier point), `set_tracker_position`, `update_tracker`, `set_tracker_settings`, `remove_tracker` (`tracker` = `id`) ;
+`add_link` (`id` ; `source` = `source_clip_id` ou le clip lui-même, `at` = `reference_time`), `set_link_enabled`, `remove_link`, `bake_link`
+(`link` = `id`) ; `set_stabilization` (`at` = `reference_time`), `remove_stabilization`. Un test (`tests/test_describe_roundtrip_c.py`) reconstruit
+la bibliothèque, les guides et la grille, un classement, une source Multicam avec ses segments, les trackers, les liaisons et la stabilisation depuis
+la seule description, et vérifie que `timeline_time` retombe sur la même image à 24, 29,97, 59,94 et 120 i/s.
+
+- **Ce qu'aucun verbe n'écrit encore** : le style des calques graphiques hors de `set_graphic` (ombre, néon, alignement, fond, texte animé,
+  lumière…), un guide verrouillé (`add_guide` ne pose que des guides libres), le flou de mouvement de la séquence et le style de texte des
+  sous-titres. Les points analysés d'un tracker ne s'écrivent pas non plus (un script n'analyse rien : il pose ses points). Un test les nomme.
+- **Pas décrit, par raison écrite** : les échantillons bruts du suivi (`xs`, `ys`, `confidence`, `status` : volumineux, résumés par `counts` et
+  `valid_range`) et `light_time` d'un calque de lumière (posé par la scène à chaque image, jamais saisi).
+- `DESCRIBE_VERSION` reste `1` : tout est ajouté, rien ne change de sens. Pour un projet de 10 000 clips suivis, la sortie reste bornée par tracker.
+
 ## Presets, compositions et sélection multiple
 
 Ces verbes (`core/scripting/preset_verbs.py`, `composition_verbs.py`, `selection_verbs.py`, `selection_rules.py`) appellent les fonctions que la
@@ -914,10 +1007,53 @@ bibliothèque, la page Composition et la sélection de la timeline appellent.
   d'un calque, liaison de suivi, même sur une autre séquence) ne doit pas être verrouillé ; c'est vérifié avant la première suppression.
 - **Identifiant du clip créé** : `id` / `as` ; les fonctions de composition reçoivent pour cela un paramètre optionnel `clip_id` (sans lui, l'interface ne change pas).
 
+## Plafonds des verbes
+
+Un script ne peut pas faire grossir un projet sans limite. Chaque verbe qui crée des objets vérifie, **avant** de créer, que le projet (ou la séquence, le clip, la piste concernés) ne dépasserait pas le plafond de la ressource, avec le nombre **exact** d'objets que l'opération ajoute. Un script qui dépasse un plafond est **refusé** avec un message clair : rien n'est ramené en silence, et le projet reste inchangé (tout ou rien). Les plafonds ne visent que les verbes de script, jamais l'interface. Un projet qui dépasse **déjà** un plafond (fichier ouvert dans l'application) n'est pas modifié : un verbe refuse seulement d'y **ajouter**, il ne supprime rien et une opération qui remplace ou retire passe.
+
+Toutes les constantes vivent dans `core/scripting/resource_limits.py` (les plafonds de séquences, de calques, de suiveurs, de ducking, d'automation, de bibliothèque et de bus restent dans leur module de règles, indiqué ci-dessous).
+
+| Ressource | Plafond | Valeur | Portée |
+| --- | --- | --- | --- |
+| Clips (calques, sous-titres, copies, coupes, segments Multicam compris) | `MAX_CLIPS_IN_PROJECT` | 5 000 | le projet, toutes séquences ; tout chemin qui crée un calque réserve aussi ses clips (un projet peut avoir 5 000 clips vidéo et peu de calques) |
+| Clips créés par une opération | `MAX_NEW_CLIPS_PER_OPERATION` | 500 | l'opération |
+| Images clés | `MAX_KEYFRAMES_PER_CLIP` | 2 000 | un clip : une **seule** mesure, transform + animation (effets, masques, vitesse, calques) |
+| Pistes | `MAX_TRACKS_PER_SEQUENCE` | 100 | la séquence active |
+| Repères | `MAX_MARKERS_PER_SEQUENCE` | 5 000 | la séquence active |
+| Guides | `MAX_GUIDES_PER_SEQUENCE` | 200 | la séquence active |
+| Inserts audio | `MAX_INSERTS_PER_CHAIN` | 32 | une piste, ou un bus |
+| Effets visuels | `MAX_EFFECTS_PER_CLIP` | 100 | un clip |
+| Effets audio | `MAX_AUDIO_EFFECTS_PER_CLIP` | 100 | un clip |
+| Masques | `MAX_MASKS_PER_CLIP` | 64 | un clip |
+| Nœuds d'étalonnage | `MAX_COLOR_NODES_PER_CLIP` | 64 | un clip |
+| Fenêtres d'étalonnage | `MAX_COLOR_WINDOWS_PER_CLIP` | 64 | un clip, tous nœuds confondus |
+| Médias | `MAX_MEDIA_IN_PROJECT` | 10 000 | le projet : tout chemin qui ajoute un média réserve son nombre exact avant de créer (import, média interne d'un calque ou d'un sous-titre, photo posée dans un emplacement ; une photo déjà dans le projet n'en ajoute pas) |
+| Suiveurs | `MAX_TRACKERS_IN_PROJECT` (`tracking_rules`) | 1 000 | le projet ; une coupe ou une copie d'un clip suivi reprend ses suiveurs |
+| Séquences | `MAX_SEQUENCES_IN_PROJECT` (`sequence_rules`) | 200 | le projet |
+| Calques | `MAX_LAYERS_IN_PROJECT` (`layer_rules`) | 5 000 | le projet, toutes séquences (copie de séquence comprise) |
+| Associations de ducking | `MAX_SIDECHAINS` (`audio_rules`) | 256 | le projet |
+| Points d'une courbe de volume | `MAX_AUTOMATION_POINTS` (`audio_rules`) | 1 000 | une piste |
+
+Les valeurs sont larges (plusieurs fois ce qu'un projet réaliste utilise). Deux familles ne portent pas de plafond propre parce qu'elles sont bornées par construction : les **transitions** (une par jonction, et un clip n'est dans qu'une seule transition : au plus la moitié des clips de la séquence) et les **liaisons de suivi** (une par propriété cible d'un clip, vers un masque qui doit exister : au plus 2 + masques + fenêtres, eux-mêmes plafonnés). Le fichier `tests/script_resource_guards.py` tient l'inventaire de chaque verbe créateur (voir ci-dessous).
+
+## Garde-fous de ressources
+
+Deux garde-fous de tests empêchent qu'un verbe oublie une limite, ou qu'une raison de la dette se perde.
+
+**Un verbe qui crée des objets** (clips, calques, séquences, images clés, associations, suiveurs…) doit avoir décidé de son plafond. Les verbes créateurs sont **découverts** dans la table des verbes (`creates=…`, ou appel d'une fonction de création du modèle, y compris à travers une fonction de `core/scripting/`) : un verbe neuf sans décision fait échouer `tests/test_script_resource_guards.py`. La décision s'écrit dans `tests/script_resource_guards.py` :
+
+- `CEILINGS` : une entrée par ressource plafonnée (arguments minimaux du verbe, nombre d'objets créés). Le test applique l'opération construite **directement**, sans session, à un projet déjà au plafond (constante abaissée) et vérifie le refus et l'absence de changement, avec les objets déjà là dans la séquence active **et** dans une autre (`Project.tracks` ne montre que l'active). Il vérifie aussi qu'il reste la place d'exactement l'opération, pour que l'oubli d'un « combien » (valeur 0) se voie ;
+- `BOUNDED` : le verbe ne peut pas faire croître la ressource ; la raison dit comment on l'a vérifié ;
+- à défaut, une ligne `verbe:ressource` dans `tests/data/script_resource_debt.json` (dette nommée, avec sa raison) : elle ne peut que diminuer. Quand le verbe est sondable (`DEBT_SPECS`), le test échoue dès qu'il se met à refuser, pour qu'on le passe en `CEILINGS`.
+
+Une ressource nouvelle s'ajoute à `RESOURCES` (constantes à abaisser, comptage indépendant des gardes, remplissage).
+
+**Une fonction du modèle sans verbe** reste dans `tests/data/script_verb_debt.json` avec une raison de `tools/scripting_debt.py` (`REASONS`). Les raisons durables (« interne », « interface seulement… », « lecture seule », « remplacé »…) sont recopiées dans `tests/data/script_verb_reclassified.json`, que `tests/test_script_verb_reasons.py` compare à la dette : un merge qui écrase un reclassement fait échouer le test. Pour reclasser une fonction, changez sa raison dans la dette puis lancez `python -m tools.scripting_debt verbs --sync-reclassified` (le diff du fichier est ce que la revue lit) ; `--check-reclassified` vérifie sans rien écrire et liste ce qui reste « à faire ».
+
 ## Pas encore là
 
 - **Animation des effets** : le flou, le rayon de la lueur et l'aberration chromatique ne s'animent pas encore (étape 5 de l'ADR-0008) ; les verbes d'images clés d'effet n'acceptent que les paramètres que le modèle rend animables.
-- Le reste de `describe` (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale, style de texte, suivi : « partie C »), les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 5 partie C, 6 et 7 de l'ADR).
+- Les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code
 

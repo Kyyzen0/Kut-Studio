@@ -97,7 +97,9 @@ def test_defaults_have_no_extra_shortcut_beyond_legacy_ones():
     motion = {"Ctrl+G", "Ctrl+Shift+G", "Ctrl+'", "Ctrl+;"}
     # Raccourcis ajoutés avec le Multicam : un angle par chiffre et le moniteur Multicam.
     multicam = {str(number) for number in range(1, 10)} | {"Ctrl+Shift+M"}
-    added = {normalize_sequence(s) for s in animation | sequences | motion | multicam}
+    # Palette de commandes « Rechercher une fonction » (Ctrl+K reste « couper à la tête de lecture »).
+    palette = {"Ctrl+Shift+P"}
+    added = {normalize_sequence(s) for s in animation | sequences | motion | multicam | palette}
     assigned = {s for c in COMMANDS for s in shortcuts.sequences(c.id)}
     assert assigned == legacy | added
     assert not legacy & added

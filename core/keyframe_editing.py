@@ -20,6 +20,7 @@ from typing import Any
 
 from .animation import (
     AnimatableProperty,
+    TIME_EPSILON,
     AnimationCurve,
     InterpolationType,
     Keyframe,
@@ -248,6 +249,26 @@ def remove_keyframe_at(project, clip_id: str, property_id: str, local_time: floa
         return False
     refs = [KeyframeRef(clip_id, property_id, existing.id)]
     return remove_keyframes(project, refs, local_time=local_time) == 1
+
+
+def remove_orphan_keyframe_at(project, clip_id: str, property_id: str, local_time: float) -> bool:
+    """Retire l'image clé de ``property_id`` à ``local_time`` quand **plus aucune cible** ne la résout pour ce clip (ADR-0008, étape 9).
+
+    Cas : une image clé d'étalonnage ``color.*`` restée dans un clip devenu graphe de nœuds (le rendu l'ignore, aucune cible ne la
+    résout : ``remove_keyframe_at`` lèverait ``KeyError``). Rien d'autre n'est modifié (aucune valeur statique n'est écrite : il n'y a
+    plus de réglage simple). Verrous de piste et de calque respectés ; ``False`` si aucune image clé n'est à cet instant.
+    """
+    clip = find_clip(project, clip_id)
+    _guard(project, clip_id)
+    when = normalize_time(local_time)
+    kept = [
+        k for k in clip.animation
+        if not (k.property_name == property_id and abs(normalize_time(k.time_seconds) - when) <= TIME_EPSILON)
+    ]
+    if len(kept) == len(clip.animation):
+        return False
+    clip.animation = kept
+    return True
 
 
 def set_animation_enabled(project, clip_id: str, property_id: str, enabled: bool, local_time: float) -> None:
@@ -549,6 +570,7 @@ __all__ = [
     "previous_keyframe_time",
     "remove_keyframe_at",
     "remove_keyframes",
+    "remove_orphan_keyframe_at",
     "set_animation_enabled",
     "set_interpolation",
     "set_keyframe_time",

@@ -27,6 +27,8 @@ from ..effects_model import (
 )
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import Project
+from ..timeline_operations import find_clip
+from .resource_limits import require_effect_room
 from .verbs import Kind, Operation, Param, Verb, _CLIP, _editable_clip, _pick
 
 _MAX_DELTA = 1000
@@ -51,6 +53,7 @@ def _add_effect(a: Mapping[str, Any]) -> Operation:
                 requested = resolve_object_id(requested, prefix="fx", kind="effet", taken={item.id for item in clip_effects(project, clip_id)})
             except InvalidObjectId as error:
                 raise ValueError(str(error)) from None
+        require_effect_room(find_clip(project, clip_id))
         return add_effect_to_clip(
             project, clip_id, a["type"], effect_id=requested, params=a.get("params"), enabled=bool(a.get("enabled", True)),
         )

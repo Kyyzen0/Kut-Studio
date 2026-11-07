@@ -32,9 +32,10 @@ from ..mograph_presets import MographPreset, apply_preset, builtin_preset_names,
 from ..project_model import Project
 from ..text_animations import TEXT_ANIMATIONS, apply_text_animation
 from .layer_rules import (
-    MAX_LAYERS_PER_OPERATION, appearance, frozen_layers, graphic_of, require_editable_container, require_room,
+    MAX_LAYERS_PER_OPERATION, appearance, frozen_layers, graphic_of, require_editable_container, require_layers_room,
     require_same_appearance, require_shallow, require_untouched,
 )
+from .resource_limits import require_keyframes_after
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip
 
 _MAX_INDEX = 10_000
@@ -123,7 +124,8 @@ def _duplicate_layers(a: Mapping[str, Any]) -> Operation:
         for clip_id in ids:
             require_editable_container(project, find_layer(project, clip_id)[1])
         copied = _with_content(project, ids)
-        require_room(project, len(copied))
+        media = sum(1 for clip_id in copied if find_layer(project, clip_id)[1].asset_id in {asset.id for asset in project.media_assets})
+        require_layers_room(project, len(copied), media=media)               # une copie n'a un média neuf que si l'original en a un
         # Le modèle rend les copies dans l'ordre de la pile : celle du premier calque cité s'y retrouve par son rang.
         created = duplicate_layers(project, ids, new_ids={ids[0]: a["id"]} if a.get("id") else None)
         return created[copied.index(ids[0])]
@@ -188,7 +190,7 @@ def _group_layers(a: Mapping[str, Any]) -> Operation:
         options: dict[str, Any] = {"group_id": a.get("id")}
         if a.get("name") is not None:
             options["name"] = a["name"]
-        require_room(project, 1)
+        require_layers_room(project, 1)
         group = group_layers(project, ids, **options)
         require_shallow(project, group.id)
         return group
@@ -265,7 +267,8 @@ def _apply_layer_preset(a: Mapping[str, Any]) -> Operation:
         # modèle porte donc un nom ici. Les presets de l'utilisateur sont des fichiers de sa configuration : un script n'en lit pas.
         named = MographPreset(str(a["preset"]), "", _NO_LAYERS, builtin=True)
         built = next(item for item in builtin_presets(project.width, project.height) if item.name == named.name)
-        require_room(project, len(built.clipboard.clips))
+        known = {raw["id"] for raw in built.clipboard.assets}
+        require_layers_room(project, len(built.clipboard.clips), media=sum(1 for raw in built.clipboard.clips if raw.get("asset_id") in known))
         created = apply_preset(project, named, at=float(a["at"]), main_id=a.get("id"))
         return next(clip for clip in created if not graphic_of(clip).group_id)       # le calque principal : le premier hors groupe
 
@@ -284,6 +287,7 @@ def _apply_text_animation(a: Mapping[str, Any]) -> Operation:
             raise ValueError(f"Il reste moins de {_MIN_ROOM:g} s de calque après {start:g} s : trop court pour cette animation.")
         if a["animation"] == "bounce" and (clip.duration - start) / 0.25 > _MAX_BOUNCE_KEYFRAMES:
             raise ValueError(f"Le rebond pose une image clé tous les 0,25 s : au plus {_MAX_BOUNCE_KEYFRAMES * 0.25:g} s de calque.")
+        require_keyframes_after(clip, lambda probe: apply_text_animation(probe, a["animation"], start=start), "apply_text_animation")
         return apply_text_animation(clip, a["animation"], start=start)
 
     return operation

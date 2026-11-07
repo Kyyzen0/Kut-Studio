@@ -18,11 +18,13 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
+import shiboken6
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QPixmap, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
@@ -42,6 +44,7 @@ from ui.design_system import Sizes, Spacing, Typography, Weights
 from ui.empty_state import EmptyState
 from ui.icons import IconButton, IconName
 from ui.panel_header import PanelHeader
+from ui.source_scope import SourceScope
 from ui.theme import COLORS, monospace_font_family, set_role
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
@@ -95,9 +98,27 @@ def _decode_underlay_frame(path: str, seconds: float, color_override: str = ""):
 
 
 class _UnderlayDecodeBridge(QObject):
-    """Pont fil de décodage → thread Qt."""
+    """Pont fil de décodage → thread Qt (un seul, partagé par tous les panneaux)."""
 
-    ready = Signal(str, str, object)  # source_id, key, VideoFrame | None
+    ready = Signal(int, str, str, object)  # panneau, source_id, key, VideoFrame | None
+
+
+_UNDERLAY_BRIDGE: _UnderlayDecodeBridge | None = None
+_PANEL_IDS = itertools.count(1)
+
+
+def _underlay_bridge() -> _UnderlayDecodeBridge:
+    """Le pont, créé sur le fil Qt et jamais rattaché à un panneau.
+
+    Le fil de décodage émet sur ce QObject pendant que le fil Qt peut détruire un panneau (démontage de test, fermeture
+    de fenêtre) : un signal émis sur un QObject en cours de destruction plante (CI Debian, ``_job`` ligne 1244). Le pont
+    vit donc tant que l'application ; la connexion vers un panneau détruit se défait seule, et l'événement en file est
+    abandonné par Qt.
+    """
+    global _UNDERLAY_BRIDGE
+    if _UNDERLAY_BRIDGE is None or not shiboken6.isValid(_UNDERLAY_BRIDGE):
+        _UNDERLAY_BRIDGE = _UnderlayDecodeBridge(QCoreApplication.instance())
+    return _UNDERLAY_BRIDGE
 
 
 class _ViewportWatcher(QObject):
@@ -160,6 +181,7 @@ class PreviewPanel(QWidget):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self._source_scope = SourceScope()
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(1.0)
@@ -249,8 +271,8 @@ class PreviewPanel(QWidget):
         self._gpu_underlays: tuple = ()
         self._gpu_underlay_pushed: dict[str, str] = {}
         self._gpu_underlay_wanted: dict[str, str] = {}  # source_id → clé path|time en vol
-        self._underlay_bridge = _UnderlayDecodeBridge(self)
-        self._underlay_bridge.ready.connect(self._on_underlay_decoded, Qt.QueuedConnection)
+        self._underlay_panel_id = next(_PANEL_IDS)
+        _underlay_bridge().ready.connect(self._on_underlay_bridge, Qt.QueuedConnection)
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
@@ -281,7 +303,7 @@ class PreviewPanel(QWidget):
         self.preview_effects_overlay.setAlignment(Qt.AlignCenter)
         self.preview_effects_overlay.setStyleSheet(
             f"background: rgba(15, 118, 110, 210); color: {COLORS['text']};"
-            " border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 700;"
+            f" border-radius: 6px; padding: 4px 8px; font-size: {Typography.micro}px; font-weight: 700;"
         )
         self.preview_effects_overlay.hide()
 
@@ -290,7 +312,7 @@ class PreviewPanel(QWidget):
         self.preview_quality_notice.setAlignment(Qt.AlignCenter)
         self.preview_quality_notice.setStyleSheet(
             f"background: rgba(120, 80, 0, 200); color: {COLORS['text']};"
-            " border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600;"
+            f" border-radius: 6px; padding: 3px 8px; font-size: {Typography.micro}px; font-weight: 600;"
         )
         self.preview_quality_notice.hide()
 
@@ -328,7 +350,8 @@ class PreviewPanel(QWidget):
         )
         toolbar_layout.addWidget(self.timecode_label)
         toolbar_layout.addSpacing(Spacing.xs)
-        toolbar_layout.addWidget(QLabel("/"))
+        slash = QLabel("/")
+        toolbar_layout.addWidget(slash)
         toolbar_layout.addSpacing(Spacing.xs)
         toolbar_layout.addWidget(self.duration_label)
 
@@ -385,6 +408,11 @@ class PreviewPanel(QWidget):
         toolbar_layout.addWidget(cut_button)
         toolbar_layout.addWidget(import_button)
         self._tooltip_buttons += [(cut_button, "tooltip.cut"), (import_button, "preview.import")]
+        # Colonne étroite (page Composition, nœuds entiers à droite) : la durée totale et les deux boutons de droite s'effacent plutôt
+        # que de rogner le timecode (voir :meth:`set_adaptive_transport`).
+        self._adaptive_transport = False
+        self._transport_full_width = toolbar.minimumSizeHint().width()
+        self._transport_extras = (self.duration_label, slash, cut_button, import_button)
 
         # Zone d'aperçu ---------------------------------------------------------
         preview_container = QWidget()
@@ -437,6 +465,7 @@ class PreviewPanel(QWidget):
         self._library_preview_path = path
         self._timeline_preview_path = None
         self.set_source_color("")        # un média de la bibliothèque : la matrice de l'image décodée (étiquette, sinon taille)
+        self._source_scope.hold(path)    # Store : l'accès au fichier dure autant que la source (ADR-0013 étape 5)
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
 
@@ -456,6 +485,7 @@ class PreviewPanel(QWidget):
         target_ms = int(source_time_seconds * 1000)
         if self._timeline_preview_path != path:
             self._timeline_preview_path = path
+            self._source_scope.hold(path)
             self.player.setSource(QUrl.fromLocalFile(path))
         elif playing and self.player.playbackState() == QMediaPlayer.PlayingState:
             if abs(self.player.position() - target_ms) <= PLAYBACK_DRIFT_SECONDS * 1000:
@@ -598,6 +628,22 @@ class PreviewPanel(QWidget):
         self.preview_effects_overlay.setText(f"FX · {names}")
         self.preview_effects_overlay.show()
 
+    def set_adaptive_transport(self, enabled: bool) -> None:
+        """Page Composition : sous la largeur de la barre de transport entière, la durée totale et les boutons de droite s'effacent
+        (le timecode et la lecture restent entiers). Ailleurs (``False``, par défaut), la barre ne change jamais."""
+        self._adaptive_transport = bool(enabled)
+        self._fit_transport()
+
+    def _fit_transport(self) -> None:
+        narrow = self._adaptive_transport and self.width() < self._transport_full_width
+        for widget in self._transport_extras:
+            widget.setVisible(not narrow)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        super().resizeEvent(event)
+        if self._adaptive_transport:
+            self._fit_transport()
+
     def set_timecode(self, current_seconds: float, total_seconds: float) -> None:
         """Met à jour le timecode turquoise et la durée totale."""
         try:
@@ -680,6 +726,7 @@ class PreviewPanel(QWidget):
         try:
             self.player.stop()
             self.player.setSource(QUrl())
+            self._source_scope.release()
         except Exception:  # pragma: no cover
             LOGGER.debug(
                 "Libération du lecteur du moniteur en échec : le décodeur peut rester attaché au fichier précédent",
@@ -1229,8 +1276,10 @@ class PreviewPanel(QWidget):
             # Dernière demande gagne : les jobs déjà en file voient la clé périmée
             # avant le décodage coûteux et s'arrêtent (coalesce scrub / lecture).
             self._gpu_underlay_wanted[source_id] = key
+            bridge, panel_id = _underlay_bridge(), self._underlay_panel_id  # pris ici : le fil de décodage ne touche pas ``self`` Qt
 
-            def _job(source_id=source_id, path=path, time_s=time_s, key=key, override=override) -> None:
+            def _job(source_id=source_id, path=path, time_s=time_s, key=key, override=override,
+                     bridge=bridge, panel_id=panel_id) -> None:
                 if self._gpu_underlay_wanted.get(source_id) != key:
                     return
                 try:
@@ -1241,7 +1290,7 @@ class PreviewPanel(QWidget):
                     frame = None
                 if self._gpu_underlay_wanted.get(source_id) != key:
                     return
-                self._underlay_bridge.ready.emit(source_id, key, frame)
+                bridge.ready.emit(panel_id, source_id, key, frame)
 
             _underlay_pool().submit(_job)
         for source_id in [s for s in list(self._gpu_underlay_pushed) if s not in used]:
@@ -1252,6 +1301,10 @@ class PreviewPanel(QWidget):
         for source_id in [s for s in list(self._gpu_underlay_wanted) if s not in used]:
             self._gpu_underlay_wanted.pop(source_id, None)
         self._update_gpu_composite()
+
+    def _on_underlay_bridge(self, panel_id: int, source_id: str, key: str, decoded) -> None:
+        if panel_id == self._underlay_panel_id:
+            self._on_underlay_decoded(source_id, key, decoded)
 
     def _on_underlay_decoded(self, source_id: str, key: str, decoded) -> None:
         """Rappel Qt : une image underlay est prête (ou ``None`` si échec)."""

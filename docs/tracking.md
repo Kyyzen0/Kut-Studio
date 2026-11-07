@@ -12,7 +12,7 @@ camera solve, planar tracking, détection d'objets, génération de contenu.
 ## Pour l'utilisateur
 
 1. Sélectionner un clip vidéo, ouvrir l'onglet **Suivi** de l'inspecteur
-   (menu « ••• », ou *Calques → Suivi (tracking)…*).
+   (onglet « Suivi » de l'inspecteur, ou *Calques → Suivi (tracking)…*).
 2. **Ajouter** un tracker (il apparaît au centre ; double-cliquer dans le
    viewer le pose à cet endroit). Le glisser sur un détail contrasté — un
    coin, une tache, un logo — jamais sur une zone uniforme.
@@ -287,6 +287,55 @@ Ce qui change à la coupe, dans `cut_clip` (donc **une seule entrée d'historiqu
 Supprimer une moitié retire la référence morte (`TrackLink.without_source`) : la moitié restante devient la source ;
 la barre d'état nomme le défaut s'il en reste un. Hors de toute partie de la source, le mouvement **tient** la valeur
 de la plus proche (jamais un saut) et `source_gap` le dit.
+
+**Un suiveur verrouillé n'est jamais réécrit.** Couper ou supprimer la source réécrit la liaison de clips qui ne sont pas ceux que
+l'utilisateur vise (`follow_cut`, `release_source`, sur toutes les séquences). Si l'un d'eux est verrouillé (piste verrouillée ou
+calque graphique verrouillé), le **modèle** refuse l'opération entière, avant la première écriture (`ValueError`, message en
+français qui nomme le suiveur) : `cut_clip`, `cut_clips_on_beats`, `delete_clip`, `ripple_delete_clip`, `delete_clips` (tout ou rien) et
+`update_leaderboard`. L'interface (coupe, suppression simple, ripple, sélection multiple, bascule Multicam, coupes sur les temps ou
+aux changements de plan) et les verbes de script partagent donc la même règle (`core/tracking_locks.py`, source unique). Le refus ne vise que
+ce qui serait réellement modifié : une liaison qui suit une autre source, ou qu'une suppression laisse telle quelle (aucune prolongation), ne
+bloque rien ; un suiveur supprimé dans la même opération non plus. Choix de sécurité : refuser plutôt qu'ignorer le suiveur (il
+cesserait de suivre la moitié droite) ou le détacher. Déverrouillez le suiveur, puis recommencez.
+
+**Supprimer un tracker ne réécrit pas non plus un suiveur verrouillé.** `tracking_ops.remove_tracker` (et `remove_trackers`, la suppression
+de plusieurs trackers du panneau Suivi, tout ou rien) retire le tracker de la liaison des clips de la séquence **du clip porteur** qui le suivent (pas de la séquence active : un appel direct du modèle peut viser une séquence inactive), ou la
+supprime si elle n'en a plus. Si l'un de ces clips est verrouillé (piste ou calque), le **modèle** refuse avant la première écriture
+(`require_tracker_removal_unlocked`, `core/tracking_locks.py`, calculé par la règle d'écriture elle-même) ; le panneau affiche le message
+dans la barre d'état, sans rien changer ni écrire dans l'historique. Une liaison qui n'utilise pas ce tracker, ou qui suit encore l'autre moitié
+d'un clip coupé, ne bloque rien ; la suppression d'un clip porteur reste régie par la règle de coupe / suppression ci-dessus.
+
+**Suiveur dans une autre séquence : volontairement ni réécrit ni refusé.** Une liaison ne vit que dans une séquence : l'identifiant d'un clip est
+unique au projet, `TrackingContext` ne cherche la source d'une liaison que dans la séquence du suiveur, l'interface et les verbes (`add_link`
+ne trouve pas un clip d'une autre séquence) n'en créent pas, et dupliquer une séquence réécrit les sources vers les clips de la copie. Une
+liaison qui désigne un clip d'une autre séquence (elle ne peut venir que d'un appel direct du modèle, d'un fichier retouché à la main ou d'un
+calque copié puis collé dans une autre séquence) est donc **déjà** diagnostiquée `missing_source` avant la suppression du tracker, et le reste
+après : le rendu, `describe`, l'enregistrement et le rechargement la tolèrent sans erreur (caractérisé par `tests/test_tracker_removal_lock.py`).
+Supprimer le tracker ne l'aggrave pas et ne la répare pas : `remove_tracker` et le verrou restent donc limités à la séquence du clip porteur (quelle que soit la séquence active), ce qui
+préserve l'indépendance des séquences (une suppression ne touche pas la copie d'une séquence, dont les liaisons visent ses propres clips). Aucun
+nettoyage à l'ouverture : la liaison inerte est signalée, jamais effacée en silence.
+
+**Déplacer, rogner ou accélérer la source ne touche pas un suiveur verrouillé.** Ces opérations ne modifient que le clip visé : la liaison du
+suiveur (`TrackLink`, en temps source) n'est pas réécrite, seules ses images clés dérivées, recalculées au rendu, suivent la nouvelle place de la
+source. Elles ne sont donc refusées ni par l'interface ni par les scripts (`move_clip`, `move_clip_to_track`, `move_clips` appliquent la même
+règle que la souris) ; seuls la coupe et la suppression, qui réécrivent des liaisons, le sont.
+
+**Éditer les données d'un tracker ne touche pas un suiveur verrouillé.** Poser, retirer ou effacer des points (`set_tracker_position`,
+`remove_correction`, `reset_tracker`) et régler ou retirer la stabilisation (`set_stabilization`, `remove_stabilization`) ne remplacent que le suivi du clip
+visé : aucune liaison de suiveur n'est écrite. Un suiveur verrouillé dont l'apparence change parce que le tracker qu'il suit change est le comportement
+attendu d'un suivi : le verrou interdit de le **réécrire**, pas de le **redessiner**. Ni l'interface ni les verbes de script ne refusent donc ces
+opérations (`tests/test_tracker_verbs_lock_parity.py`) ; seul `remove_tracker`, qui réécrit les liaisons, garde son refus.
+
+**Un clip verrouillé n'est jamais modifié par une opération de suivi.** C'est le **clip porteur** qui est vérifié : le propriétaire des trackers
+(poser, déplacer ou effacer un point, renommer, régler, supprimer, appliquer le résultat d'une analyse, stabiliser) ou la cible d'une liaison (la poser,
+la retirer, l'activer ou la désactiver, la convertir en images clés). Sa piste verrouillée, ou son calque graphique verrouillé, est refusé par le
+**modèle** (`core.tracking_locks.require_clip_editable`, appelée par les fonctions de `core/tracking_ops.py` avant la première écriture, sur
+toutes les séquences). L'interface attrape le refus : message dans la barre d'état, aucune écriture, aucune entrée d'historique ; le glisser d'un
+point ou d'une zone dans le viewer est refusé **avant** de commencer le geste (rien à annuler), et une analyse qui se termine sur un clip verrouillé
+entre-temps n'écrit rien. La **source** d'une liaison n'est que lue : elle peut être verrouillée. Une opération sans effet (même nom, même valeur, rien
+à retirer, `reset_tracker` d'une plage qui ne contient que des points posés à la main, résultat d'analyse vide) n'est pas refusée, même sur un clip verrouillé ; `analysis_request` reste refusée (elle annonce une écriture). Un refus de verrou à la fin d'une analyse vide aussi la file des suites de l'auto-stabilisation. Les verbes de script n'ont plus de copie de la règle ; `follow_reframe` garde celle de l'interface (le recadrage
+suivi réécrit les images clés du clip). Une liaison retirée par un autre geste (suppression d'une fenêtre d'étalonnage, de séquence) n'est pas couverte
+par cette règle. Tests : `tests/test_tracker_locked_clip.py`, `tests/test_tracker_locked_clip_ui.py`.
 
 ## Undo / redo
 

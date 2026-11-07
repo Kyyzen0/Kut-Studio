@@ -12,6 +12,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from ..project_model import Clip, Project
+from ..tracking_locks import release_locked_followers
 
 
 def frozen_clips(project: Project) -> dict[str, Clip]:
@@ -39,14 +40,14 @@ def require_dependants_editable(project: Project, doomed: list[str]) -> None:
     Supprimer un clip efface ces références chez les tiers (``_release_clip_references``) : un tiers verrouillé (piste ou calque), sur
     n'importe quelle séquence, serait modifié. Le filet :func:`require_untouched_clips` reste une seconde protection."""
     gone = set(doomed)
+    followers = set(release_locked_followers(project, doomed))
     for track in project.all_tracks():
         for clip in track.clips:
             graphic = getattr(clip, "graphic", None)
             if not (track.locked or bool(getattr(graphic, "locked", False))) or clip.id in gone:
                 continue
-            tracking = getattr(clip, "tracking", None)
             references = graphic is not None and gone & {getattr(graphic, "parent_id", ""), getattr(graphic, "group_id", "")}
-            follows = tracking is not None and any(link.continuation_ids and gone & set(link.source_ids) for link in tracking.links)
+            follows = clip.id in followers                            # la règle partagée avec le modèle (``core.tracking_locks``)
             if references or follows:
                 raise ValueError(f"Le clip verrouillé '{clip.id}' dépend d'un clip supprimé (parent, groupe ou suivi) : refusé.")
 

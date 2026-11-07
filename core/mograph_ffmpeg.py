@@ -59,7 +59,7 @@ def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 
     """Filtres des effets puis de l'étalonnage, dans l'ordre de l'export vidéo.
 
     ``preserve_alpha`` : flux RGBA d'un calque. Couleur en ``yuva444p``
-    (l'alpha traverse ``eq``, ``hue``…) ; flou et netteté en alpha
+    (l'alpha traverse ``lut``, ``hue``…) ; flou et netteté en alpha
     prémultiplié (pas de franges sombres) ; ``vignette`` (qui perd l'alpha)
     est appliquée à la couleur seule.
     """

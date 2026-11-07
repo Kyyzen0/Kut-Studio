@@ -44,6 +44,11 @@ def _visible(clip, instants=INSTANTS):
     ]
 
 
+def _flat(pairs):
+    """Aplatit les paires ``(échelle, opacité)`` : les versions récentes de pytest refusent ``approx`` sur des listes de tuples."""
+    return [value for pair in pairs for value in pair]
+
+
 def _no_keyframe_after_the_end(clip):
     return all(k.time_seconds <= clip.duration + 1e-6 for k in clip.transform_keyframes)
 
@@ -54,7 +59,7 @@ def test_a_faster_clip_keeps_the_visible_animation():
     set_clip_speed(project, "c", 2.0)                       # durée 6 s → 3 s : keyframes à 6 s et 5 s hors du clip
     assert clip.duration == pytest.approx(3.0)
     assert _no_keyframe_after_the_end(clip)
-    assert _visible(clip) == pytest.approx(before)
+    assert _flat(_visible(clip)) == pytest.approx(_flat(before))
 
 
 def test_a_shorter_freeze_keeps_the_visible_animation():
@@ -64,7 +69,7 @@ def test_a_shorter_freeze_keeps_the_visible_animation():
     set_clip_freeze_duration(project, "c", 3.0)
     assert clip.duration == pytest.approx(3.0)
     assert _no_keyframe_after_the_end(clip)
-    assert _visible(clip, (0.0, 0.9, 1.7, 2.6)) == pytest.approx(before)
+    assert _flat(_visible(clip, (0.0, 0.9, 1.7, 2.6))) == pytest.approx(_flat(before))
 
 
 def test_removing_a_freeze_or_resetting_a_slow_clip_keeps_the_visible_animation():
@@ -74,14 +79,14 @@ def test_removing_a_freeze_or_resetting_a_slow_clip_keeps_the_visible_animation(
     reset_clip_time_remapping(project, "c")                 # retour à ×1 : 6 s
     assert clip.duration == pytest.approx(6.0)
     assert _no_keyframe_after_the_end(clip)
-    assert _visible(clip) == pytest.approx(before)
+    assert _flat(_visible(clip)) == pytest.approx(_flat(before))
 
     project, clip = _project()
     set_clip_freeze_frame(project, "c", 2.0, 4.0)
     before = _visible(clip, (0.0, 1.0, 2.0, 3.5))
     remove_clip_freeze_frame(project, "c")
     assert _no_keyframe_after_the_end(clip)
-    assert _visible(clip, (0.0, 1.0, 2.0, 3.5)) == pytest.approx(before)
+    assert _flat(_visible(clip, (0.0, 1.0, 2.0, 3.5))) == pytest.approx(_flat(before))
 
 
 def test_a_longer_clip_keeps_every_keyframe():
@@ -91,4 +96,4 @@ def test_a_longer_clip_keeps_every_keyframe():
     before = _visible(clip)
     set_clip_speed(project, "c", 0.5)
     assert len(clip.transform_keyframes) == count
-    assert _visible(clip) == pytest.approx(before)
+    assert _flat(_visible(clip)) == pytest.approx(_flat(before))

@@ -8,7 +8,12 @@ Commandes :
 * ``archive --dist dist --out release-assets`` : archive conventionnelle de l'application construite ;
 * ``checksums DOSSIER`` : écrit ``SHA256SUMS.txt`` ;
 * ``verify DOSSIER`` : refuse une release incomplète ou incohérente (code de sortie 1) ;
-* ``notes --signing notarized|signed|adhoc [--generated FICHIER] --out FICHIER`` : notes de release.
+* ``sign DOSSIER --status-file FICHIER`` : signe ``SHA256SUMS.txt`` (Ed25519) avec le secret ``UPDATE_SIGNING_KEY`` de
+  l'environnement ; sans secret, release non signée (le dit en clair) ; avec secret, toute anomalie est une erreur ;
+* ``gen-update-key --out FICHIER`` : à lancer **par le mainteneur** ; crée la clé de signature (jamais affichée) et
+  affiche la clé publique à coller dans ``core/update_keys.py`` (ADR-0012) ;
+* ``notes --signing notarized|signed|adhoc --update-signature "signed <clé>|unsigned" [--generated FICHIER] --out
+  FICHIER`` : notes de release.
 """
 
 from __future__ import annotations
@@ -19,8 +24,11 @@ import sys
 from pathlib import Path
 
 from core.app_version import APP_VERSION
-from core.release_assets import detect_target
+from core.release_assets import SIGNATURE_FILE, detect_target
 
+from core.update_signature import parse_signature_file
+
+from .signing import UPDATE_SIGNATURE_STATUSES, generate_update_key, key_instructions, sign_release_directory
 from .packaging import (
     SIGNING_STATUSES,
     ReleaseError,
@@ -33,6 +41,12 @@ from .packaging import (
     write_checksums,
     write_github_output,
 )
+
+
+def verify_key_id(directory: Path) -> str:
+    """Identifiant de la clé annoncé par le fichier de signature qu'on vient de produire."""
+    key_id, _signature = parse_signature_file((directory / SIGNATURE_FILE).read_bytes())
+    return key_id
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -52,8 +66,16 @@ def _parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify")
     verify.add_argument("directory", type=Path)
     verify.add_argument("--version", default=APP_VERSION)
+    sign = commands.add_parser("sign")
+    sign.add_argument("directory", type=Path)
+    sign.add_argument("--status-file", type=Path, required=True)
+    genkey = commands.add_parser("gen-update-key")
+    genkey.add_argument("--out", type=Path, required=True,
+                        help="fichier de la graine secrète (créé en 600, jamais écrasé), p. ex. kut-studio.update-key")
     notes = commands.add_parser("notes")
     notes.add_argument("--signing", choices=SIGNING_STATUSES, required=True)
+    notes.add_argument("--update-signature", required=True, metavar="STATE",
+                       help='contenu de signing-status/update-signature.txt : "signed <identifiant de clé>" ou "unsigned"')
     notes.add_argument("--version", default=APP_VERSION)
     notes.add_argument("--generated", type=Path)
     notes.add_argument("--out", type=Path, required=True)
@@ -89,9 +111,33 @@ def main(argv: list[str] | None = None) -> int:
             if problems:
                 return 1
             print(f"Release {args.version} conforme : {args.directory}")
+        elif args.command == "sign":
+            state = sign_release_directory(args.directory)
+            if state == "signed":
+                key_id = verify_key_id(args.directory)
+                args.status_file.parent.mkdir(parents=True, exist_ok=True)
+                args.status_file.write_text(f"signed {key_id}\n", encoding="utf-8")
+                print(f"Mises à jour signées (clé {key_id}) : {args.directory / SIGNATURE_FILE}", file=sys.stderr)
+            else:
+                args.status_file.parent.mkdir(parents=True, exist_ok=True)
+                args.status_file.write_text("unsigned\n", encoding="utf-8")
+                message = ("secret UPDATE_SIGNING_KEY absent : release produite SANS signature, mises à jour "
+                           "automatiques indisponibles pour cette version")
+                print(f"::warning::{message}")
+                summary = os.environ.get("GITHUB_STEP_SUMMARY")
+                if summary:
+                    with open(summary, "a", encoding="utf-8") as stream:
+                        stream.write(f"**Mises à jour automatiques indisponibles pour cette version** : {message}.\n")
+        elif args.command == "gen-update-key":
+            public = generate_update_key(args.out)
+            print(key_instructions(public, args.out))
         elif args.command == "notes":
             generated = args.generated.read_text(encoding="utf-8") if args.generated else ""
-            args.out.write_text(release_notes(args.version, args.signing, generated), encoding="utf-8")
+            state, _, key_id = args.update_signature.strip().partition(" ")
+            if state not in UPDATE_SIGNATURE_STATUSES or (state == "signed") != bool(key_id):
+                raise ReleaseError(f"état de signature des mises à jour illisible : {args.update_signature!r}")
+            args.out.write_text(release_notes(args.version, args.signing, generated, update_signature=state,
+                                              update_key_id=key_id.strip()), encoding="utf-8")
     except ReleaseError as exc:
         print(f"::error::{exc}")
         return 1

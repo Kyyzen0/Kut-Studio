@@ -26,7 +26,7 @@ from core.multicam_ops import multicam_segment_at
 from core.multicam_feed import AngleFeed, FeedPool, Frame, TileQualityGovernor, lag_ratio, tile_profile
 from core.project_model import Project
 from ui import i18n
-from ui.design_system import Spacing
+from ui.design_system import Spacing, Typography
 from ui.theme import BLACK, WHITE, ThemePalette, active_palette, label_style, mix_colors
 
 POLL_MS = 40
@@ -137,7 +137,7 @@ class AngleTile(QWidget):
         if message:
             painter.setPen(QColor(palette.muted))
             font = QFont(painter.font())
-            font.setPointSizeF(max(7.0, min(11.0, self.width() / 22)))
+            font.setPixelSize(round(max(Typography.MIN_PX, min(Typography.small, self.width() / 22))))
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(inner, Qt.AlignCenter, message)
@@ -178,7 +178,7 @@ class AngleTile(QWidget):
         if self._active and not self.program:
             text += "  ·  " + i18n.translate("multicam.viewer.active")         # le mot, pas seulement la couleur du cadre
         font = QFont(painter.font())
-        font.setPointSizeF(max(7.0, min(10.0, self.width() / 26)))
+        font.setPixelSize(round(max(Typography.MIN_PX, min(Typography.small, self.width() / 26))))
         font.setBold(True)
         painter.setFont(font)
         metrics = painter.fontMetrics()

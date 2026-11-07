@@ -163,19 +163,29 @@ def test_gpu_eq_matches_the_export_on_slowly_varying_chroma():
 
 
 @needs_ffmpeg
+@pytest.mark.parametrize("which", ["lut", "eq"])
 @pytest.mark.parametrize("contrast", [0.7, 1.0, 1.4])
 @pytest.mark.parametrize("brightness", [-1.0, -0.5, -0.4, -0.3, -0.2, -0.1, -0.01, 0.01, 0.1, 0.3, 0.5])
-def test_eq_plane_is_the_exact_luma_table_of_the_ffmpeg_eq_filter(brightness, contrast):
+def test_eq_plane_is_the_exact_luma_table_of_the_ffmpeg_eq_filter(brightness, contrast, which):
     """La table luma 0..255 de ``eq`` (brightness, contrast) est celle d':func:`eq_plane`, entier pour entier.
 
     FFmpeg stocke la luminosité en float32 : b = −0,1 donne ``int(100·b32 + 100)`` = 89 et non 90. Sans cet arrondi,
     le moniteur s'écartait de 2 à 3 niveaux à luminosité négative, quel que soit le contraste.
+
+    ``lut`` : le filtre de l'export (``eq`` est GPL, ADR-0013 : :mod:`core.eq_lut`). ``eq`` : le filtre d'origine, la référence, quand ce
+    FFmpeg le contient (pas celui de la version App Store).
     """
     np = pytest.importorskip("numpy")
+    from core.eq_lut import static_filters
+    from tests.ffmpeg_filters import has_filter
+
+    if which == "eq" and not has_filter("eq"):
+        pytest.skip("ce FFmpeg est LGPL : pas de filtre eq")
     ramp = np.arange(256, dtype=np.uint8)
+    flt = f"eq=brightness={brightness}:contrast={contrast}" if which == "eq" else static_filters(brightness, contrast, 1.0)
     completed = subprocess.run(
         ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", "256x2", "-i", "-",
-         "-vf", f"eq=brightness={brightness}:contrast={contrast}", "-f", "rawvideo", "-"],
+         "-vf", flt, "-f", "rawvideo", "-"],
         input=np.tile(ramp, (2, 1)).tobytes(), capture_output=True, check=True)
     got = np.frombuffer(completed.stdout, np.uint8)[:256]
     factor, offset, _active = eq_plane(contrast, brightness)

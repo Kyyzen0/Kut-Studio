@@ -69,6 +69,7 @@ Le niveau indiqué est le **minimal où l'élément est affiché directement**. 
 | Sous-titre : position/marges/remplissage, contour, ombre, fond | Studio | |
 | Calque graphique : type, texte, taille, couleur, police | Simple | visible seulement sur un calque graphique |
 | Calque graphique : contour, ombre et fond, animation de texte | Studio | |
+| Calque scène 3D : fichier `.kut3d` et « Recharger » | Studio | visible seulement sur une scène 3D ; la vitesse y est grisée à tous les niveaux |
 | Calque graphique : lueur néon, lumière, forme, parent, flou de mouvement | Avancé | |
 | Compositing : modes de fusion Normal, Multiplier, Écran, Incrustation, Assombrir, Éclaircir | Studio | |
 | Compositing : modes Addition, Différence | Avancé | le mode déjà choisi dans un projet reste affiché |
@@ -91,7 +92,7 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Séquence : détection de scènes, proxies pour la sélection | Studio |
 | Séquence : nouvelle/renommer/dupliquer/supprimer une séquence, imbriquer, ouvrir/parent/retour/avance, convertir en composition, nouvelle composition, multicam | Avancé |
 | Calques : Ajouter ▸ texte ; réinitialiser le recadrage | Simple |
-| Calques : Ajouter ▸ forme, nul, ajustement ; grouper/dégrouper ; copier/coller (calques, attributs) ; préréglages ; zones de sécurité, repères, grille, aimantation, centre ; Aligner | Studio |
+| Calques : Ajouter ▸ forme, nul, ajustement, scène 3D ; grouper/dégrouper ; copier/coller (calques, attributs) ; préréglages ; zones de sécurité, repères, grille, aimantation, centre ; Aligner | Studio |
 | Calques : flou de mouvement et réglages ; panneau de suivi | Avancé |
 | Réseaux sociaux : nouveau projet social, réglages, zones de plateforme, remplir le cadre, sous-titres automatiques, repère de couverture | Simple |
 | Réseaux sociaux : grille de rythme, Recadrer en suivant le tracker, Ken Burns, Impact, audio social, versions de format, classement, Photos | Studio |
@@ -107,6 +108,15 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Rail de la bibliothèque | médias, montage, texte, audio, graphiques | + effets, transitions, couleur, séquences, modèles | tout |
 | Barre de la timeline | sélection, lame, aimantation, ripple, marqueur | + roll, slip, slide, enregistrement | tout |
 
+### Lisibilité de la navigation (aucun changement de niveau)
+
+La politique de niveaux ci-dessus ne change pas ; seule la façon de montrer ce qu'elle autorise est plus lisible :
+
+- **Rail de gauche** : le nom de chaque section est écrit **en permanence** sous son icône (`Qt.ToolButtonTextUnderIcon`, rail large de 84 px, boutons de 76 × 54 px, police de 10 px). Le texte visible est le nom accessible et l'infobulle. Un test (`tests/test_navigation_discoverability.py`) vérifie, dans les trois langues, que le nom tient dans le bouton sans être élidé.
+- **Onglets de l'inspecteur** : les sept onglets (Clip, Couleur, Audio, Effets, Graphiques, Compositing, Suivi) sont atteignables à **tous** les niveaux, sur **une seule ligne** : Clip, Couleur, Audio et Effets en boutons, Graphiques, Compositing et Suivi sous le bouton « Plus » (page Montage « Air d'abord », `ui/properties_widgets/tab_row.py`) ; aucun libellé de bouton ne change.
+- **Losanges d'images clés** : les boutons ‹ ◆ › sont posés **à droite du champ**, dans la même ligne de formulaire que lui (`field_with_keyframes` + `build_keyframe_row(beside=…)`), et non plus dans une ligne à eux. Le niveau (Studio) ne cache que ces boutons. Dans l'étalonnage, tous les libellés ont la même largeur : quand l'inspecteur est étroit, ils passent tous au-dessus de leur champ, jamais un seul.
+- **Barre du haut** : la puce du niveau dit « Niveau : Avancé » (forme complète), « Avancé » (forme abrégée quand la place manque), puis disparaît ; « Réglages » garde son icône et son texte.
+
 ### Menus contextuels
 
 | Menu | Simple | Studio | Avancé |
@@ -115,11 +125,15 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Piste (⋯) | hauteur, replier, monter/descendre, renommer, supprimer | idem | + courbe de volume, rôle, « Baisser sous… » (ducking) |
 | Média de la bibliothèque | renommer, sélectionner dans la timeline, dossiers, supprimer | + étiquettes, relier, proxy, matrice couleur | + « Créer une séquence Multicam… » (sélection multiple) |
 | Calque (panneau Calques) | renommer, dupliquer, supprimer | + grouper, dégrouper, entrer dans le groupe, copier / coller les attributs, enregistrer comme préréglage | + parent, flou de mouvement |
-| Ajouter un calque (menu du fond et bouton « Ajouter ») | texte, aplat de couleur, image | + formes, contrôleur nul, calque d'effets | idem |
+| Ajouter un calque (menu du fond et bouton « Ajouter ») | texte, aplat de couleur, image | + formes, contrôleur nul, calque d'effets (la scène 3D n'est que dans le menu Calques, Studio) | idem |
 | Barre du panneau Calques | « Ajouter » | + « Grouper », « Préréglages » | idem |
 | Bande d'automation d'une piste audio | supprimer le point, effacer la courbe | idem | + ajouter un point ici, remettre à 0 dB |
 | Dossiers de la bibliothèque | tout (nouveau, sous-dossier, renommer, supprimer) | idem | idem |
 | Éditeur de nœuds Couleur / Composition | (pages absentes) | tout (page Couleur) | tout (page Composition) |
+
+### Exception voulue : la palette « Rechercher une fonction »
+
+Les menus du niveau Simple n'affichent aucun outil du niveau supérieur (comportement inchangé). La **palette de commandes** ([command-palette.md](command-palette.md)), elle, les **affiche** (découvrabilité) avec un bouton « Passer en Studio » / « Passer en Avancé » qui change le niveau (`set_usage_level`) puis lance la fonction. Rien n'est caché ni désactivé de plus ; ce n'est pas un nouveau contrôle classé (c'est une surface de recherche, le bouton de la barre du haut est Simple), donc le manifeste `usage_level_controls.json` et le test d'énumération n'ont pas changé. Le niveau de chaque résultat est lu dans les tables ci-dessus (`MENU_GATES`, `PAGE_LEVELS`, `SECTION_LEVELS`, `_group_levels`) : classer une entrée de menu la classe aussi pour la palette.
 
 ## Déplacements de contrôles et classements non précisés par la spécification
 

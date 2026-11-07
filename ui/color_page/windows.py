@@ -36,10 +36,12 @@ from PySide6.QtWidgets import (
 
 from core.color_nodes import MAX_BLUR, MAX_SHARPEN
 from core.compositing import Mask, MaskMode, MaskShape
+from ui.adaptive_layout import FlowLayout
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import set_role
+from ui.qt_item_lifetime import retain
 
 _SHAPES = ((MaskShape.RECTANGLE, IconName.WINDOW_RECT), (MaskShape.ELLIPSE, IconName.WINDOW_ELLIPSE),
            (MaskShape.POLYGON, IconName.WINDOW_POLYGON))
@@ -79,7 +81,7 @@ class WindowsEditor(QWidget):
         root.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
         root.setSpacing(Spacing.sm)
 
-        top = QHBoxLayout()
+        top = FlowLayout(spacing=Spacing.sm)           # à la ligne si la colonne est étroite (« Afficher la sélection » tronqué)
         self.add_buttons: dict[MaskShape, QToolButton] = {}
         for shape, icon in _SHAPES:
             button = QToolButton()
@@ -88,7 +90,6 @@ class WindowsEditor(QWidget):
             button.clicked.connect(lambda _checked=False, value=shape: self._add(value))
             self.add_buttons[shape] = button
             top.addWidget(button)
-        top.addStretch(1)
         self.remove_button = IconButton(icon=IconName.TRASH, tooltip=translate("color.window.remove"),
                                         size=Sizes.icon_button_sm)
         self.remove_button.clicked.connect(self._remove)
@@ -164,7 +165,7 @@ class WindowsEditor(QWidget):
         try:
             self.list.clear()
             for index, window in enumerate(windows):
-                item = QListWidgetItem(window_label(window, index), self.list)
+                item = retain(QListWidgetItem(window_label(window, index), self.list))
                 item.setData(Qt.UserRole, window.id)
             ids = [window.id for window in windows]
             row = ids.index(current) if current in ids else (len(ids) - 1 if ids else -1)

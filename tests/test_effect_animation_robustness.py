@@ -4,6 +4,8 @@ un effet qui existe ET un effet absent."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from core.animation import Keyframe
@@ -65,7 +67,8 @@ def frame_graph(project: Project) -> str:
     request = ExportRequest(render_plan=build_render_plan(project), output_path="/x/o.mp4", format=ExportFormat.MP4_H264,
                             preset=ExportPreset("T", (320, 180), 18, "64k"), fps=25)
     command = ExportEngine().build_frame_command(request, 0.5)
-    return command[command.index("-filter_complex") + 1]
+    # Les fichiers de commandes (``sendcmd``, dont la correction colorimétrique animée depuis ADR-0013) ont un nom temporaire aléatoire.
+    return re.sub(r"kut-studio-sendcmd-[0-9A-Za-z_]+\.cmd", "FICHIER.cmd", command[command.index("-filter_complex") + 1])
 
 
 def test_the_loaded_project_keeps_every_keyframe(loaded):

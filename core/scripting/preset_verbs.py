@@ -23,10 +23,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..color_grading import ColorGradingService, builtin_color_presets
-from ..effects_library import EffectPreset, apply_preset_to_clip, builtin_presets
+from ..effects_library import EffectPreset, apply_preset_to_clip, builtin_presets, preset_effects_to_apply
 from ..effects_model import is_single_instance, split_fx_property
 from ..project_model import Project
 from ..timeline_operations import find_clip
+from .resource_limits import require_effect_room
 from .verbs import Kind, Operation, Param, Verb, _CLIP, _NODE, _editable_clip, _grade_clip
 
 _EFFECT_PRESETS = tuple(preset.id for preset in builtin_presets())
@@ -56,6 +57,9 @@ def _apply_effect_preset(a: Mapping[str, Any]) -> Operation:
         clip_id = _editable_clip(project, a["clip"], track_types=("video",))
         preset = next(item for item in builtin_presets() if item.id == a["preset"])
         _require_no_animated_replacement(project, clip_id, preset)
+        clip = find_clip(project, clip_id)
+        # Le nombre exact d'effets ajoutés : la chaîne finale que calcule le modèle, moins celle d'avant (un effet à instance unique en remplace un).
+        require_effect_room(clip, len(preset_effects_to_apply(preset, list(clip.effects))) - len(clip.effects))
         return apply_preset_to_clip(project, clip_id, preset)
 
     return operation

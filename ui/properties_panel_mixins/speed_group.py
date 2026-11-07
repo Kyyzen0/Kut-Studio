@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, 
 from core.time_remapping import MAX_SPEED, MIN_SPEED
 from core.usage_level import UsageLevel
 from ui.adaptive_layout import FlowLayout
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography
 from ui.i18n import translate
 from ui.icons import IconButton
 from ui.properties_widgets.level_gate import gated
@@ -114,7 +114,7 @@ class SpeedGroupMixin:
         self.freeze_duration_spinbox.setEnabled(False)
         self.freeze_duration_spinbox.valueChanged.connect(self._on_freeze_duration_changed)
         self.freeze_duration_label = QLabel("1,00 s")
-        self.freeze_duration_label.setStyleSheet(label_style(11, "muted", 500))
+        self.freeze_duration_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         self.freeze_duration_label.setVisible(False)
 
         freeze_row = QWidget()
@@ -137,9 +137,9 @@ class SpeedGroupMixin:
 
         # Affichage des durées source et timeline
         self.source_duration_label = QLabel(translate("inspector.source_empty"))
-        self.source_duration_label.setStyleSheet(label_style(11, "muted", 500))
+        self.source_duration_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         self.timeline_duration_label = QLabel(translate("inspector.timeline_empty"))
-        self.timeline_duration_label.setStyleSheet(label_style(11, "muted", 500))
+        self.timeline_duration_label.setStyleSheet(label_style(Typography.caption, "muted", 500))
         duration_info = QWidget()
         duration_layout = FlowLayout(duration_info, spacing=Spacing.md)  # deux libellés : à la ligne si la place manque
         duration_layout.setContentsMargins(0, 0, 0, 0)

@@ -241,6 +241,11 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
     "transcription.progress.cancel": _t("Annuler", "Cancel", "Cancelar"),
     "transcription.message.running": _t("Une transcription est déjà en cours.", "A transcription is already running.",
                                         "Ya hay una transcripción en curso."),
+    "transcription.message.store_unavailable": _t(
+        "Les sous-titres automatiques ne sont pas disponibles dans cette version.",
+        "Automatic subtitles are not available in this version.",
+        "Los subtítulos automáticos no están disponibles en esta versión.",
+    ),
     "transcription.message.no_voice": _t(
         "Sélectionnez le clip de la voix (audio, ou vidéo avec du son), ou placez-la sur la piste Voix.",
         "Select the voice clip (audio, or video with sound), or put it on the Voice track.",

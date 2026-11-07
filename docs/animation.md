@@ -195,13 +195,13 @@ Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la
 (`max_transform_value`), aux côtés multiples de 4 : FFmpeg fixe la taille de sortie de `rotate` à la première image
 (`RENDER_ENGINE_VERSION` 9).
 
-## Paramètres d'effets : animer la correction de couleur et la vignette (ADR-0008, étapes 2 à 4)
+## Paramètres d'effets : animer la correction de couleur, la vignette, le flou, l'aberration chromatique et le rayon de la lueur (ADR-0008, étapes 2 à 5)
 
 ### Pour l'utilisateur
 
-Sont animables : la **luminosité, le contraste et la saturation** de la *Correction couleur*, et l'**intensité** de la
-*Vignette*. Aucun autre réglage d'effet ne l'est encore : flou, netteté, lueur, aberration chromatique et brume de chaleur
-restent fixes (pas de losange sur leurs réglages).
+Sont animables : la **luminosité, le contraste et la saturation** de la *Correction couleur*, l'**intensité** de la
+*Vignette*, l'**intensité du Flou**, l'**intensité de l'Aberration chromatique** et le **rayon du Bloom** (la lueur). Les autres
+réglages restent fixes, sans losange : la **netteté**, le **seuil et l'intensité du Bloom** et la **brume de chaleur**.
 
 1. Sélectionnez un clip vidéo, onglet **Effets** de l'inspecteur, puis l'effet dans la liste.
 2. Sous chaque réglage animable, la rangée **‹ ◆ ›** fonctionne comme celle de Mouvement : le losange pose (ou retire) une
@@ -225,8 +225,10 @@ menu du losange, au niveau Avancé.
 révèle le groupe Effets) ; le menu du losange n'offre que « Désactiver » et « Supprimer l'animation de l'effet » en Studio,
 l'interpolation, le copier / coller et l'éditeur de courbes en Avancé. Changer de niveau ne perd aucune valeur.
 
-**Format** : un fichier qui contient au moins une courbe d'effet s'écrit en version 20 et ne s'ouvre plus dans une version
-antérieure de Kut-Studio ; sans courbe il reste en version 17 (inchangé).
+**Format** : un fichier qui contient une courbe de correction de couleur ou de vignette s'écrit en version 20 ; un fichier qui
+contient une courbe de **flou, de rayon du Bloom ou d'aberration chromatique** (rendues par `sendcmd`) s'écrit en version **23**
+(la 0.8.0 publiée lit la 22 mais ne connaît pas ces réglages : elle les rendrait à leur valeur de base sans rien dire). Une
+version antérieure refuse ces fichiers au lieu de perdre l'animation ; sans courbe d'effet, le fichier garde la version qu'il avait.
 
 ### Modèle et rendu
 
@@ -262,18 +264,18 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   ignorée, puis retirée à la prochaine modification de la chaîne d'effets du clip. Un test de garde
   (`tests/test_effects_write_guard.py`) échoue si une nouvelle écriture de `clip.effects` n'est pas classée.
 - **Format** : un fichier qui contient au moins une image clé `fx.*` (ou `color.*`, réservé à l'étalonnage) s'écrit en version
-  20 (`EFFECT_ANIMATION_VERSION`) ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
+  20 (`EFFECT_ANIMATION_VERSION`), ou 23 (`SENDCMD_ANIMATION_VERSION`) si l'une porte sur le flou, l'aberration chromatique ou le rayon du Bloom ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
 
 ### Rendu (étape 3)
 
-- **Export et aperçu fidèle** (même graphe) : `eq` (`brightness`, `contrast`, `saturation`, `eval=frame`) et `vignette`
-  (`angle = intensité × π/4`, `eval=frame`) reçoivent l'expression de la courbe (`core/effect_expressions.py`, la même
-  `curve_expression` que la transformation, bornée par `clip()` aux bornes du paramètre). Les paramètres non animés d'un
-  même filtre restent des constantes.
+- **Export et aperçu fidèle** (même graphe) : `vignette` (`angle = intensité × π/4`, `eval=frame`) reçoit l'expression de la
+  courbe (`core/effect_expressions.py`, la même `curve_expression` que la transformation, bornée par `clip()` aux bornes du
+  paramètre). **La correction colorimétrique (`brightness`, `contrast`, `saturation`) ne passe plus par `eq` (GPL, ADR-0013) mais par
+  une table `lut` pilotée par `sendcmd`** (`core/eq_lut.py`, mêmes octets : voir « `eq` remplacé par `lut` » plus bas) ; elle reste dans le
+  groupe « expression » du registre, qui décide de la version du fichier `.kut`.
 - **Base de temps** : les images clés d'un effet sont en temps **local du clip**. Dans `_build_layer_filter`, `PTS` repart de
   zéro au début du clip (`setpts=PTS-STARTPTS` après `fps`, plus `+skip/TB` à l'origine d'un segment d'aperçu, ou
-  `+retimed_skip/TB` pour un clip remappé) *avant* les effets ; `PTS+timeline_start` n'est posé qu'à la fin. `t` (`eq`,
-  `vignette`) et `T` (`geq`) valent donc le temps local du clip, comme `t` pour l'échelle et la rotation. Testé : un clip
+  `+retimed_skip/TB` pour un clip remappé) *avant* les effets ; `PTS+timeline_start` n'est posé qu'à la fin. `t` (`vignette`) et `T` (`geq`) valent donc le temps local du clip, comme `t` pour l'échelle et la rotation. Testé : un clip
   entier et un segment qui démarre en milieu de clip (clip décalé sur la timeline et source rognée, changement de cadence
   24 vers 10 i/s, clip à vitesse ×2) donnent les mêmes images, et chacune égale le rendu statique à la valeur évaluée.
 - **Moniteur GPU** : `evaluated_effects` est appelé à chaque image par les deux points de synchronisation (clip du dessus,
@@ -289,9 +291,52 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   l'image `n` de la sortie animée égale l'image `n` du rendu statique à la valeur évaluée (écart maximal 0 niveau). La
   référence de la vignette prend l'angle exact : l'export statique arrondit l'angle à six décimales, et un pixel sur une
   frontière d'arrondi bascule d'un niveau (1 octet sur 230 000, écart 2, disparu avec l'angle exact).
-- **Écart d'un `eq` statique, hors animation** : à luminosité négative, la formule du moniteur (`eq_plane`) s'écarte déjà du
+- **Écart du moniteur à un `eq` statique, hors animation** (le rendu de l'export est identique à `eq`, voir plus bas) : à luminosité négative, la formule du moniteur (`eq_plane`) s'écarte déjà du
   `eq` de l'export (écart moyen 1,9 à −0,1 et 2,8 à −0,2, contre 0,4 à +0,1 ; mesuré sur des valeurs fixes). Ce n'est pas
   l'animation ; les tests de parité animée prennent une luminosité de 0 à 0,3.
+
+### `eq` remplacé par `lut` (ADR-0013)
+
+`eq` est un filtre GPL : le FFmpeg de la version Mac App Store (LGPL) ne l'a pas. `core/eq_lut.py` écrit la même correction avec
+`lut` : `eq` n'est qu'une table de 256 niveaux par plan en YUV 8 bits, et la formule entière de `vf_eq.c` se recalcule exactement
+(`⌊Y·C/4096⌋ + B`, voir le module). Le texte du filtre fixe est `format=<formats d'eq>,lut=y='…':u='…':v='…'` (le `format` donne à `lut` la
+négociation d'`eq`, qui n'accepte que le YUV 8 bits). Animé : `lut` n'évalue ses options qu'à la configuration et à chaque commande, la
+courbe passe donc par un fichier de commandes (une instruction par image où une table change, une demi-image avant l'image visée,
+`lut@<étiquette> y '…', lut@<étiquette> u '…', …`). Mesuré contre `eq` sur FFmpeg 9.0.2 et 7.1.5 : écart maximal **0** (rampes de
+0 à 255 sur les trois plans, 900 réglages changeant à chaque image, mire animée de 90 images pour l'effet et pour l'étalonnage).
+Coût animé : ~13 ms par image quand les trois plans changent (chaque commande recalcule 65 536 valeurs par composante), borne de
+40 000 instructions par effet comme les autres étages `sendcmd`. Détail : ADR-0013, « Filtre `eq` : remplacé ».
+
+### Flou, aberration chromatique, rayon du Bloom : fichier de commandes `sendcmd` (étape 5)
+
+Ces trois filtres n'acceptent pas d'expression du temps : `gblur` (`sigma`), `rgbashift` (`rh`, `bh`). Mais ils acceptent de
+changer d'option en cours de route (`sendcmd`, validé sur FFmpeg 6.1.1, 7.1.5 et 9.0.2, `docs/ffmpeg-sendcmd.md`).
+
+- **Fichier de commandes** (`core/effect_sendcmd.py`) : écrit à la construction du graphe dans un fichier temporaire (le dossier
+  temporaire du système), cité dans le graphe par `sendcmd=f='…'` avec le chemin échappé (lettre de lecteur Windows `C\:`,
+  barres obliques, apostrophe fermée-échappée-rouverte ; un chemin avec un saut de ligne ou un caractère de contrôle est refusé),
+  supprimé avec les autres fichiers temporaires de l'export, de l'aperçu ou de l'analyse des scopes (même après un échec de la
+  construction de la commande). Hors de ces appelants (outils, bancs), un fichier **nommé par son contenu** dans un dossier de
+  processus supprimé à la sortie.
+- **Une instruction par image**, écrite **une demi-image avant** l'image visée (`(n − 0,5) / cadence`), avec la valeur que lit
+  l'inspecteur : `AnimatableProperty.evaluate` (linéaire, Bézier, maintien, ease), bornée par le modèle, puis la conversion de la
+  chaîne statique (`× pixel_scale`, arrondi entier de l'aberration, plancher de 0,01 du rayon du Bloom). Une ligne n'est écrite
+  que si la valeur change (un maintien ne coûte qu'une instruction). `gblur` reçoit `sigma` **et** `sigmaV`, `rgbashift` `rh` et
+  `bh` opposés. Les filtres visés sont **nommés** (`gblur@v0fx0`) : plusieurs effets animés d'un même graphe ne se confondent pas.
+- **Base de temps** : les instants sont ceux de `PTS` à l'entrée de `sendcmd`, donc le **temps local du clip** (la même remise à
+  zéro que pour `t` des expressions : clip entier, segment d'aperçu qui démarre en milieu de clip, clip remappé, arrêt sur
+  image). La cadence est exacte (29,97 = 30000/1001).
+- **Aberration chromatique à zéro** : à décalage 0 le rendu statique n'ajoute aucun filtre ; animée, la conversion RVB
+  aller-retour reste présente pour les images à 0 : écart d'au plus 2 niveaux avec le rendu statique à 0 sur ces images. Une
+  courbe qui reste à 0 n'ajoute rien.
+- **Pas de courbe** : un projet sans image clé sur ces réglages produit **exactement** le graphe d'avant (aucun fichier,
+  aucun `sendcmd`), donc `RENDER_ENGINE_VERSION` ne change pas (13).
+- **Moniteur** : `evaluated_effects` évalue déjà la valeur à l'image courante pour tout réglage enregistré ; `program_for`
+  reçoit le flou, le décalage et le rayon évalués. L'écart avec l'export animé est celui d'un effet statique de même valeur.
+- **Coût** (1080p, 150 images, FFmpeg 6.1.1 / 7.1.5 / 9.0.2) : même temps qu'en statique (×0,9 à ×1,15 ; `tools/measure_sendcmd_cost.py`),
+  à 2 comme à 10 images clés (le fichier a une ligne par changement, pas par image clé). Détail dans l'ADR-0008.
+- **Limites** : le seuil et le gain du Bloom (`lutrgb`, 0,2 s par commande) et la netteté (`unsharp` ignore les commandes) restent
+  statiques. Un clip de plus de ~5 h à 100 i/s dépasse la borne de 2 000 000 d'instructions et est refusé à la construction.
 
 ### Brume de chaleur : pourquoi elle n'est pas enregistrée
 
@@ -308,6 +353,96 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   `∫ v dt`) : `speed` reste statique. `frequency` animé fait glisser la phase de façon voulue (`Y·f(T)`), et l'export et le
   moniteur concordent (même formule, vérifiée aux seuils d'un effet statique).
 
+## Étalonnage animé : `color.*` (ADR-0008, étapes 6 à 8 : modèle, export, moniteur et interface)
+
+**Pas encore dans l'interface** : pas de losange dans le panneau Couleur (étape 8), pas de verbe de script (étape 9). Ce qui existe : le
+modèle, l'**export** (donc l'aperçu fidèle, qui rend le même graphe) et, depuis l'étape 7, le **moniteur** (voir plus bas).
+
+- **Propriétés** (`core/grade_targets.py`, 23) : `color.exposure`, `color.contrast`, `color.saturation`, `color.temperature`,
+  `color.hue`, `color.shadows`, `color.highlights`, et `color.<roue>.<canal>` pour `lift`, `gamma`, `gain`, `offset` × `r`, `g`, `b`, `y`
+  (le palet et la molette de chaque roue). Bornes et valeurs de base lues dans `core/color_grading.py`. Stockées dans `Clip.animation`,
+  résolues avec le clip (`get_target("color.exposure", clip)`). `targets_for_clip` ne les liste pas : le Graph Editor et les menus
+  n'en changent pas.
+- **Ni les courbes ni la LUT**, et **seul le réglage simple du clip** : un clip étalonné par plusieurs nœuds (ou un nœud nommé, qualifié ou
+  fenêtré) n'a pas ces cibles (`KeyError`) ; une image clé `color.*` restée dans un tel clip est conservée mais ignorée par le rendu.
+- **Valeur effective** : `effective_grade(clip, t)` (fonction pure) rend l'étalonnage de base dont les champs animés sont remplacés par leur
+  courbe, bornée ; sans image clé, **exactement** `clip.color_grade` (le même objet, `None` compris). C'est la fonction que le moniteur
+  appelle (étape 7).
+- **Rendu à l'export** (`core/grade_render.py`, `core/grade_tables.py`, `core/eq_lut.py`) : teinte par `hue=h='…'` (expression du temps local du clip,
+  comme les effets) ; contraste et saturation par une table `lut` (le remplaçant LGPL d'`eq`, qui est GPL : ADR-0013), ombres et hautes lumières par
+  `colorbalance`, température par `colorchannelmixer`, exposition et roues par `curves`, tous par un **fichier de commandes `sendcmd`** (un seul par
+  étalonnage, une instruction par image, une demi-image avant l'image visée). Pourquoi `curves` et pas `lutrgb` (le filtre de l'export
+  fixe) pour l'exposition et les roues : `lutrgb` recalcule sa table à chaque commande (×30 à ×150 le temps d'export), `curves` reçoit sa
+  courbe pour le prix du fixe ; on lui envoie un point par niveau d'entrée (256 points) et le résultat égale la table de `lutrgb`
+  niveau par niveau (testé sur FFmpeg 6.1, 7.1 et 9.0). Mesures : ADR-0008, « Résultats de l'étape 6 ».
+- **Un étage animé est toujours émis**, même aux images où sa valeur est neutre (là où la chaîne fixe l'omet) : `curves`, `colorbalance` et
+  `colorchannelmixer` neutres sont l'identité exacte ; `lut` (`val`) et `hue` neutres peuvent ajouter l'arrondi d'une conversion YUV (écart mesuré
+  dans l'ADR).
+- **Taille du fichier de commandes** : ~4,6 Ko par image pour l'exposition (une table de 256 points), trois fois plus pour des roues
+  colorées (la molette seule suffit à un seul canal `master`). Le texte est écrit ligne à ligne, **par fenêtres de 192 Ko** (un `sendcmd`
+  par fenêtre : FFmpeg 6.1 et 7.1 lisent un fichier avec ~1000 fois sa taille de mémoire, voir `docs/ffmpeg-sendcmd.md`, piège 9), et le
+  total est borné à **32 Mo** (FFmpeg 6.1 / 7.1 en gardent ~45 fois la taille en mémoire : 32 Mo restent sous ~1,5 Go). Un clip dont
+  l'étalonnage animé dépasse cette borne (de l'ordre de quatre minutes d'exposition, d'une à deux minutes de roues colorées, à 30 i/s ;
+  une courbe qui reste constante ne coûte rien) est refusé à l'export avec un message, jamais rendu faux.
+- **Format** : un fichier qui contient une image clé d'étalonnage rendue s'écrit en version **24** (`GRADE_ANIMATION_VERSION`), qui
+  l'emporte sur toutes les autres ; une version antérieure le refuse. Sans ces images clés, le fichier est écrit octet pour octet comme avant, et
+  le moteur de rendu (`RENDER_ENGINE_VERSION`) ne change pas : le graphe d'un clip sans image clé `color.*` est identique, caractère pour caractère.
+- **Composition** : convertir en composition un clip qui porte un étalonnage animé est refusé (la composition rend son étalonnage fixe).
+
+### Le moniteur (étape 7)
+
+Le moniteur GPU montre l'étalonnage **que l'export applique à l'instant affiché** : `MainWindow._monitor_color_grade(clip, temps local)`
+appelle `effective_grade` pour le clip du dessus et pour chaque piste vidéo en dessous (même temps local que les effets : tête de lecture
+moins début du clip). Le moniteur n'a toujours aucune formule d'étalonnage : la LUT 3D (`core/gpu_grade.py`) est cuite par FFmpeg avec la
+chaîne de l'export **pour les valeurs évaluées à cet instant**.
+
+- **À l'arrêt** (curseur déplacé, image clé modifiée, pause) : la LUT est cuite exactement à l'instant courant. À la pause, le moniteur est
+  resynchronisé une fois si un clip visible a un étalonnage animé (la LUT du dernier tic de lecture date d'une image au plus).
+- **Pendant la lecture, repli documenté.** Une LUT coûte **≈ 100 ms** à cuire (FFmpeg 9.0.2, M-series, mesuré : 104 ms médian, la même durée
+  pour un réglage simple ou avec température et ombres ; l'ADR disait ≈ 30 ms, valeur de la docstring non remesurée), soit **trois images à
+  30 i/s** : il n'est pas possible de cuire une LUT par image. Le moniteur ne cuit donc que la dernière demande de chaque clip (les
+  intermédiaires ne sont jamais cuites), **jamais d'approximation de la valeur** : on montre la LUT exacte d'un instant récent, pas une
+  valeur interpolée ou arrondie. Mesures sur 6 s de lecture à 25 i/s, un à quatre clips animés à la fois, cuisson réelle (script jetable, non conservé) : **7,7 LUT/s avec un fil de cuisson, ≈ 15/s avec deux (réglage retenu), ≈ 22/s avec trois** ; retard de l'étalonnage affiché
+  sur l'image : **un clip : ≈ 200 ms (médiane), 250 à 290 ms (p95) ; quatre clips : ≈ 280 ms (médiane), ≈ 400 ms (p95)** avec deux fils
+  (un fil : ≈ 400 ms médiane et ≈ 650 ms p95 à quatre clips). Le plancher d'un clip (≈ 200 ms) est la durée d'une cuisson plus l'attente
+  du prochain tic. Un étalonnage qui change lentement (le cas d'un fondu de couleur) est donc fidèle ; une variation plus rapide que
+  ≈ 0,3 s est montrée avec ce retard. Dès que la lecture s'arrête, la LUT de l'instant exact est cuite.
+- **Équité.** Chaque calque étalonné a son emplacement de cuisson (`<source>:<domaine>`) et le cache sert **le moins récemment servi** : sans
+  cela, avec plusieurs clips animés, le dernier demandé aurait été servi à chaque fois et les autres seraient restés figés. Un seul
+  emplacement (un curseur qu'on glisse) se comporte comme avant : la dernière valeur d'abord.
+- **LUT affichée tant que la demandée cuit** : la **dernière LUT cuite avec succès du calque** (`GradeLutCache.latest`). Avant l'étape 7,
+  seule la dernière LUT *obtenue sur demande* servait de repli, ce qui ne montrait jamais rien tant que la LUT demandée change à chaque
+  image.
+- **Clip sans image clé `color.*` : chemin identique.** `effective_grade` rend le même objet que `clip.color_grade`, donc la même clé de
+  LUT d'une image à l'autre, aucune recuisson (testé : une cuisson pour 100 images, `GradeCurves` jamais construit). Coût mesuré par tic et
+  par clip : 0,09 µs avant, 2,0 µs après (le parcours de ses images clés pour y chercher `color.*`), contre ≈ 410 µs pour un clip animé
+  (construction des courbes, six réglages).
+- **Invalidation** : la clé de LUT suit le contenu de la chaîne d'export (pas le clip, pas le temps) : modifier une clé `color.*` ou déplacer
+  le curseur change la clé ; revenir à la valeur d'avant retrouve la LUT déjà cuite ; deux clips de même courbe au même instant partagent la
+  LUT ; rien ne fuit d'un clip à l'autre. Le cache garde 48 LUT (≈ 20 Mo) et 256 emplacements.
+- **Avant / après (page Couleur)** : la branche `Compare` de `_build_color_grade_filters` transmet les images clés et le contexte `sendcmd` au réglage montré à droite ; le segment fidèle suit donc `effective_grade(t)` à chaque instant au lieu de se figer sur le réglage de base (testé en FFmpeg réel). Les autres enveloppes (`Highlight`, graphe de nœuds, `FilterChain`, vues de composition) ne portent que des étalonnages à nœuds, qui n'ont pas de cible `color.*` : rien à animer.
+- **Non touché** : l'aperçu rapide et le moniteur sans GPU montrent le média sans étalonnage animé (comme avant) ; l'aperçu fidèle suit la
+  courbe (export). Les calques d'effets (graphiques) ne portent pas de cible `color.*`. Un clip étalonné par un graphe de nœuds n'est pas animé.
+
+### Pour l'utilisateur : animer l'étalonnage (étape 8)
+
+1. Sélectionnez un clip vidéo. Dans l'inspecteur, groupe **Couleur** (niveau Studio), chacun des sept réglages (exposition, contraste, saturation,
+   température, teinte, ombres, hautes lumières) a sa rangée **‹ ◆ ›**. Sur la page **Couleur**, chaque roue (Lift, Gamma, Gain, Offset) a la sienne :
+   un losange pour ses quatre canaux (palet et molette).
+2. Le losange pose une image clé **à la tête de lecture** (la valeur actuelle) ou retire celle qui s'y trouve ; ‹ et › sautent à la précédente ou suivante.
+   Plein : une clé sous la tête ; contour : animé, entre deux clés ; vide : pas animé.
+3. Une fois animé, le curseur (ou la roue) **montre la valeur à la tête de lecture** ; le modifier écrit l'image clé de cet instant. Un geste, une étape
+   d'historique (Annuler / Rétablir). Le moniteur et l'export suivent la courbe.
+4. Clic droit sur un losange : *Supprimer l'animation de l'étalonnage* (chaque réglage garde la valeur qu'il montrait) ; au niveau Avancé, interpolation,
+   copier / coller et **éditeur de courbes** (les 23 propriétés y sont listées, « Exposition », « Lift rouge »…).
+5. **Réinitialiser l'étalonnage** (inspecteur ou page Couleur) remet les réglages à zéro **et retire les images clés d'étalonnage**, dans la même étape :
+   Annuler rétablit les deux.
+6. **Étalonnage découpé en nœuds** (plusieurs nœuds, ou un nœud nommé, qualifié, fenêtré, flou ou net) : il **ne s'anime pas**. Les losanges sont grisés et un avis
+   le dit ; si le clip garde des images clés, elles sont ignorées au rendu et le bouton **Supprimer les images-clés** les retire. Revenez à un seul nœud simple pour animer.
+7. Piste ou calque **verrouillé** : tout est refusé. Appliquer un preset garde les réglages animés.
+
+Les images clés d'étalonnage ne s'affichent pas dans la timeline ; les scripts ne peuvent pas encore les écrire (étape 9).
+
 ## Limites connues
 
 - Bézier : la tangente règle la **pente**, pas l'« influence » temporelle (la
@@ -317,9 +452,9 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   inclinaison, miroirs), propriétés de forme et de texte (`graphic.*`) et
   masques (`mask.<id>.*`, une famille par masque) — voir
   `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
-  les couleurs ne sont pas animables. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
-  (luminosité, contraste, saturation) et la vignette (intensité) ; les autres réglages d'effets restent statiques (voir la
-  section précédente).
+  les couleurs de l'étalonnage sont animables, avec interface (losanges de l'inspecteur et des roues, voir « Étalonnage animé »), mais pas encore par script. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
+  (luminosité, contraste, saturation), la vignette, le flou et l'aberration chromatique (intensité) et le rayon du Bloom ; les
+  autres réglages d'effets restent statiques (voir la section précédente).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.

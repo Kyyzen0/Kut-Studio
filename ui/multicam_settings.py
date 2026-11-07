@@ -32,7 +32,7 @@ from core.multicam import angle_offset
 from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
 from core.multicam_ops import angle_has_audio
 from core.project_model import Project
-from ui.design_system import DIALOG_MARGINS, Spacing
+from ui.design_system import DIALOG_MARGINS, Sizes, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
 from ui.theme import active_palette, label_style
@@ -52,7 +52,7 @@ class _AngleRow(QFrame):
         palette = active_palette()
         colors = palette.angle_colors
         self.color_button = QToolButton()
-        self.color_button.setFixedSize(22, 22)
+        self.color_button.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
         self.color_button.setStyleSheet(
             f"QToolButton {{ background: {colors[angle.color_index % len(colors)]}; border: 1px solid {palette.text}; "
             f"border-radius: 4px; }}"

@@ -1,0 +1,5 @@
+{
+ "_comment": "Dette des plafonds de ressources des verbes créateurs : « verbe:ressource » sans garde de plafond. Ne peut que diminuer (tests/test_script_resource_guards.py). Un verbe sondé qui se met à refuser fait échouer le test : retirez l'entrée et inscrivez le verbe dans CEILINGS (tests/script_resource_guards.py). Vide depuis l'ajout des plafonds de ressources de tous les verbes créateurs.",
+ "version": 1,
+ "verbs": {}
+}

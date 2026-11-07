@@ -35,6 +35,7 @@ from ui.design_system import DIALOG_MARGINS, Sizes, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
 from ui.theme import COLORS, label_style
+from ui.qt_item_lifetime import retain
 
 SEQUENCE_FRAME_RATES: tuple[float, ...] = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
 
@@ -119,11 +120,11 @@ class SocialProjectDialog(QDialog):
         self.template_list.setFixedHeight(thumb.height() + 4 * Spacing.lg)
         empty = QPixmap(thumb)
         empty.fill(QColor(COLORS["surface"]))                      # « Projet vide » : une toile nue, alignée sur les autres
-        blank = QListWidgetItem(QIcon(empty), translate("social.dialog.no_template"))
+        blank = retain(QListWidgetItem(QIcon(empty), translate("social.dialog.no_template")))
         blank.setData(Qt.UserRole, "")
         self.template_list.addItem(blank)
         for template_id, label, description, image in templates or ():
-            item = QListWidgetItem(QPixmap.fromImage(image), label)
+            item = retain(QListWidgetItem(QPixmap.fromImage(image), label))
             item.setData(Qt.UserRole, template_id)
             item.setToolTip(description)
             self.template_list.addItem(item)

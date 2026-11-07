@@ -17,6 +17,7 @@ from typing import Any
 
 from ..canvas_guides import GuideOrientation, add_guide, clear_guides, move_guide, remove_guide
 from ..project_model import Project
+from .resource_limits import require_guide_room
 from .verbs import Kind, Operation, Param, Verb, _pick
 
 _GUIDE = Param("guide", Kind.SELECTOR, "Le guide, par son identifiant.", of="guide")
@@ -29,7 +30,11 @@ def _guide_id(project: Project, selector: str) -> str:
 
 
 def _add_guide(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_guide(p.active_sequence, a["orientation"], float(a["position"]), guide_id=a.get("id"))
+    def operation(project: Project) -> Any:
+        require_guide_room(project)
+        return add_guide(project.active_sequence, a["orientation"], float(a["position"]), guide_id=a.get("id"))
+
+    return operation
 
 
 def _move_guide(a: Mapping[str, Any]) -> Operation:

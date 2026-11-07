@@ -188,11 +188,12 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
     ),
     # --- Inspecteur : onglets, groupes, transition, sous-titre -------------------------------------------------------
     "inspector.tab.clip": _t("Clip", "Clip", "Clip"),
+    "inspector.tab.more": _t("Plus", "More", "Más"),
+    "inspector.tab.more.tip": _t("Autres onglets : Graphiques, Compositing, Suivi", "Other tabs: Graphics, Compositing, Tracking", "Otras pestañas: Gráficos, Composición, Seguimiento"),
     "inspector.tab.compositing": _t("Compositing", "Compositing", "Composición"),
     "inspector.project.format": _t("Format", "Format", "Formato"),
     "inspector.color.saturation": _t("Saturation", "Saturation", "Saturación"),
     "inspector.title": _t("INSPECTEUR", "INSPECTOR", "INSPECTOR"),
-    "inspector.more_tooltip": _t("Outils spécialisés", "Specialized tools", "Herramientas especializadas"),
     "inspector.project.state": _t("État", "State", "Estado"),
     "inspector.clip.title": _t("Clip sélectionné", "Selected clip", "Clip seleccionado"),
     "inspector.transition.title": _t("Transition", "Transition", "Transición"),
@@ -282,6 +283,7 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Search the library…",
         "Buscar en la biblioteca…",
     ),
+    "library.browse.toggle": _t("Dossiers et filtres", "Folders and filters", "Carpetas y filtros"),
     "library.manage_tags": _t("Gérer les tags…", "Manage tags…", "Gestionar etiquetas…"),
     "library.audio_files": _t("Fichiers", "Files", "Archivos"),
     "library.import_tip": _t(

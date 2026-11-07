@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .video_encoders import EncoderUnavailableError, auxiliary_h264_args
+
 MAX_SIDE = 8192
 """Côté maximal d'un film, en pixels (``kut3d.render.limits.MAX_IMAGE_SIDE`` ; un test garde les deux égaux)."""
 MAX_FPS = 240.0
@@ -125,7 +127,10 @@ def ffmpeg_tool() -> str:
 
     found = find_media_tool("ffmpeg")
     if found is None:
-        raise FilmError("FFmpeg est introuvable : installez-le (ou ajoutez-le au PATH) pour encoder un film.")
+        from .tool_paths import missing_tool_message
+
+        raise FilmError(missing_tool_message(
+            "FFmpeg", "FFmpeg est introuvable : installez-le (ou ajoutez-le au PATH) pour encoder un film."))
     return found
 
 
@@ -211,8 +216,13 @@ def _color_hex(color: tuple[float, float, float]) -> str:
 def make_background_video(spec: BackgroundSpec, size: tuple[int, int], fps: float, count: int, output: Path) -> None:
     """Fabrique le fond (``count`` images) en H.264 : une couleur unie, ou une image recadrée « remplir le cadre »."""
     width, height = size
+    try:
+        # libx264 (FFmpeg complet) ; sans lui (construction LGPL du Mac App Store), VideoToolbox au débit de la qualité « master ».
+        encoder = auxiliary_h264_args(speed_preset="veryfast", crf=10, width=width, height=height, fps=fps)
+    except EncoderUnavailableError as error:
+        raise FilmError(str(error)) from error
     tail = [
-        "-frames:v", str(count), "-c:v", "libx264", "-preset", "veryfast", "-crf", "10", "-pix_fmt", "yuv420p",
+        "-frames:v", str(count), *encoder, "-pix_fmt", "yuv420p",
         *_COLOR_TAGS, "-an", "-movflags", "+faststart",
     ]
     partial = output.with_name(f".{output.stem}.partial{output.suffix}")

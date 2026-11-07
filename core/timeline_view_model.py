@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from .clip_crop import crop_is_animated
 from .effects_model import FX_PREFIX
+from .grade_keyframing import grade_keyframes
 from .project_model import Clip, Project
 from .time_map import speed_keyframes
 
@@ -122,6 +123,8 @@ class TimelineClipView:
     # Images clés des paramètres d'effets (``fx.<effet>.<paramètre>``, ADR-0008) : l'inspecteur y lit les losanges et les valeurs
     # animées. Vide pour un clip sans effet animé.
     effect_keyframes: tuple = ()
+    # Images clés de l'étalonnage (``color.*``, ADR-0008 étape 8) : l'inspecteur en lit les losanges et les valeurs animées.
+    grade_keyframes: tuple = ()
 
     @property
     def is_nested(self) -> bool:
@@ -243,6 +246,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     composition_nodes=len(clip.composition.graph.nodes) if clip.composition is not None else 0,
                     crop_animated=crop_is_animated(clip),
                     effect_keyframes=tuple(k for k in clip.animation if k.property_name.startswith(FX_PREFIX)),
+                    grade_keyframes=tuple(grade_keyframes(clip)),
                 )
             )
     return views

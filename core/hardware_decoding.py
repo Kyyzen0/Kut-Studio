@@ -140,6 +140,11 @@ class DecodeCodec:
         sample_args: encodeur logiciel qui fabrique l'échantillon de validation
             (le codec n'est validé que si cet encodeur existe dans ce FFmpeg).
         sample_extension: conteneur de l'échantillon.
+        sample_alternatives: autres fabriques de l'échantillon, essayées dans l'ordre quand l'encodeur
+            préféré est absent de ce FFmpeg (construction LGPL : ni libx264 ni libx265, mais VideoToolbox).
+            Chacune produit un vrai flux du même profil (codec, profondeur, sous-échantillonnage) : le test
+            reste un décodage strict d'un flux conforme. Sans aucune fabrique, le codec reste **non vérifiable**
+            (``validated=None``), jamais « inutilisable ».
     """
 
     id: str
@@ -150,19 +155,31 @@ class DecodeCodec:
     download_format: str
     sample_args: tuple[str, ...]
     sample_extension: str = "mp4"
+    sample_alternatives: tuple[tuple[str, ...], ...] = ()
 
     @property
     def sample_encoder(self) -> str:
         return self.sample_args[self.sample_args.index("-c:v") + 1]
 
+    def sample_args_for(self, encoder_names: set[str]) -> tuple[str, ...] | None:
+        """Les arguments de la première fabrique dont l'encodeur existe dans ``encoder_names`` (``None`` : aucune)."""
+        for args in (self.sample_args, *self.sample_alternatives):
+            if args[args.index("-c:v") + 1] in encoder_names:
+                return args
+        return None
+
 
 DECODE_CODECS: tuple[DecodeCodec, ...] = (
     DecodeCodec("h264", "H.264", ("h264",), 8, "420", "nv12",
-                ("-c:v", "libx264", "-pix_fmt", "yuv420p")),
+                ("-c:v", "libx264", "-pix_fmt", "yuv420p"),
+                sample_alternatives=(("-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p", "-b:v", "2M"),)),
     DecodeCodec("hevc", "HEVC", ("hevc",), 8, "420", "nv12",
-                ("-c:v", "libx265", "-pix_fmt", "yuv420p", "-x265-params", "log-level=error")),
+                ("-c:v", "libx265", "-pix_fmt", "yuv420p", "-x265-params", "log-level=error"),
+                sample_alternatives=(("-c:v", "hevc_videotoolbox", "-pix_fmt", "yuv420p", "-b:v", "2M", "-tag:v", "hvc1"),)),
     DecodeCodec("hevc10", "HEVC 10 bits", ("hevc",), 10, "420", "p010le",
-                ("-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error")),
+                ("-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error"),
+                sample_alternatives=(("-c:v", "hevc_videotoolbox", "-pix_fmt", "p010le", "-profile:v", "main10",
+                                      "-b:v", "2M", "-tag:v", "hvc1"),)),
     DecodeCodec("prores", "ProRes 422", ("prores",), 10, "422", "p210le",
                 ("-c:v", "prores_ks", "-profile:v", "0"), "mov"),
     DecodeCodec("vp9", "VP9", ("vp9",), 8, "420", "nv12",
@@ -325,12 +342,21 @@ def listed_backends(hwaccels: set[str]) -> tuple[DecodeMode, ...]:
     return tuple(b for b in DECODE_BACKENDS if HWACCEL_NAMES[b] in hwaccels)
 
 
-def sample_command(command: Sequence[str], codec: DecodeCodec, output: str) -> list[str]:
-    """Fabrique un échantillon 256×144 de 5 images avec un encodeur **logiciel**."""
+def sample_command(
+    command: Sequence[str], codec: DecodeCodec, output: str, encoder_names: set[str] | None = None
+) -> list[str]:
+    """Fabrique un échantillon 256×144 de 5 images avec un encodeur **logiciel** (ou, à défaut, sa fabrique de remplacement).
+
+    ``encoder_names`` (liste ``-encoders``) choisit parmi les fabriques de :attr:`DecodeCodec.sample_alternatives` ;
+    sans lui, la fabrique préférée, comme avant.
+    """
+    args = codec.sample_args
+    if encoder_names is not None:
+        args = codec.sample_args_for(encoder_names) or codec.sample_args
     return [
         *command, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
         "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=10:duration=0.5",
-        *codec.sample_args, output,
+        *args, output,
     ]
 
 
@@ -401,11 +427,11 @@ def detect_decoders(
     try:
         samples: dict[str, str | None] = {}
         for codec in DECODE_CODECS:
-            if codec.sample_encoder not in encoder_names:
+            if codec.sample_args_for(encoder_names) is None:
                 samples[codec.id] = None
                 continue
             path = os.path.join(directory, f"{codec.id}.{codec.sample_extension}")
-            made = run(sample_command(command, codec, path))
+            made = run(sample_command(command, codec, path, encoder_names))
             samples[codec.id] = path if getattr(made, "returncode", 1) == 0 else None
 
         def check(item: DecoderCapability) -> DecoderCapability:
@@ -415,7 +441,7 @@ def detect_decoders(
                 return replace(item, validated=False, detail=problem)
             sample = samples.get(item.codec)
             if not sample:
-                return replace(item, validated=None, detail="échantillon impossible (encodeur absent)")
+                return replace(item, validated=None, detail="non vérifiable : échantillon impossible à fabriquer avec les encodeurs de ce FFmpeg")
             output = run(strict_validation_command(command, item.backend, codec, sample))
             if getattr(output, "returncode", 1) == 0:
                 return replace(item, validated=True, detail="")

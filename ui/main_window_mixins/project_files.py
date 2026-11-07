@@ -11,7 +11,9 @@ from core.project_factory import DEFAULT_PROJECT_NAME, create_default_project
 from core.project_io import load_project, save_project
 from core.project_lock import ProjectLock, ProjectLockedError, lock_file_for
 from core.render_plan import RenderPlan, build_render_plan
+from core.security_scope import remember_user_path
 from ui import i18n
+from ui.sandbox_access import report_offline_media
 
 
 def _main_window():
@@ -145,6 +147,7 @@ class ProjectFilesMixin:
 
     def save_project_file(self) -> None:
         """Enregistre le projet courant. Délègue à ``save_project_as`` si aucun chemin."""
+        self._settle_forbidden_edits()       # lecture seule (Store) : jamais une édition interdite dans le fichier
         self._flush_subtitle_history_record()
         if self.current_project_path is None:
             self.save_project_as()
@@ -163,6 +166,7 @@ class ProjectFilesMixin:
 
     def save_project_as(self) -> None:
         """Ouvre un dialogue pour choisir un chemin ``.kut`` et enregistre le projet."""
+        self._settle_forbidden_edits()
         self._flush_subtitle_history_record()
         if self.current_project_path is not None:
             default_path = self.current_project_path
@@ -190,6 +194,7 @@ class ProjectFilesMixin:
                 i18n.translate("dialog.save.failed_text", error=exc),
             )
             return
+        remember_user_path(path)                     # le fichier existe maintenant : signet (Store, ADR-0013 étape 5)
         self.current_project_path = path
         self._lock_project(path)
         self._mark_clean()
@@ -205,10 +210,12 @@ class ProjectFilesMixin:
         )
         if not path:
             return
+        remember_user_path(path)
         self._load_project_from_path(path)
 
     def open_external_project(self, path: str) -> None:
         """Ouvre un projet que le système a confié à l'application (Finder, double-clic, ligne de commande)."""
+        remember_user_path(path)
         self._load_project_from_path(path)
         self.raise_()
         self.activateWindow()
@@ -290,6 +297,7 @@ class ProjectFilesMixin:
             self._mark_clean()
         # Références cassées ou cycles : signalés, jamais corrigés en silence.
         self._report_sequence_issues()
+        report_offline_media(self)                   # Store : médias sans signet valide => hors ligne, à relier (sans effet ailleurs)
 
     def launch_export(self):
         """Export en une étape : choisir le fichier, ajouter à la file, lancer."""
@@ -306,6 +314,8 @@ class ProjectFilesMixin:
         peut continuer à monter (ou fermer le projet) pendant que la file
         rend la version ajoutée.
         """
+        if self._export_refused_ui():                 # lecture seule (Store) : pas de dialogue, pas de job
+            return None
         spec = self.export_panel.current_spec()
         path = self._ask_export_path(spec)
         if not path:
@@ -342,6 +352,7 @@ class ProjectFilesMixin:
             ),
             i18n.translate("dialog.filter.video", ext=spec.container),
         )
+        remember_user_path(path)                     # sans effet tant que la sortie n'existe pas (voir docs/sandbox-access.md)
         return path
 
     def get_render_plan(self, at: float | None = None) -> RenderPlan:
@@ -455,6 +466,7 @@ class ProjectFilesMixin:
         timer.start()
 
     def _write_autosave(self) -> None:
+        self._settle_forbidden_edits()
         if not self.project_dirty or not self.current_project_path:
             return
         try:

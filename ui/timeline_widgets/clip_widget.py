@@ -17,6 +17,7 @@ from core.media_previews import (
     thumbnail_source_times,
 )
 from core.timeline_view_model import TimelineClipView
+from ui.design_system import Typography
 from ui.theme import BLACK, mix_colors, set_stylesheet_if_changed
 from ui.timeline_widgets.clip_style import (
     cache_dot_color,
@@ -93,7 +94,7 @@ class ClipWidget(QWidget):
             if self._cache_dot is None:
                 self._cache_dot = QLabel("●", self)
                 self._cache_dot.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-            set_stylesheet_if_changed(self._cache_dot, "color: %s; font-size: 10px; background: transparent;" % color)
+            set_stylesheet_if_changed(self._cache_dot, "color: %s; font-size: %dpx; background: transparent;" % (color, Typography.micro))
             self._cache_dot.move(max(0, self.width() - 18), 2)
             self._cache_dot.resize(16, 14)
             self._cache_dot.setVisible(state in ("cached", "pending"))

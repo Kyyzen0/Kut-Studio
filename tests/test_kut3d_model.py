@@ -368,13 +368,19 @@ def test_error_message_does_not_echo_huge_input(tmp_path: Path) -> None:
 # --- architecture ---------------------------------------------------------------------------------------
 
 
-# Liste blanche, explicite et minimale : (1) `kut3d/render/images.py` (repli de décodage des images non PNG), seulement
-# par un import PARESSEUX (dans une fonction) ; (2) le sous-paquet `kut3d/gpu/` (moteur GPU « qrhi », phase 2b), où
+# Liste blanche, explicite et minimale : (1) `kut3d/render/images.py` (repli de décodage des images non PNG) et
+# `kut3d/text_font.py` (contours des polices du texte 3D, seul moyen d'ouvrir une police), seulement par un import
+# PARESSEUX (dans une fonction) ; (2) le sous-paquet `kut3d/gpu/` (moteur GPU « qrhi », phase 2b), où
 # seuls `renderer.py` et `qtapp.py` importent réellement PySide6 (voir QT_USERS) et ne sont chargés qu'au premier rendu
 # GPU (`test_importing_kut3d_loads_no_qt`). Tout le reste de `kut3d` reste sans Qt.
-QT_WHITELIST = {"kut3d/render/images.py"}
+QT_WHITELIST = {"kut3d/render/images.py", "kut3d/text_font.py"}
 QT_WHITELIST_DIRS = ("kut3d/gpu/",)
-QT_USERS = {"kut3d/render/images.py", "kut3d/gpu/qtapp.py", "kut3d/gpu/renderer.py"}
+QT_USERS = {
+    "kut3d/render/images.py",
+    "kut3d/text_font.py",
+    "kut3d/gpu/qtapp.py",
+    "kut3d/gpu/renderer.py",
+}
 
 
 def _qt_allowed(rel: str, lazy: bool) -> bool:

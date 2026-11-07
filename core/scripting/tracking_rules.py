@@ -9,9 +9,10 @@ Aucun verbe ici (comme ``layer_rules``) : des fonctions sur le projet et des ide
   produisent ``bake_link`` et ``follow_reframe`` (une par image du clip, :func:`core.tracking_bindings.frame_times`) le sont aussi, par
   la durée du clip et la cadence de la séquence, avant tout calcul.
 - **Verrous des suiveurs** : un clip qui suit un tracker (liaison active) change d'apparence quand les données de ce tracker, ou la
-  stabilisation de sa source, changent ; un verbe qui les modifie refuse si l'un de ces clips est sur une piste verrouillée ou est un
-  calque verrouillé (:func:`require_followers_editable`). ``remove_tracker`` réécrit en plus leurs liaisons
-  (:func:`require_link_owners_editable`).
+  stabilisation de sa source, changent ; ce n'est PAS une écriture sur lui (sa liaison est en temps source, les images clés sont dérivées
+  au rendu), donc aucun verbe de données n'est refusé pour un suiveur verrouillé, comme dans l'interface. Seul ``remove_tracker``
+  réécrit leurs liaisons : ce refus-là est dans le modèle (:func:`core.tracking_locks.require_tracker_removal_unlocked`, appelé par
+  ``tracking_ops.remove_tracker``), le verbe n'en a pas de copie.
 
 Pas de cycle à craindre entre liaisons : :meth:`core.tracking_bindings.TrackingContext.layer_matrix` ne lit, pour le clip source, que son
 transform saisi, ses images clés saisies et sa stabilisation, jamais ses propres liaisons ; la source d'une liaison peut donc elle-même
@@ -22,9 +23,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from ..compositing_guard import ClipEditRefused, clip_edit_refusal
 from ..project_model import Clip, Project
-from ..tracking_ops import _still_tracked_elsewhere, tracking_of
+from ..tracking_ops import tracking_of
+from .resource_limits import require_room_in
 
 MAX_TRACKERS_PER_CLIP = 32
 """Trackers d'un clip (l'interface en pose quatre pour une stabilisation automatique)."""
@@ -66,6 +67,14 @@ def require_tracker_room(project: Project, clip: Clip) -> None:
         raise ValueError(f"Le projet compte déjà {count} trackers : la limite est de {MAX_TRACKERS_IN_PROJECT}.")
 
 
+def require_tracker_copies_room(project: Project, clip: Clip) -> None:
+    """Refuse, AVANT de couper ou de dupliquer ``clip``, que la copie (qui reprend ses suiveurs, mêmes identifiants) fasse dépasser la limite
+    de suiveurs du projet (toutes séquences). Un clip sans suiveur n'ajoute rien."""
+    copies = len(tracking_of(clip).trackers)
+    count = sum(len(tracking_of(other).trackers) for other in project_clips(project))
+    require_room_in(count, copies, MAX_TRACKERS_IN_PROJECT, "suiveurs", "Le projet")
+
+
 def require_span(project: Project, data, index: int) -> None:
     """Refuse de poser une image suivie à ``index`` si la plage du tracker, ou le total du projet, dépasserait ses limites."""
     first, last = (index, index) if data.count == 0 else (min(data.first, index), max(data.last, index))
@@ -95,49 +104,8 @@ def require_derived_size(project: Project, clip: Clip, what: str) -> None:
         raise ValueError(f"{what} : le clip '{clip.id}' compte environ {int(frames)} images, le maximum est de {MAX_DERIVED_FRAMES}.")
 
 
-def _followers(project: Project, source_id: str, tracker_id: str | None) -> list[Clip]:
-    result = []
-    for track in project.active_sequence.tracks:
-        for other in track.clips:
-            if other.id == source_id or other.tracking is None:
-                continue
-            if any(
-                link.enabled and link.follows(source_id) and (tracker_id is None or tracker_id in link.tracker_ids)
-                for link in other.tracking.links
-            ):
-                result.append(other)
-    return result
-
-
-def _refuse_locked(project: Project, clips: list[Clip]) -> None:
-    for other in clips:
-        code = clip_edit_refusal(project, other.id, visual_only=False)
-        if code is not None:
-            raise ClipEditRefused(code, other.id)
-
-
-def require_followers_editable(project: Project, source_id: str, tracker_id: str | None = None) -> None:
-    """Aucun clip qui suit ``source_id`` (liaison active, ce tracker si donné) ne doit être verrouillé : son mouvement en dépend."""
-    _refuse_locked(project, _followers(project, source_id, tracker_id))
-
-
-def require_link_owners_editable(project: Project, source_id: str, tracker_id: str) -> None:
-    """``remove_tracker`` réécrit les liaisons des clips qui suivent le tracker (sauf s'il reste porté par une autre moitié coupée)."""
-    owners = []
-    for track in project.active_sequence.tracks:
-        for other in track.clips:
-            if other.id == source_id or other.tracking is None:
-                continue
-            if any(
-                link.follows(source_id) and tracker_id in link.tracker_ids and not _still_tracked_elsewhere(project, link, source_id, tracker_id)
-                for link in other.tracking.links
-            ):
-                owners.append(other)
-    _refuse_locked(project, owners)
-
-
 __all__ = [
     "MAX_DERIVED_FRAMES", "MAX_PROJECT_TRACK_FRAMES", "MAX_TRACKERS_IN_PROJECT", "MAX_TRACKERS_PER_CLIP", "MAX_TRACK_SPAN",
-    "known_link_ids", "known_tracker_ids", "project_clips", "require_derived_size", "require_followers_editable",
-    "require_link_owners_editable", "require_span", "require_tracker_room", "require_within", "tracked_frames",
+    "known_link_ids", "known_tracker_ids", "project_clips", "require_derived_size",
+    "require_span", "require_tracker_room", "require_within", "tracked_frames",
 ]

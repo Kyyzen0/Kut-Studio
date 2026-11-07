@@ -88,14 +88,14 @@ def test_the_lattice_nodes_are_whole_8_bit_codes_in_the_atlas_layout():
 
 
 def test_the_bake_command_carries_the_colour_properties_of_the_media():
-    command = bake_command("ffmpeg", "eq=gamma=2", domain=DOMAIN_YUV, colorspace="bt709", color_range="full")
+    command = bake_command("ffmpeg", "hue=s=0.5", domain=DOMAIN_YUV, colorspace="bt709", color_range="full")
     graph = command[command.index("-vf") + 1]
-    assert graph == "setparams=colorspace=bt709:range=pc,eq=gamma=2,format=rgba"
+    assert graph == "setparams=colorspace=bt709:range=pc,hue=s=0.5,format=rgba"
     assert command[command.index("-pix_fmt") + 1] == "yuv444p"
-    untagged = bake_command("ffmpeg", "eq=gamma=2", domain=DOMAIN_YUV)
+    untagged = bake_command("ffmpeg", "hue=s=0.5", domain=DOMAIN_YUV)
     assert untagged[untagged.index("-vf") + 1].startswith("setparams=range=tv,")
-    rgb = bake_command("ffmpeg", "eq=gamma=2", domain=DOMAIN_RGB)
-    assert rgb[rgb.index("-vf") + 1] == "eq=gamma=2,format=rgba", "les conversions de l'export, choisies par FFmpeg"
+    rgb = bake_command("ffmpeg", "hue=s=0.5", domain=DOMAIN_RGB)
+    assert rgb[rgb.index("-vf") + 1] == "hue=s=0.5,format=rgba", "les conversions de l'export, choisies par FFmpeg"
     assert rgb[rgb.index("-pix_fmt") + 1] == "rgba" and rgb[-2:] == ["rgb24", "pipe:1"]
 
 

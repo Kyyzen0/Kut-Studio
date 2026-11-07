@@ -21,6 +21,9 @@ class RecordingMixin:
     def on_record_toggled(self, checked: bool) -> None:
         """Démarre ou arrête le microphone sur les pistes audio armées."""
         if checked:
+            if self._edit_refused_ui():              # lecture seule (Store) : l'enregistrement poserait un clip
+                self._set_record_button(False)
+                return
             armed = [
                 track.id
                 for track in self.project.tracks

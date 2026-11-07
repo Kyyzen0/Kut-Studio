@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 from PySide6.QtCore import QTimer
+from core.entitlements import EntitlementRefused, require_export
 from core.project_model import Clip
+from core.security_scope import remember_user_path
 from core.subtitle_io import load_srt, save_srt
 from core.text_style import TextStyle, default_text_style
 from core.timeline_editing import apply_solo
@@ -111,7 +113,10 @@ class SubtitlesGraphicsMixin:
         self.preview_panel.set_subtitle(text, style)
 
     def export_subtitles_to_path(self, file_path: str) -> None:
-        """Exporte tous les sous-titres actifs vers ``file_path`` (.srt)."""
+        """Exporte tous les sous-titres actifs vers ``file_path`` (.srt).
+
+        Lecture seule (Store) : ``ExportBlockedError`` avant d'écrire."""
+        require_export()
         cues = subtitle_cues_from_project(self.project)
         save_srt(cues, file_path)
         self.subtitle_file = file_path
@@ -215,6 +220,7 @@ class SubtitlesGraphicsMixin:
         )
         if not path:
             return
+        remember_user_path(path)
         from core.graphics import add_graphic_clip
 
         try:
@@ -346,6 +352,7 @@ class SubtitlesGraphicsMixin:
         )
         if not path:
             return
+        remember_user_path(path)
         try:
             self.import_subtitles_from_path(path)
         except (OSError, ValueError, KeyError) as exc:
@@ -356,6 +363,8 @@ class SubtitlesGraphicsMixin:
             )
 
     def export_subtitles_via_dialog(self) -> None:
+        if self._export_refused_ui():                # lecture seule (Store) : un fichier .srt est un export
+            return
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
             i18n.translate("dialog.subtitle.export_title"),
@@ -366,6 +375,9 @@ class SubtitlesGraphicsMixin:
             return
         try:
             self.export_subtitles_to_path(path)
+            remember_user_path(path)             # le fichier existe maintenant : un signet est possible
+        except EntitlementRefused as refusal:        # les droits ont changé depuis le dialogue
+            self._show_refusal_message(refusal.user_message())
         except OSError as exc:
             _main_window().QMessageBox.critical(
                 self,

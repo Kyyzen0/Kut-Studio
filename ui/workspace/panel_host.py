@@ -182,6 +182,16 @@ class PanelHost(QWidget):
         if self.manager is not None:
             self._options.set_actions(self.manager.build_actions(self.panel))
 
+    def sync_height_cap(self) -> None:
+        """Hauteur maximale de l'hôte : celle que le panneau impose (mixeur replié en barre), sinon aucune.
+
+        Un ``QSplitter`` ne lit que le maximum du widget qu'il porte, pas celui de son enfant : sans cela, la barre repliée
+        pourrait être étirée à la main ou recevoir la hauteur en trop de la zone.
+        """
+        cap = getattr(self._content, "height_cap", None)
+        cap = cap() if callable(cap) else None
+        self.setMaximumHeight(cap if cap else 16777215)
+
     def retranslate(self) -> None:
         """Textes de l'hôte dans la langue courante (après un changement de langue)."""
         self._options.retranslate()

@@ -100,7 +100,7 @@ def test_the_four_wheels_sit_in_a_row_when_wide_and_two_by_two_in_a_column(qtbot
     wheels.resize(400, 520)
     qtbot.waitUntil(lambda: wheels._columns == 2)
     grid = wheels._grid
-    assert [grid.getItemPosition(grid.indexOf(wheels.wheels[name]))[:2] for name in ("lift", "gamma", "gain", "offset")] \
+    assert [grid.getItemPosition(grid.indexOf(wheels.cells[name]))[:2] for name in ("lift", "gamma", "gain", "offset")] \
         == [(0, 0), (0, 1), (1, 0), (1, 1)]
 
 

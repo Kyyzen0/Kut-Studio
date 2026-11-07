@@ -40,6 +40,10 @@ AUDIO_TRANSLATIONS: dict[str, dict[str, str]] = {
         "En el orden de la lista, sobre la suma de las pistas enviadas a este bus, antes de su fader.",
     ),
     "bus.add": _t("Nouveau bus", "New bus", "Nuevo bus"),
+    "mixer.fold.open": _t("Ouvrir", "Open", "Abrir"),
+    "mixer.fold.open.tip": _t("Ouvrir le mixeur (un clic sur la barre suffit)", "Open the mixer (clicking the bar is enough)", "Abrir el mezclador (basta con pulsar la barra)"),
+    "mixer.fold.close": _t("Replier", "Collapse", "Replegar"),
+    "mixer.fold.close.tip": _t("Replier le mixeur en une barre : la timeline reprend la place", "Collapse the mixer into a bar: the timeline takes the room", "Replegar el mezclador en una barra: la línea de tiempo recupera el espacio"),
     "bus.add.tip": _t(
         "Ajouter un bus : un sous-mixage (fader, inserts) entre des pistes et le Master",
         "Add a bus: a submix (fader, inserts) between tracks and the Master",

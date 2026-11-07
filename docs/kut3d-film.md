@@ -61,6 +61,67 @@ film.place_scene(scene, duration=3.0, start=0.0, track=1, name="cube")   # -> "s
 Exemple complet : `.venv/bin/python examples/kut3d_scene_film.py out/` (cube texturé OBJ + MTL + PNG fabriqué par le script).
 Un film peut mêler `render_shot` + `place` et `place_scene`.
 
+## Formes de base : un film sans aucun fichier de modèle
+
+Cube, sphère, plan, cylindre, cône et tore se décrivent par leurs dimensions ([format](kut3d-scene.md#formes-de-base-format-2)) :
+aucun fichier OBJ ou glTF, rien à copier. `film.primitive(...)` fabrique l'`Instance` à mettre dans la scène ; `place_scene` écrit un
+`.kut3d` de **version 2** (paramètres seulement) et **aucun** dossier `<nom>_models/` si la scène ne contient que des formes.
+
+```python
+from core.film import Film
+from kut3d import AmbientLight, Camera, DirectionalLight, Material, Scene
+
+film = Film("out/formes.kut", size=(1280, 720), fps=24)
+rouge = Material(base_color=(0.9, 0.2, 0.2, 1.0), roughness=0.4)
+gris = Material(base_color=(0.3, 0.3, 0.35, 1.0), roughness=0.9)
+scene = Scene(
+    instances=[
+        film.primitive("plane", width=8, depth=8, material=gris),
+        film.primitive("sphere", radius=0.5, position=(-1, 0.5, 0), material=rouge),
+        film.primitive("cube", width=0.8, height=0.8, depth=0.8, position=(1, 0.4, 0), rotation_deg=(0, 30, 0)),
+        film.primitive("torus", major_radius=0.4, minor_radius=0.12, position=(0, 0.3, 1.5)),
+    ],
+    lights=[AmbientLight((1, 1, 1), 0.25), DirectionalLight((-0.4, -0.6, -0.7), (1, 1, 1), 2.5)],
+    camera=Camera((0, 2, 6), (0, 0.4, 0)),
+)
+film.place_scene(scene, duration=3.0, name="formes")   # out/formes_assets/formes.kut3d, version 2
+film.save()
+```
+
+- `film.primitive(kind, *, material=None, position=(0, 0, 0), rotation_deg=(0, 0, 0), scale=1.0, name="", **paramètres)` :
+  `kind` est `"cube"`, `"sphere"`, `"plane"`, `"cylinder"`, `"cone"` ou `"torus"` (ou une description `kut3d.Sphere(radius=1)`) ;
+  les paramètres nommés sont ceux du tableau du [format](kut3d-scene.md#formes-de-base-format-2), bornés. `rotation_deg` = angles
+  (X, Y, Z) en degrés (appliqués dans l'ordre Z, Y, X), `scale` un nombre ou trois nombres > 0. Une valeur refusée est une `FilmError`.
+- Le plan est une surface ouverte (une face) : `Material(double_sided=True)` pour le voir de dessous.
+- Un matériau avec **texture** ne s'écrit pas encore dans un `.kut3d` (`place_scene` le refuse) ; `render_shot` le rend normalement.
+- Une scène qui mêle fichiers de modèle et formes copie les fichiers seuls ; les formes passent telles quelles.
+- Le verbe de script `add_scene3d_clip` accepte un `.kut3d` à formes de base comme un autre.
+
+## Texte 3D extrudé
+
+`film.text3d(texte, ...)` fabrique l'`Instance` d'un titre en relief ; comme une forme de base, il se décrit par ses paramètres
+([format](kut3d-scene.md#texte-3d-extrude-format-3)) : aucun fichier de police ni de modèle, et `place_scene` écrit un `.kut3d` de
+**version 3** seulement si la scène contient un texte (sans texte : version 2 ou 1, inchangées).
+
+```python
+or_ = Material(base_color=(0.9, 0.6, 0.1, 1.0), metallic=0.8, roughness=0.3)
+titre = film.text3d("Kut Studio", size=1.2, depth=0.3, bevel=0.01, material=or_, position=(0, 1, 0))
+```
+
+- `film.text3d(text, *, font="Anton", size=1.0, depth=0.2, bevel=0.0, align="center", material=None, position=(0, 0, 0), rotation_deg=(0, 0, 0), scale=1.0, name="")` :
+  `font` = `Anton` (défaut), `Saira ExtraCondensed` (+ `SemiBold`, `Bold`, `Black`), toutes livrées avec l'application (même rendu sur toutes les
+  machines), ou une famille installée (propre à la machine, refusée si absente). `text` : latin, grec, cyrillique, 40 caractères au plus, `\n`
+  pour changer de ligne. Une valeur refusée (texte vide, emoji, idéogramme, biseau trop grand, police absente, caractère que la police
+  n'a pas...) est une `FilmError` « Texte 3D refusé : ... » en français, avant toute écriture.
+- `film.primitive("text", text="...")` est équivalent.
+- Le maillage est généré à l'appel (une police s'ouvre) : dans l'application ou un script lancé par elle, l'application Qt existe ; dans un script
+  autonome elle est créée au besoin, dans le fil principal.
+- Sans application Qt, `kut3d` en crée une pour ouvrir la police ; sous Linux sans `QT_QPA_PLATFORM`, `DISPLAY` ni `WAYLAND_DISPLAY`, elle
+  utilise la plateforme `offscreen` (le plugin natif ferait avorter le processus) ; un choix explicite de `QT_QPA_PLATFORM` n'est jamais écrasé,
+  et macOS / Windows ne sont pas touchés.
+- Le verbe de script `add_scene3d_clip` accepte un `.kut3d` à texte comme un autre ; un fichier hostile (texte démesuré, police absente...) est
+  refusé en une ligne.
+
 ## Ce qui est écrit sur disque
 
 ```

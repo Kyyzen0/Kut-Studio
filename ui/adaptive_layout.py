@@ -71,8 +71,11 @@ class ShrinkableScrollArea(QScrollArea):
         hint = content.sizeHint()
         # Un contenu dont la hauteur dépend de la largeur (rangée de puces) : on la lit à la largeur réelle.
         width = self.viewport().width()
+        # Pas de ``max`` avec ``sizeHint()`` : un contenu à retour à la ligne calcule ce dernier à sa largeur **idéale**
+        # (étroite), donc sur trop de lignes ; garder le plus grand laissait un grand vide sous les puces de filtre
+        # (panneau Transitions : ~70 px perdus sur un portable).
         if content.hasHeightForWidth() and width > 0:
-            hint.setHeight(max(hint.height(), content.heightForWidth(width)))
+            hint.setHeight(content.heightForWidth(width))
         return hint + QSize(2 * self.frameWidth(), 2 * self.frameWidth())
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - API Qt

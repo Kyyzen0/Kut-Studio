@@ -8,6 +8,7 @@ Après : 193 tics sur 200, pire tic 8 ms, 7,98 s en 8 s.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -158,17 +159,50 @@ def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(t
 
     def factory():
         built_on.append(threading.get_ident())
-        # Une commande qui échoue vite : seul le thread de construction et le nettoyage comptent ici.
-        return ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "nullsrc", "-frames:v", "0", "-"], (str(leftover),)
+        # Une commande qui échoue vite : seul le thread de construction et le nettoyage comptent ici. Un processus
+        # Python trivial (et non un vrai ffmpeg, dont le démarrage dépendait du runner) échoue de façon déterministe.
+        return [sys.executable, "-I", "-S", "-c", "import sys; sys.exit(1)"], (str(leftover),)
 
     analyzer = ScopeAnalyzer(on_error=lambda *_a: done.set(), on_result=lambda *_a: done.set(), min_interval=0.0)
     try:
         analyzer.submit(playhead=0.0, command_factory=factory, force=True)
-        assert analyzer.wait_idle(10)
+        # Borne de détection de blocage, pas de performance : échoue seulement si le fil est réellement bloqué.
+        assert analyzer.wait_idle(60)
     finally:
         analyzer.close()
+    assert done.is_set()  # l'échec de la commande a bien été signalé (on_error)
     assert built_on and built_on[0] != threading.get_ident()
     assert not leftover.exists()
+
+
+def test_no_callback_reaches_the_owner_once_the_analyzer_is_closed():
+    """Régression (segfault intermittent de la CI Linux, test de la pipette) : si l'extraction dépasse le délai de ``close``
+    (FFmpeg lent sur un runner chargé), le thread finissait seul et appelait le rappel d'une fenêtre que le fil de
+    l'interface venait de détruire (``emit`` sur un ``QObject`` mort). Plus aucun rappel ne doit partir après ``close``."""
+    from core.scopes import ScopeFrame
+
+    in_extraction = threading.Event()
+    release = threading.Event()
+    results: list[object] = []
+    errors: list[object] = []
+
+    def slow_extractor(_request):
+        in_extraction.set()
+        release.wait(60)                       # garde-fou : libéré par le test, jamais attendu en entier
+        return ScopeFrame(width=2, height=2, pixels=tuple((10, 20, 30) for _ in range(4)))
+
+    analyzer = ScopeAnalyzer(on_result=results.append, on_error=lambda *_a: errors.append(_a), min_interval=0.0,
+                             extractor=slow_extractor)
+    try:
+        analyzer.submit(playhead=0.0, force=True, ffmpeg_command=("ffmpeg",))
+        assert in_extraction.wait(60)
+        analyzer.close(join_timeout=0.05)      # l'extraction n'est pas finie : close rend la main sans le thread
+        release.set()
+        assert analyzer.wait_idle(60)          # le thread a bien terminé son travail…
+    finally:
+        release.set()
+        analyzer.close()
+    assert results == [] and errors == []      # …mais son résultat a été jeté, rien n'a atteint le propriétaire
 
 
 # --- Image des scopes ------------------------------------------------------------------------------------------------

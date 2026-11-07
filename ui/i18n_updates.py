@@ -6,6 +6,8 @@ de :mod:`core.updates` se traduisent par leur genre : ``update.error.<UpdateErro
 
 from __future__ import annotations
 
+from ui.i18n_update_install import UPDATE_INSTALL_TRANSLATIONS
+
 UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
     # --- Menu et barre supérieure -------------------------------------------------------------------------------
     "update.menu.check": {
@@ -360,6 +362,59 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This installation has no TLS backend: secure connections are impossible.",
         "es": "Esta instalación no dispone de ningún motor TLS: las conexiones seguras son imposibles.",
     },
+    "update.error.signature_missing": {
+        "fr": "Cette version n'est pas signée : l'installation automatique est impossible. Utilisez l'installation "
+              "assistée.",
+        "en": "This version is not signed: automatic installation is not possible. Use the assisted installation.",
+        "es": "Esta versión no está firmada: la instalación automática no es posible. Use la instalación asistida.",
+    },
+    "update.error.signature_invalid": {
+        "fr": "La signature de cette version est fausse : le contenu publié n'est pas celui que le mainteneur a "
+              "signé. Rien n'a été téléchargé ni installé.",
+        "en": "This version's signature is wrong: the published content is not what the maintainer signed. "
+              "Nothing was downloaded or installed.",
+        "es": "La firma de esta versión es incorrecta: el contenido publicado no es el que firmó el responsable. "
+              "No se ha descargado ni instalado nada.",
+    },
+    "update.error.signature_unknown_key": {
+        "fr": "Cette version est signée avec une clé que votre Kut-Studio ne connaît pas. Rien n'a été téléchargé. "
+              "Installez-la à la main depuis la page de la version, après avoir comparé l'identifiant de clé affiché "
+              "dans Aide › À propos avec celui annoncé par le mainteneur.",
+        "en": "This version is signed with a key your Kut-Studio does not know. Nothing was downloaded. Install it "
+              "by hand from the release page, after comparing the key identifier shown in Help › About with the one "
+              "announced by the maintainer.",
+        "es": "Esta versión está firmada con una clave que su Kut-Studio no conoce. No se ha descargado nada. "
+              "Instálela a mano desde la página de la versión, tras comparar el identificador de clave que muestra "
+              "Ayuda › Acerca de con el anunciado por el responsable.",
+    },
+    "update.error.not_newer": {
+        "fr": "Cette version n'est pas plus récente que celle installée : elle ne sera pas installée.",
+        "en": "This version is not newer than the installed one: it will not be installed.",
+        "es": "Esta versión no es más reciente que la instalada: no se instalará.",
+    },
+    "update.ready.signature_verified": {
+        "fr": "Signature vérifiée : SHA256SUMS.txt est signé par la clé {key_id} de Kut-Studio, donc cette version a bien "
+              "été publiée par le mainteneur.",
+        "en": "Signature verified: SHA256SUMS.txt is signed by Kut-Studio's key {key_id}, so this version was published "
+              "by the maintainer.",
+        "es": "Firma verificada: SHA256SUMS.txt está firmado por la clave {key_id} de Kut-Studio, por lo que esta "
+              "versión fue publicada por el responsable.",
+    },
+    "update.ready.signature_absent": {
+        "fr": "Cette version n'est pas signée : seule son intégrité est vérifiée, pas son auteur.",
+        "en": "This version is not signed: only its integrity is verified, not its author.",
+        "es": "Esta versión no está firmada: solo se verifica su integridad, no su autor.",
+    },
+    "update.about.keys": {
+        "fr": "Clés de signature des mises à jour : {keys}",
+        "en": "Update signing keys: {keys}",
+        "es": "Claves de firma de las actualizaciones: {keys}",
+    },
+    "update.about.keys_none": {
+        "fr": "aucune (mises à jour non authentifiées par signature)",
+        "en": "none (updates are not authenticated by signature)",
+        "es": "ninguna (las actualizaciones no se autentican por firma)",
+    },
     "update.error.detail": {
         "fr": "Détail technique : {detail}",
         "en": "Technical detail: {detail}",
@@ -393,6 +448,17 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
         "es": "Kut-Studio {version}\nEditor de vídeo de código abierto (licencia MIT).\n\nInstalación: {install}\n"
               "Sistema: {system}\nQt {qt} · PySide6 {pyside} · Python {python}\n\n{website}",
     },
+    "update.about.store_text": {
+        "fr": "Kut-Studio {version}\nÉditeur vidéo open source (licence MIT).\n\nDistribution : Mac App Store "
+              "(les mises à jour passent par le Mac App Store)\nSystème : {system}\n"
+              "Qt {qt} · PySide6 {pyside} · Python {python}",
+        "en": "Kut-Studio {version}\nOpen-source video editor (MIT license).\n\nDistribution: Mac App Store "
+              "(updates are delivered by the Mac App Store)\nSystem: {system}\n"
+              "Qt {qt} · PySide6 {pyside} · Python {python}",
+        "es": "Kut-Studio {version}\nEditor de vídeo de código abierto (licencia MIT).\n\nDistribución: Mac App Store "
+              "(las actualizaciones las entrega el Mac App Store)\nSistema: {system}\n"
+              "Qt {qt} · PySide6 {pyside} · Python {python}",
+    },
     "update.install.source": {
         "fr": "depuis les sources ({path})",
         "en": "from source ({path})",
@@ -413,3 +479,6 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 __all__ = ["UPDATES_TRANSLATIONS"]
+
+# Installation automatique macOS : table séparée (clés ``update.auto.*`` et ``update.outcome.*``), fusionnée ici.
+UPDATES_TRANSLATIONS.update(UPDATE_INSTALL_TRANSLATIONS)

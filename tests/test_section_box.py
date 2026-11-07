@@ -85,3 +85,32 @@ def test_unfolding_stops_watching_the_children(qtbot):
     conditional.setVisible(True)                    # une section ouverte laisse la logique faire
     _settle()
     assert not conditional.isHidden()
+
+
+def test_a_section_destroyed_before_its_deferred_fold_never_runs_on_the_dead_widget(qtbot):
+    """Le pliage initial est différé d'un tour de boucle : si la section est détruite avant, il ne s'exécute pas.
+
+    Une fenêtre fermée puis détruite sans tour de boucle (le cas de tout test d'interface) laissait la fonction différée
+    agir sur une section déjà libérée (``RuntimeError: Internal C++ object already deleted``, vu dans la pile d'un plantage
+    natif de la CI Windows : ``section_box.set_open`` appelée par ``pytestqt._process_events``).
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    SectionBox._remembered["demo"] = False          # noqa: SLF001 - une section repliée en mémoire : pliage différé à la construction
+    box = SectionBox("Démo", key="demo")
+    box.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)       # la section est détruite, le minuteur est encore en attente
+    with qtbot.capture_exceptions() as caught:
+        QApplication.processEvents()
+        QApplication.processEvents()
+    assert caught == []
+
+
+def test_a_section_remembered_as_folded_still_folds_once_built(qtbot):
+    SectionBox._remembered["demo2"] = False         # noqa: SLF001
+    box = SectionBox("Démo", key="demo2")
+    QVBoxLayout(box).addWidget(QLabel("contenu"))
+    qtbot.addWidget(box)
+    box.show()
+    _settle()
+    assert not box.is_open

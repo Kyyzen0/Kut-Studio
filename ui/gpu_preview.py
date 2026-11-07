@@ -552,7 +552,9 @@ class GpuPreviewWidget(QRhiWidget):
         # Le fil de cuisson ne touche à aucun objet Qt (il ne garde même pas de référence au widget : la dernière,
         # lâchée dans ce fil, détruirait le widget hors du fil de l'interface) ; le widget se redessine tant qu'une
         # cuisson est en cours (voir ``_poll_grades``).
-        self.grades = GradeLutCache()
+        # Deux fils de cuisson : les LUT d'un étalonnage animé se renouvellent à chaque image (ADR-0008, étape 7) ; une seule
+        # LUT à la fois ferait vieillir celle qu'on montre de plusieurs images.
+        self.grades = GradeLutCache(workers=2)
         self._grade_poll_pending = False
         self._lut_images: OrderedDict[str, QImage] = OrderedDict()
         self._last_luts: dict[str, str] = {}
@@ -809,13 +811,20 @@ class GpuPreviewWidget(QRhiWidget):
         program = compile_program(grade, _build_color_grade_filters)
         if program is not None:
             return self._resolve_program(layer, program, options, images)
-        found = self.grades.lookup(grade, **options)
         slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
+        # Un emplacement par calque : deux calques étalonnés dont l'un est animé ne s'écrasent pas la demande (ADR-0008, étape 7).
+        newest = self.grades.latest(slot)           # avant la demande : celle-ci peut lancer une cuisson qui finit aussitôt
+        found = self.grades.lookup(grade, **options, slot=slot)
         if found is None and not self.grades.failed(grade, **options):
             self._poll_grades()
         if found is None:
-            # Cuisson en cours (un curseur qu'on glisse) : la LUT précédente du calque, plutôt qu'un clignotement
-            # sans étalonnage ; aucune si le calque n'en a jamais eu.
+            # Cuisson en cours (un curseur qu'on glisse, ou un étalonnage animé dont la LUT change à chaque image) : la dernière
+            # LUT cuite pour ce calque, plutôt qu'un clignotement sans étalonnage ; aucune si le calque n'en a jamais eu.
+            if newest is not None and not self.grades.failed(grade, **options):
+                name = f"lut:{newest[0]}"
+                self._last_luts[slot] = name
+                images[name] = self._atlas_image(name, newest[1])
+                return replace(layer, grade=None, grade_lut=name)
             previous = self._last_luts.get(slot)
             if previous is not None and previous in self._lut_images and not self.grades.failed(grade, **options):
                 images[previous] = self._lut_images[previous]

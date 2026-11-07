@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from ui.design_system import Radius, Sizes, Spacing, Weights
+from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, active_palette, label_style
@@ -166,14 +166,14 @@ class TextPresetLibraryView(QWidget):
             empty.setAlignment(Qt.AlignCenter)
             empty.setWordWrap(True)
             empty.setStyleSheet(
-                f"color: {COLORS['muted']}; font-size: 11px; padding: 16px 8px;"
+                f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 16px 8px;"
             )
             self.cards_layout.addWidget(empty)
         elif not user_visible:
             hint = QLabel(translate("text.library.user_empty"))
             hint.setWordWrap(True)
             hint.setStyleSheet(
-                f"color: {COLORS['muted']}; font-size: 10px; padding: 4px 8px;"
+                f"color: {COLORS['muted']}; font-size: {Typography.micro}px; padding: 4px 8px;"
             )
             self.cards_layout.addWidget(hint)
 
@@ -188,7 +188,7 @@ class TextPresetLibraryView(QWidget):
     def _render_section_title(self, title: str) -> None:
         label = QLabel(title.upper())
         label.setStyleSheet(
-            f"color: {COLORS['muted_strong']}; font-size: 10px;"
+            f"color: {COLORS['muted_strong']}; font-size: {Typography.micro}px;"
             f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )
