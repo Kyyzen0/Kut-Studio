@@ -191,3 +191,24 @@ Mesures hors écran (la fenêtre de test garde sa barre de menus de 25 px) :
   du moniteur y perd ~9 % (la colonne des nœuds prend 724 px de large), contre un gain de 7 % à 1440x900.
 * **Mesurer** : `python -m tools.ui_legibility` ajoute le scénario `composition-noeuds` (le clip de composition aux 7 nœuds de la
   maquette, `tools.ui_legibility.seven_node_composition`) ; les gardes sont dans `tests/test_ui_legibility.py` (`test_composition_*`).
+
+## Mode nuit (lumière bleue adoucie)
+
+Le mode nuit transforme les **couleurs de l'interface** (fonds, panneaux, textes, bordures, accents : `ui/night_palette.py`), jamais
+un voile posé sur la fenêtre. Il fonctionne avec les thèmes sombre et clair et avec les trois niveaux d'usage.
+
+* **Jamais touchés** : le moniteur (fond de l'image comprise), le rendu d'export, les scopes, la page Couleur (les canaux de l'éditeur de
+  courbes, la roue des teintes, la pipette) et les miniatures. Les peintres qui montrent de l'image ou de l'analyse lisent
+  `ui.theme.PURE_COLORS` (la palette sans mode nuit) ; un widget marqué `nightExempt` suit le thème mais pas le mode nuit. Le plan de
+  rendu et l'export (`core`) n'importent jamais l'interface (`tests/test_night_mode.py`).
+* **Activation** : commande « Basculer le mode nuit » (menu Fenêtre, palette de commandes,
+  `Ctrl+Alt+Maj+N`), groupe « Mode nuit » des Préférences (bascule, intensité 0 à 100 % – 60 % par défaut –, option automatique
+  avec heures de début et de fin, 21:00 – 07:00 par défaut). Pas de pastille dans la barre d'état : `statusBar()` la crée avec ~23 px de haut sur toutes les pages, ce que les gardes de lisibilité (4 pistes de 60 px…) ne permettent pas. Éteindre à la main pendant la plage horaire dure jusqu'à la fin de
+  la plage.
+* **Horaire** : `core/night_mode.py`, horloge injectée (`MainWindow._night_clock`), passage de minuit géré, début égal à la fin :
+  jamais actif. Un `QTimer` de 60 s relit l'horaire et ne repeint que si le niveau change ; il est arrêté à la fermeture. Le curseur
+  d'intensité n'applique la palette qu'au relâchement (un seul passage de re-teinte, pas de rafale).
+* **Lisibilité** : après le réchauffement, chaque paire texte/fond de `CONTRAST_PAIRS` garde son ratio d'origine (plafonné au seuil
+  WCAG) ; `tests/test_night_mode_contrast.py` le vérifie à 30, 60 et 100 % sur les thèmes sombre et clair.
+* **Réglages** : `night_mode_enabled`, `night_intensity`, `night_auto`, `night_start`, `night_end` (`core/user_settings.py`, valeurs
+  invalides : défaut). « Restaurer les réglages par défaut » ne les réinitialise pas (choix personnel d'interface).

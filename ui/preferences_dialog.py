@@ -82,6 +82,8 @@ from ui.keyboard_navigation import set_single_default
 from ui.performance_settings import PerformanceSettingsTab
 from ui.shortcut_manager import ShortcutManager
 from ui.shortcuts_editor import ShortcutsEditor
+from core.night_mode import NightModeState
+from ui.night_mode_settings import NightModeGroup
 from ui.theme import set_role
 from ui.transcription_settings import TranscriptionSettingsGroup
 
@@ -221,6 +223,7 @@ class PreferencesDialog(QDialog):
     file_association_requested = Signal()
     whisper_path_changed = Signal(str)
     whisper_model_changed = Signal(str)
+    night_mode_changed = Signal(bool, int, bool, str, str)      # activé, intensité, automatique, début, fin
     restore_defaults_requested = Signal()
     offers_requested = Signal()                      # zone « Licence » (build Store) : l'utilisateur veut voir les offres
     # Groupe « Fichiers de projet » : construit seulement sous Windows et Linux (voir _build_ui).
@@ -239,6 +242,7 @@ class PreferencesDialog(QDialog):
         current_whisper_path: str = "",
         current_whisper_model: str = "",
         current_usage_level: str = DEFAULT_USAGE_LEVEL.value,
+        night_state: NightModeState | None = None,
         parent=None,
         shortcut_manager: ShortcutManager | None = None,
         performance_host=None,
@@ -265,6 +269,8 @@ class PreferencesDialog(QDialog):
         self.current_preview_quality = current_preview_quality
         self.current_render_quality = current_render_quality
         self.current_usage_level = current_usage_level
+        self._night_state = night_state              # ``None`` : pas de groupe « Mode nuit » (appel direct en test)
+        self.night_box: NightModeGroup | None = None
         self.current_check_updates = bool(current_check_updates)
         self.current_include_prereleases = bool(current_include_prereleases)
         self.current_whisper_path = str(current_whisper_path or "")
@@ -337,6 +343,10 @@ class PreferencesDialog(QDialog):
             self.transcription_box.whisper_path_changed.connect(self.whisper_path_changed)
             self.transcription_box.whisper_model_changed.connect(self.whisper_model_changed)
             layout.addWidget(self.transcription_box)
+        if self._night_state is not None:
+            self.night_box = NightModeGroup(self._night_state)
+            self.night_box.changed.connect(self.night_mode_changed)
+            layout.addWidget(self.night_box)
         self.license_box = None
         if self._license_host is not None:      # build Store seulement (ADR-0013, étape 15)
             from ui.store_license import LicenseGroup
@@ -525,6 +535,8 @@ class PreferencesDialog(QDialog):
             self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
         if self.transcription_box is not None:
             self.transcription_box.retranslate()
+        if self.night_box is not None:
+            self.night_box.retranslate()
         if self.license_box is not None:
             self.license_box.retranslate()
         if self.files_box is not None:

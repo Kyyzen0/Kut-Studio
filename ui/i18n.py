@@ -1985,6 +1985,7 @@ from ui.i18n_history import HISTORY_TRANSLATIONS as _HISTORY  # noqa: E402
 from ui.i18n_mask_edit import MASK_EDIT_TRANSLATIONS as _MASK_EDIT  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_multicam import MULTICAM_TRANSLATIONS as _MULTICAM  # noqa: E402
+from ui.i18n_night import NIGHT_TRANSLATIONS as _NIGHT  # noqa: E402
 from ui.i18n_palette import PALETTE_TRANSLATIONS as _PALETTE  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_sandbox import SANDBOX_TRANSLATIONS as _SANDBOX  # noqa: E402
@@ -2018,6 +2019,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_audio": _AUDIO,
     "ui.i18n_cli": _CLI,
     "ui.i18n_usage": _USAGE,
+    "ui.i18n_night": _NIGHT,
     "ui.i18n_scene3d": _SCENE3D,
     "ui.i18n_transitions": _TRANSITIONS,
 }

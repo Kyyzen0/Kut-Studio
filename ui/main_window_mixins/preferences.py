@@ -63,6 +63,7 @@ class PreferencesMixin:
             shortcuts=self.shortcuts.overrides(),
             # Sans cette ligne, chaque sauvegarde d'un autre réglage remettrait le niveau au défaut du modèle.
             usage_level=self.usage_level.value,
+            **self._night_settings_fields(),
             **self._performance_settings_fields(),
             **self._update_settings_fields(),
             **self._social_settings_fields(),
@@ -126,6 +127,7 @@ class PreferencesMixin:
             current_whisper_path=getattr(self, "_whisper_path", ""),
             current_whisper_model=getattr(self, "_whisper_model", ""),
             current_usage_level=self.usage_level.value,
+            night_state=self._night_state,
             shortcut_manager=self.shortcuts,
             performance_host=self,
             license_host=getattr(self, "_store_entitlements", None),     # build Store seulement
@@ -147,6 +149,7 @@ class PreferencesMixin:
         dialog.usage_level_changed.connect(self.set_usage_level)
         # Un niveau changé ailleurs pendant que la boîte est ouverte (script) la met à jour.
         self.usage_level_changed.connect(dialog.sync_usage_level)  # type: ignore[attr-defined]
+        dialog.night_mode_changed.connect(self.set_night_settings)
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
         dialog.update_check_changed.connect(self.set_update_check_enabled)
         dialog.update_prereleases_changed.connect(self.set_update_include_prereleases)
@@ -207,6 +210,12 @@ class PreferencesMixin:
                 whisper_model=snapshot.whisper_model,
                 # Choix personnel d'interface : « Restaurer » ne le réinitialise pas.
                 usage_level=snapshot.usage_level,
+                # Idem pour le mode nuit (bascule, intensité, horaire).
+                night_mode_enabled=snapshot.night_mode_enabled,
+                night_intensity=snapshot.night_intensity,
+                night_auto=snapshot.night_auto,
+                night_start=snapshot.night_start,
+                night_end=snapshot.night_end,
             )
         )
 
@@ -245,11 +254,15 @@ class PreferencesMixin:
     def _apply_settings(self, settings: UserSettings) -> None:
         # Application du thème dans Qt : la feuille globale tout de suite, puis la re-teinte des styles locaux, que la feuille
         # globale ne rattrape pas (sans elle, un passage sombre → clair laissait la moitié de l'interface dans l'ancien thème).
-        previous_palette = self.theme_manager.effective_palette
-        self.theme_manager.set_mode(settings.theme_mode)
+        previous_palette, previous_base = self.theme_manager.effective_palette, self.theme_manager.base_palette
+        self._night_load(settings)                      # thème et mode nuit : une seule publication, un seul passage
+        self.theme_manager.set_mode(settings.theme_mode, night=self._night_state.level(self._night_clock()))
         self.theme_manager.apply_to(QApplication.instance())
         if self.theme_manager.effective_palette is not previous_palette:
-            retheme_application(previous_palette, self.theme_manager.effective_palette)
+            retheme_application(
+                previous_palette, self.theme_manager.effective_palette, previous_base, self.theme_manager.base_palette
+            )
+        self._night_refresh_controls()
         self.runtime.set_requested_profile(settings.performance_profile)
         self.runtime.set_preview_quality(settings.preview_quality)
         self._render_quality = settings.render_quality

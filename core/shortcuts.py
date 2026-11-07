@@ -461,6 +461,8 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("preferences", Category.VIEW, "Ctrl+,", scope=_A, application_wide=True),
     # Ctrl+K est déjà « couper à la tête de lecture » : la palette prend Ctrl+Maj+P (reconfigurable dans les Préférences).
     _cmd("command_palette", Category.VIEW, "Ctrl+Shift+P", scope=_A),
+    # Mode nuit de l'interface (core.night_mode) ; reconfigurable dans les Préférences.
+    _cmd("night_mode", Category.VIEW, "Ctrl+Alt+Shift+N", scope=_A, application_wide=True),
     # Pages (Montage, Couleur) : sans touche par défaut, Maj+chiffre étant pris par les angles Multicam (AZERTY).
     _cmd("page_edit", Category.VIEW, scope=_A, application_wide=True),
     _cmd("page_color", Category.VIEW, scope=_A, application_wide=True),

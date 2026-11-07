@@ -71,6 +71,7 @@ from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
 from ui.main_window_mixins.entitlements import EntitlementsMixin
 from ui.main_window_mixins.history import HistoryMixin
+from ui.main_window_mixins.night_mode import NightModeMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
 from ui.main_window_mixins.menu_levels import MenuLevelsMixin
 from ui.main_window_mixins.command_palette import CommandPaletteMixin
@@ -192,6 +193,7 @@ class MainWindow(
     MediaImportMixin,
     TimelineEditingMixin,
     RecordingMixin,
+    NightModeMixin,
     PreferencesMixin,
     UsageLevelMixin,
     MenuLevelsMixin,
@@ -230,6 +232,7 @@ class MainWindow(
         self._render_quality = loaded_settings.render_quality
         self._init_usage_level(loaded_settings)
         self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
+        self._init_night_mode(loaded_settings)          # mode nuit : la palette est réglée avant la construction des widgets
         i18n.set_language(loaded_settings.language)
         self.runtime = StudioRuntime(
             profile=loaded_settings.performance_profile,
@@ -785,6 +788,7 @@ class MainWindow(
         self._refresh_undo_redo_state()
         self.shortcuts.changed.connect(self._refresh_shortcut_tooltips)
         self._refresh_shortcut_tooltips()
+        self._install_night_controls()      # mode nuit : vérification de l'horaire
         self._install_menu_levels()         # niveau d'usage : entrées des menus, rail, barre et menus contextuels
         self._install_command_palette()     # « Rechercher une fonction » : lit les menus à l'ouverture
         self._init_entitlements()           # droits d'usage (Store) : lecture seule, export bloqué ; sans effet hors Store
@@ -1002,6 +1006,7 @@ class MainWindow(
             ("minuteur autosave", lambda: stop_timer("_autosave_timer")),
             ("minuteur debug", lambda: stop_timer("_debug_timer")),
             ("minuteur banc machine", lambda: stop_timer("_machine_bench_timer")),
+            ("minuteur mode nuit", self._stop_night_timer),
             ("minuteur aperçu", lambda: stop_timer("_preview_pump_timer")),
             ("pistage", self._cancel_tracking_jobs),
             ("analyse du flux optique", self._cancel_flow_analysis),
@@ -1672,6 +1677,8 @@ class MainWindow(
         # accessible sans modifier l'ordre établi.
         self._build_usage_level_menu(window_menu)
         window_menu.addAction(preferences_action)
+        self.night_action = self._command_action("night_mode", "night.menu.toggle", checkable=True)
+        window_menu.addAction(self.night_action)
         self.diagnostics_action = self._labelled_action("debug.toggle")
         self.diagnostics_action.setCheckable(True)
         self.diagnostics_action.toggled.connect(self.set_diagnostics_visible)
@@ -2270,6 +2277,7 @@ class MainWindow(
             "zoom_fit": lambda: timeline().fit_timeline(),
             "toggle_scopes": self.toggle_scopes_visible,
             "preferences": self.show_preferences,
+            "night_mode": self.toggle_night_mode,
             "command_palette": self.toggle_command_palette,
             **self._page_shortcut_handlers(),
             **self._composition_shortcut_handlers(),

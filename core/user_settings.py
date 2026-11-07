@@ -34,6 +34,7 @@ from pathlib import Path
 from .atomic_io import atomic_write_json
 from .platform_paths import user_config_dir
 from .shortcuts import ShortcutMap
+from .night_mode import DEFAULT_END, DEFAULT_INTENSITY, DEFAULT_START, coerce_intensity, coerce_time
 from .usage_level import (
     DEFAULT_EXISTING as DEFAULT_EXISTING_USAGE_LEVEL,
     DEFAULT_NEW_INSTALL as DEFAULT_USAGE_LEVEL,
@@ -357,6 +358,12 @@ class UserSettings:
     whisper_model: str = ""
     # --- Niveau d'usage (ADR-0006 étape 4) : le défaut du modèle est celui d'une installation neuve ---
     usage_level: str = DEFAULT_USAGE_LEVEL.value
+    # --- Mode nuit de l'interface (core.night_mode) : jamais les images du montage ---
+    night_mode_enabled: bool = False
+    night_intensity: int = DEFAULT_INTENSITY
+    night_auto: bool = False
+    night_start: str = DEFAULT_START
+    night_end: str = DEFAULT_END
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -574,6 +581,11 @@ def load_user_settings(
         whisper_path=_coerce_path(data.get("whisper_path")),
         whisper_model=_coerce_path(data.get("whisper_model")),
         usage_level=_coerce_usage_level(data.get("usage_level")),
+        night_mode_enabled=_coerce_bool(data.get("night_mode_enabled", False)),
+        night_intensity=coerce_intensity(data.get("night_intensity")),
+        night_auto=_coerce_bool(data.get("night_auto", False)),
+        night_start=coerce_time(data.get("night_start"), DEFAULT_START),
+        night_end=coerce_time(data.get("night_end"), DEFAULT_END),
     )
 
 
@@ -638,6 +650,11 @@ def save_user_settings(
             whisper_path=_coerce_path(settings.whisper_path),
             whisper_model=_coerce_path(settings.whisper_model),
             usage_level=_coerce_usage_level(settings.usage_level),
+            night_mode_enabled=_coerce_bool(settings.night_mode_enabled),
+            night_intensity=coerce_intensity(settings.night_intensity),
+            night_auto=_coerce_bool(settings.night_auto),
+            night_start=coerce_time(settings.night_start, DEFAULT_START),
+            night_end=coerce_time(settings.night_end, DEFAULT_END),
         )
     )
     atomic_write_json(target, payload)

@@ -63,17 +63,25 @@ def remap_stylesheet(text: str, mapping: dict[str, str]) -> str:
     return _COLOR.sub(replace, text)
 
 
-def retheme_application(old: ThemePalette, new: ThemePalette) -> int:
-    """Re-teinte tous les widgets de l'application après un passage de ``old`` à ``new`` ; retourne le nombre de styles réécrits."""
+def retheme_application(
+    old: ThemePalette, new: ThemePalette, old_base: ThemePalette | None = None, new_base: ThemePalette | None = None,
+) -> int:
+    """Re-teinte tous les widgets de l'application après un passage de ``old`` à ``new`` ; retourne le nombre de styles réécrits.
+
+    ``old_base`` / ``new_base`` : les mêmes palettes **avant le mode nuit** (par défaut ``old`` / ``new``, donc rien ne change sans mode
+    nuit). Un widget marqué ``nightExempt`` (moniteur, scopes : de l'image ou de l'analyse) suit le changement de thème mais jamais le mode
+    nuit : sa feuille est re-teintée d'une base à l'autre.
+    """
     from PySide6.QtWidgets import QApplication, QWidget
 
     mapping = color_map(old, new)
+    pure_mapping = mapping if old_base is None or new_base is None else color_map(old_base, new_base)
     rewritten = 0
     for top in QApplication.topLevelWidgets():
         for widget in (top, *top.findChildren(QWidget)):
             sheet = widget.styleSheet()
             if sheet:
-                updated = remap_stylesheet(sheet, mapping)
+                updated = remap_stylesheet(sheet, pure_mapping if widget.property("nightExempt") else mapping)
                 if updated != sheet:
                     widget.setStyleSheet(updated)
                     rewritten += 1
