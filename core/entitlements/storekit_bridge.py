@@ -31,13 +31,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ABI_VERSION = 1
+"""``OP_PURCHASE`` (étape 15) s'ajoute SANS changer l'ABI : une opération de plus ne change ni signature ni structure. Une bibliothèque
+plus ancienne la refuse (``BAD_ARGUMENT``, ``unknown_op``) : l'achat échoue, rien ne se débloque."""
 LIBRARY_NAME = "libkutstore.dylib"
 
 # kutstore_status (kutstore.h)
 OK, TIMEOUT, BAD_ARGUMENT, STOREKIT_ERROR, UNVERIFIED, SHUTDOWN, INTERNAL, POLL_TIMEOUT = range(8)
 # kutstore_op (kutstore.h)
-OP_ENTITLEMENTS, OP_APP_TRANSACTION, OP_SYNC, OP_PRODUCTS, OP_START_UPDATES = 1, 2, 3, 4, 5
-KNOWN_OPS = frozenset({OP_ENTITLEMENTS, OP_APP_TRANSACTION, OP_SYNC, OP_PRODUCTS, OP_START_UPDATES})
+OP_ENTITLEMENTS, OP_APP_TRANSACTION, OP_SYNC, OP_PRODUCTS, OP_START_UPDATES, OP_PURCHASE = 1, 2, 3, 4, 5, 6
+KNOWN_OPS = frozenset({OP_ENTITLEMENTS, OP_APP_TRANSACTION, OP_SYNC, OP_PRODUCTS, OP_START_UPDATES, OP_PURCHASE})
 
 MAX_ARG_BYTES = 8192
 MAX_RESPONSE_BYTES = 1 << 20
@@ -190,7 +192,7 @@ class StoreKitBridge:
 
 __all__ = [
     "ABI_VERSION", "BAD_ARGUMENT", "BridgeResult", "DEFAULT_CALL_TIMEOUT_MS", "INTERNAL", "KNOWN_OPS", "LIBRARY_NAME",
-    "MAX_ARG_BYTES", "MAX_RESPONSE_BYTES", "OK", "OP_APP_TRANSACTION", "OP_ENTITLEMENTS", "OP_PRODUCTS", "OP_START_UPDATES",
+    "MAX_ARG_BYTES", "MAX_RESPONSE_BYTES", "OK", "OP_APP_TRANSACTION", "OP_ENTITLEMENTS", "OP_PRODUCTS", "OP_PURCHASE", "OP_START_UPDATES",
     "OP_SYNC", "POLL_TIMEOUT", "SHUTDOWN", "STOREKIT_ERROR", "StoreBridgeError", "StoreKitBridge", "TIMEOUT", "UNVERIFIED",
     "bundled_dylib_path",
 ]

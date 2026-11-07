@@ -17,6 +17,7 @@ des calques, matrices du monde, masques, échantillons de flou…) :
   autres éléments, et les segments d'aperçu qui ne le montrent pas,
   restent en cache ;
 - un aperçu puis un export réutilisent les mêmes images à résolution égale ;
+- une image qu'un aperçu n'a pas pu dessiner (scène 3D en échec) est marquée inutilisable : l'export la redessine ;
 - la version du dessin (:data:`core.mograph_raster.RASTER_VERSION`) entre
   dans chaque nom : un dessin modifié ne ressert jamais une image ancienne.
 
@@ -77,6 +78,42 @@ def _touch(path: Path) -> None:
         pass
 
 
+_UNUSABLE_SUFFIX = ".unusable"
+"""Marque, à côté du PNG, une image écrite alors que le dessin a échoué (scène 3D tolérée à l'écran).
+
+Le nom du PNG est choisi AVANT le dessin : sans cette marque, le fichier vide serait resservi par un export, y compris
+dans un autre processus. La marque et le PNG partent ensemble : retirer seulement la marque rendrait le vide réutilisable."""
+
+
+def _unusable_marker(target: Path) -> Path:
+    return target.with_name(target.name + _UNUSABLE_SUFFIX)
+
+
+def _discard_cached(path: Path) -> None:
+    """Retire une entrée du cache et sa paire (PNG ↔ marque d'échec)."""
+    name = path.name
+    sibling = (
+        path.with_name(name[: -len(_UNUSABLE_SUFFIX)])
+        if name.endswith(_UNUSABLE_SUFFIX)
+        else _unusable_marker(path)
+    )
+    for item in (path, sibling):
+        try:
+            item.unlink()
+        except OSError:
+            pass
+
+
+def _reusable(target: Path) -> bool:
+    """``True`` si ``target`` est une image réussie déjà en cache (non vide, sans marque d'échec)."""
+    if _unusable_marker(target).is_file():
+        return False
+    try:
+        return target.is_file() and target.stat().st_size > 0
+    except OSError:
+        return False
+
+
 SHARED_WRITE_ATTEMPTS = 5
 """Essais pour publier une entrée du cache qu'un autre thread publie au même instant (refus de Windows)."""
 
@@ -100,16 +137,30 @@ def _publish_shared(target: Path, publish: Callable[[], object]) -> None:
             time.sleep(0.01 * (attempt + 1))
 
 
-def _write_png(image, target: Path) -> None:
-    if target.is_file() and target.stat().st_size > 0:
+def _write_png(image, target: Path, failed: bool = False) -> None:
+    """Écrit ``image`` dans ``target``. ``failed`` : le dessin a échoué, le fichier ne doit pas être resservi.
+
+    Une image déjà réussie (sans marque) n'est pas remplacée : un échec concurrent ne l'empoisonne pas. Une image marquée
+    est réécrite. La marque est posée AVANT le PNG : un plantage entre les deux laisse une marque, jamais un vide réutilisable.
+    """
+    if _reusable(target):
+        # Déjà une image réussie : un échec de dessin ne l'écrase pas (l'aperçu montre celle du cache).
         _touch(target)
         return
+    marker = _unusable_marker(target)
+    _discard_cached(target)
+    if failed:
+        marker.write_bytes(b"1")
     # Processus **et** thread : l'aperçu fidèle et les scopes rastérisent chacun dans leur thread, parfois la même image.
     temporary = target.with_name(f".{target.stem}.{os.getpid()}.{threading.get_ident()}.tmp.png")
-    if not image.save(str(temporary), "PNG", 80):
-        raise OSError(f"Impossible d'écrire l'image de calque : {temporary}")
     try:
+        if not image.save(str(temporary), "PNG", 80):
+            raise OSError(f"Impossible d'écrire l'image de calque : {temporary}")
         _publish_shared(target, lambda: os.replace(temporary, target))
+    except OSError:
+        if failed:
+            _discard_cached(target)            # la marque sans image réussie ne doit pas bloquer ; le vide non plus
+        raise
     finally:
         if temporary.exists():         # un écrivain concurrent l'a emporté : notre copie identique est en trop
             try:
@@ -156,13 +207,24 @@ WRITE_BACKLOG = 2
 """Images dessinées en attente d'encodage, par fil : borne la mémoire (8 Mo par image pleine trame en 1080p)."""
 
 
+def _rendered(render: Callable[[float], object], t: float) -> tuple[object, bool]:
+    """``(image, échec avalé)``. L'échec est celui d'une scène 3D tolérée à l'écran pendant CE dessin."""
+    from .scene3d import tolerated_failures
+
+    before = tolerated_failures()
+    image = render(t)
+    return image, tolerated_failures() != before
+
+
 def _write_frames(targets: list[tuple[Path, float]], render: Callable[[float], object]) -> None:
     """Dessine (dans ce fil) puis encode (en parallèle) les images ``targets`` : ``(fichier, instant)``.
 
-    La première erreur d'écriture est relevée une fois les écritures déjà lancées terminées ; aucune n'est oubliée."""
+    La première erreur d'écriture est relevée une fois les écritures déjà lancées terminées ; aucune n'est oubliée.
+    Un dessin de scène 3D avalé (boîte vide) marque le fichier : il ne sera pas resservi."""
     if len(targets) <= 1 or WRITE_WORKERS <= 1:
         for target, t in targets:
-            _write_png(render(t), target)
+            image, failed = _rendered(render, t)
+            _write_png(image, target, failed)
         return
     pending: deque[Future] = deque()
     with ThreadPoolExecutor(max_workers=WRITE_WORKERS, thread_name_prefix="kut-png") as pool:
@@ -170,7 +232,8 @@ def _write_frames(targets: list[tuple[Path, float]], render: Callable[[float], o
             for target, t in targets:
                 while len(pending) >= WRITE_WORKERS * WRITE_BACKLOG:
                     pending.popleft().result()
-                pending.append(pool.submit(_write_png, render(t), target))
+                image, failed = _rendered(render, t)
+                pending.append(pool.submit(_write_png, image, target, failed))
             while pending:
                 pending.popleft().result()
         finally:
@@ -221,7 +284,7 @@ def _publish_playlist(directory: Path, runs: list[list], fps: float, first_frame
     missing: list[tuple[Path, float]] = []
     for name, t in first_frames.items():
         target = directory / name
-        if target.is_file() and target.stat().st_size > 0:
+        if _reusable(target):
             _touch(target)
         else:
             missing.append((target, t))
@@ -449,6 +512,7 @@ class MographFrameCache:
                 path.unlink()
             except OSError:
                 continue
+            _discard_cached(path)                     # la paire (PNG ou marque) ; l'entrée déjà retirée est ignorée
             freed += size
         return freed
 

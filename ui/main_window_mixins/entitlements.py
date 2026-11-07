@@ -26,6 +26,9 @@ _EDIT_PANELS = ("properties_panel", "mixer_panel", "layers_panel")
 """Panneaux d'édition désactivés en lecture seule (ceux qui existent dans la fenêtre). La bibliothèque et les pages Couleur / Composition
 restent actives : on y regarde, on y prévisualise ; ce qu'on y modifierait est refusé par l'historique (couche 2)."""
 
+TRIGGER_EXPORT, TRIGGER_REFUSED = "export", "refused"
+"""Déclencheurs du mur d'achat (mêmes valeurs que ``core.entitlements.paywall``, qui n'est pas importé hors Store : égalité testée)."""
+
 CHECK_INTERVAL_MS = 60_000
 """Un essai peut finir pendant que la fenêtre est ouverte : l'état est relu chaque minute (seulement quand le contrôle est exigé)."""
 
@@ -42,7 +45,7 @@ class EntitlementsMixin:
         self._entitlement_panels_disabled = []
         self.history.on_edit_refused = self._on_edit_refused  # type: ignore[attr-defined]
         self.shortcuts.command_guard = self._command_allowed  # type: ignore[attr-defined]
-        self.render_queue.export_refused.connect(self._show_refusal_message)  # type: ignore[attr-defined]
+        self.render_queue.export_refused.connect(self._on_queue_export_refused)  # type: ignore[attr-defined]
         if not enforced():
             return                                                # hors Store : rien de plus, aucun minuteur
         from PySide6.QtCore import QTimer
@@ -59,21 +62,33 @@ class EntitlementsMixin:
         """Installe le service de droits du Store et démarre la lecture StoreKit (thread de travail, signal Qt vers cette fenêtre)."""
         from ui.store_entitlements import StoreEntitlementsController
 
+        from ui.store_screens import StoreScreens
+
         self._store_entitlements = StoreEntitlementsController(self)  # type: ignore[arg-type]
         self._store_entitlements.state_changed.connect(self.refresh_entitlements)
+        self._store_screens = StoreScreens(self, self._store_entitlements)   # pastille d'état, mur d'achat (étape 15)
         self._store_entitlements.start()
 
     # -- refus --------------------------------------------------------------------------------------------------------------
 
-    def _show_refusal_message(self, message: str) -> None:
+    def _show_refusal_message(self, message: str, trigger: str | None = None) -> None:
+        """Message dans la barre d'état. ``trigger`` (geste volontaire de l'utilisateur) propose en plus le mur d'achat, mais
+        seulement build Store, essai fini, hors édition en cours (``StoreScreens.offer``) ; ``None`` : jamais de mur
+        (refus d'un enregistrement différé de l'historique, qui peut tomber au milieu d'une édition)."""
         self.statusBar().showMessage(message, 8000)  # type: ignore[attr-defined]
+        screens = getattr(self, "_store_screens", None)
+        if trigger is not None and screens is not None:
+            screens.offer(trigger)
+
+    def _on_queue_export_refused(self, message: str) -> None:
+        self._show_refusal_message(message, TRIGGER_REFUSED)
 
     def _edit_refused_ui(self) -> bool:
         """Vrai (et message dans la barre d'état) si modifier le projet est refusé : à appeler en tête d'un geste qui écrit."""
         refusal = edit_refusal()
         if refusal is None:
             return False
-        self._show_refusal_message(refusal.user_message())
+        self._show_refusal_message(refusal.user_message(), TRIGGER_REFUSED)
         return True
 
     def _export_refused_ui(self) -> bool:
@@ -81,7 +96,7 @@ class EntitlementsMixin:
         refusal = export_refusal()
         if refusal is None:
             return False
-        self._show_refusal_message(refusal.user_message())
+        self._show_refusal_message(refusal.user_message(), TRIGGER_EXPORT)
         return True
 
     def _settle_forbidden_edits(self) -> None:
@@ -109,7 +124,7 @@ class EntitlementsMixin:
         refusal = edit_refusal()
         if refusal is None:
             return True
-        self._show_refusal_message(refusal.user_message())
+        self._show_refusal_message(refusal.user_message(), TRIGGER_REFUSED)
         return False
 
     # -- apparence ----------------------------------------------------------------------------------------------------------
@@ -119,6 +134,9 @@ class EntitlementsMixin:
         if not enforced():
             return
         read_only = edit_refusal() is not None
+        screens = getattr(self, "_store_screens", None)
+        if screens is not None:
+            screens.refresh()                                      # pastille d'état (build Store seulement)
         self._apply_read_only_actions(read_only)
         self._apply_read_only_panels(read_only)
         self._apply_export_blocked(export_refusal() is not None)

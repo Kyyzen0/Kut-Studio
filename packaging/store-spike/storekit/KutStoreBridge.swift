@@ -114,6 +114,31 @@ private func runOperation(_ op: Int32, _ arg: String) async -> (Int32, String) {
         case 5:
             startUpdates()
             return (0, json(["listening": true]))
+        case 6:
+            // Achat (étape 15). Rend un SIGNAL ({"outcome": ...}), jamais un déblocage : Python relit les droits et les vérifie.
+            // finish() n'est appelé qu'après la vérification JWS (.verified).
+            if arg.isEmpty || arg.utf8.count > 200 || arg.contains(",") {
+                return (2, json(["error": "bad_argument"]))
+            }
+            guard let product = try await Product.products(for: [arg]).first else {
+                return (3, json(["error": "product_not_found"]))
+            }
+            switch try await product.purchase() {
+            case .success(let verification):
+                switch verification {
+                case .verified(let t):
+                    await t.finish()
+                    return (0, json(["outcome": "success", "verified": true, "productID": t.productID]))
+                case .unverified:
+                    return (0, json(["outcome": "unverified", "verified": false]))   // jamais terminée, jamais acceptée
+                }
+            case .userCancelled:
+                return (0, json(["outcome": "cancelled"]))
+            case .pending:
+                return (0, json(["outcome": "pending"]))
+            @unknown default:
+                return (0, json(["outcome": "unknown"]))
+            }
         default:
             return (2, json(["error": "unknown_op"]))
         }

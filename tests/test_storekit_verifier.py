@@ -64,7 +64,7 @@ def test_lifetime_purchase_beats_a_subscription(tmp_path):
 
 def test_longest_subscription_wins(tmp_path):
     bridge = FakeBridge(ent=entitlements(
-        item(PRODUCT_MONTHLY, signed=NOW, expires=NOW + 5 * DAY), item("com.kutstudio.app.yearly", signed=NOW, expires=NOW + 300 * DAY)))
+        item(PRODUCT_MONTHLY, signed=NOW, expires=NOW + 5 * DAY), item("studio.yearly", signed=NOW, expires=NOW + 300 * DAY)))
     record = verifier(tmp_path).fetch(bridge).record
     assert record is not None and record.expires_at == pytest.approx(NOW + 300 * DAY)
 

@@ -69,6 +69,50 @@ Le service ci-dessus est alimenté, dans le **build Store seulement**, par le po
 
 **Construction.** `python build.py --flavor store` (macOS) compile le pont avec `packaging/store-spike/storekit/build.sh` (`swiftc` requis) et l'ajoute au bundle avec `--add-binary` ; la signature de la bibliothèque, l'identité Store et le profil de provisionnement sont l'étape 7 (rien n'est créé ici).
 
+## Écrans d'achat et d'état (étape 15)
+
+Dans le **build Store seulement** (`core.build_flavor.is_store()`). Hors Store : aucun écran, aucun de ces modules n'est importé (testé dans un processus neuf :
+`tests/test_store_screens_window.py`).
+
+| Module | Rôle |
+|---|---|
+| `core/entitlements/storekit_actions.py` | **Le seul module qui demande un achat** (`OP_PURCHASE`, inventaire AST : `tests/test_store_purchase_inventory.py`). Produits (`OP_PRODUCTS`), achat, restauration (`OP_SYNC`) dans un fil Python court (`kut-storekit-action`), une action à la fois (sinon `BUSY`) ; le chargement des prix ne bloque pas un achat. Sans Qt |
+| `core/entitlements/paywall.py` | Règle du mur (`may_show_paywall`), bannière (`banner_days`), URL (confidentialité, conditions, réglages d'abonnement). Sans Qt |
+| `ui/store_paywall.py` | Le mur d'achat (`PaywallDialog`) |
+| `ui/store_license.py` | Zone « Licence » des Préférences (`LicenseGroup`), ajoutée par `PreferencesDialog(license_host=...)` ; `None` partout ailleurs |
+| `ui/store_screens.py` | `StoreScreens` : pastille de la barre d'état, déclenchement du mur |
+| `ui/store_texts.py`, `ui/i18n_store_screens.py` | Phrases (état, résultat d'une action) et textes fr / en / es |
+
+**Un achat ne débloque rien.** Le pont ne rend qu'un *signal* (`{"outcome": "success" | "cancelled" | "pending" | "unverified"}`) ; côté Swift, `Transaction.finish()` n'est
+appelé qu'après la vérification JWS. Côté Python, `success` n'est pris en compte que si `verified` est vrai **et** que le produit est celui demandé ; alors une **relecture
+complète** (`StoreKitVerifier.fetch` puis `EntitlementService.publish`, seul écrivain de l'état) doit trouver un droit vérifié, sinon le résultat est `NOT_CONFIRMED` et
+l'état ne change pas. Une opération refusée, annulée, en attente, expirée ou un pont absent laissent aussi l'état intact.
+
+**Pont, ABI 1 conservée.** `OP_PURCHASE = 6` s'ajoute sans changer de signature ni de structure ; une bibliothèque plus ancienne la refuse (`BAD_ARGUMENT`, `unknown_op`) :
+l'achat échoue, rien ne se débloque. Appels bloquants hors du fil Qt, aucun rappel natif ; le résultat revient par le signal Qt `action_finished` du contrôleur.
+
+**Prix.** Ils viennent de `Product.displayPrice` (localisés par StoreKit) ; **aucun montant n'est codé en dur** (test). Tant que les produits ne sont pas chargés : « Prix
+indisponible » et le bouton « Choisir » est grisé. Identifiants : **une seule constante**, `ProductIds` (`core/entitlements/storekit_verifier.py`) : `studio.monthly`,
+`studio.yearly`, `studio.lifetime` (proposés, à confirmer à l'étape 14 ; le fichier `.storekit` du spike et ses tests les utilisent aussi).
+
+**Quand le mur s'ouvre** (`may_show_paywall`) : seulement en état `EXPIRED`, jamais pendant l'essai, jamais pour un abonné, un acheteur ou un état `UNKNOWN` (on ne vend pas à
+quelqu'un dont on ne sait rien), jamais au milieu d'un geste (bouton de souris enfoncé, boîte modale ouverte, mur déjà ouvert). Déclencheurs : un **export refusé**
+(`_export_refused_ui`), un **geste d'édition refusé** (commande, glisser-déposer, import ; au plus une fois toutes les dix minutes), le **démarrage** (une fois, 2,5 s après
+l'affichage, seulement si la fin d'essai est connue dans les 30 premières secondes). Le refus différé de l'historique (`_on_edit_refused`) n'ouvre **jamais** le mur. L'utilisateur peut
+toujours l'ouvrir lui-même (pastille, Préférences). Il s'ouvre au tour suivant de la boucle d'événements, jamais dans un `dropEvent` ni un gestionnaire de commande.
+
+**Contenu.** Ce qui est bloqué (modifier, exporter) et ce qui reste libre (ouvrir, visualiser) ; trois offres (période, renouvellement automatique, prix localisé) ; texte
+d'abonnement (prélèvement sur le compte Apple, renouvellement sauf annulation 24 h avant, gestion dans les réglages du compte Apple) ; liens conditions d'utilisation,
+politique de confidentialité, « Gérer l'abonnement » ; « Restaurer les achats » ; « Continuer en lecture seule » (toujours là, bouton par défaut : Entrée ne
+fait jamais acheter ; Échap et la croix ferment). Pas de compte à rebours, pas de culpabilisation.
+
+**Zone « Licence » (Préférences)** : état en une phrase (jours d'essai restants, abonné jusqu'au, achat unique, lecture seule, accès non vérifié), « Voir les offres »,
+« Gérer l'abonnement » (page `https://apps.apple.com/account/subscriptions` ouverte par le système), « Restaurer les achats ». **Pastille** de la barre d'état : « Essai : N j »
+les trois derniers jours, « Lecture seule · Voir les offres » après l'essai, « Accès non vérifié » si l'état est inconnu ; jamais bloquante.
+
+Les entrées bloquées en lecture seule (commande, glisser-déposer, import, enregistrement d'export, file de rendu) gardent leur refus (`edit_refusal` / `export_refusal`,
+inchangés) : le message de la barre d'état reste, le mur s'y ajoute selon la règle ci-dessus.
+
 ## Les gardes
 
 `require_edit()` et `require_export()` (`core/entitlements/guard.py`) lèvent `ReadOnlyError` / `ExportBlockedError` (communes : `EntitlementRefused`, qui n'est

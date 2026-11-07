@@ -7,7 +7,7 @@
       "familyShareable" : false,
       "internalID" : "6700000001",
       "localizations" : [ { "description" : "Kut-Studio, licence a vie", "displayName" : "Kut-Studio a vie", "locale" : "fr" } ],
-      "productID" : "com.kutstudio.app.lifetime",
+      "productID" : "studio.lifetime",
       "referenceName" : "Achat unique",
       "type" : "NonConsumable"
     }
@@ -28,7 +28,7 @@
           "internalID" : "6700000002",
           "introductoryOffer" : null,
           "localizations" : [ { "description" : "Abonnement mensuel", "displayName" : "Mensuel", "locale" : "fr" } ],
-          "productID" : "com.kutstudio.app.monthly",
+          "productID" : "studio.monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Mensuel",
           "subscriptionGroupID" : "21000001",
@@ -44,7 +44,7 @@
           "internalID" : "6700000003",
           "introductoryOffer" : null,
           "localizations" : [ { "description" : "Abonnement annuel", "displayName" : "Annuel", "locale" : "fr" } ],
-          "productID" : "com.kutstudio.app.yearly",
+          "productID" : "studio.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Annuel",
           "subscriptionGroupID" : "21000001",
