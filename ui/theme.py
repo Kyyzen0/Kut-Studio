@@ -183,6 +183,8 @@ class ThemePalette:
 
 
 _ACTIVE_PALETTE: ThemePalette = ThemePalette()
+_BASE_PALETTE: ThemePalette = _ACTIVE_PALETTE
+"""Palette du thème **sans** mode nuit : ce que lisent les peintres d'analyse et d'image (``PURE_COLORS``)."""
 
 
 def active_palette() -> ThemePalette:
@@ -190,10 +192,14 @@ def active_palette() -> ThemePalette:
     return _ACTIVE_PALETTE
 
 
-def set_active_palette(palette: ThemePalette) -> None:
-    """Bascule la palette utilisée par :data:`COLORS` et ``label_style``."""
-    global _ACTIVE_PALETTE
+def set_active_palette(palette: ThemePalette, base: ThemePalette | None = None) -> None:
+    """Bascule la palette utilisée par :data:`COLORS` et ``label_style``.
+
+    ``base`` : la même palette avant le mode nuit (par défaut ``palette`` elle-même, donc rien ne change pour les appelants existants).
+    """
+    global _ACTIVE_PALETTE, _BASE_PALETTE
     _ACTIVE_PALETTE = palette
+    _BASE_PALETTE = palette if base is None else base
 
 
 class _LiveColors:
@@ -205,42 +211,58 @@ class _LiveColors:
 
     __slots__ = ()
 
+    @staticmethod
+    def _palette() -> ThemePalette:
+        return _ACTIVE_PALETTE
+
     def __getitem__(self, key: str) -> str:
         try:
-            return getattr(_ACTIVE_PALETTE, key)
+            return getattr(self._palette(), key)
         except AttributeError as exc:  # pragma: no cover - garde-fou
             raise KeyError(key) from exc
 
     def __iter__(self):
-        return iter(vars(_ACTIVE_PALETTE))
+        return iter(vars(self._palette()))
 
     def __len__(self) -> int:
-        return len(vars(_ACTIVE_PALETTE))
+        return len(vars(self._palette()))
 
     def __contains__(self, key: object) -> bool:
-        return isinstance(key, str) and hasattr(_ACTIVE_PALETTE, key)
+        return isinstance(key, str) and hasattr(self._palette(), key)
 
     def keys(self):
-        return vars(_ACTIVE_PALETTE).keys()
+        return vars(self._palette()).keys()
 
     def values(self):
-        return vars(_ACTIVE_PALETTE).values()
+        return vars(self._palette()).values()
 
     def items(self):
-        return vars(_ACTIVE_PALETTE).items()
+        return vars(self._palette()).items()
 
     def get(self, key, default=None):
-        return getattr(_ACTIVE_PALETTE, key, default)
+        return getattr(self._palette(), key, default)
 
     def copy(self) -> dict:
-        return vars(_ACTIVE_PALETTE).copy()
+        return vars(self._palette()).copy()
 
     def __repr__(self) -> str:  # pragma: no cover - confort de débogage
         return f"_LiveColors({len(self)} tokens, thème actif inclus)"
 
 
+class _PureColors(_LiveColors):
+    """Comme :class:`_LiveColors`, mais sur la palette du thème **avant le mode nuit** (analyse et image : jamais réchauffées)."""
+
+    __slots__ = ()
+
+    @staticmethod
+    def _palette() -> ThemePalette:
+        return _BASE_PALETTE
+
+
 # Mapping vivant des couleurs (remplace l'ancien instantané du thème sombre).
 COLORS: _LiveColors = _LiveColors()
+# Les couleurs du thème sans le mode nuit : scopes, fond du moniteur, tout ce qui montre de l'image ou de l'analyse.
+PURE_COLORS: _LiveColors = _PureColors()
 
 
 THEMES: dict[str, ThemePalette] = {
@@ -952,11 +974,14 @@ class ThemeManager:
         if requested_mode not in SYSTEM_THEME_NAMES:
             requested_mode = "dark"
         self.requested_mode: str = requested_mode
+        self._night_intensity: int = 0                          # mode nuit : 0 = éteint (voir ``set_night``)
+        self._night_cache: dict[tuple[int, int], ThemePalette] = {}
+        self.base_palette: ThemePalette = self._resolve_base(requested_mode)
         self.effective_palette: ThemePalette = self._resolve_palette(requested_mode)
         self._subscribers: list[Callable] = []
         # Les panneaux lisent leurs couleurs via ``COLORS`` : on publie
         # la palette résolue avant même la construction des widgets.
-        set_active_palette(self.effective_palette)
+        set_active_palette(self.effective_palette, self.base_palette)
 
     # ------------------------------------------------------------------
     # API publique
@@ -981,26 +1006,43 @@ class ThemeManager:
                     exc_info=True,
                 )
 
-    def set_mode(self, mode: str) -> bool:
-        """Change la palette active."""
+    def set_mode(self, mode: str, night: int | None = None) -> bool:
+        """Change la palette active ; ``night`` (0 à 100) règle aussi le mode nuit dans la même publication (un seul passage)."""
         if mode not in SYSTEM_THEME_NAMES:
             return False
         self.requested_mode = mode
-        new_palette = self._resolve_palette(mode)
-        if new_palette is self.effective_palette:
-            return False
-        self.effective_palette = new_palette
-        set_active_palette(new_palette)
-        self._notify()
-        return True
+        if night is not None:
+            self._night_intensity = self._clamp_night(night)
+        return self._publish()
 
     def refresh(self) -> None:
         """Recalcule la palette effective (par exemple si le système change)."""
+        return self._publish()
+
+    @property
+    def night_intensity(self) -> int:
+        """Intensité du mode nuit appliquée (0 = éteint)."""
+        return self._night_intensity
+
+    def set_night(self, intensity: int) -> bool:
+        """Règle le mode nuit (0 à 100, 0 = éteint) ; ``True`` si la palette effective a changé. Une seule publication, un seul passage."""
+        self._night_intensity = self._clamp_night(intensity)
+        return self._publish()
+
+    @staticmethod
+    def _clamp_night(intensity: int) -> int:
+        from core.night_mode import INTENSITY_RANGE
+
+        return max(INTENSITY_RANGE[0], min(INTENSITY_RANGE[1], int(intensity)))
+
+    def _publish(self) -> bool:
+        base = self._resolve_base(self.requested_mode)
         new_palette = self._resolve_palette(self.requested_mode)
-        if new_palette is self.effective_palette:
+        if new_palette is self.effective_palette and base is self.base_palette:
             return False
+        self.base_palette = base
         self.effective_palette = new_palette
-        set_active_palette(new_palette)
+        set_active_palette(new_palette, base)
         self._notify()
         return True
 
@@ -1036,7 +1078,7 @@ class ThemeManager:
     # Helpers privés
     # ------------------------------------------------------------------
 
-    def _resolve_palette(self, mode: str) -> ThemePalette:
+    def _resolve_base(self, mode: str) -> ThemePalette:
         if mode == "light":
             return THEMES["light"]
         if mode == "system":
@@ -1044,6 +1086,19 @@ class ThemeManager:
             if detected == "light":
                 return THEMES["light"]
         return THEMES["dark"]
+
+    def _resolve_palette(self, mode: str) -> ThemePalette:
+        """Palette effective : le thème, sans lumière bleue si le mode nuit est allumé (même objet tant que rien ne change)."""
+        base = self._resolve_base(mode)
+        if self._night_intensity == 0:
+            return base
+        key = (id(base), self._night_intensity)
+        cached = self._night_cache.get(key)
+        if cached is None:
+            from ui.night_palette import night_palette
+
+            cached = self._night_cache[key] = night_palette(base, self._night_intensity)
+        return cached
 
     @staticmethod
     def _detect_system_palette_name() -> str:
@@ -1084,6 +1139,7 @@ class ThemeManager:
 
 __all__ = [
     "COLORS",
+    "PURE_COLORS",
     "ThemePalette",
     "ThemeManager",
     "THEMES",

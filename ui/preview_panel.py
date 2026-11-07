@@ -45,7 +45,7 @@ from ui.empty_state import EmptyState
 from ui.icons import IconButton, IconName
 from ui.panel_header import PanelHeader
 from ui.source_scope import SourceScope
-from ui.theme import COLORS, monospace_font_family, set_role
+from ui.theme import COLORS, PURE_COLORS, monospace_font_family, set_role
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
 from ui.i18n import translate
@@ -194,9 +194,11 @@ class PreviewPanel(QWidget):
         self.graphics_scene = QGraphicsScene(self)
         self.graphics_view = QGraphicsView(self.graphics_scene, self)
         self.graphics_view.setRenderHints(self.graphics_view.renderHints())
-        self.graphics_view.setBackgroundBrush(QColor(COLORS["background"]))
+        # Le moniteur garde les couleurs d'origine du thème (jamais le mode nuit : voir ``ui.night_palette``).
+        self.graphics_view.setProperty("nightExempt", True)
+        self.graphics_view.setBackgroundBrush(QColor(PURE_COLORS["background"]))
         self.graphics_view.setStyleSheet(
-            f"background: {COLORS['background']}; border: none;"
+            f"background: {PURE_COLORS['background']}; border: none;"
         )
         # Le calque vidéo (taille du cadre, transform du clip) rogne son média : en cadrage « remplir », le média
         # agrandi dépasse du calque et seule la fenêtre de pan est visible, comme le ``crop`` de l'export.
@@ -820,7 +822,7 @@ class PreviewPanel(QWidget):
         self.mograph_item.setPos(rect.topLeft())
         if self.gpu_view is not None:
             self.gpu_view.set_canvas_rect(
-                (rect.x(), rect.y(), rect.width(), rect.height()), _rgb(COLORS["background"])
+                (rect.x(), rect.y(), rect.width(), rect.height()), _rgb(PURE_COLORS["background"])
             )
         self._reapply_transform()
         if getattr(self, "_subtitle_layer", None) is not None:
@@ -980,7 +982,7 @@ class PreviewPanel(QWidget):
         self.video_item.hide()
         self.player.setVideoSink(sink)
         rect = self._canvas_rect
-        view.set_canvas_rect((rect.x(), rect.y(), rect.width(), rect.height()), _rgb(COLORS["background"]))
+        view.set_canvas_rect((rect.x(), rect.y(), rect.width(), rect.height()), _rgb(PURE_COLORS["background"]))
         self._update_gpu_composite()
         self.set_effects(self._gpu_effects)
         view.show()
@@ -1227,7 +1229,7 @@ class PreviewPanel(QWidget):
         (des ``QBrush`` / ``QPen`` créés à la construction), pas des styles : la re-teinte des styles ne les atteint pas."""
         self.canvas_item.setPen(QColor(COLORS["border"]))
         if self.graphics_view.backgroundBrush().style() != Qt.NoBrush:
-            self.graphics_view.setBackgroundBrush(QColor(COLORS["background"]))
+            self.graphics_view.setBackgroundBrush(QColor(PURE_COLORS["background"]))
         if self.gpu_view is not None:
             self._layout_canvas()
 
@@ -1238,8 +1240,8 @@ class PreviewPanel(QWidget):
             self.graphics_view.viewport().setAutoFillBackground(False)
             self.canvas_item.setBrush(QBrush(Qt.NoBrush))
         else:
-            self.graphics_view.setBackgroundBrush(QColor(COLORS["background"]))
-            self.graphics_view.setStyleSheet(f"background: {COLORS['background']}; border: none;")
+            self.graphics_view.setBackgroundBrush(QColor(PURE_COLORS["background"]))
+            self.graphics_view.setStyleSheet(f"background: {PURE_COLORS['background']}; border: none;")
             self.canvas_item.setBrush(QColor(0, 0, 0))
 
     def _on_gpu_frame(self, frame) -> None:

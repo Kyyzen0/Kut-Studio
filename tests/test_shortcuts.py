@@ -99,7 +99,9 @@ def test_defaults_have_no_extra_shortcut_beyond_legacy_ones():
     multicam = {str(number) for number in range(1, 10)} | {"Ctrl+Shift+M"}
     # Palette de commandes « Rechercher une fonction » (Ctrl+K reste « couper à la tête de lecture »).
     palette = {"Ctrl+Shift+P"}
-    added = {normalize_sequence(s) for s in animation | sequences | motion | multicam | palette}
+    # Mode nuit de l'interface (« Basculer le mode nuit »).
+    night = {"Ctrl+Alt+Shift+N"}
+    added = {normalize_sequence(s) for s in animation | sequences | motion | multicam | palette | night}
     assigned = {s for c in COMMANDS for s in shortcuts.sequences(c.id)}
     assert assigned == legacy | added
     assert not legacy & added

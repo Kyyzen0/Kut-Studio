@@ -52,7 +52,7 @@ from core.scopes import (
 )
 from ui.design_system import Sizes, Spacing, Typography
 from ui.i18n import translate
-from ui.theme import COLORS, label_style
+from ui.theme import COLORS, PURE_COLORS, label_style
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +99,11 @@ class _ScopeCanvas(QWidget):
         # (``Sizes.scopes_min_height``) sans déborder.
         self.setMinimumSize(96, 32)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Un scope montre de l'analyse d'image : ses couleurs ne passent jamais par le mode nuit (voir ``ui.night_palette``).
+        self.setProperty("nightExempt", True)
         self.setStyleSheet(
-            f"background: {COLORS['background']};"
-            f" border: 1px solid {COLORS['border']};"
+            f"background: {PURE_COLORS['background']};"
+            f" border: 1px solid {PURE_COLORS['border']};"
             f" border-radius: 6px;"
         )
 
@@ -135,7 +137,7 @@ class _ScopeCanvas(QWidget):
         try:
             painter.setRenderHint(QPainter.Antialiasing, False)
             rect = self.rect().adjusted(1, 1, -1, -1)
-            painter.fillRect(rect, QColor(COLORS["background"]))
+            painter.fillRect(rect, QColor(PURE_COLORS["background"]))
             if self._result is None:
                 self._paint_placeholder(painter, rect)
                 return
@@ -153,7 +155,7 @@ class _ScopeCanvas(QWidget):
             painter.end()
 
     def _paint_placeholder(self, painter: QPainter, rect) -> None:
-        painter.setPen(QPen(QColor(COLORS["muted"])))
+        painter.setPen(QPen(QColor(PURE_COLORS["muted"])))
         font = QFont()
         font.setPixelSize(Typography.small)
         painter.setFont(font)
@@ -164,7 +166,7 @@ class _ScopeCanvas(QWidget):
 
     def _paint_grid(self, painter: QPainter, rect, low: float, high: float) -> None:
         """Grille de repères (0 %, 50 %, 100 %)."""
-        painter.setPen(QPen(QColor(COLORS["divider"]), 1, Qt.DotLine))
+        painter.setPen(QPen(QColor(PURE_COLORS["divider"]), 1, Qt.DotLine))
         for fraction in (0.25, 0.5, 0.75):
             y = rect.bottom() - int(rect.height() * fraction)
             painter.drawLine(rect.left(), y, rect.right(), y)
@@ -186,7 +188,7 @@ class _ScopeCanvas(QWidget):
             )
         self._draw_histogram_trace(
             painter, rect, result.histogram_luma, low, high, span,
-            QColor(COLORS["accent"]), fill=True,
+            QColor(PURE_COLORS["accent"]), fill=True,
         )
 
     def _draw_histogram_trace(
@@ -265,7 +267,7 @@ class _ScopeCanvas(QWidget):
                 # ne s'affiche comme un aplat quasi invisible.
                 alpha = int((density ** 0.5) * 255.0)
                 if alpha != last_alpha:
-                    color = QColor(COLORS["accent"])
+                    color = QColor(PURE_COLORS["accent"])
                     color.setAlpha(max(20, min(255, alpha)))
                     painter.setPen(QPen(color, 1))
                     last_alpha = alpha
@@ -328,13 +330,13 @@ class _ScopeCanvas(QWidget):
         cx = rect.center().x()
         cy = rect.center().y()
         radius = size / 2.0
-        painter.setPen(QPen(QColor(COLORS["border_strong"]), 1))
+        painter.setPen(QPen(QColor(PURE_COLORS["border_strong"]), 1))
         painter.drawEllipse(
             int(cx - radius), int(cy - radius),
             int(radius * 2), int(radius * 2),
         )
         # Lignes de repère : axes horizontaux / verticaux.
-        painter.setPen(QPen(QColor(COLORS["divider"]), 1, Qt.DotLine))
+        painter.setPen(QPen(QColor(PURE_COLORS["divider"]), 1, Qt.DotLine))
         painter.drawLine(
             int(cx - radius), cy, int(cx + radius), cy
         )
@@ -345,7 +347,7 @@ class _ScopeCanvas(QWidget):
         angle = math.radians(SKIN_TONE_LINE_DEGREES)
         ux = math.cos(angle - math.pi / 2.0)
         uy = -math.sin(angle - math.pi / 2.0)
-        painter.setPen(QPen(QColor(COLORS["marker"]), 1, Qt.DashLine))
+        painter.setPen(QPen(QColor(PURE_COLORS["marker"]), 1, Qt.DashLine))
         painter.drawLine(
             int(cx), int(cy),
             int(cx + ux * radius * 0.5), int(cy + uy * radius * 0.5),
@@ -354,7 +356,7 @@ class _ScopeCanvas(QWidget):
         # ``(col / bins, row / bins)`` du carré unitaire ; on le
         # projette dans le cercle en retranchant 0.5 pour recentrer
         # sur le point neutre.
-        painter.setPen(QPen(QColor(COLORS["accent"]), 1))
+        painter.setPen(QPen(QColor(PURE_COLORS["accent"]), 1))
         for row in range(bins):
             for column_index in range(bins):
                 density = result.vectorscope[row][column_index]
@@ -366,7 +368,7 @@ class _ScopeCanvas(QWidget):
                 x = int(cx + nx * radius * 2.0)
                 y = int(cy + ny * radius * 2.0)
                 alpha = max(30, min(255, int(density * 255)))
-                color = QColor(COLORS["accent"])
+                color = QColor(PURE_COLORS["accent"])
                 color.setAlpha(alpha)
                 painter.setPen(QPen(color, 1))
                 painter.drawPoint(x, y)
