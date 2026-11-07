@@ -142,6 +142,7 @@ Version qui ouvre le **mode script** à presque tout le montage et qui apporte u
 
 ### Fixed
 
+- Une scène 3D animée qu'un aperçu ou les scopes n'ont pas réussi à dessiner (mémoire, texture un instant illisible) n'est plus remplacée en silence par une image vide dans l'export suivant : le film la redessine. Un export annoncé réussi ne peut plus la perdre.
 - Mode script : un script ne supprime, ne déplace ni ne désactive plus un calque verrouillé sur une piste libre (`delete_clip`, `move_clip`, `set_clip_enabled`), et ne réécrit plus, en coupant, supprimant ou déplaçant la source d'un suivi, les liaisons d'un clip suiveur verrouillé (calque, piste ou autre séquence) : le script est refusé avant toute modification.
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
 
