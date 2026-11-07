@@ -22,7 +22,7 @@ essais, le hors ligne réel et l'achat réel (liste en fin de document).
 | `KutStoreBridge.swift` | Le pont (une seule source, ~215 lignes). |
 | `storekit_contract.py` | Contrat Python `ctypes` : lit l'ABI avant tout, copie puis libère les chaînes, borne l'argument. **Jetable, pas dans `core/`.** |
 | `build.sh` | `swiftc -emit-library` arm64, macOS 13+. |
-| `Kut-Studio.storekit` | Configuration StoreKit locale : groupe « Kut-Studio Pro » (mensuel `com.kutstudio.app.monthly`, annuel `com.kutstudio.app.yearly`) + non consommable `com.kutstudio.app.lifetime`. **Identifiants provisoires.** |
+| `Kut-Studio.storekit` | Configuration StoreKit locale : groupe « Kut-Studio Pro » (mensuel `studio.monthly`, annuel `studio.yearly`) + non consommable `studio.lifetime`. **Identifiants provisoires.** |
 | `XCTestHost/` | Projet Xcode jetable : application hôte vide + tests XCTest avec `SKTestSession` (`run_tests.sh`). |
 | `bridge_probe.py`, `build_bridge_probe.sh` | Sonde exécutée dans un bundle PyInstaller (comme `probe.py` du spike bac à sable). |
 | `../../../tests/test_store_spike_storekit.py` | Tests CI macOS **sans compte** : compilation, chargement, version, arguments, arrêt. |

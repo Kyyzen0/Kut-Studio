@@ -12,14 +12,15 @@
 #define KUTSTORE_H
 #include <stdint.h>
 
-#define KUTSTORE_ABI_VERSION 1
+#define KUTSTORE_ABI_VERSION 1 /* l'opération 6 s'ajoute sans changer l'ABI : une bibliothèque plus ancienne la refuse (unknown_op) */
 
 enum kutstore_op {
     KUTSTORE_OP_ENTITLEMENTS    = 1, /* arg: ignoré. Transaction.currentEntitlements */
     KUTSTORE_OP_APP_TRANSACTION = 2, /* arg: ignoré. AppTransaction.shared (originalPurchaseDate) */
     KUTSTORE_OP_SYNC            = 3, /* arg: ignoré. AppStore.sync() (restauration) */
     KUTSTORE_OP_PRODUCTS        = 4, /* arg: identifiants séparés par des virgules (<= 32). Product.products(for:) */
-    KUTSTORE_OP_START_UPDATES   = 5  /* arg: ignoré. Démarre l'écoute de Transaction.updates (idempotent) */
+    KUTSTORE_OP_START_UPDATES   = 5, /* arg: ignoré. Démarre l'écoute de Transaction.updates (idempotent) */
+    KUTSTORE_OP_PURCHASE        = 6  /* arg: un identifiant de produit. Product.purchase() ; rend un signal, jamais un déblocage (étape 15) */
 };
 
 enum kutstore_status {

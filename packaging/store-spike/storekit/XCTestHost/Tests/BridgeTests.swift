@@ -64,7 +64,7 @@ final class BridgeTests: XCTestCase {
     }
 
     func testProductsFromConfigurationFile() {
-        let (s, o) = run(4, "com.kutstudio.app.monthly,com.kutstudio.app.yearly,com.kutstudio.app.lifetime")
+        let (s, o) = run(4, "studio.monthly,studio.yearly,studio.lifetime")
         XCTAssertEqual(s, 0)
         let products = o["products"] as? [[String: Any]] ?? []
         XCTAssertEqual(products.count, 3)
@@ -75,17 +75,17 @@ final class BridgeTests: XCTestCase {
         var (s, o) = run(1)
         XCTAssertEqual(s, 0)
         XCTAssertEqual((o["entitlements"] as? [Any])?.count, 0)
-        try await buy("com.kutstudio.app.monthly")
+        try await buy("studio.monthly")
         (s, o) = run(1)
         let ents = o["entitlements"] as? [[String: Any]] ?? []
         XCTAssertEqual(ents.count, 1)
-        XCTAssertEqual(ents.first?["productID"] as? String, "com.kutstudio.app.monthly")
+        XCTAssertEqual(ents.first?["productID"] as? String, "studio.monthly")
         XCTAssertEqual(o["rejected"] as? Int, 0)
         print("ENTITLEMENT", ents)
     }
 
     func testLifetimePurchaseIsAnEntitlement() async throws {
-        try await buy("com.kutstudio.app.lifetime")
+        try await buy("studio.lifetime")
         let (_, o) = run(1)
         let ents = o["entitlements"] as? [[String: Any]] ?? []
         XCTAssertEqual(ents.count, 1)
@@ -95,8 +95,8 @@ final class BridgeTests: XCTestCase {
     }
 
     func testExpiredSubscriptionIsNoLongerAnEntitlement() async throws {
-        try await buy("com.kutstudio.app.yearly")
-        try session.expireSubscription(productIdentifier: "com.kutstudio.app.yearly")
+        try await buy("studio.yearly")
+        try session.expireSubscription(productIdentifier: "studio.yearly")
         let (_, o) = run(1)
         XCTAssertEqual((o["entitlements"] as? [Any])?.count, 0)
     }
@@ -104,14 +104,14 @@ final class BridgeTests: XCTestCase {
     func testUpdatesStreamDeliversRenewal() async throws {
         XCTAssertEqual(run(5).0, 0)
         XCTAssertEqual(run(5).0, 0, "idempotent")
-        try await buy("com.kutstudio.app.monthly")
-        try session.forceRenewalOfSubscription(productIdentifier: "com.kutstudio.app.monthly")
+        try await buy("studio.monthly")
+        try session.forceRenewalOfSubscription(productIdentifier: "studio.monthly")
         let (s, o) = pollOne()
         print("UPDATE", s, o)
         XCTAssertEqual(s, 0)
         XCTAssertEqual(o["verified"] as? Bool, true)
         let tx = o["transaction"] as? [String: Any]
-        XCTAssertEqual(tx?["productID"] as? String, "com.kutstudio.app.monthly")
+        XCTAssertEqual(tx?["productID"] as? String, "studio.monthly")
     }
 
     func testAppTransactionInTestSession() {
@@ -128,9 +128,9 @@ final class BridgeTests: XCTestCase {
     }
 
     func testOfflineProductsAndEntitlements() async throws {
-        try await buy("com.kutstudio.app.monthly")
+        try await buy("studio.monthly")
         try await session.setSimulatedError(.generic(.networkError(URLError(.notConnectedToInternet))), forAPI: .loadProducts)
-        let (s, o) = run(4, "com.kutstudio.app.monthly")
+        let (s, o) = run(4, "studio.monthly")
         print("OFFLINE products", s, o)
         XCTAssertEqual(s, 3, "erreur StoreKit rendue en code, pas d'exception")
         let (s2, o2) = run(1)
@@ -144,7 +144,7 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(run(4, "").0, 2)
         XCTAssertEqual(run(4, String(repeating: "a", count: 9000)).0, 2, "argument démesuré refusé avant allocation")
         XCTAssertEqual(run(4, (0..<40).map { "id\($0)" }.joined(separator: ",")).0, 2)
-        let (s, o) = run(4, "com.kutstudio.app.monthly", timeout: 1)
+        let (s, o) = run(4, "studio.monthly", timeout: 1)
         XCTAssertTrue(s == 1 || s == 0, "1 ms : délai ou succès rarissime, jamais de crash")
         _ = o
     }
