@@ -14,13 +14,15 @@ from __future__ import annotations
 
 import ctypes
 import threading
-import weakref
 from dataclasses import dataclass
 from typing import Any
 
 from . import abi
-from .errors import InvalidArgumentError, InvalidHandleError, error_for
+from .errors import InvalidArgumentError, InvalidHandleError, NotFoundError, error_for
 from .loader import NativeLibrary, load_library
+
+
+BYTES_PER_PIXEL = 4
 
 
 @dataclass(frozen=True)
@@ -99,7 +101,10 @@ class NativeEngine(_Handle):
 
     def __init__(self, library: NativeLibrary, handle: int) -> None:
         super().__init__(library, handle)
-        self._sessions: weakref.WeakSet[NativeSession] = weakref.WeakSet()
+        # Propriété FORTE : une session non fermée reste référencée ici jusqu'à sa destruction native réussie, même si l'appelant l'a lâchée ;
+        # ``close()`` du moteur la ferme donc toujours (sinon l'ABI refuserait de détruire un moteur qui a encore des sessions).
+        self._sessions: set[NativeSession] = set()
+        self._sessions_lock = threading.Lock()                # ne protège que l'ensemble (jamais tenu pendant un appel natif)
 
     @classmethod
     def open(cls, library: NativeLibrary | None = None) -> NativeEngine:
@@ -142,17 +147,24 @@ class NativeEngine(_Handle):
             session = ctypes.c_uint64(0)
             self._check(self._lib.cdll.kut_engine_session_create(handle, data, size, ctypes.byref(config), ctypes.byref(session)))
             created = NativeSession(self._lib, session.value, self)
-            self._sessions.add(created)
+            with self._sessions_lock:
+                self._sessions.add(created)
             return created
 
     def close(self) -> None:
         with self._lock:
             if self._closed:
                 return
-            for session in list(self._sessions):
-                session.close()
-            self._closed = True
+            with self._sessions_lock:
+                pending = list(self._sessions)
+            for session in pending:
+                session.close()                               # une erreur remonte : le moteur reste ouvert et close() peut être relancé
             self._check(self._lib.cdll.kut_engine_destroy(self._handle))
+            self._closed = True                               # posé seulement après la destruction réussie
+
+    def _forget(self, session: NativeSession) -> None:
+        with self._sessions_lock:
+            self._sessions.discard(session)
 
 
 class NativeSession(_Handle):
@@ -208,8 +220,22 @@ class NativeSession(_Handle):
         self._call("kut_engine_session_set_mapping", _source_id(source_id), ctypes.byref(mapping))
 
     def set_static_image(self, source_id: str, data: bytes, stride: int) -> None:
-        raw = (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
-        self._call("kut_engine_session_set_static_image", _source_id(source_id), raw, stride)
+        """Image fixe d'une source rgba/bgra. Les bornes sont vérifiées ICI, avant l'appel natif, qui ne reçoit qu'un pointeur et un pas :
+        ``stride >= largeur * 4`` et ``len(data) >= stride * hauteur`` (la bibliothèque copie ``stride * hauteur`` octets)."""
+        raw_id = _source_id(source_id)
+        source = next((item for item in self.sources() if item.id == source_id), None)
+        if source is None or source.kind != abi.SOURCE_KIND_IMAGE:
+            raise NotFoundError(abi.ERR_NOT_FOUND, "pas de source image de ce nom")
+        row = source.width * BYTES_PER_PIXEL
+        if not isinstance(stride, int) or isinstance(stride, bool) or not row <= stride <= abi.MAX_IMAGE_STRIDE:
+            raise InvalidArgumentError(abi.ERR_INVALID_ARGUMENT, "pas de ligne (stride) invalide")
+        required = stride * source.height
+        if required > abi.MAX_IMAGE_BYTES:
+            raise InvalidArgumentError(abi.ERR_INVALID_ARGUMENT, "image trop grande")
+        if len(data) < required:
+            raise InvalidArgumentError(abi.ERR_INVALID_ARGUMENT, "image trop courte pour la largeur, la hauteur et le pas")
+        raw = (ctypes.c_uint8 * required).from_buffer_copy(data, 0)
+        self._call("kut_engine_session_set_static_image", raw_id, raw, stride)
 
     def play(self) -> None:
         self._call("kut_engine_session_play")
@@ -263,5 +289,6 @@ class NativeSession(_Handle):
         with self._lock:
             if self._closed:
                 return
-            self._closed = True
             self._check(self._lib.cdll.kut_engine_session_destroy(self._handle))
+            self._closed = True                               # seulement après succès : un échec laisse close() ré-essayable
+            self._engine._forget(self)

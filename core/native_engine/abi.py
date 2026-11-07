@@ -51,6 +51,9 @@ FRAME_STALE: Final = 2
 MAX_PLAN_BYTES: Final = 16 << 20
 """Taille maximale d'un plan KFPL (la bibliothèque refuse au-delà avant de lire)."""
 MAX_ERROR_MESSAGE_BYTES: Final = 256
+MAX_IMAGE_STRIDE: Final = 1 << 28
+MAX_IMAGE_BYTES: Final = 1 << 30
+"""Bornes d'une image fixe : celles de la bibliothèque (pas de ligne <= 256 Mio, image <= 1 Gio)."""
 
 
 class EngineConfig(ctypes.Structure):
